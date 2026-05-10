@@ -1,0 +1,219 @@
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { getLoginUrl } from "@/const";
+import { trpc } from "@/lib/trpc";
+import { useLocation } from "wouter";
+import { useState } from "react";
+import {
+  Shield, LayoutDashboard, Mail, BookTemplate, Users, BarChart3,
+  Settings, LogOut, ChevronDown, ChevronRight, Trophy, BookOpen,
+  Menu, X, Building2, Plus
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: string;
+  children?: { label: string; href: string; icon: React.ElementType }[];
+}
+
+const navItems: NavItem[] = [
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  {
+    label: "Phishing", href: "/campaigns", icon: Mail,
+    children: [
+      { label: "Campaigns", href: "/campaigns", icon: Mail },
+      { label: "Templates", href: "/templates", icon: BookTemplate },
+      { label: "Targets", href: "/targets", icon: Users },
+      { label: "Training", href: "/training", icon: BookOpen },
+      { label: "Leaderboard", href: "/gamification", icon: Trophy },
+    ],
+  },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Settings", href: "/settings", icon: Settings },
+];
+
+function NavLink({ item, depth = 0 }: { item: NavItem; depth?: number }) {
+  const [location, navigate] = useLocation();
+  const [open, setOpen] = useState(() =>
+    item.children?.some(c => location.startsWith(c.href)) || location.startsWith(item.href)
+  );
+
+  const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href) && !item.children);
+  const isParentActive = item.children?.some(c => location.startsWith(c.href));
+
+  if (item.children) {
+    return (
+      <div>
+        <button
+          onClick={() => setOpen(!open)}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+            isParentActive
+              ? "text-foreground bg-accent"
+              : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+          )}
+        >
+          <item.icon className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1 text-left">{item.label}</span>
+          {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        </button>
+        {open && (
+          <div className="ml-4 mt-1 space-y-0.5 border-l border-border/50 pl-3">
+            {item.children.map(child => (
+              <NavLink key={child.href} item={child} depth={1} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => navigate(item.href)}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors",
+        isActive
+          ? "text-foreground bg-primary/15 text-primary"
+          : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+      )}
+    >
+      <item.icon className="w-4 h-4 flex-shrink-0" />
+      <span>{item.label}</span>
+      {item.badge && (
+        <Badge variant="secondary" className="ml-auto text-xs py-0 px-1.5 h-4">
+          {item.badge}
+        </Badge>
+      )}
+    </button>
+  );
+}
+
+interface AppLayoutProps {
+  children: React.ReactNode;
+  title?: string;
+  actions?: React.ReactNode;
+}
+
+export default function AppLayout({ children, title, actions }: AppLayoutProps) {
+  const { user, isAuthenticated, loading, logout } = useAuth();
+  const [, navigate] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
+  const orgs = orgsData ?? [];
+  const currentOrg = orgs[0]?.org;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    window.location.href = getLoginUrl();
+    return null;
+  }
+
+  if (!loading && isAuthenticated && orgs.length === 0) {
+    navigate("/setup");
+    return null;
+  }
+
+  const sidebar = (
+    <div className="flex flex-col h-full">
+      {/* Logo */}
+      <div className="p-4 border-b border-sidebar-border">
+        <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+            <Shield className="w-4 h-4 text-primary-foreground" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold text-sm leading-tight">PhishGuard</div>
+            {currentOrg && (
+              <div className="text-xs text-muted-foreground truncate max-w-[140px]">{currentOrg.name}</div>
+            )}
+          </div>
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+        {navItems.map(item => (
+          <NavLink key={item.href} item={item} />
+        ))}
+      </nav>
+
+      {/* User */}
+      <div className="p-3 border-t border-sidebar-border">
+        <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
+          <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+            <span className="text-xs font-semibold text-primary">
+              {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium truncate">{user?.name ?? "User"}</div>
+            <div className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-7 h-7 text-muted-foreground hover:text-foreground flex-shrink-0"
+            onClick={() => logout()}
+            title="Sign out"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-background flex">
+      {/* Desktop sidebar */}
+      <aside className="hidden lg:flex flex-col w-56 bg-sidebar border-r border-sidebar-border flex-shrink-0 fixed left-0 top-0 bottom-0 z-30">
+        {sidebar}
+      </aside>
+
+      {/* Mobile sidebar overlay */}
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setMobileOpen(false)} />
+          <aside className="absolute left-0 top-0 bottom-0 w-56 bg-sidebar border-r border-sidebar-border z-50">
+            {sidebar}
+          </aside>
+        </div>
+      )}
+
+      {/* Main content */}
+      <main className="flex-1 lg:ml-56 flex flex-col min-h-screen">
+        {/* Top bar */}
+        <header className="sticky top-0 z-20 h-14 border-b border-border/50 bg-background/80 backdrop-blur-xl flex items-center px-4 lg:px-6 gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden w-8 h-8"
+            onClick={() => setMobileOpen(true)}
+          >
+            <Menu className="w-4 h-4" />
+          </Button>
+          {title && <h1 className="font-semibold text-base flex-1">{title}</h1>}
+          {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
+        </header>
+
+        {/* Page content */}
+        <div className="flex-1 p-4 lg:p-6">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
