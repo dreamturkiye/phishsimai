@@ -17,6 +17,7 @@ import OrgSettings from "./pages/OrgSettings";
 import OrgSetup from "./pages/OrgSetup";
 import AcceptInvite from "./pages/AcceptInvite";
 import ComplianceCenter from "./pages/ComplianceCenter";
+import MspPortal from "./pages/MspPortal";
 
 function Router() {
   return (
@@ -34,6 +35,7 @@ function Router() {
       <Route path="/setup" component={OrgSetup} />
       <Route path="/invite/:token" component={AcceptInvite} />
       <Route path="/compliance" component={ComplianceCenter} />
+      <Route path="/msp" component={MspPortal} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -97,9 +97,52 @@
 - [x] Add /compliance route to App.tsx
 
 ## Phase 14: Mandatory Mandate Highlighting & Certificate Enhancement
-- [ ] Add prominent "Mandatory Compliance" hero banner section to landing page with urgency messaging
-- [ ] Add individual mandatory mandate cards with legal citations on landing page
-- [ ] Rebuild certificate generator with framework-specific regulatory language per certificate
-- [ ] Update ComplianceCenter to visually distinguish mandatory vs recommended vs industry-specific
-- [ ] Add mandatory badge/indicator to each mandatory framework card in dashboard
-- [ ] Update landing page compliance section header to emphasize legal requirement
+- [x] Add prominent "Mandatory Compliance" hero banner section to landing page with urgency messaging
+- [x] Add individual mandatory mandate cards with legal citations on landing page
+- [x] Rebuild certificate generator with framework-specific regulatory language per certificate
+- [x] Update ComplianceCenter to visually distinguish mandatory vs recommended vs industry-specific
+- [x] Add mandatory badge/indicator to each mandatory framework card in dashboard
+- [x] Update landing page compliance section header to emphasize legal requirement
+
+## Phase 15: MSP White Label Portal
+- [ ] DB schema: msp_tenants, msp_customer_orgs, msp_branding, msp_activity_log tables
+- [ ] Backend: MSP registration and profile router
+- [ ] Backend: MSP customer provisioning (create/suspend/delete customer orgs)
+- [ ] Backend: MSP impersonation (act-as-customer session)
+- [ ] Backend: MSP white-label branding (logo, colors, domain, support email)
+- [ ] Backend: MSP customer analytics aggregation (all customers overview)
+- [ ] Backend: MSP activity log (audit trail of all MSP actions)
+- [ ] MSP Portal page: separate /msp route and layout (distinct from customer dashboard)
+- [ ] MSP Dashboard: KPI cards (total customers, active campaigns, compliance scores, at-risk orgs)
+- [ ] MSP Customer List: table with status, plan, last activity, compliance score, quick actions
+- [ ] MSP Customer Provisioning Wizard: create new customer org (name, domain, plan, admin email)
+- [ ] MSP Impersonate Customer: "Manage" button to enter customer's dashboard as admin
+- [ ] MSP White Label Branding Settings: upload logo, set brand colors, custom support email
+- [ ] MSP Activity Log: audit trail of all provisioning and access actions
+- [ ] Add MSP section to landing page (targeting IT service providers)
+- [ ] Add MSP nav entry to AppLayout for MSP-role users
+- [ ] Vitest tests for MSP routers
+
+## Phase 15: MSP White Label Portal
+- [ ] DB schema: msp_tenants, msp_customer_orgs, msp_branding, msp_activity_log tables
+- [ ] Backend: MSP registration, customer provisioning, impersonation, branding, activity log routers
+- [ ] MSP Portal page (/msp route, separate layout, MSP-role gated)
+- [ ] MSP Dashboard: KPI cards (total customers, active campaigns, compliance scores, at-risk orgs)
+- [ ] MSP Customer List: table with status, plan, last activity, compliance score, quick actions
+- [ ] MSP Customer Provisioning Wizard: create new customer org (name, domain, plan, admin email)
+- [ ] MSP Impersonate Customer: "Manage" button to enter customer dashboard as admin
+- [ ] MSP White Label Branding Settings: logo, brand colors, custom support email
+- [ ] MSP Activity Log: audit trail of all provisioning and access actions
+- [ ] Vitest tests for MSP routers
+
+## Phase 16: Marketing Polish & Go-Live Readiness
+- [ ] Landing page: stronger hero with 2X better / half price value prop
+- [ ] Landing page: competitor comparison table (vs KnowBe4, Proofpoint, Cofense)
+- [ ] Landing page: social proof / testimonials section
+- [ ] Landing page: MSP / partner section with dedicated CTA
+- [ ] Landing page: How It Works (3-step visual flow)
+- [ ] Landing page: FAQ section
+- [ ] Landing page: full multi-column footer (Product, Compliance, Company, Legal)
+- [ ] Landing page: Privacy Policy and Terms of Service pages
+- [ ] Add MSP pricing tier to pricing section
+- [ ] Beta test all pages and fix any UI/UX issues

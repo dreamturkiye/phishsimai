@@ -278,3 +278,58 @@ export const complianceCertificates = mysqlTable("compliance_certificates", {
   index("compliance_certs_orgId_idx").on(t.orgId),
 ]);
 export type ComplianceCertificate = typeof complianceCertificates.$inferSelect;
+
+// ─── MSP Tenants ──────────────────────────────────────────────────────────────
+export const mspTenants = mysqlTable("msp_tenants", {
+  id: int("id").autoincrement().primaryKey(),
+  ownerUserId: int("ownerUserId").notNull(),
+  companyName: varchar("companyName", { length: 255 }).notNull(),
+  contactEmail: varchar("contactEmail", { length: 320 }).notNull(),
+  contactPhone: varchar("contactPhone", { length: 32 }),
+  website: varchar("website", { length: 255 }),
+  // White-label branding
+  brandName: varchar("brandName", { length: 128 }),
+  brandLogoUrl: text("brandLogoUrl"),
+  brandPrimaryColor: varchar("brandPrimaryColor", { length: 16 }).default("#6366f1"),
+  brandSupportEmail: varchar("brandSupportEmail", { length: 320 }),
+  brandCustomDomain: varchar("brandCustomDomain", { length: 255 }),
+  // Status
+  status: mysqlEnum("status", ["active", "suspended", "trial"]).default("trial").notNull(),
+  maxCustomers: int("maxCustomers").default(10).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("msp_tenants_ownerUserId_idx").on(t.ownerUserId),
+]);
+export type MspTenant = typeof mspTenants.$inferSelect;
+
+// ─── MSP Customer Organizations ───────────────────────────────────────────────
+export const mspCustomerOrgs = mysqlTable("msp_customer_orgs", {
+  id: int("id").autoincrement().primaryKey(),
+  mspTenantId: int("mspTenantId").notNull(),
+  orgId: int("orgId").notNull(),           // FK → organizations.id
+  plan: mysqlEnum("plan", ["starter", "professional", "enterprise"]).default("starter").notNull(),
+  status: mysqlEnum("status", ["active", "suspended", "pending"]).default("pending").notNull(),
+  adminEmail: varchar("adminEmail", { length: 320 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("msp_customer_orgs_mspId_idx").on(t.mspTenantId),
+  index("msp_customer_orgs_orgId_idx").on(t.orgId),
+]);
+export type MspCustomerOrg = typeof mspCustomerOrgs.$inferSelect;
+
+// ─── MSP Activity Log ─────────────────────────────────────────────────────────
+export const mspActivityLog = mysqlTable("msp_activity_log", {
+  id: int("id").autoincrement().primaryKey(),
+  mspTenantId: int("mspTenantId").notNull(),
+  actorUserId: int("actorUserId").notNull(),
+  action: varchar("action", { length: 128 }).notNull(),   // e.g. "provision_customer", "impersonate"
+  targetOrgId: int("targetOrgId"),
+  details: text("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("msp_activity_log_mspId_idx").on(t.mspTenantId),
+]);
+export type MspActivityLog = typeof mspActivityLog.$inferSelect;

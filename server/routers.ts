@@ -809,6 +809,184 @@ Make it realistic and educational. The email should look authentic but contain s
           .orderBy(desc(complianceCertificates.issuedAt));
       }),
   }),
+  // ─── MSP ────────────────────────────────────────────────────────────────────
+  msp: router({
+    // Get current user's MSP tenant (or null)
+    getMyTenant: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const { mspTenants } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+      return rows[0] ?? null;
+    }),
+
+    // Register as an MSP
+    register: protectedProcedure
+      .input(z.object({
+        companyName: z.string().min(2),
+        contactEmail: z.string().email(),
+        contactPhone: z.string().optional(),
+        website: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Check if already registered
+        const existing = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (existing[0]) throw new TRPCError({ code: "CONFLICT", message: "Already registered as MSP" });
+        await db.insert(mspTenants).values({
+          ownerUserId: ctx.user.id,
+          companyName: input.companyName,
+          contactEmail: input.contactEmail,
+          contactPhone: input.contactPhone ?? null,
+          website: input.website ?? null,
+          status: "trial",
+          maxCustomers: 10,
+        });
+        const rows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        return rows[0];
+      }),
+
+    // Update MSP branding
+    updateBranding: protectedProcedure
+      .input(z.object({
+        brandName: z.string().optional(),
+        brandLogoUrl: z.string().optional(),
+        brandPrimaryColor: z.string().optional(),
+        brandSupportEmail: z.string().email().optional(),
+        brandCustomDomain: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const rows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "MSP tenant not found" });
+        await db.update(mspTenants).set({
+          brandName: input.brandName ?? rows[0].brandName,
+          brandLogoUrl: input.brandLogoUrl ?? rows[0].brandLogoUrl,
+          brandPrimaryColor: input.brandPrimaryColor ?? rows[0].brandPrimaryColor,
+          brandSupportEmail: input.brandSupportEmail ?? rows[0].brandSupportEmail,
+          brandCustomDomain: input.brandCustomDomain ?? rows[0].brandCustomDomain,
+        }).where(eq(mspTenants.ownerUserId, ctx.user.id));
+        return { success: true };
+      }),
+
+    // List all customer orgs for this MSP
+    listCustomers: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { mspTenants, mspCustomerOrgs, organizations } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const tenant = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+      if (!tenant[0]) return [];
+      const customers = await db
+        .select({ customer: mspCustomerOrgs, org: organizations })
+        .from(mspCustomerOrgs)
+        .leftJoin(organizations, eq(mspCustomerOrgs.orgId, organizations.id))
+        .where(eq(mspCustomerOrgs.mspTenantId, tenant[0].id));
+      return customers;
+    }),
+
+    // Provision a new customer org
+    provisionCustomer: protectedProcedure
+      .input(z.object({
+        orgName: z.string().min(2),
+        orgSlug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+        adminEmail: z.string().email(),
+        plan: z.enum(["starter", "professional", "enterprise"]).default("starter"),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants, mspCustomerOrgs, mspActivityLog, organizations } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        // Get MSP tenant
+        const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Not an MSP" });
+        const tenant = tenantRows[0];
+        // Check customer limit
+        const existing = await db.select().from(mspCustomerOrgs).where(eq(mspCustomerOrgs.mspTenantId, tenant.id));
+        if (existing.length >= tenant.maxCustomers) throw new TRPCError({ code: "FORBIDDEN", message: "Customer limit reached" });
+        // Check slug uniqueness
+        const slugCheck = await db.select().from(organizations).where(eq(organizations.slug, input.orgSlug)).limit(1);
+        if (slugCheck[0]) throw new TRPCError({ code: "CONFLICT", message: "Organization slug already taken" });
+        // Create org
+        await db.insert(organizations).values({
+          name: input.orgName,
+          slug: input.orgSlug,
+          gamificationEnabled: false,
+          trainingEnabled: true,
+        });
+        const orgRows = await db.select().from(organizations).where(eq(organizations.slug, input.orgSlug)).limit(1);
+        const org = orgRows[0];
+        if (!org) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        // Link to MSP
+        await db.insert(mspCustomerOrgs).values({
+          mspTenantId: tenant.id,
+          orgId: org.id,
+          plan: input.plan,
+          status: "active",
+          adminEmail: input.adminEmail,
+          notes: input.notes ?? null,
+        });
+        // Log action
+        await db.insert(mspActivityLog).values({
+          mspTenantId: tenant.id,
+          actorUserId: ctx.user.id,
+          action: "provision_customer",
+          targetOrgId: org.id,
+          details: `Provisioned org '${input.orgName}' (${input.orgSlug}) for ${input.adminEmail}`,
+        });
+        return { success: true, orgId: org.id, orgSlug: org.slug };
+      }),
+
+    // Update customer status (suspend/activate)
+    updateCustomerStatus: protectedProcedure
+      .input(z.object({
+        customerOrgId: z.number(),
+        status: z.enum(["active", "suspended", "pending"]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants, mspCustomerOrgs, mspActivityLog } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
+        await db.update(mspCustomerOrgs)
+          .set({ status: input.status })
+          .where(and(eq(mspCustomerOrgs.id, input.customerOrgId), eq(mspCustomerOrgs.mspTenantId, tenantRows[0].id)));
+        await db.insert(mspActivityLog).values({
+          mspTenantId: tenantRows[0].id,
+          actorUserId: ctx.user.id,
+          action: `set_status_${input.status}`,
+          targetOrgId: input.customerOrgId,
+          details: `Set customer org ${input.customerOrgId} status to ${input.status}`,
+        });
+        return { success: true };
+      }),
+
+    // Get activity log
+    getActivityLog: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { mspTenants, mspActivityLog } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+      if (!tenantRows[0]) return [];
+      return db.select().from(mspActivityLog)
+        .where(eq(mspActivityLog.mspTenantId, tenantRows[0].id))
+        .orderBy(desc(mspActivityLog.createdAt))
+        .limit(100);
+    }),
+  }),
+
   // ─── Seed ───────────────────────────────────────────────────────────────────
   seed: router({
     seedBuiltIns: protectedProcedure.mutation(async ({ ctx }) => {
