@@ -257,40 +257,92 @@ export default function Home() {
       {/* Compliance / Certification */}
       <section id="compliance" className="py-24 border-t border-border/50">
         <div className="container">
+
+          {/* Section header */}
           <div className="text-center mb-14">
             <Badge variant="outline" className="mb-4 text-xs font-medium border-primary/40 text-primary bg-primary/5">
               Compliance &amp; Certification
             </Badge>
-            <h2 className="text-4xl font-bold mb-4">Built for regulated industries</h2>
+            <h2 className="text-4xl font-bold mb-4">Phishing training is not optional — it's the law</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              PhishSim AI maps directly to the compliance requirements your auditors, regulators, and customers demand.
-              Generate audit-ready reports and compliance certificates in one click.
+              Five major federal and state regulations <strong className="text-foreground">legally require</strong> organizations in healthcare, finance, energy, defense, and New York to conduct phishing simulation and security awareness training. Non-compliance carries fines, audits, and contract disqualification.
             </p>
           </div>
 
-          {/* Mandatory frameworks */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-5">
-              <div className="h-px flex-1 bg-border/50" />
-              <span className="text-xs font-semibold text-red-400 uppercase tracking-widest px-3">Mandatory / Effectively Required</span>
-              <div className="h-px flex-1 bg-border/50" />
+          {/* MANDATORY ALERT BANNER */}
+          <div className="mb-12 rounded-2xl border border-red-500/40 bg-red-500/5 p-6 md:p-8">
+            <div className="flex flex-col md:flex-row items-start md:items-center gap-4 mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                  <ShieldCheck className="w-5 h-5 text-red-400" />
+                </div>
+                <div>
+                  <div className="font-bold text-red-400 text-sm uppercase tracking-widest">Legally Mandated Frameworks</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Failure to comply may result in regulatory fines, audit failures, or contract disqualification</div>
+                </div>
+              </div>
+              <div className="md:ml-auto">
+                <Button onClick={() => navigate(getLoginUrl())} size="sm" className="bg-red-500 hover:bg-red-600 text-white border-0">
+                  Get Compliant Now <ArrowRight className="ml-1.5 w-3.5 h-3.5" />
+                </Button>
+              </div>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[
-                { name: "HIPAA", desc: "Workforce security training for covered entities", sector: "Healthcare" },
-                { name: "GLBA", desc: "Safeguards Rule employee training for financial institutions", sector: "Financial Services" },
-                { name: "NERC CIP", desc: "Cybersecurity awareness for critical infrastructure personnel", sector: "Energy / Utilities" },
-                { name: "CMMC / DFARS", desc: "NIST 800-171 AT practices for defense contractors", sector: "Defense" },
-                { name: "NY DFS Part 500", desc: "Annual training mandate for NY financial companies", sector: "Financial (NY)" },
+                {
+                  name: "HIPAA",
+                  fullName: "Health Insurance Portability and Accountability Act",
+                  citation: "45 CFR §164.308(a)(5)",
+                  requirement: "Covered entities must implement security awareness and training programs for all workforce members, including phishing simulation as the industry-standard demonstration of compliance.",
+                  sector: "Healthcare",
+                  penalty: "Up to $1.9M per violation category",
+                },
+                {
+                  name: "GLBA",
+                  fullName: "Gramm-Leach-Bliley Act — Safeguards Rule",
+                  citation: "16 CFR Part 314",
+                  requirement: "Financial institutions must implement safeguards including employee training on phishing and social engineering as part of a written information security program.",
+                  sector: "Financial Services",
+                  penalty: "FTC enforcement, civil penalties",
+                },
+                {
+                  name: "NERC CIP",
+                  fullName: "NERC Critical Infrastructure Protection",
+                  citation: "NERC CIP-004-7 R1",
+                  requirement: "Personnel with access to critical infrastructure must complete cybersecurity awareness training including phishing and social engineering attack recognition.",
+                  sector: "Energy / Utilities",
+                  penalty: "Up to $1M per violation per day",
+                },
+                {
+                  name: "CMMC / DFARS",
+                  fullName: "Cybersecurity Maturity Model Certification",
+                  citation: "NIST SP 800-171 AT.2.056 / AT.3.058",
+                  requirement: "Defense contractors at CMMC Level 2+ must provide security awareness training that includes recognizing and reporting phishing and social engineering threats.",
+                  sector: "Defense Contractors",
+                  penalty: "Contract disqualification, False Claims Act liability",
+                },
+                {
+                  name: "NY DFS Part 500",
+                  fullName: "NY Dept. of Financial Services Cybersecurity Regulation",
+                  citation: "23 NYCRR §500.14(b)",
+                  requirement: "All covered entities must provide annual cybersecurity awareness training for all personnel, explicitly including phishing and social engineering recognition.",
+                  sector: "NY Financial Companies",
+                  penalty: "Up to $1M per violation",
+                },
               ].map(f => (
-                <div key={f.name} className="flex items-start gap-3 p-4 rounded-xl bg-red-500/5 border border-red-500/20 hover:border-red-500/40 transition-colors">
-                  <div className="w-8 h-8 rounded-lg bg-red-500/15 flex items-center justify-center flex-shrink-0">
-                    <ShieldCheck className="w-4 h-4 text-red-400" />
+                <div key={f.name} className="flex flex-col gap-2 p-4 rounded-xl bg-background/60 border border-red-500/25 hover:border-red-500/50 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-bold text-sm text-red-300">{f.name}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{f.fullName}</div>
+                    </div>
+                    <Badge className="text-xs bg-red-500/15 text-red-400 border-red-500/30 flex-shrink-0">REQUIRED</Badge>
                   </div>
-                  <div>
-                    <div className="font-semibold text-sm">{f.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{f.desc}</div>
-                    <Badge variant="outline" className="mt-2 text-xs border-red-500/30 text-red-400 bg-red-500/5">{f.sector}</Badge>
+                  <div className="text-xs font-mono text-red-400/70 bg-red-500/5 rounded px-2 py-1">{f.citation}</div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{f.requirement}</p>
+                  <div className="flex items-center gap-1.5 mt-auto pt-1">
+                    <Badge variant="outline" className="text-xs border-border/50">{f.sector}</Badge>
+                    <span className="text-xs text-red-400/70 ml-auto">{f.penalty}</span>
                   </div>
                 </div>
               ))}
@@ -306,9 +358,9 @@ export default function Home() {
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {[
-                { name: "NIST CSF / SP 800-53", desc: "AT-2 and AT-3 controls explicitly cite phishing simulation", sector: "All Sectors" },
-                { name: "SOC 2", desc: "Auditors look for phishing programs as CC1.4 evidence", sector: "Technology / SaaS" },
-                { name: "FTC Safeguards Rule", desc: "Written security program with phishing training (updated 2023)", sector: "Financial Services" },
+                { name: "NIST CSF / SP 800-53", desc: "AT-2 and AT-3 controls explicitly cite phishing simulation as a training mechanism", sector: "All Sectors" },
+                { name: "SOC 2", desc: "Auditors routinely look for phishing simulation programs as evidence of CC1.4 security awareness controls", sector: "Technology / SaaS" },
+                { name: "FTC Safeguards Rule (2023)", desc: "Requires a written information security program including employee training for financial services companies", sector: "Financial Services" },
               ].map(f => (
                 <div key={f.name} className="flex items-start gap-3 p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 hover:border-amber-500/40 transition-colors">
                   <div className="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center flex-shrink-0">
@@ -316,7 +368,7 @@ export default function Home() {
                   </div>
                   <div>
                     <div className="font-semibold text-sm">{f.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{f.desc}</div>
+                    <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{f.desc}</div>
                     <Badge variant="outline" className="mt-2 text-xs border-amber-500/30 text-amber-400 bg-amber-500/5">{f.sector}</Badge>
                   </div>
                 </div>
@@ -328,13 +380,13 @@ export default function Home() {
           <div className="mb-12">
             <div className="flex items-center gap-2 mb-5">
               <div className="h-px flex-1 bg-border/50" />
-              <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest px-3">Industry-Specific</span>
+              <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest px-3">Industry-Specific Requirements</span>
               <div className="h-px flex-1 bg-border/50" />
             </div>
             <div className="grid sm:grid-cols-2 gap-4">
               {[
-                { name: "PCI DSS v4.0", desc: "Requirement 12.6.3 explicitly mandates phishing awareness training", sector: "Payment Processing" },
-                { name: "SEC Cybersecurity Rules (2023)", desc: "Risk management program disclosure; phishing training is a cited control", sector: "Public Companies" },
+                { name: "PCI DSS v4.0", citation: "Requirement 12.6.3", desc: "Explicitly mandates security awareness training that specifically addresses phishing. Organizations processing card payments must comply.", sector: "Payment Processing" },
+                { name: "SEC Cybersecurity Rules (2023)", citation: "17 CFR Parts 229 & 249", desc: "Public companies must disclose material cybersecurity incidents and their risk management programs. Phishing training is a commonly cited control in SEC filings.", sector: "Public Companies" },
               ].map(f => (
                 <div key={f.name} className="flex items-start gap-3 p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 hover:border-blue-500/40 transition-colors">
                   <div className="w-8 h-8 rounded-lg bg-blue-500/15 flex items-center justify-center flex-shrink-0">
@@ -342,7 +394,8 @@ export default function Home() {
                   </div>
                   <div>
                     <div className="font-semibold text-sm">{f.name}</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">{f.desc}</div>
+                    <div className="text-xs font-mono text-blue-400/70 mt-0.5">{f.citation}</div>
+                    <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{f.desc}</div>
                     <Badge variant="outline" className="mt-2 text-xs border-blue-500/30 text-blue-400 bg-blue-500/5">{f.sector}</Badge>
                   </div>
                 </div>
@@ -355,7 +408,7 @@ export default function Home() {
             <ShieldCheck className="w-10 h-10 text-primary mx-auto mb-4" />
             <h3 className="text-xl font-bold mb-2">One platform. Ten frameworks. Zero guesswork.</h3>
             <p className="text-muted-foreground text-sm mb-6 max-w-lg mx-auto">
-              PhishSim AI tracks your compliance posture, generates audit-ready reports, and issues downloadable compliance certificates — all from the same dashboard you use to run phishing campaigns.
+              PhishSim AI tracks your compliance posture, generates audit-ready reports, and issues downloadable compliance certificates referencing the exact regulatory citation — all from the same dashboard you use to run phishing campaigns.
             </p>
             <Button onClick={() => navigate(getLoginUrl())} size="lg">
               Get Compliance-Ready <ArrowRight className="ml-2 w-4 h-4" />

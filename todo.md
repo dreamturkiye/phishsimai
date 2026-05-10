@@ -95,3 +95,11 @@
 - [x] Add compliance backend routers (client-side generation — no server round-trip needed)
 - [x] Add Compliance nav item to AppLayout sidebar
 - [x] Add /compliance route to App.tsx
+
+## Phase 14: Mandatory Mandate Highlighting & Certificate Enhancement
+- [ ] Add prominent "Mandatory Compliance" hero banner section to landing page with urgency messaging
+- [ ] Add individual mandatory mandate cards with legal citations on landing page
+- [ ] Rebuild certificate generator with framework-specific regulatory language per certificate
+- [ ] Update ComplianceCenter to visually distinguish mandatory vs recommended vs industry-specific
+- [ ] Add mandatory badge/indicator to each mandatory framework card in dashboard
+- [ ] Update landing page compliance section header to emphasize legal requirement

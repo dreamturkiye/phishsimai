@@ -326,81 +326,220 @@ const CATEGORY_LABELS: Record<string, { label: string; color: string }> = {
 
 // ─── Certificate Generator ────────────────────────────────────────────────────
 
+// Framework-specific regulatory language for certificates
+const CERT_REGULATORY_LANGUAGE: Record<string, { citation: string; legalText: string; accentColor: string; accentBg: string; categoryLabel: string; }> = {
+  hipaa: {
+    citation: "45 CFR §164.308(a)(5) — HIPAA Security Rule",
+    legalText: "This certificate documents that the above-named organization has implemented a phishing simulation and security awareness training program in accordance with the HIPAA Security Rule (45 CFR §164.308(a)(5)), which requires covered entities and business associates to implement security awareness and training programs for all workforce members. Phishing simulation is the industry-recognized method for demonstrating ongoing compliance. Records are retained per 45 CFR §164.316(b)(2).",
+    accentColor: "#3b82f6",
+    accentBg: "rgba(59,130,246,0.12)",
+    categoryLabel: "LEGALLY REQUIRED — Healthcare",
+  },
+  glba: {
+    citation: "16 CFR Part 314 — FTC Safeguards Rule (GLBA)",
+    legalText: "This certificate documents that the above-named financial institution has implemented employee phishing simulation and security awareness training as a required safeguard under the Gramm-Leach-Bliley Act (GLBA) FTC Safeguards Rule (16 CFR Part 314, updated 2023). The Safeguards Rule mandates that financial institutions maintain a written information security program (WISP) that includes employee training on recognizing and responding to phishing and social engineering attacks.",
+    accentColor: "#10b981",
+    accentBg: "rgba(16,185,129,0.12)",
+    categoryLabel: "LEGALLY REQUIRED — Financial Services",
+  },
+  "nerc-cip": {
+    citation: "NERC CIP-004-7 R1 — Critical Infrastructure Protection",
+    legalText: "This certificate documents that the above-named organization has implemented a cybersecurity awareness training program including phishing simulation in compliance with NERC CIP-004-7 Requirement R1, which mandates that personnel with access to BES Cyber Systems receive cybersecurity awareness training at least once every 15 calendar months. Phishing and social engineering awareness is a required component of CIP-004-7 training programs. Records are maintained per CIP-004-7 R4.",
+    accentColor: "#eab308",
+    accentBg: "rgba(234,179,8,0.12)",
+    categoryLabel: "LEGALLY REQUIRED — Energy / Critical Infrastructure",
+  },
+  cmmc: {
+    citation: "NIST SP 800-171 AT.2.056 / AT.3.058 — CMMC Level 2+",
+    legalText: "This certificate documents that the above-named defense contractor has implemented security awareness training including phishing simulation in compliance with NIST SP 800-171 Practice AT.2.056 (Ensure that personnel are aware of the security risks associated with their activities) and AT.3.058 (Provide security awareness training on recognizing and reporting potential threats), as required by CMMC Level 2+ and DFARS clause 252.204-7012. This evidence package supports C3PAO assessment and DoD contract compliance.",
+    accentColor: "#8b5cf6",
+    accentBg: "rgba(139,92,246,0.12)",
+    categoryLabel: "LEGALLY REQUIRED — Defense Contractors",
+  },
+  nydfs: {
+    citation: "23 NYCRR §500.14(b) — NY DFS Cybersecurity Regulation",
+    legalText: "This certificate documents that the above-named covered entity has implemented annual cybersecurity awareness training for all personnel in compliance with 23 NYCRR Part 500.14(b), which explicitly requires New York Department of Financial Services covered entities to provide cybersecurity awareness training that includes recognition of social engineering and phishing attacks. This documentation supports the annual Certification of Compliance filing required by 23 NYCRR §500.17(b) by April 15 of each year.",
+    accentColor: "#ef4444",
+    accentBg: "rgba(239,68,68,0.12)",
+    categoryLabel: "LEGALLY REQUIRED — NY Financial Companies",
+  },
+  nist: {
+    citation: "NIST SP 800-53 AT-2 / AT-3 & NIST SP 800-50",
+    legalText: "This certificate documents that the above-named organization has implemented a phishing simulation and security awareness training program aligned with NIST SP 800-53 Controls AT-2 (Literacy Training and Awareness) and AT-3 (Role-Based Training), and NIST SP 800-50 (Building an Information Technology Security Awareness and Training Program). These controls explicitly identify phishing simulation as a recommended training mechanism for federal agencies and organizations adopting the NIST Cybersecurity Framework.",
+    accentColor: "#06b6d4",
+    accentBg: "rgba(6,182,212,0.12)",
+    categoryLabel: "STRONGLY RECOMMENDED — All Sectors",
+  },
+  soc2: {
+    citation: "SOC 2 CC1.4 — Security Awareness & Training",
+    legalText: "This certificate documents that the above-named organization has implemented a phishing simulation and security awareness training program as evidence for SOC 2 Trust Services Criteria CC1.4, which requires the entity to demonstrate a commitment to competence through security awareness training. SOC 2 auditors routinely examine phishing simulation programs as evidence of effective security awareness controls. This documentation supports Type I and Type II SOC 2 audit evidence packages.",
+    accentColor: "#f59e0b",
+    accentBg: "rgba(245,158,11,0.12)",
+    categoryLabel: "STRONGLY RECOMMENDED — Technology / SaaS",
+  },
+  ftc: {
+    citation: "16 CFR Part 314 — FTC Safeguards Rule (Updated 2023)",
+    legalText: "This certificate documents that the above-named financial services company has implemented employee phishing simulation and security awareness training as required by the FTC Safeguards Rule (16 CFR Part 314), updated effective June 9, 2023. The updated rule requires a written information security program that includes employee training on phishing, social engineering, and other cybersecurity threats as a core safeguard for protecting customer financial information.",
+    accentColor: "#f97316",
+    accentBg: "rgba(249,115,22,0.12)",
+    categoryLabel: "STRONGLY RECOMMENDED — Financial Services",
+  },
+  pcidss: {
+    citation: "PCI DSS v4.0 Requirement 12.6.3",
+    legalText: "This certificate documents that the above-named organization has implemented a security awareness training program that specifically addresses phishing in compliance with PCI DSS v4.0 Requirement 12.6.3, which mandates that security awareness training includes awareness of threats and vulnerabilities that could impact the cardholder data environment, explicitly including phishing and related social engineering attacks. This documentation supports PCI DSS v4.0 compliance assessments effective March 31, 2024.",
+    accentColor: "#3b82f6",
+    accentBg: "rgba(59,130,246,0.12)",
+    categoryLabel: "INDUSTRY-SPECIFIC — Payment Processing",
+  },
+  sec: {
+    citation: "17 CFR Parts 229 & 249 — SEC Cybersecurity Rules (2023)",
+    legalText: "This certificate documents that the above-named public company has implemented a phishing simulation and security awareness training program as part of its cybersecurity risk management program, as required to be disclosed under the SEC's Cybersecurity Risk Management, Strategy, Governance, and Incident Disclosure rules (effective December 15, 2023). Phishing simulation training is a commonly cited cybersecurity control in SEC filings and supports disclosure obligations under Item 106 of Regulation S-K.",
+    accentColor: "#6366f1",
+    accentBg: "rgba(99,102,241,0.12)",
+    categoryLabel: "INDUSTRY-SPECIFIC — Public Companies",
+  },
+};
+
 function generateCertificateHTML(orgName: string, framework: typeof FRAMEWORKS[0], completedCount: number, totalCount: number): string {
   const date = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const year = new Date().getFullYear();
   const certId = `PSA-${framework.id.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+  const reg = CERT_REGULATORY_LANGUAGE[framework.id] ?? {
+    citation: framework.authority,
+    legalText: framework.certificationNote,
+    accentColor: "#3b4fd8",
+    accentBg: "rgba(59,79,216,0.12)",
+    categoryLabel: CATEGORY_LABELS[framework.category]?.label ?? framework.category,
+  };
+  const pct = Math.round((completedCount / Math.max(totalCount, 1)) * 100);
+  const isMandatory = framework.category === "mandatory";
+
   return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<title>PhishSim AI — ${framework.name} Compliance Certificate</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Inter', sans-serif; background: #0a0d1a; color: #e8eaf6; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; }
-  .cert { background: linear-gradient(135deg, #0d1128 0%, #111827 50%, #0d1128 100%); border: 2px solid #3b4fd8; border-radius: 16px; padding: 60px; max-width: 800px; width: 100%; position: relative; overflow: hidden; }
-  .cert::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #3b4fd8, #7c3aed, #06b6d4); }
-  .cert::after { content: 'PHISHSIM AI'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 120px; font-weight: 800; color: rgba(59,79,216,0.04); white-space: nowrap; pointer-events: none; }
-  .logo { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
-  .logo-icon { width: 40px; height: 40px; background: #3b4fd8; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
-  .logo-text { font-size: 18px; font-weight: 700; color: #e8eaf6; }
-  .cert-title { font-size: 13px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #6b7280; margin-bottom: 12px; }
-  .cert-heading { font-size: 36px; font-weight: 800; color: #e8eaf6; margin-bottom: 8px; line-height: 1.2; }
-  .cert-sub { font-size: 15px; color: #9ca3af; margin-bottom: 40px; }
-  .divider { height: 1px; background: linear-gradient(90deg, transparent, #3b4fd8, transparent); margin: 32px 0; }
-  .org-section { margin-bottom: 32px; }
-  .org-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
-  .org-name { font-size: 28px; font-weight: 700; color: #a5b4fc; }
-  .framework-badge { display: inline-block; background: rgba(59,79,216,0.2); border: 1px solid rgba(59,79,216,0.4); color: #a5b4fc; padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 32px; }
-  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
-  .stat { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 16px; text-align: center; }
-  .stat-value { font-size: 24px; font-weight: 700; color: #a5b4fc; }
-  .stat-label { font-size: 11px; color: #6b7280; margin-top: 4px; text-transform: uppercase; letter-spacing: 1px; }
-  .footer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 32px; }
-  .footer-item label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px; }
-  .footer-item span { font-size: 14px; color: #d1d5db; font-weight: 500; }
-  .cert-id { font-size: 11px; color: #4b5563; text-align: center; margin-top: 32px; font-family: monospace; }
-  .seal { position: absolute; bottom: 48px; right: 48px; width: 80px; height: 80px; border: 3px solid #3b4fd8; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .seal-text { font-size: 8px; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; text-align: center; line-height: 1.4; }
+  body { font-family: 'Inter', sans-serif; background: #060a18; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .page { max-width: 860px; width: 100%; }
+  /* ── Certificate Card ── */
+  .cert { background: linear-gradient(160deg, #0d1228 0%, #0f172a 60%, #0d1228 100%); border: 1.5px solid ${reg.accentColor}55; border-radius: 20px; padding: 56px 60px; position: relative; overflow: hidden; box-shadow: 0 0 80px ${reg.accentColor}18; }
+  .cert-top-bar { position: absolute; top: 0; left: 0; right: 0; height: 5px; background: linear-gradient(90deg, ${reg.accentColor}, ${reg.accentColor}88, ${reg.accentColor}); }
+  .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-35deg); font-size: 100px; font-weight: 900; color: ${reg.accentColor}06; white-space: nowrap; pointer-events: none; user-select: none; letter-spacing: 8px; }
+  /* ── Header ── */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 44px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-icon { width: 38px; height: 38px; background: ${reg.accentColor}; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .brand-name { font-size: 17px; font-weight: 700; color: #f1f5f9; }
+  .brand-url { font-size: 11px; color: #64748b; margin-top: 1px; }
+  .category-pill { background: ${isMandatory ? "rgba(239,68,68,0.15)" : reg.accentBg}; border: 1px solid ${isMandatory ? "rgba(239,68,68,0.4)" : reg.accentColor + "44"}; color: ${isMandatory ? "#fca5a5" : reg.accentColor}; padding: 5px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+  /* ── Title Block ── */
+  .title-block { margin-bottom: 36px; }
+  .cert-label { font-size: 11px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: #475569; margin-bottom: 10px; }
+  .cert-framework { font-size: 42px; font-weight: 800; color: #f8fafc; line-height: 1.1; margin-bottom: 6px; }
+  .cert-fullname { font-size: 15px; color: #94a3b8; font-weight: 400; }
+  /* ── Citation Box ── */
+  .citation-box { background: ${reg.accentBg}; border: 1px solid ${reg.accentColor}33; border-left: 3px solid ${reg.accentColor}; border-radius: 8px; padding: 12px 16px; margin-bottom: 36px; }
+  .citation-label { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: ${reg.accentColor}; margin-bottom: 4px; }
+  .citation-text { font-size: 13px; font-family: 'Courier New', monospace; color: #cbd5e1; font-weight: 500; }
+  /* ── Org Block ── */
+  .divider { height: 1px; background: linear-gradient(90deg, transparent, ${reg.accentColor}44, transparent); margin: 28px 0; }
+  .org-label { font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px; }
+  .org-name { font-size: 30px; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
+  .cert-date { font-size: 14px; color: #64748b; }
+  /* ── Stats ── */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 28px 0; }
+  .stat { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 14px 12px; text-align: center; }
+  .stat-val { font-size: 22px; font-weight: 700; color: ${reg.accentColor}; }
+  .stat-lbl { font-size: 10px; color: #475569; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.8px; }
+  /* ── Legal Text ── */
+  .legal-box { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 20px 22px; margin: 28px 0; }
+  .legal-title { font-size: 10px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: #475569; margin-bottom: 10px; }
+  .legal-text { font-size: 12.5px; color: #94a3b8; line-height: 1.75; }
+  /* ── Footer ── */
+  .footer-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 28px; }
+  .footer-item .lbl { font-size: 10px; color: #475569; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 5px; }
+  .footer-item .val { font-size: 13px; color: #cbd5e1; font-weight: 500; }
+  /* ── Cert ID ── */
+  .cert-id-row { display: flex; align-items: center; justify-content: space-between; margin-top: 28px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.06); }
+  .cert-id-text { font-size: 10.5px; font-family: 'Courier New', monospace; color: #334155; }
+  .disclaimer { font-size: 10px; color: #334155; text-align: right; max-width: 320px; line-height: 1.5; }
+  /* ── Seal ── */
+  .seal { position: absolute; bottom: 52px; right: 52px; width: 76px; height: 76px; border: 2.5px solid ${reg.accentColor}55; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .seal-inner { width: 60px; height: 60px; border: 1px solid ${reg.accentColor}33; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .seal-icon { font-size: 20px; }
+  .seal-text { font-size: 7px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; text-align: center; line-height: 1.4; margin-top: 2px; }
+  @media print { body { background: white; } .cert { border-color: #ccc; box-shadow: none; } }
 </style>
 </head>
 <body>
+<div class="page">
 <div class="cert">
-  <div class="logo">
-    <div class="logo-icon">🛡</div>
-    <div class="logo-text">PhishSim AI</div>
+  <div class="cert-top-bar"></div>
+  <div class="watermark">PHISHSIM AI</div>
+
+  <div class="header">
+    <div class="brand">
+      <div class="brand-icon">🛡️</div>
+      <div>
+        <div class="brand-name">PhishSim AI</div>
+        <div class="brand-url">www.phishsimai.com &nbsp;|&nbsp; 443-594-1184</div>
+      </div>
+    </div>
+    <div class="category-pill">${reg.categoryLabel}</div>
   </div>
-  <div class="cert-title">Certificate of Compliance Evidence</div>
-  <div class="cert-heading">${framework.name}</div>
-  <div class="cert-sub">${framework.fullName}</div>
+
+  <div class="title-block">
+    <div class="cert-label">Certificate of Compliance Evidence</div>
+    <div class="cert-framework">${framework.name}</div>
+    <div class="cert-fullname">${framework.fullName}</div>
+  </div>
+
+  <div class="citation-box">
+    <div class="citation-label">Regulatory Citation</div>
+    <div class="citation-text">${reg.citation}</div>
+  </div>
+
   <div class="divider"></div>
-  <div class="org-section">
-    <div class="org-label">Issued To</div>
-    <div class="org-name">${orgName}</div>
+
+  <div class="org-label">Issued To</div>
+  <div class="org-name">${orgName}</div>
+  <div class="cert-date">Compliance Period: January 1, ${year} — December 31, ${year}</div>
+
+  <div class="stats-row">
+    <div class="stat"><div class="stat-val">${completedCount}/${totalCount}</div><div class="stat-lbl">Requirements Met</div></div>
+    <div class="stat"><div class="stat-val">${pct}%</div><div class="stat-lbl">Completion Rate</div></div>
+    <div class="stat"><div class="stat-val">${year}</div><div class="stat-lbl">Program Year</div></div>
+    <div class="stat"><div class="stat-val">${isMandatory ? "REQUIRED" : "ADOPTED"}</div><div class="stat-lbl">Status</div></div>
   </div>
-  <div class="framework-badge">${CATEGORY_LABELS[framework.category].label} — ${framework.sector}</div>
-  <div class="stats-grid">
-    <div class="stat">
-      <div class="stat-value">${completedCount}/${totalCount}</div>
-      <div class="stat-label">Requirements Met</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">${Math.round((completedCount / totalCount) * 100)}%</div>
-      <div class="stat-label">Completion Rate</div>
-    </div>
-    <div class="stat">
-      <div class="stat-value">${date.split(',')[1]?.trim().split(' ')[1] ?? new Date().getFullYear()}</div>
-      <div class="stat-label">Program Year</div>
-    </div>
+
+  <div class="legal-box">
+    <div class="legal-title">Regulatory Compliance Statement</div>
+    <div class="legal-text">${reg.legalText}</div>
   </div>
+
   <div class="divider"></div>
+
   <div class="footer-grid">
-    <div class="footer-item"><label>Issuing Authority</label><span>${framework.authority}</span></div>
-    <div class="footer-item"><label>Issue Date</label><span>${date}</span></div>
-    <div class="footer-item"><label>Platform</label><span>PhishSim AI — www.phishsimai.com</span></div>
-    <div class="footer-item"><label>Contact</label><span>443-594-1184</span></div>
+    <div class="footer-item"><div class="lbl">Issuing Authority</div><div class="val">${framework.authority}</div></div>
+    <div class="footer-item"><div class="lbl">Issue Date</div><div class="val">${date}</div></div>
+    <div class="footer-item"><div class="lbl">Penalty for Non-Compliance</div><div class="val">${framework.penalty}</div></div>
   </div>
-  <div class="cert-id">Certificate ID: ${certId} | This document serves as evidence of a phishing simulation and security awareness program. It does not constitute legal certification by the issuing authority.</div>
-  <div class="seal"><div class="seal-text">PhishSim AI Verified Program</div></div>
+
+  <div class="cert-id-row">
+    <div class="cert-id-text">Certificate ID: ${certId}</div>
+    <div class="disclaimer">This document serves as evidence of a phishing simulation and security awareness program. It does not constitute legal certification by the named regulatory authority.</div>
+  </div>
+
+  <div class="seal">
+    <div class="seal-inner">
+      <div class="seal-icon">🛡️</div>
+      <div class="seal-text">PhishSim AI\nVerified</div>
+    </div>
+  </div>
+</div>
 </div>
 </body>
 </html>`;
@@ -603,18 +742,43 @@ ${pendingProcedures.length === 0 ? "<p><em>All requirements completed.</em></p>"
           </TabsList>
 
           <TabsContent value={activeTab} className="mt-4">
+            {/* Mandatory alert banner when viewing all or mandatory tab */}
+            {(activeTab === "all" || activeTab === "mandatory") && (
+              <div className="mb-5 flex items-start gap-3 p-4 rounded-xl bg-red-500/8 border border-red-500/30">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-semibold text-red-300 mb-1">5 Legally Mandated Frameworks Require Immediate Action</div>
+                  <div className="text-xs text-muted-foreground leading-relaxed">
+                    HIPAA, GLBA, NERC CIP, CMMC/DFARS, and NY DFS Part 500 are <strong className="text-red-300">federal and state legal requirements</strong> — not best practices.
+                    Non-compliance can result in fines up to $1.9M per violation, contract disqualification, and license revocation.
+                    Complete all requirements and generate your compliance certificate for each.
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid lg:grid-cols-2 gap-4">
               {filteredFrameworks.map(fw => {
                 const { checked, total } = getProgress(fw);
                 const pct = Math.round((checked / total) * 100);
                 const Icon = fw.icon;
+                const isMandatory = fw.category === "mandatory";
                 return (
                   <Card
                     key={fw.id}
-                    className={`border-border/60 hover:border-primary/40 transition-all cursor-pointer group`}
+                    className={`transition-all cursor-pointer group ${
+                      isMandatory
+                        ? "border-red-500/40 hover:border-red-500/70 bg-red-500/3"
+                        : "border-border/60 hover:border-primary/40"
+                    }`}
                     onClick={() => setSelectedFramework(fw)}
                   >
                     <CardContent className="p-5">
+                      {isMandatory && (
+                        <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold text-red-400 uppercase tracking-widest">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          Legally Required
+                        </div>
+                      )}
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-lg ${fw.bg} flex items-center justify-center flex-shrink-0`}>
@@ -633,10 +797,15 @@ ${pendingProcedures.length === 0 ? "<p><em>All requirements completed.</em></p>"
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground mb-4 line-clamp-2">{fw.description}</p>
+                      {isMandatory && (
+                        <div className="text-xs font-mono text-red-400/60 bg-red-500/5 rounded px-2 py-1 mb-3">
+                          {CERT_REGULATORY_LANGUAGE[fw.id]?.citation ?? fw.authority}
+                        </div>
+                      )}
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">Requirements completed</span>
-                          <span className={`font-semibold ${pct === 100 ? "text-emerald-400" : pct > 50 ? "text-amber-400" : "text-muted-foreground"}`}>
+                          <span className={`font-semibold ${pct === 100 ? "text-emerald-400" : pct > 50 ? "text-amber-400" : isMandatory ? "text-red-400" : "text-muted-foreground"}`}>
                             {checked}/{total}
                           </span>
                         </div>
@@ -645,10 +814,21 @@ ${pendingProcedures.length === 0 ? "<p><em>All requirements completed.</em></p>"
                             className="h-full rounded-full transition-all"
                             style={{
                               width: `${pct}%`,
-                              background: pct === 100 ? "oklch(0.70 0.18 145)" : pct > 50 ? "oklch(0.68 0.20 35)" : "oklch(0.62 0.22 265)",
+                              background: pct === 100
+                                ? "oklch(0.70 0.18 145)"
+                                : pct > 50
+                                  ? "oklch(0.68 0.20 35)"
+                                  : isMandatory
+                                    ? "oklch(0.60 0.22 25)"
+                                    : "oklch(0.62 0.22 265)",
                             }}
                           />
                         </div>
+                        {isMandatory && pct < 100 && (
+                          <div className="text-xs text-red-400/70 mt-1">
+                            {total - checked} requirement{total - checked !== 1 ? "s" : ""} remaining — action required
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
