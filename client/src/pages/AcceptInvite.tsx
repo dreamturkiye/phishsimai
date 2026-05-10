@@ -52,7 +52,7 @@ export default function AcceptInvite() {
           <CardContent className="p-8 text-center">
             <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
             <h2 className="font-bold text-lg mb-2">You've been invited!</h2>
-            <p className="text-sm text-muted-foreground mb-6">Sign in to accept your invitation to join a PhishGuard organization.</p>
+            <p className="text-sm text-muted-foreground mb-6">Sign in to accept your invitation to join a PhishSim AI organization.</p>
             <Button className="w-full" onClick={() => window.location.href = getLoginUrl()}>
               Sign In to Accept
             </Button>

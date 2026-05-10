@@ -135,7 +135,7 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
             <Shield className="w-4 h-4 text-primary-foreground" />
           </div>
           <div className="min-w-0">
-            <div className="font-bold text-sm leading-tight">PhishGuard</div>
+            <div className="font-bold text-sm leading-tight">PhishSim AI</div>
             {currentOrg && (
               <div className="text-xs text-muted-foreground truncate max-w-[140px]">{currentOrg.name}</div>
             )}

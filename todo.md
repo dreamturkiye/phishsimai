@@ -1,4 +1,4 @@
-# PhishGuard SaaS — Project TODO
+# PhishSim AI SaaS — Project TODO
 
 ## Phase 1: Database Schema & Backend
 - [x] Design and apply full DB schema (organizations, targets, departments, campaigns, campaign_results, templates, training_modules, training_completions, gamification_scores, invites)
@@ -17,7 +17,7 @@
 - [x] Dark elegant theme (deep navy/slate, cyan accent, refined typography)
 - [x] Landing page: hero, features, pricing, CTA
 - [x] Auth flow: sign in / sign up redirect
-- [x] Dashboard shell with sidebar navigation (PhishGuard branding)
+- [x] Dashboard shell with sidebar navigation (PhishSim AI branding)
 - [x] Sidebar menu: Dashboard, Phishing (Campaigns, Templates, Targets, Training, Leaderboard), Analytics, Settings
 
 ## Phase 3: Campaign Management

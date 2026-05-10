@@ -5,7 +5,7 @@ import { getLoginUrl } from "@/const";
 import { useLocation } from "wouter";
 import {
   Shield, Mail, BarChart3, BookOpen, Users, Trophy,
-  ChevronRight, Check, Zap, Globe, Lock, ArrowRight,
+  ChevronRight, Check, Zap, Globe, Lock, ArrowRight, Phone,
   Target, Brain, Clock
 } from "lucide-react";
 
@@ -104,12 +104,12 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Shield className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg tracking-tight">PhishGuard</span>
+            <span className="font-bold text-lg tracking-tight">PhishSim AI</span>
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
-            <a href="#stats" className="hover:text-foreground transition-colors">Why PhishGuard</a>
+            <a href="#stats" className="hover:text-foreground transition-colors">Why PhishSim AI</a>
           </div>
           <div className="flex items-center gap-3">
             {isAuthenticated ? (
@@ -153,7 +153,7 @@ export default function Home() {
             </h1>
 
             <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto leading-relaxed">
-              PhishGuard delivers realistic phishing simulations, AI-generated templates, and bite-sized training modules that measurably reduce your organization's risk of a breach.
+              PhishSim AI delivers realistic phishing simulations, AI-generated templates, and bite-sized training modules that measurably reduce your organization's risk of a breach.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -318,7 +318,7 @@ export default function Home() {
             </div>
             <h2 className="text-4xl font-bold mb-4">Ready to protect your organization?</h2>
             <p className="text-muted-foreground text-lg mb-8">
-              Join thousands of organizations that use PhishGuard to build a security-aware workforce.
+              Join thousands of organizations that use PhishSim AI to build a security-aware workforce.
             </p>
             <Button
               size="lg"
@@ -333,20 +333,29 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="py-8 border-t border-border/50">
-        <div className="container flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-              <Shield className="w-3 h-3 text-primary-foreground" />
+      <footer className="py-10 border-t border-border/50">
+        <div className="container">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
+                <Shield className="w-3 h-3 text-primary-foreground" />
+              </div>
+              <span className="font-semibold text-sm">PhishSim AI</span>
             </div>
-            <span className="font-semibold text-sm">PhishGuard</span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            &copy; {new Date().getFullYear()} PhishGuard. AI-Powered Security Awareness Platform.
-          </p>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-            <Globe className="w-3 h-3" />
-            <span>EN &middot; ES &middot; TR</span>
+            <div className="flex flex-col sm:flex-row items-center gap-4 text-xs text-muted-foreground">
+              <a href="https://www.phishsimai.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 hover:text-foreground transition-colors">
+                <Globe className="w-3 h-3" />
+                www.phishsimai.com
+              </a>
+              <span className="hidden sm:inline text-border">|</span>
+              <a href="tel:+14435941184" className="flex items-center gap-1.5 hover:text-foreground transition-colors">
+                <Phone className="w-3 h-3" />
+                443-594-1184
+              </a>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              &copy; {new Date().getFullYear()} PhishSim AI. All rights reserved.
+            </p>
           </div>
         </div>
       </footer>

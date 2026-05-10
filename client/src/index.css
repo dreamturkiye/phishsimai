@@ -44,7 +44,7 @@
 
 :root {
   --radius: 0.625rem;
-  /* PhishGuard Dark Theme (always dark) */
+  /* PhishSim AI Dark Theme (always dark) */
   --background: oklch(0.10 0.01 260);
   --foreground: oklch(0.95 0.01 260);
   --card: oklch(0.13 0.015 260);

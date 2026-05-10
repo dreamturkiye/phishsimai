@@ -16,7 +16,7 @@ export default function OrgSetup() {
 
   const createOrgMutation = trpc.orgs.create.useMutation({
     onSuccess: () => {
-      toast.success("Organization created! Welcome to PhishGuard.");
+      toast.success("Organization created! Welcome to PhishSim AI.");
       navigate("/dashboard");
     },
     onError: (e) => toast.error(e.message),
@@ -29,7 +29,7 @@ export default function OrgSetup() {
           <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
             <Shield className="w-8 h-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Welcome to PhishGuard</h1>
+          <h1 className="text-2xl font-bold mb-2">Welcome to PhishSim AI</h1>
           <p className="text-muted-foreground text-sm">
             Hi {user?.name?.split(" ")[0] ?? "there"}! Let's set up your organization to get started.
           </p>
