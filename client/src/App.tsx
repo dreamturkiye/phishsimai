@@ -16,6 +16,7 @@ import Gamification from "./pages/Gamification";
 import OrgSettings from "./pages/OrgSettings";
 import OrgSetup from "./pages/OrgSetup";
 import AcceptInvite from "./pages/AcceptInvite";
+import ComplianceCenter from "./pages/ComplianceCenter";
 
 function Router() {
   return (
@@ -32,6 +33,7 @@ function Router() {
       <Route path="/settings" component={OrgSettings} />
       <Route path="/setup" component={OrgSetup} />
       <Route path="/invite/:token" component={AcceptInvite} />
+      <Route path="/compliance" component={ComplianceCenter} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

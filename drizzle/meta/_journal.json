@@ -15,6 +15,13 @@
       "when": 1778429855276,
       "tag": "0001_workable_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778432168358,
+      "tag": "0002_worried_wolf_cub",
+      "breakpoints": true
     }
   ]
 }

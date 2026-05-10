@@ -714,6 +714,101 @@ Make it realistic and educational. The email should look authentic but contain s
       }),
   }),
 
+  // ─── Compliance ─────────────────────────────────────────────────────────────
+  compliance: router({
+    // Get all compliance records for an org+framework
+    getRecords: protectedProcedure
+      .input(z.object({ orgId: z.number(), frameworkId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const db = await getDb();
+        if (!db) return [];
+        const { complianceRecords } = await import("../drizzle/schema");
+        const { and, eq } = await import("drizzle-orm");
+        return db.select().from(complianceRecords).where(
+          and(eq(complianceRecords.orgId, input.orgId), eq(complianceRecords.frameworkId, input.frameworkId))
+        );
+      }),
+    // Get all compliance records for an org (all frameworks)
+    getAllRecords: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const db = await getDb();
+        if (!db) return [];
+        const { complianceRecords } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        return db.select().from(complianceRecords).where(eq(complianceRecords.orgId, input.orgId));
+      }),
+    // Toggle a procedure requirement on/off
+    toggleProcedure: protectedProcedure
+      .input(z.object({ orgId: z.number(), frameworkId: z.string(), procedureId: z.string(), completed: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { complianceRecords } = await import("../drizzle/schema");
+        const { and, eq } = await import("drizzle-orm");
+        // Upsert: check if record exists
+        const existing = await db.select().from(complianceRecords).where(
+          and(
+            eq(complianceRecords.orgId, input.orgId),
+            eq(complianceRecords.frameworkId, input.frameworkId),
+            eq(complianceRecords.procedureId, input.procedureId)
+          )
+        ).limit(1);
+        if (existing.length > 0) {
+          await db.update(complianceRecords)
+            .set({
+              completed: input.completed ? 1 : 0,
+              completedAt: input.completed ? new Date() : null,
+              completedBy: input.completed ? ctx.user.id : null,
+            })
+            .where(eq(complianceRecords.id, existing[0]!.id));
+        } else {
+          await db.insert(complianceRecords).values({
+            orgId: input.orgId,
+            frameworkId: input.frameworkId,
+            procedureId: input.procedureId,
+            completed: input.completed ? 1 : 0,
+            completedAt: input.completed ? new Date() : null,
+            completedBy: input.completed ? ctx.user.id : null,
+          });
+        }
+        return { success: true };
+      }),
+    // Record a certificate issuance
+    issueCertificate: protectedProcedure
+      .input(z.object({ orgId: z.number(), frameworkId: z.string(), certId: z.string(), completedCount: z.number(), totalCount: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { complianceCertificates } = await import("../drizzle/schema");
+        await db.insert(complianceCertificates).values({
+          orgId: input.orgId,
+          frameworkId: input.frameworkId,
+          certId: input.certId,
+          completedCount: input.completedCount,
+          totalCount: input.totalCount,
+          issuedBy: ctx.user.id,
+        });
+        return { success: true, certId: input.certId };
+      }),
+    // List issued certificates for an org
+    getCertificates: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const db = await getDb();
+        if (!db) return [];
+        const { complianceCertificates } = await import("../drizzle/schema");
+        const { eq, desc } = await import("drizzle-orm");
+        return db.select().from(complianceCertificates)
+          .where(eq(complianceCertificates.orgId, input.orgId))
+          .orderBy(desc(complianceCertificates.issuedAt));
+      }),
+  }),
   // ─── Seed ───────────────────────────────────────────────────────────────────
   seed: router({
     seedBuiltIns: protectedProcedure.mutation(async ({ ctx }) => {

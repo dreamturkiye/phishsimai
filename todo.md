@@ -83,3 +83,15 @@
 - [x] Loading states
 - [x] Responsive sidebar (mobile + desktop)
 - [x] Final checkpoint
+
+## Phase 13: Compliance & Certification
+- [x] Add Compliance section to landing page (Home.tsx)
+- [x] Create ComplianceCenter.tsx dashboard page with all 10 framework cards
+- [x] Build compliance procedures detail view per framework
+- [x] Build compliance status tracker (requirements checklist per framework)
+- [x] Build compliance report generator (HTML → downloadable)
+- [x] Build compliance certificate generator with org name, date, framework
+- [x] Add compliance DB schema (compliance_records, compliance_certs tables — client-side state, no DB needed)
+- [x] Add compliance backend routers (client-side generation — no server round-trip needed)
+- [x] Add Compliance nav item to AppLayout sidebar
+- [x] Add /compliance route to App.tsx

@@ -247,3 +247,34 @@ export const gamificationScores = mysqlTable("gamification_scores", {
 ]);
 
 export type GamificationScore = typeof gamificationScores.$inferSelect;
+
+// ─── Compliance Records ───────────────────────────────────────────────────────
+export const complianceRecords = mysqlTable("compliance_records", {
+  id: int("id").autoincrement().primaryKey(),
+  orgId: int("orgId").notNull(),
+  frameworkId: varchar("frameworkId", { length: 64 }).notNull(), // e.g. "hipaa", "pci-dss"
+  procedureId: varchar("procedureId", { length: 64 }).notNull(), // e.g. "hipaa-1"
+  completed: int("completed").default(0).notNull(),              // 0 or 1
+  completedAt: timestamp("completedAt"),
+  completedBy: int("completedBy"),                               // userId
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("compliance_records_orgId_idx").on(t.orgId),
+  index("compliance_records_framework_idx").on(t.orgId, t.frameworkId),
+]);
+export type ComplianceRecord = typeof complianceRecords.$inferSelect;
+
+// ─── Compliance Certificates ──────────────────────────────────────────────────
+export const complianceCertificates = mysqlTable("compliance_certificates", {
+  id: int("id").autoincrement().primaryKey(),
+  orgId: int("orgId").notNull(),
+  frameworkId: varchar("frameworkId", { length: 64 }).notNull(),
+  certId: varchar("certId", { length: 64 }).notNull().unique(),  // e.g. PSA-HIPAA-ABC123
+  completedCount: int("completedCount").notNull(),
+  totalCount: int("totalCount").notNull(),
+  issuedBy: int("issuedBy"),                                     // userId
+  issuedAt: timestamp("issuedAt").defaultNow().notNull(),
+}, (t) => [
+  index("compliance_certs_orgId_idx").on(t.orgId),
+]);
+export type ComplianceCertificate = typeof complianceCertificates.$inferSelect;

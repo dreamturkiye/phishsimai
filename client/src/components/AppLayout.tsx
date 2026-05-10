@@ -8,7 +8,7 @@ import { useState } from "react";
 import {
   Shield, LayoutDashboard, Mail, BookTemplate, Users, BarChart3,
   Settings, LogOut, ChevronDown, ChevronRight, Trophy, BookOpen,
-  Menu, X, Building2, Plus
+  Menu, X, Building2, Plus, ShieldCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,7 @@ const navItems: NavItem[] = [
     ],
   },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Compliance", href: "/compliance", icon: ShieldCheck },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
