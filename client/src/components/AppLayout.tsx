@@ -8,7 +8,7 @@ import { useState } from "react";
 import {
   Shield, LayoutDashboard, Mail, BookTemplate, Users, BarChart3,
   Settings, LogOut, ChevronDown, ChevronRight, Trophy, BookOpen,
-  Menu, X, Building2, Plus, ShieldCheck
+  Menu, X, Building2, Plus, ShieldCheck, Network
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -109,6 +109,10 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
   const orgs = orgsData ?? [];
   const currentOrg = orgs[0]?.org;
 
+  // Check if user has an MSP tenant (for role-gated MSP nav item)
+  const { data: mspTenant } = trpc.msp.getMyTenant.useQuery(undefined, { enabled: isAuthenticated });
+  const isMsp = !!mspTenant;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -149,6 +153,12 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
         {navItems.map(item => (
           <NavLink key={item.href} item={item} />
         ))}
+        {/* MSP Portal — only visible to registered MSP partners */}
+        {isMsp && (
+          <div className="mt-2 pt-2 border-t border-sidebar-border/50">
+            <NavLink item={{ label: "MSP Portal", href: "/msp", icon: Network, badge: "MSP" }} />
+          </div>
+        )}
       </nav>
 
       {/* User */}

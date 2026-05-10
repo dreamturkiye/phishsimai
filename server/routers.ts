@@ -972,6 +972,71 @@ Make it realistic and educational. The email should look authentic but contain s
         return { success: true };
       }),
 
+    // Impersonate a customer org (store orgId in session-like response)
+    impersonateCustomer: protectedProcedure
+      .input(z.object({ customerOrgId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants, mspCustomerOrgs, mspActivityLog, organizations } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        // Verify MSP ownership
+        const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Not an MSP" });
+        // Verify customer belongs to this MSP
+        const customerRows = await db.select({ customer: mspCustomerOrgs, org: organizations })
+          .from(mspCustomerOrgs)
+          .leftJoin(organizations, eq(mspCustomerOrgs.orgId, organizations.id))
+          .where(and(eq(mspCustomerOrgs.id, input.customerOrgId), eq(mspCustomerOrgs.mspTenantId, tenantRows[0].id)))
+          .limit(1);
+        if (!customerRows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Customer not found" });
+        // Log the impersonation action
+        await db.insert(mspActivityLog).values({
+          mspTenantId: tenantRows[0].id,
+          actorUserId: ctx.user.id,
+          action: "impersonate_customer",
+          targetOrgId: customerRows[0].customer.orgId,
+          details: `MSP admin accessed customer org '${customerRows[0].org?.name ?? customerRows[0].customer.orgId}' dashboard`,
+        });
+        return {
+          success: true,
+          orgId: customerRows[0].customer.orgId,
+          orgName: customerRows[0].org?.name ?? "Unknown",
+          orgSlug: customerRows[0].org?.slug ?? "",
+        };
+      }),
+    // Aggregate analytics across all customer orgs
+    getAggregateAnalytics: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return { totalCustomers: 0, activeCustomers: 0, totalCampaigns: 0, avgClickRate: 0, atRiskOrgs: 0 };
+      const { mspTenants, mspCustomerOrgs, campaigns, campaignResults } = await import("../drizzle/schema");
+      const { eq, count, sql } = await import("drizzle-orm");
+      const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+      if (!tenantRows[0]) return { totalCustomers: 0, activeCustomers: 0, totalCampaigns: 0, avgClickRate: 0, atRiskOrgs: 0 };
+      const customerRows = await db.select().from(mspCustomerOrgs).where(eq(mspCustomerOrgs.mspTenantId, tenantRows[0].id));
+      const totalCustomers = customerRows.length;
+      const activeCustomers = customerRows.filter(c => c.status === "active").length;
+      const orgIds = customerRows.map(c => c.orgId).filter(Boolean) as number[];
+      if (orgIds.length === 0) return { totalCustomers, activeCustomers, totalCampaigns: 0, avgClickRate: 0, atRiskOrgs: 0 };
+      // Count total campaigns across all customer orgs
+      const campaignRows = await db.select({ orgId: campaigns.orgId, id: campaigns.id })
+        .from(campaigns)
+        .where(sql`${campaigns.orgId} IN (${sql.join(orgIds.map(id => sql`${id}`), sql`, `)})`);
+      const totalCampaigns = campaignRows.length;
+      // Compute avg click rate
+      const resultRows = await db.select().from(campaignResults)
+        .where(sql`${campaignResults.campaignId} IN (${sql.join(campaignRows.map(c => sql`${c.id}`), sql`, `)})`);
+      const sent = resultRows.length;
+      const clicked = resultRows.filter(r => r.linkClickedAt !== null).length;
+      const avgClickRate = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
+      const atRiskOrgs = orgIds.filter(orgId => {
+        const orgResults = resultRows.filter(r => campaignRows.find(c => c.orgId === orgId && c.id === r.campaignId));
+        const orgSent = orgResults.length;
+        const orgClicked = orgResults.filter(r => r.linkClickedAt !== null).length;
+        return orgSent > 0 && (orgClicked / orgSent) > 0.3;
+      }).length;
+      return { totalCustomers, activeCustomers, totalCampaigns, avgClickRate, atRiskOrgs };
+    }),
     // Get activity log
     getActivityLog: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();

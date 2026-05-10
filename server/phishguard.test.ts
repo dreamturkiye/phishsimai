@@ -56,6 +56,12 @@ vi.mock("./db", () => ({
   createOrgMembership: vi.fn(),
 }));
 
+// MSP mock — inline dynamic imports used in msp router
+vi.mock("../drizzle/schema", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../drizzle/schema")>();
+  return { ...actual };
+});
+
 vi.mock("./seed", () => ({
   BUILT_IN_TEMPLATES: [],
   BUILT_IN_TRAINING_MODULES: [],
@@ -216,6 +222,76 @@ describe("analytics.overview", () => {
     expect(result).toHaveProperty("postureScore");
     expect(result.stats?.sent).toBe(0);
     expect(result.postureScore).toBe(72);
+  });
+});
+
+describe("msp router", () => {
+  it("getMyTenant returns null when getDb returns null (no DB)", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.msp.getMyTenant();
+    expect(result).toBeNull();
+  });
+
+  it("listCustomers returns empty array when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.msp.listCustomers();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  it("getActivityLog returns empty array when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.msp.getActivityLog();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  it("getAggregateAnalytics returns zero-state when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.msp.getAggregateAnalytics();
+    expect(result).toMatchObject({
+      totalCustomers: 0,
+      activeCustomers: 0,
+      totalCampaigns: 0,
+      avgClickRate: 0,
+      atRiskOrgs: 0,
+    });
+  });
+
+  it("register throws INTERNAL_SERVER_ERROR when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.msp.register({ companyName: "Test MSP", contactEmail: "msp@test.com" })
+    ).rejects.toThrow();
+  });
+
+  it("updateBranding throws INTERNAL_SERVER_ERROR when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.msp.updateBranding({ brandName: "MyBrand" })
+    ).rejects.toThrow();
+  });
+
+  it("impersonateCustomer throws INTERNAL_SERVER_ERROR when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.msp.impersonateCustomer({ customerOrgId: 1 })
+    ).rejects.toThrow();
+  });
+
+  it("provisionCustomer throws INTERNAL_SERVER_ERROR when getDb returns null", async () => {
+    const ctx = makeCtx();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.msp.provisionCustomer({ orgName: "Client Co", orgSlug: "client-co", adminEmail: "admin@client.com" })
+    ).rejects.toThrow();
   });
 });
 

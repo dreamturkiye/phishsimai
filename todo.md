@@ -105,44 +105,44 @@
 - [x] Update landing page compliance section header to emphasize legal requirement
 
 ## Phase 15: MSP White Label Portal
-- [ ] DB schema: msp_tenants, msp_customer_orgs, msp_branding, msp_activity_log tables
-- [ ] Backend: MSP registration and profile router
-- [ ] Backend: MSP customer provisioning (create/suspend/delete customer orgs)
-- [ ] Backend: MSP impersonation (act-as-customer session)
-- [ ] Backend: MSP white-label branding (logo, colors, domain, support email)
-- [ ] Backend: MSP customer analytics aggregation (all customers overview)
-- [ ] Backend: MSP activity log (audit trail of all MSP actions)
-- [ ] MSP Portal page: separate /msp route and layout (distinct from customer dashboard)
-- [ ] MSP Dashboard: KPI cards (total customers, active campaigns, compliance scores, at-risk orgs)
-- [ ] MSP Customer List: table with status, plan, last activity, compliance score, quick actions
-- [ ] MSP Customer Provisioning Wizard: create new customer org (name, domain, plan, admin email)
-- [ ] MSP Impersonate Customer: "Manage" button to enter customer's dashboard as admin
-- [ ] MSP White Label Branding Settings: upload logo, set brand colors, custom support email
-- [ ] MSP Activity Log: audit trail of all provisioning and access actions
-- [ ] Add MSP section to landing page (targeting IT service providers)
-- [ ] Add MSP nav entry to AppLayout for MSP-role users
-- [ ] Vitest tests for MSP routers
+- [x] DB schema: msp_tenants, msp_customer_orgs, msp_branding, msp_activity_log tables
+- [x] Backend: MSP registration and profile router
+- [x] Backend: MSP customer provisioning (create/suspend/delete customer orgs)
+- [x] Backend: MSP impersonation (act-as-customer session)
+- [x] Backend: MSP white-label branding (logo, colors, domain, support email)
+- [x] Backend: MSP customer analytics aggregation (all customers overview)
+- [x] Backend: MSP activity log (audit trail of all MSP actions)
+- [x] MSP Portal page: separate /msp route and layout (distinct from customer dashboard)
+- [x] MSP Dashboard: KPI cards (total customers, active campaigns, compliance scores, at-risk orgs)
+- [x] MSP Customer List: table with status, plan, last activity, compliance score, quick actions
+- [x] MSP Customer Provisioning Wizard: create new customer org (name, domain, plan, admin email)
+- [x] MSP Impersonate Customer: "Manage" button to enter customer's dashboard as admin
+- [x] MSP White Label Branding Settings: upload logo, set brand colors, custom support email
+- [x] MSP Activity Log: audit trail of all provisioning and access actions
+- [x] Add MSP section to landing page (targeting IT service providers)
+- [x] Add MSP nav entry to AppLayout for MSP-role users
+- [x] Vitest tests for MSP routers
 
 ## Phase 15: MSP White Label Portal
-- [ ] DB schema: msp_tenants, msp_customer_orgs, msp_branding, msp_activity_log tables
-- [ ] Backend: MSP registration, customer provisioning, impersonation, branding, activity log routers
-- [ ] MSP Portal page (/msp route, separate layout, MSP-role gated)
-- [ ] MSP Dashboard: KPI cards (total customers, active campaigns, compliance scores, at-risk orgs)
-- [ ] MSP Customer List: table with status, plan, last activity, compliance score, quick actions
-- [ ] MSP Customer Provisioning Wizard: create new customer org (name, domain, plan, admin email)
-- [ ] MSP Impersonate Customer: "Manage" button to enter customer dashboard as admin
-- [ ] MSP White Label Branding Settings: logo, brand colors, custom support email
-- [ ] MSP Activity Log: audit trail of all provisioning and access actions
-- [ ] Vitest tests for MSP routers
+- [x] DB schema: msp_tenants, msp_customer_orgs, msp_branding, msp_activity_log tables
+- [x] Backend: MSP registration, customer provisioning, impersonation, branding, activity log routers
+- [x] MSP Portal page (/msp route, separate layout, MSP-role gated)
+- [x] MSP Dashboard: KPI cards (total customers, active campaigns, compliance scores, at-risk orgs)
+- [x] MSP Customer List: table with status, plan, last activity, compliance score, quick actions
+- [x] MSP Customer Provisioning Wizard: create new customer org (name, domain, plan, admin email)
+- [x] MSP Impersonate Customer: "Manage" button to enter customer dashboard as admin
+- [x] MSP White Label Branding Settings: logo, brand colors, custom support email
+- [x] MSP Activity Log: audit trail of all provisioning and access actions
+- [x] Vitest tests for MSP routers
 
 ## Phase 16: Marketing Polish & Go-Live Readiness
-- [ ] Landing page: stronger hero with 2X better / half price value prop
-- [ ] Landing page: competitor comparison table (vs KnowBe4, Proofpoint, Cofense)
-- [ ] Landing page: social proof / testimonials section
-- [ ] Landing page: MSP / partner section with dedicated CTA
-- [ ] Landing page: How It Works (3-step visual flow)
-- [ ] Landing page: FAQ section
-- [ ] Landing page: full multi-column footer (Product, Compliance, Company, Legal)
-- [ ] Landing page: Privacy Policy and Terms of Service pages
-- [ ] Add MSP pricing tier to pricing section
-- [ ] Beta test all pages and fix any UI/UX issues
+- [x] Landing page: stronger hero with 2X better / half price value prop
+- [x] Landing page: competitor comparison table (vs KnowBe4, Proofpoint, Cofense)
+- [x] Landing page: social proof / testimonials section
+- [x] Landing page: MSP / partner section with dedicated CTA
+- [x] Landing page: How It Works (3-step visual flow)
+- [x] Landing page: FAQ section
+- [x] Landing page: full multi-column footer (Product, Compliance, Company, Legal)
+- [x] Landing page: Privacy Policy and Terms of Service pages
+- [x] Add MSP pricing tier to pricing section
+- [x] Beta test all pages and fix any UI/UX issues
