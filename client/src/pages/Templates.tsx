@@ -264,7 +264,7 @@ export default function Templates() {
 
       {/* Create/Edit dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="sm:max-w-2xl bg-card border-border/60 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-5xl bg-card border-border/60 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Save Template</DialogTitle>
           </DialogHeader>
@@ -301,12 +301,31 @@ export default function Templates() {
                 </Select>
               </div>
               <div className="col-span-2 space-y-1.5">
-                <Label className="text-xs">Email Body (HTML)</Label>
-                <Textarea
-                  value={createForm.htmlBody}
-                  onChange={e => setCreateForm(f => ({ ...f, htmlBody: e.target.value }))}
-                  className="bg-background border-border/60 font-mono text-xs resize-none h-40"
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">Email Body (HTML)</Label>
+                  <span className="text-xs text-muted-foreground">Live preview updates as you type</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 h-64">
+                  <Textarea
+                    value={createForm.htmlBody}
+                    onChange={e => setCreateForm(f => ({ ...f, htmlBody: e.target.value }))}
+                    className="bg-background border-border/60 font-mono text-xs resize-none h-full"
+                    placeholder="Paste HTML from a real email or write your own..."
+                  />
+                  <div className="border border-border/60 rounded-lg overflow-hidden bg-white h-full">
+                    <div className="bg-secondary/50 px-3 py-1.5 border-b border-border/60 flex items-center gap-1.5">
+                      <Eye className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Live Preview</span>
+                    </div>
+                    <iframe
+                      srcDoc={createForm.htmlBody || "<p style='font-family:sans-serif;color:#999;padding:16px;font-size:13px'>Start typing HTML to see a live preview...</p>"}
+                      className="w-full border-0"
+                      style={{ height: 'calc(100% - 32px)' }}
+                      sandbox="allow-same-origin"
+                      title="Email Preview"
+                    />
+                  </div>
+                </div>
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label className="text-xs">Tags (comma separated)</Label>
@@ -343,7 +362,16 @@ export default function Templates() {
             <DialogTitle className="text-sm">Preview: {preview?.subject}</DialogTitle>
           </DialogHeader>
           <div className="overflow-auto max-h-[60vh] rounded-lg bg-white p-4">
-            {preview && <div dangerouslySetInnerHTML={{ __html: preview.htmlBody }} />}
+            {preview && (
+              <div className="border border-border/60 rounded-lg overflow-hidden bg-white h-96">
+                <iframe
+                  srcDoc={preview.htmlBody}
+                  className="w-full h-full border-0"
+                  sandbox="allow-same-origin"
+                  title="Email Preview"
+                />
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

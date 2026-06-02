@@ -1,0 +1,1802 @@
+[
+  {
+    "name": "Microsoft 365 Account Suspended",
+    "subject": "Action Required: Your Microsoft 365 account has been suspended",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f3f2f1;padding:20px;text-align:center;border-bottom:1px solid #ddd\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/200px-Microsoft_logo.svg.png\" alt=\"Microsoft\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"color:#d83b01;font-size:20px;margin-top:0\">Your account has been suspended</h2><p style=\"color:#323130\">We detected unusual sign-in activity on your Microsoft 365 account. To protect your organization, we've temporarily suspended access.</p><div style=\"background:#fef0cd;border-left:4px solid #f7c948;padding:12px 16px;margin:20px 0\"><strong>Action required by:</strong> Today at 11:59 PM</div><p style=\"text-align:center;margin:28px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;font-size:14px;display:inline-block\">Verify My Account</a></p><p style=\"font-size:12px;color:#605e5c\">Microsoft will never ask for your password via email.</p></div><div style=\"background:#f3f2f1;padding:12px 20px;font-size:11px;color:#605e5c\">Microsoft Corporation, One Microsoft Way, Redmond, WA 98052</div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Microsoft",
+      "O365",
+      "account"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft Teams Meeting Recording",
+    "subject": "You missed a Teams meeting — recording available now",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#6264a7;padding:20px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:600\">Microsoft Teams</span></div><div style=\"padding:32px\"><p>You missed the following Teams meeting. A recording is available for 20 days.</p><div style=\"border:1px solid #edebe9;border-radius:4px;padding:20px;margin:20px 0\"><p style=\"margin:0 0 8px;font-weight:600\">Q4 Budget Review — All Hands</p><p style=\"margin:0;color:#605e5c;font-size:13px\">Organizer: Finance Team | Duration: 47 min</p></div><p style=\"text-align:center;margin:28px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#6264a7;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Watch Recording</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "Teams",
+      "meeting"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft OneDrive Storage Full",
+    "subject": "Your OneDrive storage is 100% full — files at risk",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0078d4;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:600\">OneDrive</span></div><div style=\"padding:32px\"><h2 style=\"color:#d83b01\">Storage limit reached</h2><p>Your OneDrive is full. New files cannot be saved and existing files may stop syncing.</p><div style=\"background:#f3f2f1;border-radius:4px;padding:16px;margin:20px 0\"><div style=\"background:#d83b01;height:8px;border-radius:4px;width:100%\"></div><p style=\"margin:8px 0 0;font-size:13px;color:#605e5c\">5.0 GB used of 5.0 GB (100%)</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;display:inline-block\">Upgrade Storage</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "OneDrive",
+      "storage"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft Security Alert — New Sign-In",
+    "subject": "Security alert: New sign-in to your Microsoft account",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f3f2f1;padding:20px;text-align:center\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/200px-Microsoft_logo.svg.png\" alt=\"Microsoft\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Security alert</h2><p>We noticed a new sign-in to your Microsoft account from an unrecognized device.</p><div style=\"border:1px solid #edebe9;border-radius:4px;padding:16px;margin:20px 0\"><p style=\"margin:0\"><strong>Location:</strong> Chicago, IL, United States<br><strong>Device:</strong> Windows 11, Chrome<br><strong>Time:</strong> Today, 2:34 AM</p></div><p>If this was you, you can ignore this message. If not, secure your account immediately.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#d83b01;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;display:inline-block\">Secure My Account</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "security",
+      "sign-in"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft SharePoint File Shared",
+    "subject": "Sarah Johnson shared a file with you in SharePoint",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#036c70;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:600\">SharePoint</span></div><div style=\"padding:32px\"><p>Sarah Johnson has shared a file with you.</p><div style=\"border:1px solid #edebe9;border-radius:4px;padding:20px;margin:20px 0;display:flex;align-items:center\"><div style=\"background:#217346;color:#fff;padding:8px;border-radius:4px;font-size:12px;font-weight:bold;margin-right:16px\">XLSX</div><div><p style=\"margin:0;font-weight:600\">2025_Annual_Compensation_Review.xlsx</p><p style=\"margin:4px 0 0;font-size:13px;color:#605e5c\">Shared by: Sarah Johnson (HR Director)</p></div></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;display:inline-block\">Open in SharePoint</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "SharePoint",
+      "file sharing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Google Account Security Alert",
+    "subject": "Critical security alert for your Google Account",
+    "htmlBody": "<div style=\"font-family:Roboto,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"padding:20px;text-align:center;border-bottom:1px solid #e0e0e0\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_2015_logo.svg/200px-Google_2015_logo.svg.png\" alt=\"Google\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"color:#d93025;font-size:20px\">Critical security alert</h2><p style=\"color:#202124\">Someone just used your password to try to sign in to your account from a non-Google app.</p><div style=\"background:#fce8e6;border-radius:4px;padding:16px;margin:20px 0\"><p style=\"margin:0;color:#d93025\"><strong>Location:</strong> Houston, TX, USA<br><strong>Device:</strong> Unknown Windows device<br><strong>Time:</strong> Just now</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1a73e8;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Check Activity</a></p><p style=\"font-size:12px;color:#5f6368\">Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Google",
+      "security",
+      "account"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Google Workspace Admin Alert",
+    "subject": "Action required: Your Google Workspace subscription",
+    "htmlBody": "<div style=\"font-family:Roboto,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"padding:20px;border-bottom:1px solid #e0e0e0\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_2015_logo.svg/200px-Google_2015_logo.svg.png\" alt=\"Google\" style=\"height:20px\"></div><div style=\"padding:32px\"><h2 style=\"color:#202124;font-size:20px\">Your Google Workspace subscription requires attention</h2><p>Your payment method on file has been declined. Your Workspace services will be suspended in <strong>48 hours</strong> unless you update your billing information.</p><div style=\"background:#fef7e0;border-left:4px solid #f9ab00;padding:12px 16px;margin:20px 0\"><strong>Services at risk:</strong> Gmail, Drive, Meet, Calendar</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1a73e8;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Update Billing</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Google",
+      "Workspace",
+      "admin"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Google Drive File Shared",
+    "subject": "Michael Chen shared a document with you",
+    "htmlBody": "<div style=\"font-family:Roboto,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"padding:20px;border-bottom:1px solid #e0e0e0\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/2/2f/Google_2015_logo.svg/200px-Google_2015_logo.svg.png\" alt=\"Google\" style=\"height:20px\"></div><div style=\"padding:32px\"><p style=\"color:#202124\">Michael Chen (m.chen@company.com) has shared the following item with you:</p><div style=\"border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin:20px 0\"><div style=\"display:flex;align-items:center\"><div style=\"background:#4285f4;color:#fff;padding:8px 12px;border-radius:4px;font-size:12px;font-weight:bold;margin-right:16px\">DOCS</div><div><p style=\"margin:0;font-weight:500;color:#202124\">2025 Strategic Plan — CONFIDENTIAL</p><p style=\"margin:4px 0 0;font-size:13px;color:#5f6368\">Google Docs</p></div></div></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1a73e8;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Open in Docs</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Google",
+      "Drive",
+      "file sharing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Amazon Order Confirmation Fraud",
+    "subject": "Your Amazon order #114-8829341-1234567 has shipped",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#232f3e;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Amazon_logo.svg/200px-Amazon_logo.svg.png\" alt=\"Amazon\" style=\"height:24px\"></div><div style=\"padding:24px\"><h2 style=\"color:#232f3e\">Your order has shipped!</h2><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:16px 0\"><p style=\"margin:0\"><strong>Order #114-8829341-1234567</strong><br>Apple AirPods Pro (2nd Generation) — $249.00<br><strong>Estimated delivery:</strong> Tomorrow by 8 PM</p></div><p style=\"color:#c45500\">Not your order? Someone may have used your account. Click below to review:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ff9900;color:#111;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold\">Review Order</a></p></div><div style=\"background:#f3f3f3;padding:12px 24px;font-size:11px;color:#555\">Amazon.com, Inc., 410 Terry Ave N, Seattle, WA 98109</div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Retail",
+    "tags": [
+      "Amazon",
+      "order",
+      "shipping"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "AWS Account Billing Alert",
+    "subject": "AWS: Unusual billing activity detected on your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#232f3e;padding:16px 24px\"><span style=\"color:#ff9900;font-size:20px;font-weight:bold\">aws</span></div><div style=\"padding:32px\"><h2 style=\"color:#d13212\">Unusual billing activity detected</h2><p>We've detected a significant spike in your AWS usage that may indicate unauthorized access or a misconfigured resource.</p><div style=\"background:#fdf3f2;border:1px solid #d13212;border-radius:4px;padding:16px;margin:20px 0\"><strong>Projected monthly charge: $4,847.23</strong><br><span style=\"font-size:13px;color:#555\">Normal monthly average: $312.00</span></div><p>Review your usage immediately to avoid unexpected charges.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ec7211;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review Billing Console</a></p><p style=\"font-size:12px;color:#555\">Amazon Web Services, Inc., 410 Terry Ave N, Seattle, WA 98109</p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "AWS",
+      "billing",
+      "cloud"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Amazon Prime Membership Renewal",
+    "subject": "Your Amazon Prime membership will be charged $139",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#232f3e;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Amazon_logo.svg/200px-Amazon_logo.svg.png\" alt=\"Amazon\" style=\"height:24px\"></div><div style=\"padding:24px\"><h2>Your Prime membership is renewing</h2><p>Your annual Amazon Prime membership will automatically renew in <strong>3 days</strong> for <strong>$139.00</strong>.</p><div style=\"border:1px solid #ddd;padding:16px;border-radius:4px;margin:16px 0\"><p style=\"margin:0\">Payment method: Visa ending in 4821<br>Renewal date: This Friday</p></div><p>To cancel or update your payment method:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ff9900;color:#111;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold\">Manage Membership</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Retail",
+    "tags": [
+      "Amazon",
+      "Prime",
+      "billing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Chase Bank Fraud Alert",
+    "subject": "Chase Fraud Alert: Suspicious transaction on your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#117aca;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">CHASE</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Fraud Alert: Suspicious Activity</h2><p>We've detected a transaction that may be unauthorized on your Chase account ending in 4821.</p><div style=\"border:1px solid #e0e0e0;border-radius:4px;padding:16px;margin:20px 0\"><p style=\"margin:0\"><strong>Merchant:</strong> International Wire Transfer<br><strong>Amount:</strong> $2,847.00<br><strong>Date:</strong> Today, 11:42 AM<br><strong>Location:</strong> Lagos, Nigeria</p></div><p>If you did not authorize this transaction, secure your account immediately.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#117aca;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Secure My Account</a></p><p style=\"font-size:12px;color:#555\">JPMorgan Chase Bank, N.A., 270 Park Avenue, New York, NY 10017</p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Chase",
+      "bank",
+      "fraud alert"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Wells Fargo Account Locked",
+    "subject": "Important: Your Wells Fargo account has been locked",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#d71e28;padding:16px 24px\"><span style=\"color:#ffcd11;font-size:20px;font-weight:bold\">WELLS FARGO</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your account has been locked</h2><p>For your security, we've temporarily locked your Wells Fargo Online account due to multiple failed sign-in attempts.</p><p>To unlock your account and restore full access, please verify your identity:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#d71e28;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Unlock My Account</a></p><p style=\"font-size:12px;color:#555\">Wells Fargo Bank, N.A., 420 Montgomery Street, San Francisco, CA 94104</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Wells Fargo",
+      "bank",
+      "account locked"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Bank of America Zelle Transfer Alert",
+    "subject": "You received a Zelle payment — verify to claim",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#e31837;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Bank of America</span></div><div style=\"padding:32px\"><h2 style=\"color:#004b87\">You've received a Zelle payment</h2><p>Someone has sent you money via Zelle. To claim your payment, you must verify your account within <strong>24 hours</strong> or the funds will be returned.</p><div style=\"background:#f0f7ff;border:1px solid #004b87;border-radius:4px;padding:16px;margin:20px 0\"><strong>Amount:</strong> $350.00<br><strong>From:</strong> Robert Martinez<br><strong>Memo:</strong> Rent payment</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e31837;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Claim Payment</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Bank of America",
+      "Zelle",
+      "payment"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Citibank Credit Card Suspended",
+    "subject": "Your Citi card has been temporarily suspended",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003b8e;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">citi</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Your card has been suspended</h2><p>We've temporarily suspended your Citi card ending in 7734 due to suspicious activity detected on your account.</p><p>To reactivate your card and review the flagged transactions, please verify your identity:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003b8e;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Reactivate Card</a></p><p style=\"font-size:12px;color:#555\">Citibank, N.A., 388 Greenwich Street, New York, NY 10013</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Citibank",
+      "credit card",
+      "suspended"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "PayPal Unauthorized Transaction",
+    "subject": "We've limited your PayPal account",
+    "htmlBody": "<div style=\"font-family:Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003087;padding:16px 24px;text-align:center\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/PayPal.svg/200px-PayPal.svg.png\" alt=\"PayPal\" style=\"height:28px\"></div><div style=\"padding:32px\"><h2 style=\"color:#003087\">We've limited your account</h2><p>We've noticed some unusual activity in your PayPal account. To make sure your account hasn't been compromised, we've limited what you can do until you verify your information.</p><p>You won't be able to send or receive money until you complete verification.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0070ba;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Restore My Account</a></p><p style=\"font-size:12px;color:#555\">PayPal, Inc., 2211 North First Street, San Jose, CA 95131</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "PayPal",
+      "account",
+      "limited"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "FedEx Package Delivery Failed",
+    "subject": "FedEx: Delivery attempt failed — action required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#4d148c;padding:16px 24px\"><span style=\"color:#ff6200;font-size:22px;font-weight:bold\">FedEx</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Delivery Attempt Failed</h2><p>We attempted to deliver your package today but were unable to complete delivery. Your package will be held at a FedEx location for <strong>5 business days</strong>.</p><div style=\"border:1px solid #ddd;padding:16px;border-radius:4px;margin:20px 0\"><p style=\"margin:0\"><strong>Tracking #:</strong> 7489 2341 8823 4421<br><strong>Status:</strong> Delivery attempted<br><strong>Hold location:</strong> FedEx Office, 1234 Main St</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ff6200;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Schedule Redelivery</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Logistics",
+    "tags": [
+      "FedEx",
+      "delivery",
+      "package"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "UPS Package Customs Hold",
+    "subject": "UPS: Your package is being held — customs fee required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#351c15;padding:16px 24px\"><span style=\"color:#ffb500;font-size:22px;font-weight:bold\">UPS</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your package requires a customs fee</h2><p>Your international shipment is being held at a UPS facility pending payment of a customs and duty fee.</p><div style=\"background:#fff8e1;border:1px solid #ffb500;border-radius:4px;padding:16px;margin:20px 0\"><strong>Tracking #:</strong> 1Z999AA10123456784<br><strong>Customs fee due:</strong> $14.99<br><strong>Payment deadline:</strong> 48 hours</div><p>Pay the fee to release your package:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#351c15;color:#ffb500;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Pay Customs Fee</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Logistics",
+    "tags": [
+      "UPS",
+      "customs",
+      "package"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "USPS Delivery Exception",
+    "subject": "USPS: Your package could not be delivered",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#004b87;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">USPS</span><span style=\"color:#fff;font-size:14px;margin-left:8px\">United States Postal Service</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Delivery Exception</h2><p>The United States Postal Service attempted to deliver your package but was unable to complete delivery due to an insufficient address.</p><div style=\"border:1px solid #ddd;padding:16px;border-radius:4px;margin:20px 0\"><p style=\"margin:0\"><strong>Tracking:</strong> 9400111899223397889351<br><strong>Issue:</strong> Address verification required</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#004b87;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Update Delivery Address</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Logistics",
+    "tags": [
+      "USPS",
+      "delivery",
+      "package"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Zoom Meeting Invitation",
+    "subject": "You've been invited to a Zoom meeting",
+    "htmlBody": "<div style=\"font-family:Lato,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#2d8cff;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">zoom</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">You're invited to a Zoom meeting</h2><p>David Williams is inviting you to a scheduled Zoom meeting.</p><div style=\"border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin:20px 0\"><p style=\"margin:0\"><strong>Topic:</strong> Performance Review — Q4 2025<br><strong>Time:</strong> Today, 3:00 PM Eastern Time<br><strong>Meeting ID:</strong> 842 1234 5678<br><strong>Passcode:</strong> 847291</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2d8cff;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;display:inline-block;font-size:16px\">Join Meeting</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Zoom",
+      "meeting",
+      "video call"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Slack Workspace Invitation",
+    "subject": "You've been invited to join a Slack workspace",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#4a154b;padding:16px 24px;text-align:center\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Slack_icon_2019.svg/50px-Slack_icon_2019.svg.png\" alt=\"Slack\" style=\"height:32px\"></div><div style=\"padding:40px;text-align:center\"><h2 style=\"color:#1d1c1d\">Jennifer Adams has invited you to Slack</h2><p style=\"color:#616061\">You've been invited to join <strong>AcmeCorp</strong> on Slack — where the team communicates.</p><p style=\"margin:32px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#4a154b;color:#fff;padding:14px 32px;text-decoration:none;border-radius:4px;display:inline-block;font-size:16px\">Open Invitation</a></p><p style=\"font-size:12px;color:#616061\">Slack Technologies, LLC, 500 Howard Street, San Francisco, CA 94105</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Slack",
+      "workspace",
+      "invite"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "DocuSign Contract Signature Required",
+    "subject": "Please DocuSign: Employment Contract — Action Required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f5f5f5\"><div style=\"background:#fff;border-radius:8px;overflow:hidden;margin:20px\"><div style=\"background:#1a1a2e;padding:20px;text-align:center\"><span style=\"color:#f5a623;font-size:22px;font-weight:bold\">DocuSign</span></div><div style=\"padding:30px\"><p>You have a document that requires your signature.</p><div style=\"background:#f9f9f9;border:1px solid #ddd;padding:16px;border-radius:4px;margin:16px 0\"><strong>Document:</strong> Amended Employment Agreement 2025<br><strong>From:</strong> Amanda Torres, HR Director<br><strong>Company:</strong> Acme Corporation<br><strong>Expires:</strong> 72 hours from now</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f5a623;color:#fff;padding:14px 32px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold;font-size:16px\">Review and Sign</a></p><p style=\"font-size:12px;color:#888\">DocuSign, Inc., 221 Main Street, Suite 1000, San Francisco, CA 94105</p></div></div></div>",
+    "difficulty": "medium",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Legal",
+    "tags": [
+      "DocuSign",
+      "contract",
+      "signature"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "IRS Tax Refund Notification",
+    "subject": "IRS: You have a pending tax refund of $2,847",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003366;padding:16px 24px\"><span style=\"color:#fff;font-size:16px;font-weight:bold\">Internal Revenue Service | IRS.gov</span></div><div style=\"padding:32px\"><h2 style=\"color:#003366;margin-top:0\">Tax Refund Notification</h2><p>Our records indicate that you are eligible for a federal tax refund of <strong>$2,847.00</strong> for the 2024 tax year.</p><p>To receive your refund, you must verify your identity and provide your banking information through our secure portal.</p><div style=\"background:#e8f4fd;border-left:4px solid #003366;padding:12px 16px;margin:20px 0\"><strong>Refund amount:</strong> $2,847.00<br><strong>Claim deadline:</strong> 30 days</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003366;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Claim Your Refund</a></p><p style=\"font-size:12px;color:#555\">Internal Revenue Service, 1111 Constitution Ave NW, Washington, DC 20224</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "IRS",
+      "tax refund",
+      "government"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Social Security Administration Alert",
+    "subject": "SSA: Your Social Security Number has been suspended",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#1a3a5c;padding:16px 24px\"><span style=\"color:#fff;font-size:16px;font-weight:bold\">Social Security Administration</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">IMPORTANT NOTICE: SSN Suspension</h2><p>This is an official notice from the Social Security Administration. Your Social Security Number has been temporarily suspended due to suspicious activity associated with criminal investigations.</p><p>You must verify your identity immediately to prevent permanent suspension and potential legal action.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1a3a5c;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify Identity Now</a></p><p style=\"font-size:12px;color:#555\">Social Security Administration, 6401 Security Blvd, Baltimore, MD 21235</p></div></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "Government",
+    "tags": [
+      "SSA",
+      "Social Security",
+      "government"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Medicare Benefit Update",
+    "subject": "Medicare: Your benefits card is expiring — update required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003da5;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Medicare</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your Medicare card is expiring</h2><p>Our records show your Medicare benefits card is scheduled to expire. To continue receiving your benefits without interruption, you must verify your information and request a replacement card.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003da5;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Update Medicare Information</a></p><p style=\"font-size:12px;color:#555\">Centers for Medicare and Medicaid Services, 7500 Security Blvd, Baltimore, MD 21244</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Healthcare",
+    "tags": [
+      "Medicare",
+      "healthcare",
+      "benefits"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "LinkedIn Job Application Update",
+    "subject": "Good news about your application at Google",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0a66c2;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/LinkedIn_logo_initials.png/50px-LinkedIn_logo_initials.png\" alt=\"LinkedIn\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"color:#0a66c2;margin-top:0\">Your application is moving forward!</h2><p>Great news! A recruiter at <strong>Google</strong> has reviewed your application for the <strong>Senior Software Engineer</strong> position and wants to move forward.</p><p>Sign in to LinkedIn to view the full message and next steps:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0a66c2;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Message</a></p><p style=\"font-size:12px;color:#555\">LinkedIn Corporation, 1000 West Maude Avenue, Sunnyvale, CA 94085</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "LinkedIn",
+      "job",
+      "application"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "ADP Payroll Notification",
+    "subject": "ADP: Your pay statement is ready",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#d40000;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">ADP</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your pay statement is available</h2><p>Your pay statement for the period ending <strong>December 15, 2025</strong> is now available in ADP Workforce Now.</p><div style=\"background:#f5f5f5;border-radius:4px;padding:16px;margin:20px 0\"><strong>Net Pay:</strong> $3,847.22<br><strong>Pay Date:</strong> December 20, 2025</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#d40000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Pay Statement</a></p><p style=\"font-size:12px;color:#555\">ADP, LLC, One ADP Boulevard, Roseland, NJ 07068</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "ADP",
+      "payroll",
+      "pay stub"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Workday Password Reset",
+    "subject": "Workday: Reset your password to maintain access",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f05a28;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Workday</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Password reset required</h2><p>Your Workday password will expire in <strong>48 hours</strong>. You must reset your password to continue accessing HR, payroll, and benefits information.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f05a28;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Reset Password</a></p><p style=\"font-size:12px;color:#555\">Workday, Inc., 6110 Stoneridge Mall Road, Pleasanton, CA 94588</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Workday",
+      "HR",
+      "password"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Apple ID Locked",
+    "subject": "Your Apple ID has been locked for security reasons",
+    "htmlBody": "<div style=\"font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f5f5f7;padding:20px;text-align:center;border-bottom:1px solid #d2d2d7\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Apple_logo_black.svg/50px-Apple_logo_black.svg.png\" alt=\"Apple\" style=\"height:24px\"></div><div style=\"padding:40px;text-align:center\"><h2 style=\"color:#1d1d1f;font-size:24px;font-weight:600\">Your Apple ID has been locked</h2><p style=\"color:#6e6e73\">For your security, your Apple ID has been locked because too many failed sign-in attempts were detected.</p><p style=\"color:#6e6e73\">To unlock your account, verify your identity:</p><p style=\"margin:32px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0071e3;color:#fff;padding:14px 32px;text-decoration:none;border-radius:980px;display:inline-block;font-size:15px\">Unlock Apple ID</a></p><p style=\"font-size:12px;color:#6e6e73\">Apple Inc., One Apple Park Way, Cupertino, CA 95014</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Apple",
+      "Apple ID",
+      "account"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Netflix Payment Failed",
+    "subject": "Netflix: We're having trouble with your payment",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#000\"><div style=\"padding:20px;text-align:center\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Netflix_2015_logo.svg/200px-Netflix_2015_logo.svg.png\" alt=\"Netflix\" style=\"height:32px\"></div><div style=\"background:#141414;padding:32px;color:#fff\"><h2 style=\"color:#e50914;margin-top:0\">Payment declined</h2><p style=\"color:#b3b3b3\">We're having trouble processing your payment. Your Netflix membership will be cancelled unless you update your payment information within 48 hours.</p><p style=\"text-align:center;margin:32px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e50914;color:#fff;padding:14px 32px;text-decoration:none;border-radius:4px;display:inline-block;font-size:16px\">Update Payment Info</a></p><p style=\"font-size:12px;color:#737373\">Netflix, Inc., 100 Winchester Circle, Los Gatos, CA 95032</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Entertainment",
+    "tags": [
+      "Netflix",
+      "payment",
+      "billing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Spotify Premium Cancellation Warning",
+    "subject": "Your Spotify Premium is about to be cancelled",
+    "htmlBody": "<div style=\"font-family:Circular,Arial,sans-serif;max-width:600px;margin:0 auto;background:#191414\"><div style=\"padding:24px;text-align:center\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/1/19/Spotify_logo_without_text.svg/50px-Spotify_logo_without_text.svg.png\" alt=\"Spotify\" style=\"height:40px\"></div><div style=\"background:#121212;padding:32px;color:#fff\"><h2 style=\"color:#1db954;margin-top:0\">Your Premium is expiring</h2><p style=\"color:#b3b3b3\">We couldn't process your last payment. Your Spotify Premium will revert to the free tier in <strong>3 days</strong> unless you update your billing information.</p><p style=\"text-align:center;margin:32px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1db954;color:#000;padding:14px 32px;text-decoration:none;border-radius:500px;display:inline-block;font-weight:bold\">Update Billing</a></p><p style=\"font-size:12px;color:#535353\">Spotify USA Inc., 4 World Trade Center, 150 Greenwich Street, New York, NY 10007</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Entertainment",
+    "tags": [
+      "Spotify",
+      "subscription",
+      "payment"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Salesforce Login Verification",
+    "subject": "Salesforce: Verify your login from a new device",
+    "htmlBody": "<div style=\"font-family:'Salesforce Sans',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#00a1e0;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/f/f9/Salesforce.com_logo.svg/200px-Salesforce.com_logo.svg.png\" alt=\"Salesforce\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"color:#032d60;margin-top:0\">Verify your identity</h2><p>We noticed a login attempt to your Salesforce account from a new device or location.</p><div style=\"border:1px solid #dddbda;border-radius:4px;padding:16px;margin:20px 0\"><strong>Device:</strong> Chrome on Windows<br><strong>Location:</strong> Dallas, TX<br><strong>Time:</strong> Today, 9:14 AM</div><p>If this was you, verify to continue. If not, secure your account immediately.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0070d2;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify Login</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Salesforce",
+      "CRM",
+      "login"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "ServiceNow IT Ticket Urgent",
+    "subject": "ServiceNow: Critical IT ticket assigned to you",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#62d84e;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">ServiceNow</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Critical ticket assigned to you</h2><p>A P1 (Critical) incident has been assigned to you and requires immediate attention.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0;border-left:4px solid #d0021b\"><strong>INC0089234</strong> — Production database down<br><span style=\"color:#d0021b;font-weight:bold\">Priority: Critical</span><br>Assigned by: NOC Team</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#62d84e;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Incident</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "ServiceNow",
+      "IT",
+      "ticket"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Dropbox Business Storage Warning",
+    "subject": "Dropbox: Your team storage is 95% full",
+    "htmlBody": "<div style=\"font-family:Atlas Grotesk,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0061ff;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Dropbox</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your team storage is almost full</h2><p>Your Dropbox Business account is at <strong>95% capacity</strong>. Files may stop syncing when you reach the limit.</p><div style=\"background:#f5f5f5;border-radius:4px;padding:16px;margin:20px 0\"><div style=\"background:#0061ff;height:8px;border-radius:4px;width:95%\"></div><p style=\"margin:8px 0 0;font-size:13px\">4.75 TB used of 5 TB</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0061ff;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Upgrade Storage</a></p><p style=\"font-size:12px;color:#555\">Dropbox, Inc., 1800 Owens Street, San Francisco, CA 94158</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Dropbox",
+      "storage",
+      "cloud"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Adobe Creative Cloud License Expiring",
+    "subject": "Adobe: Your Creative Cloud license expires in 3 days",
+    "htmlBody": "<div style=\"font-family:Adobe Clean,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#ff0000;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/Adobe_Corporate_Logo.png/200px-Adobe_Corporate_Logo.png\" alt=\"Adobe\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your license is expiring soon</h2><p>Your Adobe Creative Cloud All Apps subscription expires in <strong>3 days</strong>. After expiration, you will lose access to Photoshop, Illustrator, Premiere Pro, and all other Creative Cloud apps.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ff0000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Renew Subscription</a></p><p style=\"font-size:12px;color:#555\">Adobe Inc., 345 Park Avenue, San Jose, CA 95110</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Creative",
+    "tags": [
+      "Adobe",
+      "Creative Cloud",
+      "license"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "DocuSign NDA Signature Required",
+    "subject": "Please DocuSign: Non-Disclosure Agreement — Immediate Action Required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f5f5f5\"><div style=\"background:#fff;border-radius:8px;overflow:hidden;margin:20px\"><div style=\"background:#1a1a2e;padding:20px;text-align:center\"><span style=\"color:#f5a623;font-size:22px;font-weight:bold\">DocuSign</span></div><div style=\"padding:30px\"><p>URGENT: A Non-Disclosure Agreement requires your signature before your scheduled meeting tomorrow.</p><div style=\"background:#fff8e1;border:1px solid #f5a623;padding:16px;border-radius:4px;margin:16px 0\"><strong>Document:</strong> Mutual NDA — Acme Corp / Partner<br><strong>From:</strong> Legal Department<br><strong>Deadline:</strong> Before 9:00 AM tomorrow</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f5a623;color:#fff;padding:14px 32px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold\">Sign Now</a></p></div></div></div>",
+    "difficulty": "hard",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Legal",
+    "tags": [
+      "DocuSign",
+      "NDA",
+      "legal"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "CFO Gift Card Request",
+    "subject": "Quick favor needed — confidential",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><p>Hi,</p><p>I need a quick favor. I'm in back-to-back meetings and can't make calls right now. I need you to purchase some Google Play gift cards for a client appreciation gift — this is time-sensitive.</p><p>Can you get 5 x $100 Google Play cards from any nearby store? Scratch off the back and email me the codes. I'll reimburse you through expense reports.</p><p>Please don't mention this to anyone else — I want it to be a surprise. Can you handle this in the next hour?</p><p>Thanks,<br>James Richardson<br>Chief Financial Officer</p></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "BEC",
+      "gift card",
+      "CFO fraud"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "CEO Acquisition Confidential",
+    "subject": "Confidential: Acquisition — do not forward",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><p>Hi,</p><p>I'm reaching out directly because this is extremely sensitive. We're in the final stages of a confidential acquisition and our legal team needs a wire transfer processed today before the market opens tomorrow.</p><p>Please access the secure transfer portal below and process the payment. Our M&A advisor will be waiting for confirmation.</p><p><a href=\"{{TRACKING_LINK}}\">Access Secure Payment Portal</a></p><p>Do not discuss this with anyone — including your manager. I'll brief the full team after the deal closes. Please confirm you've received this.</p><p>Best,<br>Patricia Chen<br>Chief Executive Officer</p></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "BEC",
+      "CEO fraud",
+      "acquisition"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "IT Help Desk Credential Verification",
+    "subject": "IT Security: Mandatory credential verification required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e0e0e0;border-radius:8px\"><div style=\"background:#1565c0;padding:16px;border-radius:6px 6px 0 0;text-align:center\"><h2 style=\"color:white;margin:0\">IT Security Department</h2></div><div style=\"padding:24px\"><p>Dear Employee,</p><p>As part of our ongoing security audit, all employees are required to verify their network credentials by <strong>end of business today</strong>. Failure to complete verification will result in temporary account suspension.</p><p>This is a mandatory compliance requirement per our IT Security Policy.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1565c0;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify Credentials</a></p><p style=\"font-size:12px;color:#666\">IT Security Team | Help Desk: ext. 4357</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "IT helpdesk",
+      "credentials",
+      "internal"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "HR Annual Compliance Training",
+    "subject": "Mandatory: Complete your annual compliance training by Friday",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><div style=\"background:#2e7d32;padding:16px;text-align:center;border-radius:6px 6px 0 0\"><h2 style=\"color:white;margin:0\">Human Resources</h2></div><div style=\"border:1px solid #ddd;padding:24px\"><p>Dear Team Member,</p><p>This is your final reminder to complete your <strong>Annual Compliance and Security Awareness Training</strong>. This training is mandatory for all employees and must be completed by <strong>this Friday</strong>.</p><p>Employees who do not complete the training will be flagged in the HR system and may be subject to disciplinary action.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2e7d32;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Start Training Now</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "HR",
+      "compliance",
+      "training"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Epic MyChart Patient Portal",
+    "subject": "New message from your care team in MyChart",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#005eb8;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">MyChart</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">You have a new message</h2><p>Your care team has sent you a message through MyChart. This message may contain important health information or test results.</p><div style=\"background:#e8f4fd;border-radius:4px;padding:16px;margin:20px 0\"><strong>From:</strong> Dr. Sarah Williams, MD<br><strong>Subject:</strong> Your recent lab results<br><strong>Received:</strong> Today</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#005eb8;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Message</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Healthcare",
+    "tags": [
+      "Epic",
+      "MyChart",
+      "healthcare"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "CVS Pharmacy Prescription Ready",
+    "subject": "CVS Pharmacy: Your prescription is ready for pickup",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#cc0000;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">CVS Pharmacy</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your prescription is ready</h2><p>Your prescription is ready for pickup at your CVS Pharmacy location. Please pick up within <strong>7 days</strong> to avoid automatic return to stock.</p><div style=\"background:#f5f5f5;border-radius:4px;padding:16px;margin:20px 0\"><strong>Prescription:</strong> Lisinopril 10mg<br><strong>Quantity:</strong> 30 tablets<br><strong>Ready at:</strong> 1234 Main Street CVS</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#cc0000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Manage Prescription</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Healthcare",
+    "tags": [
+      "CVS",
+      "pharmacy",
+      "prescription"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "UnitedHealthcare Benefits Expiring",
+    "subject": "UnitedHealthcare: Use your benefits before they expire",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#005695;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">UnitedHealthcare</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your benefits expire December 31</h2><p>You have unused health benefits that will expire at the end of the year. Review your available benefits and schedule appointments before December 31.</p><div style=\"background:#e8f4fd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Available balance:</strong> $847 FSA<br><strong>Unused dental:</strong> $1,200 annual max<br><strong>Unused vision:</strong> $200 allowance</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#005695;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View My Benefits</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Healthcare",
+    "tags": [
+      "UnitedHealthcare",
+      "insurance",
+      "benefits"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "QuickBooks Invoice Payment Request",
+    "subject": "Invoice #INV-2847 from Acme Supplies — Payment due",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#2ca01c;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">QuickBooks</span></div><div style=\"padding:32px\"><p>Acme Supplies LLC has sent you an invoice through QuickBooks.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:20px;margin:20px 0\"><h3 style=\"margin-top:0\">Invoice #INV-2847</h3><p><strong>From:</strong> Acme Supplies LLC<br><strong>Amount due:</strong> $12,450.00<br><strong>Due date:</strong> Net 30 — Due this Friday<br><strong>Services:</strong> Q4 IT Equipment Supply</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2ca01c;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review and Pay Invoice</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "QuickBooks",
+      "invoice",
+      "vendor fraud"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Vendor Banking Information Update",
+    "subject": "Important: Updated banking information for future payments",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><p>Dear Accounts Payable Team,</p><p>Please be advised that our company has recently changed our banking institution. Effective immediately, all future payments should be directed to our new bank account.</p><p>Please update your records accordingly and apply this change to any pending invoices:</p><div style=\"border:1px solid #ddd;padding:16px;border-radius:4px;margin:16px 0;background:#f9f9f9\"><strong>Bank:</strong> First National Bank<br><strong>Routing:</strong> 021000021<br><strong>Account:</strong> 4829103847</div><p>Please confirm receipt and update your records. For verification, please access our vendor portal:</p><p><a href=\"{{TRACKING_LINK}}\">Vendor Portal — Confirm Banking Update</a></p><p>Thank you for your prompt attention to this matter.</p><p>Best regards,<br>Robert Chen<br>Controller, Acme Supplies LLC</p></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "vendor fraud",
+      "banking",
+      "BEC"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Duke Energy Bill Payment Overdue",
+    "subject": "Duke Energy: Your account is past due — service interruption warning",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003087;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Duke Energy</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Service interruption warning</h2><p>Your Duke Energy account is <strong>47 days past due</strong>. To avoid service interruption, please pay your outstanding balance immediately.</p><div style=\"background:#fdf3f2;border:1px solid #d0021b;border-radius:4px;padding:16px;margin:20px 0\"><strong>Account:</strong> 4829-1234-5678<br><strong>Past due amount:</strong> $347.82<br><strong>Disconnection date:</strong> In 3 business days</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003087;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Pay Now to Avoid Disconnection</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Energy",
+    "tags": [
+      "Duke Energy",
+      "utility",
+      "bill"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Comcast Xfinity Account Alert",
+    "subject": "Xfinity: Your internet service will be suspended",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#e11b22;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">XFINITY</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your service will be suspended</h2><p>We were unable to process your most recent Xfinity payment. Your internet, TV, and phone services will be suspended in <strong>48 hours</strong> unless payment is received.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e11b22;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Make a Payment</a></p><p style=\"font-size:12px;color:#555\">Comcast Corporation, One Comcast Center, Philadelphia, PA 19103</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Telecommunications",
+    "tags": [
+      "Comcast",
+      "Xfinity",
+      "internet"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "AT&T Wireless Account Verification",
+    "subject": "AT&T: Verify your account to prevent suspension",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#00a8e0;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">AT&T</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Account verification required</h2><p>We've detected unusual activity on your AT&T account. To protect your account and prevent unauthorized changes, please verify your identity within <strong>24 hours</strong>.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#00a8e0;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify My Account</a></p><p style=\"font-size:12px;color:#555\">AT&T Inc., 208 S. Akard Street, Dallas, TX 75202</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Telecommunications",
+    "tags": [
+      "AT&T",
+      "wireless",
+      "account"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Verizon Data Breach Notification",
+    "subject": "Verizon: Important security notice regarding your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#cd040b;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Verizon</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Security notice: Your account may be affected</h2><p>We recently identified a security incident that may have affected some Verizon customer accounts. As a precaution, we recommend you verify your account information and update your password.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#cd040b;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Secure My Account</a></p><p style=\"font-size:12px;color:#555\">Verizon Communications Inc., 1095 Avenue of the Americas, New York, NY 10036</p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Telecommunications",
+    "tags": [
+      "Verizon",
+      "data breach",
+      "security"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "T-Mobile SIM Swap Alert",
+    "subject": "T-Mobile: SIM card change detected on your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#e20074;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">T-Mobile</span></div><div style=\"padding:32px\"><h2 style=\"color:#e20074;margin-top:0\">SIM card change detected</h2><p>A SIM card change was requested for your T-Mobile account. If you did not request this change, your account may be compromised.</p><div style=\"background:#fce4ec;border:1px solid #e20074;border-radius:4px;padding:16px;margin:20px 0\"><strong>Change requested:</strong> Today, 3:47 PM<br><strong>Location:</strong> T-Mobile Store, Phoenix, AZ</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e20074;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Cancel SIM Change</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Telecommunications",
+    "tags": [
+      "T-Mobile",
+      "SIM swap",
+      "account takeover"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Delta Airlines Flight Cancellation",
+    "subject": "Important: Your Delta flight has been cancelled",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003366;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">DELTA</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Your flight has been cancelled</h2><p>We regret to inform you that your Delta flight has been cancelled due to operational constraints.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Flight:</strong> DL 1847 — ATL to LAX<br><strong>Original departure:</strong> Tomorrow, 7:30 AM<br><strong>Status:</strong> CANCELLED</div><p>To rebook or request a refund, please access your account:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003366;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Rebook or Get Refund</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Travel",
+    "tags": [
+      "Delta",
+      "airline",
+      "flight"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Marriott Bonvoy Points Expiring",
+    "subject": "Marriott Bonvoy: Your points expire in 7 days",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#8b1a1a;padding:16px 24px\"><span style=\"color:#d4af37;font-size:18px;font-weight:bold\">Marriott Bonvoy</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your points are about to expire</h2><p>You have <strong>47,500 Marriott Bonvoy points</strong> (worth approximately $475 in free nights) that will expire in <strong>7 days</strong> due to account inactivity.</p><p>Sign in to your account to prevent expiration:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#8b1a1a;color:#d4af37;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Save My Points</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Hospitality",
+    "tags": [
+      "Marriott",
+      "hotel",
+      "loyalty points"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Airbnb Reservation Confirmation Fraud",
+    "subject": "Airbnb: Action required for your upcoming reservation",
+    "htmlBody": "<div style=\"font-family:Circular,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#ff5a5f;padding:16px 24px;text-align:center\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/6/69/Airbnb_Logo_B%C3%A9lo.svg/200px-Airbnb_Logo_B%C3%A9lo.svg.png\" alt=\"Airbnb\" style=\"height:28px\"></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Action required for your reservation</h2><p>Your host has flagged an issue with your upcoming reservation. You must verify your payment information within <strong>24 hours</strong> or your reservation will be automatically cancelled.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ff5a5f;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify Reservation</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Travel",
+    "tags": [
+      "Airbnb",
+      "travel",
+      "reservation"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Walmart Order Fraud Alert",
+    "subject": "Walmart: Suspicious order placed on your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0071ce;padding:16px 24px\"><span style=\"color:#ffc220;font-size:20px;font-weight:bold\">Walmart</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Suspicious order detected</h2><p>A high-value order was placed on your Walmart account from an unrecognized device. If you did not place this order, please secure your account immediately.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Order total:</strong> $1,247.83<br><strong>Items:</strong> Electronics (3 items)<br><strong>Ship to:</strong> New address added today</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0071ce;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review Order</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Retail",
+    "tags": [
+      "Walmart",
+      "order",
+      "fraud"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Target RedCard Security Alert",
+    "subject": "Target RedCard: Unusual activity on your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#cc0000;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Target</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">RedCard security alert</h2><p>We've detected unusual activity on your Target RedCard. For your protection, we've temporarily restricted your card until you verify your identity.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#cc0000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify Identity</a></p><p style=\"font-size:12px;color:#555\">Target Corporation, 1000 Nicollet Mall, Minneapolis, MN 55403</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Retail",
+    "tags": [
+      "Target",
+      "RedCard",
+      "retail"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "eBay Seller Account Suspended",
+    "subject": "eBay: Your seller account has been suspended",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#e53238;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/EBay_logo.svg/200px-EBay_logo.svg.png\" alt=\"eBay\" style=\"height:28px\"></div><div style=\"padding:32px\"><h2 style=\"color:#e53238;margin-top:0\">Your seller account has been suspended</h2><p>We've suspended your eBay seller account due to a policy violation. You have <strong>7 days</strong> to appeal this decision before it becomes permanent.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0064d2;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Appeal Suspension</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Retail",
+    "tags": [
+      "eBay",
+      "seller",
+      "account"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Costco Membership Renewal",
+    "subject": "Costco: Your membership expires this month",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#005daa;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Costco Wholesale</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your membership is expiring</h2><p>Your Costco Executive Membership expires at the end of this month. Renew now to continue enjoying member pricing and your 2% annual reward.</p><div style=\"background:#f5f5f5;border-radius:4px;padding:16px;margin:20px 0\"><strong>Membership type:</strong> Executive<br><strong>Annual fee:</strong> $130<br><strong>Your 2% reward earned:</strong> $87.40</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#005daa;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Renew Membership</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Retail",
+    "tags": [
+      "Costco",
+      "membership",
+      "renewal"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "CrowdStrike Threat Alert",
+    "subject": "CrowdStrike: Active threat detected on endpoint",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#e2002a;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">CrowdStrike Falcon</span></div><div style=\"padding:32px\"><h2 style=\"color:#e2002a;margin-top:0\">Active threat detected</h2><p>CrowdStrike Falcon has detected a high-severity threat on a managed endpoint in your organization. Immediate action is required.</p><div style=\"background:#fdf3f2;border:1px solid #e2002a;border-radius:4px;padding:16px;margin:20px 0\"><strong>Severity:</strong> Critical<br><strong>Threat:</strong> Ransomware behavior detected<br><strong>Endpoint:</strong> DESKTOP-HR-047<br><strong>User:</strong> j.smith@company.com</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e2002a;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Threat Details</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "CrowdStrike",
+      "endpoint",
+      "threat"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "GitHub Repository Access Alert",
+    "subject": "GitHub: A new SSH key was added to your account",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#24292f;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Octicons-mark-github.svg/50px-Octicons-mark-github.svg.png\" alt=\"GitHub\" style=\"height:28px;filter:invert(1)\"></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">New SSH key added</h2><p>A new SSH key was recently added to your GitHub account. If you did not add this key, your account may be compromised.</p><div style=\"background:#f6f8fa;border:1px solid #d0d7de;border-radius:6px;padding:16px;margin:20px 0;font-family:monospace;font-size:13px\">Key fingerprint: SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2da44e;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;display:inline-block\">Review SSH Keys</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "GitHub",
+      "SSH",
+      "developer"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Okta MFA Enrollment Required",
+    "subject": "Okta: Multi-factor authentication enrollment required",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#007dc1;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Okta</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">MFA enrollment required</h2><p>Your organization requires all users to enroll in multi-factor authentication. You must complete enrollment by <strong>end of this week</strong> or your account will be locked.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#007dc1;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Enroll in MFA</a></p><p style=\"font-size:12px;color:#555\">Okta, Inc., 100 First Street, Suite 600, San Francisco, CA 94105</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Okta",
+      "MFA",
+      "identity"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "LastPass Master Password Reset",
+    "subject": "LastPass: Your master password needs to be reset",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#d32d27;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">LastPass</span></div><div style=\"padding:32px\"><h2 style=\"color:#d32d27;margin-top:0\">Security notice: Reset required</h2><p>Following a recent security review, LastPass requires you to reset your master password. This is a mandatory security measure affecting all accounts.</p><p>You must complete this reset within <strong>48 hours</strong> to maintain access to your vault.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#d32d27;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Reset Master Password</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "LastPass",
+      "password manager",
+      "credentials"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "VPN Certificate Expired",
+    "subject": "IT Alert: Your VPN certificate has expired — remote access blocked",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e0e0e0;border-radius:8px\"><div style=\"background:#1565c0;padding:16px;border-radius:6px 6px 0 0;text-align:center\"><h2 style=\"color:white;margin:0\">IT Security — VPN Notice</h2></div><div style=\"padding:24px\"><p>Dear Employee,</p><p>Your VPN client certificate has expired. You are currently unable to connect to the corporate network remotely until you renew your certificate.</p><p>Click below to download and install the updated certificate:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1565c0;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Renew VPN Certificate</a></p><p style=\"font-size:12px;color:#666\">IT Help Desk | ext. 4357 | helpdesk@company.com</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "VPN",
+      "certificate",
+      "remote access"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft Azure Cost Alert",
+    "subject": "Azure: Your monthly spend has exceeded budget threshold",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0078d4;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Microsoft Azure</span></div><div style=\"padding:32px\"><h2 style=\"color:#d83b01;margin-top:0\">Budget alert: Threshold exceeded</h2><p>Your Azure subscription has exceeded your configured budget threshold. Unusual resource provisioning may indicate unauthorized access.</p><div style=\"background:#fef0cd;border-left:4px solid #f7c948;padding:12px 16px;margin:20px 0\"><strong>Current spend:</strong> $8,247 (Budget: $2,000)<br><strong>Overage:</strong> 312% above budget</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;display:inline-block\">Review Azure Portal</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Azure",
+      "cloud",
+      "billing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Canvas LMS Course Deadline",
+    "subject": "Canvas: Assignment due in 24 hours — submit now",
+    "htmlBody": "<div style=\"font-family:Lato,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#e66000;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Canvas</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Assignment due in 24 hours</h2><p>You have an assignment due tomorrow that has not been submitted. Late submissions will receive a 50% grade penalty.</p><div style=\"background:#fff8e1;border:1px solid #e66000;border-radius:4px;padding:16px;margin:20px 0\"><strong>Course:</strong> MGMT 4820 — Business Ethics<br><strong>Assignment:</strong> Case Study Analysis #3<br><strong>Due:</strong> Tomorrow at 11:59 PM</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e66000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Submit Assignment</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Education",
+    "tags": [
+      "Canvas",
+      "education",
+      "LMS"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Student Loan Forgiveness Program",
+    "subject": "Federal Student Aid: You qualify for loan forgiveness",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003366;padding:16px 24px\"><span style=\"color:#fff;font-size:16px;font-weight:bold\">Federal Student Aid | U.S. Department of Education</span></div><div style=\"padding:32px\"><h2 style=\"color:#003366;margin-top:0\">You may qualify for loan forgiveness</h2><p>Based on your federal student loan history, you may qualify for the Public Service Loan Forgiveness (PSLF) program. This could eliminate your remaining loan balance.</p><p>To check your eligibility and apply, access your Federal Student Aid account:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003366;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Check My Eligibility</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Education",
+    "tags": [
+      "student loan",
+      "federal",
+      "forgiveness"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Zillow Home Value Alert",
+    "subject": "Zillow: Your home value has changed significantly",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#006aff;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Zillow_logo.svg/200px-Zillow_logo.svg.png\" alt=\"Zillow\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your home value has changed</h2><p>Your Zillow Zestimate has changed by more than 8% in the last 30 days. This may affect your home equity and refinancing options.</p><div style=\"background:#e8f4fd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Previous estimate:</strong> $487,000<br><strong>Current estimate:</strong> $524,000 (+7.6%)</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#006aff;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Home Details</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Real Estate",
+    "tags": [
+      "Zillow",
+      "real estate",
+      "home value"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Rocket Mortgage Refinance Offer",
+    "subject": "Rocket Mortgage: Lock in 5.2% rate before it expires",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#cc0000;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Rocket Mortgage</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your rate lock expires in 48 hours</h2><p>Your pre-approved refinance rate of <strong>5.2% APR</strong> expires in 48 hours. Based on your current mortgage, refinancing could save you $347/month.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#cc0000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Lock My Rate</a></p><p style=\"font-size:12px;color:#555\">Rocket Mortgage, LLC, 1050 Woodward Avenue, Detroit, MI 48226</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Rocket Mortgage",
+      "refinance",
+      "mortgage"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Wire Transfer Closing Instructions",
+    "subject": "URGENT: Wire instructions for your real estate closing tomorrow",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><p>Dear Client,</p><p>Please be advised that our escrow company has updated their banking information. The wire instructions you received previously are no longer valid. Please use the following updated instructions for tomorrow's closing:</p><div style=\"border:1px solid #ddd;padding:16px;border-radius:4px;margin:16px 0;background:#f9f9f9\"><strong>Bank:</strong> First American Title<br><strong>Routing:</strong> 026009593<br><strong>Account:</strong> 7834920184<br><strong>Amount:</strong> Per your HUD-1 statement</div><p>Please confirm receipt and wire the funds before 2:00 PM tomorrow. If you have any questions, please access our secure client portal:</p><p><a href=\"{{TRACKING_LINK}}\">Access Closing Portal</a></p><p>Best regards,<br>Jennifer Walsh<br>Closing Coordinator</p></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "Real Estate",
+    "tags": [
+      "wire fraud",
+      "real estate",
+      "closing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "State Farm Policy Renewal",
+    "subject": "State Farm: Your auto policy renews in 7 days",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#cc0000;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">State Farm</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your policy renews in 7 days</h2><p>Your State Farm auto insurance policy is scheduled to renew in 7 days. Your premium has increased by 12% due to recent claims in your area.</p><p>Review your policy and payment options before renewal:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#cc0000;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review My Policy</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Insurance",
+    "tags": [
+      "State Farm",
+      "insurance",
+      "auto"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "GEICO Claim Status Update",
+    "subject": "GEICO: Update required on your open claim",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#003087;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">GEICO</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Action required on your claim</h2><p>Your GEICO claim requires additional documentation before we can process your payment. Please submit the required information within <strong>5 business days</strong> to avoid claim denial.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#003087;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Submit Documentation</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Insurance",
+    "tags": [
+      "GEICO",
+      "insurance",
+      "claim"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Zoom Webinar Registration Confirmation",
+    "subject": "You're registered: Cybersecurity Best Practices Webinar",
+    "htmlBody": "<div style=\"font-family:Lato,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#2d8cff;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">zoom</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">You're registered!</h2><p>Thank you for registering for the upcoming webinar.</p><div style=\"border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin:20px 0\"><strong>Webinar:</strong> 2025 Cybersecurity Threat Landscape<br><strong>Date:</strong> Thursday at 2:00 PM ET<br><strong>Host:</strong> CISA & NIST Joint Briefing</div><p>Add to your calendar and join using the link below:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2d8cff;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;display:inline-block\">Join Webinar</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Zoom",
+      "webinar",
+      "registration"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft Authenticator App Prompt",
+    "subject": "Approve sign-in request in Microsoft Authenticator",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f3f2f1;padding:20px;text-align:center;border-bottom:1px solid #ddd\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Microsoft_logo.svg/200px-Microsoft_logo.svg.png\" alt=\"Microsoft\" style=\"height:24px\"></div><div style=\"padding:32px;text-align:center\"><div style=\"font-size:48px;margin-bottom:16px\">🔐</div><h2 style=\"color:#323130\">Approve sign-in request</h2><p style=\"color:#605e5c\">A sign-in request is waiting for your approval in the Microsoft Authenticator app. If you can't access the app, verify here:</p><div style=\"background:#f3f2f1;border-radius:4px;padding:16px;margin:20px 0;text-align:left\"><strong>App:</strong> Microsoft 365<br><strong>Location:</strong> Seattle, WA<br><strong>Time:</strong> Just now</div><p><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;display:inline-block\">Approve Sign-In</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "MFA",
+      "authenticator"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "IT Asset Return Request",
+    "subject": "IT: Please return company equipment before your last day",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e0e0e0;border-radius:8px\"><div style=\"background:#1565c0;padding:16px;border-radius:6px 6px 0 0;text-align:center\"><h2 style=\"color:white;margin:0\">IT Asset Management</h2></div><div style=\"padding:24px\"><p>Dear Employee,</p><p>Our records indicate you have company-issued equipment that must be returned. Please complete the equipment return form and schedule a pickup or drop-off.</p><div style=\"border:1px solid #ddd;padding:16px;border-radius:4px;margin:16px 0\"><strong>Assets on record:</strong><br>• Dell Laptop (SN: DL8472918)<br>• iPhone 14 Pro (SN: IP9283741)<br>• Security badge</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1565c0;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Schedule Equipment Return</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "IT",
+      "equipment",
+      "offboarding"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Bonus Payment Notification",
+    "subject": "Payroll: Your Q4 bonus has been processed",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><div style=\"background:#2e7d32;padding:16px;text-align:center;border-radius:6px 6px 0 0\"><h2 style=\"color:white;margin:0\">Payroll Services</h2></div><div style=\"border:1px solid #ddd;padding:24px\"><p>Dear Employee,</p><p>We are pleased to inform you that your Q4 performance bonus has been approved and processed. The amount will be reflected in your next paycheck.</p><div style=\"background:#f1f8e9;border:1px solid #2e7d32;border-radius:4px;padding:16px;margin:16px 0\"><strong>Bonus amount:</strong> $4,750.00<br><strong>Pay date:</strong> Next Friday</div><p>To view your bonus breakdown and tax withholding details, log in to the employee portal:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2e7d32;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Bonus Details</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "bonus",
+      "payroll",
+      "HR"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Phishing Test Awareness Training",
+    "subject": "You clicked a phishing link — required training assigned",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e0e0e0;border-radius:8px\"><div style=\"background:#e65100;padding:16px;border-radius:6px 6px 0 0;text-align:center\"><h2 style=\"color:white;margin:0\">Information Security</h2></div><div style=\"padding:24px\"><p>Dear Employee,</p><p>Our records show that you recently clicked a link in a simulated phishing email. As a result, you have been assigned mandatory security awareness training.</p><p>You must complete this training within <strong>5 business days</strong>.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#e65100;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Complete Required Training</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "security awareness",
+      "training",
+      "phishing test"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Concur Expense Report Approval",
+    "subject": "SAP Concur: Your expense report requires manager approval",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0070f2;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">SAP Concur</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Expense report pending approval</h2><p>Your expense report has been submitted and is awaiting manager approval. Please log in to verify the report details before it is reviewed.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Report:</strong> Q4 Travel Expenses<br><strong>Total:</strong> $2,847.50<br><strong>Submitted:</strong> Today</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0070f2;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review Expense Report</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Concur",
+      "expense",
+      "SAP"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft Planner Task Overdue",
+    "subject": "Microsoft Planner: You have 5 overdue tasks",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#31752f;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Microsoft Planner</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">You have overdue tasks</h2><p>You have <strong>5 overdue tasks</strong> in Microsoft Planner that require your attention. Your team is waiting on these items.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><p style=\"margin:0;color:#d83b01\">⚠ Q4 Report Review — 3 days overdue<br>⚠ Budget Approval — 1 day overdue<br>⚠ Client Presentation Prep — Due today</p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#31752f;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View My Tasks</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "Planner",
+      "tasks"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Robinhood Account Verification",
+    "subject": "Robinhood: Verify your account to continue trading",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#00c805;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Robinhood</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Account verification required</h2><p>To comply with SEC regulations, we need to verify your identity before you can continue trading. Your account has been temporarily restricted.</p><p>This verification takes less than 2 minutes:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#00c805;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify My Identity</a></p><p style=\"font-size:12px;color:#555\">Robinhood Markets, Inc., 85 Willow Road, Menlo Park, CA 94025</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Robinhood",
+      "investing",
+      "trading"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Coinbase Crypto Withdrawal Alert",
+    "subject": "Coinbase: Large withdrawal initiated from your account",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0052ff;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/24x7vc_Coinbase.png/200px-24x7vc_Coinbase.png\" alt=\"Coinbase\" style=\"height:24px\"></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Withdrawal alert</h2><p>A withdrawal of <strong>2.4 BTC ($98,400)</strong> was initiated from your Coinbase account. If you did not authorize this transaction, cancel it immediately.</p><div style=\"background:#fdf3f2;border:1px solid #d0021b;border-radius:4px;padding:16px;margin:20px 0\"><strong>Amount:</strong> 2.4 BTC (~$98,400)<br><strong>Destination:</strong> External wallet<br><strong>Status:</strong> Pending (30 min to cancel)</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#d0021b;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Cancel Withdrawal</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "Coinbase",
+      "crypto",
+      "withdrawal"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Outlook Calendar Invite — Board Meeting",
+    "subject": "Invitation: Emergency Board Meeting — Today 4:00 PM",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0078d4;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Microsoft Outlook</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Meeting Invitation</h2><p><strong>Patricia Chen</strong> has invited you to a meeting.</p><div style=\"border:1px solid #edebe9;border-radius:4px;padding:20px;margin:20px 0\"><strong>Subject:</strong> Emergency Board Meeting — Q4 Results<br><strong>When:</strong> Today, 4:00 PM – 5:30 PM<br><strong>Where:</strong> Microsoft Teams (link below)<br><strong>Organizer:</strong> CEO Office</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:#fff;padding:12px 28px;text-decoration:none;border-radius:2px;display:inline-block\">Accept and Join Meeting</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Outlook",
+      "calendar",
+      "meeting"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Stripe Payment Processing Alert",
+    "subject": "Stripe: Your payout has been paused",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#635bff;padding:16px 24px\"><img src=\"https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Stripe_Logo%2C_revised_2016.svg/200px-Stripe_Logo%2C_revised_2016.svg.png\" alt=\"Stripe\" style=\"height:24px;filter:brightness(0) invert(1)\"></div><div style=\"padding:32px\"><h2 style=\"color:#635bff;margin-top:0\">Your payouts have been paused</h2><p>We've paused payouts to your bank account while we review some recent activity on your Stripe account. This may affect your cash flow.</p><div style=\"background:#f6f5ff;border:1px solid #635bff;border-radius:4px;padding:16px;margin:20px 0\"><strong>Funds on hold:</strong> $12,847.00<br><strong>Reason:</strong> Elevated dispute rate</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#635bff;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review Account</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Stripe",
+      "payments",
+      "payout"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Twilio Account Suspended",
+    "subject": "Twilio: Your account has been suspended for policy violation",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f22f46;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Twilio</span></div><div style=\"padding:32px\"><h2 style=\"color:#f22f46;margin-top:0\">Account suspended</h2><p>Your Twilio account has been suspended due to a potential policy violation. All API calls are currently blocked.</p><p>To restore your account, please review the flagged activity and verify your account details:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f22f46;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review and Restore Account</a></p></div></div>",
+    "difficulty": "hard",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Twilio",
+      "API",
+      "developer"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Jira Sprint Deadline Alert",
+    "subject": "Jira: Sprint ends tomorrow — 8 tickets unresolved",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0052cc;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Jira</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Sprint ending tomorrow</h2><p>Your current sprint ends tomorrow and you have <strong>8 unresolved tickets</strong> assigned to you. Please update your ticket statuses.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><p style=\"margin:0;color:#d0021b\">🔴 PROJ-1847 — Critical bug in auth flow<br>🔴 PROJ-1851 — API timeout issue<br>🟡 PROJ-1863 — UI alignment fix<br><span style=\"color:#555\">+ 5 more tickets</span></p></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0052cc;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View My Tickets</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Jira",
+      "Atlassian",
+      "sprint"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Confluence Page Review Request",
+    "subject": "Confluence: Your review is needed on a critical document",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0052cc;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Confluence</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Review requested</h2><p><strong>Alex Thompson</strong> has requested your review on a Confluence page before it is published to all staff.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Page:</strong> 2025 Security Incident Response Plan<br><strong>Space:</strong> IT Security<br><strong>Deadline:</strong> Today by 5:00 PM</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0052cc;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Review Page</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Confluence",
+      "Atlassian",
+      "documentation"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Intuit TurboTax Filing Alert",
+    "subject": "TurboTax: Your tax return requires additional information",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#355fa3;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">TurboTax</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your return needs attention</h2><p>The IRS has flagged your 2024 tax return for additional review. You must provide supplemental documentation within <strong>21 days</strong> to avoid processing delays or penalties.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#355fa3;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Respond to IRS Notice</a></p><p style=\"font-size:12px;color:#555\">Intuit Inc., 2700 Coast Avenue, Mountain View, CA 94043</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "TurboTax",
+      "tax",
+      "Intuit"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Zoom Account Compromised",
+    "subject": "Zoom: Unauthorized access to your account detected",
+    "htmlBody": "<div style=\"font-family:Lato,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#2d8cff;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">zoom</span></div><div style=\"padding:32px\"><h2 style=\"color:#d0021b;margin-top:0\">Unauthorized access detected</h2><p>We detected a sign-in to your Zoom account from an unrecognized device. Your meeting recordings and contacts may have been accessed.</p><div style=\"background:#fdf3f2;border:1px solid #d0021b;border-radius:4px;padding:16px;margin:20px 0\"><strong>Device:</strong> Unknown Android device<br><strong>Location:</strong> Toronto, Canada<br><strong>Time:</strong> Today, 1:23 AM</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2d8cff;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Secure My Account</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Zoom",
+      "account",
+      "security"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Glassdoor Company Review Alert",
+    "subject": "Glassdoor: A new review has been posted about your company",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#0caa41;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Glassdoor</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">New review posted</h2><p>A new employee review has been posted about your company on Glassdoor. The review contains content that may require your attention.</p><div style=\"background:#f5f5f5;border-radius:4px;padding:16px;margin:20px 0\"><strong>Rating:</strong> ⭐ 1/5<br><strong>Title:</strong> \"Toxic management and no work-life balance\"<br><strong>Posted:</strong> Today</div><p>As an employer representative, you can respond to this review:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0caa41;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View and Respond</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Glassdoor",
+      "HR",
+      "employer brand"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Calendly Meeting Scheduled",
+    "subject": "New meeting scheduled: Interview with Google Recruiter",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#006bff;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Calendly</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Meeting confirmed</h2><p>A meeting has been scheduled on your behalf.</p><div style=\"border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin:20px 0\"><strong>Event:</strong> Technical Interview — Senior Engineer<br><strong>Invitee:</strong> Jessica Park, Google Recruiting<br><strong>Date:</strong> Tomorrow, 10:00 AM – 11:00 AM ET<br><strong>Location:</strong> Google Meet</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#006bff;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">View Event Details</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Calendly",
+      "meeting",
+      "scheduling"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Notion Workspace Invitation",
+    "subject": "You've been invited to join a Notion workspace",
+    "htmlBody": "<div style=\"font-family:-apple-system,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#000;padding:16px 24px;text-align:center\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">Notion</span></div><div style=\"padding:40px;text-align:center\"><h2 style=\"color:#000\">You've been invited to join a workspace</h2><p style=\"color:#787774\"><strong>Marcus Johnson</strong> has invited you to join the <strong>AcmeCorp Operations</strong> workspace on Notion.</p><p style=\"margin:32px 0\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#000;color:#fff;padding:14px 32px;text-decoration:none;border-radius:4px;display:inline-block\">Accept Invitation</a></p><p style=\"font-size:12px;color:#787774\">Notion Labs, Inc., 2300 Harrison Street, San Francisco, CA 94110</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Technology",
+    "tags": [
+      "Notion",
+      "workspace",
+      "productivity"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Figma Design File Shared",
+    "subject": "Amanda Torres shared a Figma file with you",
+    "htmlBody": "<div style=\"font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f24e1e;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Figma</span></div><div style=\"padding:32px\"><p>Amanda Torres has shared a file with you.</p><div style=\"border:1px solid #e5e5e5;border-radius:8px;padding:20px;margin:20px 0\"><div style=\"background:#f24e1e;width:40px;height:40px;border-radius:8px;margin-bottom:12px\"></div><strong>2025 Brand Redesign — Final</strong><br><span style=\"color:#888;font-size:13px\">Figma file • 47 frames</span></div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f24e1e;color:#fff;padding:12px 28px;text-decoration:none;border-radius:6px;display:inline-block\">Open in Figma</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Creative",
+    "tags": [
+      "Figma",
+      "design",
+      "file sharing"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Asana Project Deadline Missed",
+    "subject": "Asana: You missed a project deadline",
+    "htmlBody": "<div style=\"font-family:Graphik,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#f06a6a;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Asana</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">You missed a deadline</h2><p>A task assigned to you in Asana is now overdue. Your project manager has been notified.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0;border-left:4px solid #f06a6a\"><strong>Task:</strong> Q4 Financial Reconciliation Report<br><strong>Project:</strong> Finance — Year End Close<br><strong>Was due:</strong> Yesterday at 5:00 PM</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f06a6a;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Update Task Status</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Asana",
+      "project management",
+      "deadline"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "HubSpot CRM Deal Alert",
+    "subject": "HubSpot: High-value deal at risk of closing lost",
+    "htmlBody": "<div style=\"font-family:Lexend,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#ff7a59;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">HubSpot</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Deal at risk</h2><p>A high-value deal in your HubSpot CRM pipeline has not been updated in 14 days and is at risk of being marked as Closed Lost.</p><div style=\"border:1px solid #ddd;border-radius:4px;padding:16px;margin:20px 0\"><strong>Deal:</strong> Acme Corp — Enterprise License<br><strong>Value:</strong> $84,000<br><strong>Stage:</strong> Proposal Sent<br><strong>Last activity:</strong> 14 days ago</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#ff7a59;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Update Deal</a></p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Sales",
+    "tags": [
+      "HubSpot",
+      "CRM",
+      "sales"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Zoom Recording Shared",
+    "subject": "A Zoom recording has been shared with you",
+    "htmlBody": "<div style=\"font-family:Lato,Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#2d8cff;padding:16px 24px\"><span style=\"color:#fff;font-size:20px;font-weight:bold\">zoom</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">A recording has been shared with you</h2><p><strong>David Williams</strong> has shared a Zoom cloud recording with you.</p><div style=\"border:1px solid #e0e0e0;border-radius:8px;padding:20px;margin:20px 0\"><strong>Meeting:</strong> Executive Leadership Briefing — Q4<br><strong>Duration:</strong> 1 hour 23 minutes<br><strong>Shared by:</strong> David Williams (CEO)</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2d8cff;color:#fff;padding:14px 32px;text-decoration:none;border-radius:8px;display:inline-block\">Watch Recording</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Zoom",
+      "recording",
+      "video"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Microsoft Forms Survey Link",
+    "subject": "Please complete: Annual Employee Satisfaction Survey",
+    "htmlBody": "<div style=\"font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#fff\"><div style=\"background:#742774;padding:16px 24px\"><span style=\"color:#fff;font-size:18px;font-weight:bold\">Microsoft Forms</span></div><div style=\"padding:32px\"><h2 style=\"margin-top:0\">Your feedback is needed</h2><p>HR has sent you the Annual Employee Satisfaction Survey. Your responses are anonymous and will be used to improve our workplace.</p><p>The survey takes approximately 5 minutes to complete. <strong>Deadline: This Friday.</strong></p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#742774;color:#fff;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Take Survey</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "Microsoft",
+      "Forms",
+      "survey"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "IT Password Reset — Active Directory",
+    "subject": "URGENT: Your corporate password will expire in 24 hours",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e0e0e0;border-radius:8px\"><div style=\"background:#0078d4;padding:16px;border-radius:6px 6px 0 0;text-align:center\"><h2 style=\"color:white;margin:0\">IT Security Notice</h2></div><div style=\"padding:24px\"><p>Dear Employee,</p><p>Our system has detected that your corporate password is scheduled to expire in <strong>24 hours</strong>. Failure to update your password will result in account lockout and loss of access to all company systems.</p><p>Please click the link below to update your password immediately:</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0078d4;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Update Password Now</a></p><p style=\"color:#666;font-size:12px\">If you did not request this, please contact IT Support immediately at ext. 4357.</p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "IT",
+      "password",
+      "Active Directory"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Payroll Direct Deposit Update",
+    "subject": "Action needed: Verify your direct deposit information",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><div style=\"background:#1565c0;padding:16px;text-align:center;border-radius:6px 6px 0 0\"><h2 style=\"color:white;margin:0\">Payroll Services</h2></div><div style=\"border:1px solid #ddd;padding:24px\"><p>Dear Employee,</p><p>We are updating our payroll system and require all employees to verify their direct deposit information by <strong>end of business today</strong>.</p><p>Failure to verify may result in a delay in your next paycheck.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#1565c0;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Verify Banking Info</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "payroll",
+      "banking",
+      "direct deposit"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "HR Benefits Open Enrollment Deadline",
+    "subject": "Last chance: Open enrollment closes Friday",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><div style=\"background:#2e7d32;padding:16px;text-align:center;border-radius:6px 6px 0 0\"><h2 style=\"color:white;margin:0\">Human Resources</h2></div><div style=\"border:1px solid #ddd;padding:24px\"><p>Dear Team Member,</p><p>This is your final reminder that <strong>open enrollment for 2025 benefits closes this Friday at 5:00 PM</strong>.</p><p>If you do not complete your enrollment, you will be automatically enrolled in the default plan, which may not meet your needs.</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#2e7d32;color:white;padding:12px 28px;text-decoration:none;border-radius:4px;display:inline-block\">Complete Enrollment</a></p><p style=\"font-size:12px;color:#666\">Questions? Contact HR at hr@company.com</p></div></div>",
+    "difficulty": "medium",
+    "attackType": "credential_harvest",
+    "language": "en",
+    "industry": "Healthcare",
+    "tags": [
+      "HR",
+      "benefits",
+      "enrollment"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "CEO Wire Transfer Request",
+    "subject": "Confidential: Urgent wire transfer needed",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px\"><p>Hi,</p><p>I'm currently in a board meeting and need you to process an urgent wire transfer. This is time-sensitive and confidential — please don't discuss with anyone else until it's complete.</p><p>Amount: <strong>$47,500</strong><br>Please click below to access the secure transfer portal:</p><p><a href=\"{{TRACKING_LINK}}\">Access Secure Transfer Portal</a></p><p>I'll explain the details after the meeting. Please confirm receipt of this email.</p><p>Best,<br>CEO</p></div>",
+    "difficulty": "hard",
+    "attackType": "pretexting",
+    "language": "en",
+    "industry": "Finance",
+    "tags": [
+      "BEC",
+      "CEO fraud",
+      "wire transfer"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "DocuSign Employment Agreement",
+    "subject": "You have a document to review and sign",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#f5f5f5\"><div style=\"background:white;border-radius:8px;overflow:hidden\"><div style=\"background:#1a1a2e;padding:20px;text-align:center\"><h2 style=\"color:white;margin:0\">DocuSign</h2></div><div style=\"padding:30px\"><p>A document has been sent to you for signature.</p><div style=\"background:#f9f9f9;border:1px solid #ddd;padding:16px;border-radius:4px;margin:16px 0\"><strong>Document:</strong> Employment Agreement 2025<br><strong>From:</strong> Legal Department<br><strong>Expires:</strong> 48 hours</div><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#f5a623;color:white;padding:14px 32px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold\">Review Document</a></p></div></div></div>",
+    "difficulty": "medium",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "Legal",
+    "tags": [
+      "DocuSign",
+      "document",
+      "signature"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  },
+  {
+    "name": "Shared File Notification",
+    "subject": "John Smith shared a file with you",
+    "htmlBody": "<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#f0f2f5\"><div style=\"background:white;border-radius:8px;padding:30px\"><div style=\"text-align:center;margin-bottom:20px\"><div style=\"width:48px;height:48px;background:#0061ff;border-radius:8px;margin:0 auto;display:flex;align-items:center;justify-content:center\"><span style=\"color:white;font-size:24px\">📁</span></div></div><h3 style=\"text-align:center\">John Smith shared \"Q4 Financial Report.xlsx\" with you</h3><p style=\"color:#666;text-align:center\">Click below to view the document</p><p style=\"text-align:center\"><a href=\"{{TRACKING_LINK}}\" style=\"background:#0061ff;color:white;padding:12px 28px;text-decoration:none;border-radius:6px;display:inline-block\">Open File</a></p></div></div>",
+    "difficulty": "easy",
+    "attackType": "link_click",
+    "language": "en",
+    "industry": "All Industries",
+    "tags": [
+      "file sharing",
+      "Dropbox",
+      "OneDrive"
+    ],
+    "isBuiltIn": true,
+    "isShared": false,
+    "orgId": null,
+    "createdByUserId": null
+  }
+]

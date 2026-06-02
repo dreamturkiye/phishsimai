@@ -118,8 +118,10 @@ export const templates = mysqlTable("templates", {
   ]).default("credential_harvest").notNull(),
   industry: varchar("industry", { length: 100 }),
   difficulty: mysqlEnum("difficulty", ["easy", "medium", "hard"]).default("medium").notNull(),
+  mspTenantId: int("mspTenantId"),                        // null = not MSP template; set = MSP private template
   isBuiltIn: boolean("isBuiltIn").default(false).notNull(),
   isShared: boolean("isShared").default(false).notNull(),   // shared to community
+  isMspTemplate: boolean("isMspTemplate").default(false).notNull(), // MSP private template
   tags: json("tags").$type<string[]>().default([]),
   usageCount: int("usageCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -128,6 +130,7 @@ export const templates = mysqlTable("templates", {
   index("templates_orgId_idx").on(t.orgId),
   index("templates_isBuiltIn_idx").on(t.isBuiltIn),
   index("templates_isShared_idx").on(t.isShared),
+  index("templates_mspTenantId_idx").on(t.mspTenantId),
 ]);
 
 export type Template = typeof templates.$inferSelect;

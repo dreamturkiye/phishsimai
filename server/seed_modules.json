@@ -1,0 +1,222 @@
+[
+  {
+    "title": "Phishing Awareness 101",
+    "description": "Learn to identify phishing emails before they compromise your organization.",
+    "category": "Security Fundamentals",
+    "content": "# Phishing Awareness 101\n\nPhishing is the #1 attack vector in cybersecurity.\n\n## Key Warning Signs\n- Urgency or threats\n- Mismatched sender domains\n- Generic greetings\n- Suspicious links\n- Unexpected attachments\n\n## The Hover Test\nAlways hover over links to see the real URL before clicking.\n\n## What To Do\n1. Don't click any links\n2. Report to IT Security\n3. Delete the email",
+    "durationMinutes": 4,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 0
+  },
+  {
+    "title": "Password Hygiene & Management",
+    "description": "Best practices for creating and managing strong, unique passwords.",
+    "category": "Security Fundamentals",
+    "content": "# Password Hygiene & Management\n\nWeak passwords are the second most common cause of data breaches.\n\n## Strong Password Rules\n- Minimum 12 characters\n- Mix of uppercase, lowercase, numbers, symbols\n- Never reuse passwords\n- Use a passphrase\n\n## Password Managers\nUse a password manager to generate and store unique passwords.\n\n## Multi-Factor Authentication\nAlways enable MFA on email, banking, and work accounts.",
+    "durationMinutes": 5,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 1
+  },
+  {
+    "title": "Social Engineering Defense",
+    "description": "Recognize and resist psychological manipulation tactics used by attackers.",
+    "category": "Social Engineering",
+    "content": "# Social Engineering Defense\n\nSocial engineering exploits human psychology, not technology.\n\n## Common Tactics\n- Authority: Impersonating executives or IT\n- Urgency: Act now or lose access\n- Scarcity: Only 1 hour left\n\n## Defense Strategies\n1. Verify identity through a separate channel\n2. Never give credentials over phone or email\n3. It is OK to say I need to verify this first\n4. Report suspicious requests to your manager",
+    "durationMinutes": 5,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 2
+  },
+  {
+    "title": "HIPAA Security Awareness",
+    "description": "Understand your obligations under HIPAA to protect patient health information.",
+    "category": "Compliance",
+    "content": "# HIPAA Security Awareness\n\nHIPAA requires covered entities to protect Protected Health Information (PHI).\n\n## What is PHI?\nAny information that can identify a patient: name, DOB, SSN, medical record numbers, diagnosis, treatment.\n\n## Your Obligations\n- Only access PHI you need for your job\n- Never share PHI via unencrypted email\n- Lock your screen when away from your desk\n- Report any suspected breach immediately\n\n## Phishing and HIPAA\nPhishing is the #1 cause of healthcare data breaches. A single click can expose thousands of patient records.",
+    "durationMinutes": 5,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 3
+  },
+  {
+    "title": "PCI DSS Cardholder Data Protection",
+    "description": "Protect payment card data and meet PCI DSS v4.0 requirements.",
+    "category": "Compliance",
+    "content": "# PCI DSS Cardholder Data Protection\n\nPCI DSS v4.0 Requirement 12.6.3 mandates phishing simulation training.\n\n## What is Cardholder Data?\n- Primary Account Number (PAN)\n- Cardholder name, expiration date\n- CVV/CVC codes (never store these)\n\n## Your Responsibilities\n- Never write down or photograph card numbers\n- Never send card data via email or chat\n- Use only approved payment systems\n- Report any suspected card data exposure immediately",
+    "durationMinutes": 5,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 4
+  },
+  {
+    "title": "GDPR Data Privacy Fundamentals",
+    "description": "Understand GDPR requirements for handling personal data of EU residents.",
+    "category": "Compliance",
+    "content": "# GDPR Data Privacy Fundamentals\n\nGDPR applies to any organization handling data of EU residents.\n\n## Key Principles\n- Lawful basis: Have a legal reason to process data\n- Data minimization: Collect only what you need\n- Purpose limitation: Use data only for stated purposes\n\n## Individual Rights\nEU residents have the right to access, correct, and delete their data.\n\n## Breach Notification\nGDPR requires breach notification within 72 hours.",
+    "durationMinutes": 4,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 5
+  },
+  {
+    "title": "Ransomware Prevention & Response",
+    "description": "How ransomware works and how to prevent and respond to attacks.",
+    "category": "Threat Awareness",
+    "content": "# Ransomware Prevention & Response\n\nRansomware cost organizations $20 billion globally in 2023.\n\n## How Ransomware Spreads\n1. Phishing email with malicious attachment\n2. Compromised credentials\n3. Unpatched software\n4. Malicious USB drives\n\n## Prevention\n- Never open unexpected attachments\n- Keep software updated\n- Use MFA on all remote access\n- Back up data regularly\n\n## If You Suspect Infection\n1. Disconnect from the network immediately\n2. Do not pay the ransom\n3. Call IT Security immediately",
+    "durationMinutes": 5,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 6
+  },
+  {
+    "title": "Safe Web Browsing",
+    "description": "Identify malicious websites and practice safe browsing habits.",
+    "category": "Security Fundamentals",
+    "content": "# Safe Web Browsing\n\nMalicious websites can install malware or steal credentials.\n\n## URL Red Flags\n- Misspellings: paypa1.com, arnazon.com\n- Extra subdomains: login.microsoft.com.evil.com\n- HTTP (not HTTPS) for login pages\n\n## Safe Browsing Habits\n- Type URLs directly instead of clicking links\n- Check for the padlock icon (HTTPS)\n- Do not download software from unofficial sites\n- Keep your browser updated",
+    "durationMinutes": 3,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 7
+  },
+  {
+    "title": "Mobile Device Security",
+    "description": "Secure your smartphone and tablet against common threats.",
+    "category": "Security Fundamentals",
+    "content": "# Mobile Device Security\n\nMobile devices are increasingly targeted because they carry sensitive data.\n\n## Essential Security Steps\n- Use a strong PIN or biometric lock\n- Enable full-disk encryption\n- Keep OS and apps updated\n- Only install apps from official stores\n- Enable remote wipe capability\n\n## Mobile Phishing\nSMS phishing (smishing) is growing rapidly. The small screen makes it harder to spot fake URLs.",
+    "durationMinutes": 4,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 8
+  },
+  {
+    "title": "Business Email Compromise (BEC)",
+    "description": "Recognize and prevent costly BEC attacks including CEO fraud and wire transfer scams.",
+    "category": "Social Engineering",
+    "content": "# Business Email Compromise (BEC)\n\nBEC caused $2.9 billion in losses in 2023.\n\n## Common BEC Scenarios\n- CEO Fraud: Attacker impersonates CEO requesting urgent wire transfer\n- Vendor Impersonation: Fake invoice with changed bank details\n- Payroll Diversion: Request to change direct deposit\n\n## Red Flags\n- Urgency and secrecy\n- Request to bypass normal approval processes\n- New bank account or wire instructions\n\n## Defense\nAlways verify wire transfers via a phone call to a known number.",
+    "durationMinutes": 5,
+    "difficulty": "advanced",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 9
+  },
+  {
+    "title": "Insider Threat Awareness",
+    "description": "Understand how insider threats occur and how to report concerns safely.",
+    "category": "Threat Awareness",
+    "content": "# Insider Threat Awareness\n\nInsider threats account for 34% of all data breaches.\n\n## Types of Insider Threats\n- Malicious: Employee intentionally stealing data\n- Negligent: Employee accidentally exposing data\n- Compromised: Employee credentials stolen by an attacker\n\n## Warning Signs\n- Accessing data outside normal job scope\n- Downloading large amounts of data before resignation\n- Bypassing security controls\n\n## How to Report\nReport concerns to your manager, HR, or anonymously through the ethics hotline.",
+    "durationMinutes": 4,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 10
+  },
+  {
+    "title": "Physical Security & Tailgating",
+    "description": "Protect physical access to your workplace and prevent tailgating.",
+    "category": "Physical Security",
+    "content": "# Physical Security & Tailgating\n\nPhysical security breaches can be just as damaging as cyber attacks.\n\n## Tailgating\nNever hold doors open for people you do not recognize. Direct them to reception.\n\n## Clean Desk Policy\n- Lock your computer when away from your desk\n- Do not leave sensitive documents visible\n- Shred documents before discarding\n- Do not write passwords on sticky notes\n\n## Visitor Management\n- All visitors must sign in and wear a badge\n- Escort visitors at all times",
+    "durationMinutes": 3,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 11
+  },
+  {
+    "title": "Secure Remote Work Practices",
+    "description": "Stay secure while working from home or public locations.",
+    "category": "Security Fundamentals",
+    "content": "# Secure Remote Work Practices\n\nRemote work has expanded the attack surface significantly.\n\n## Home Network Security\n- Use your company VPN at all times\n- Change your router default password\n- Keep router firmware updated\n- Use WPA3 or WPA2 encryption\n\n## Physical Security at Home\n- Position your screen away from windows\n- Use a privacy screen filter\n- Lock your computer when stepping away\n\n## Video Calls\n- Be aware of what is visible in your background\n- Verify meeting links before joining",
+    "durationMinutes": 5,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 12
+  },
+  {
+    "title": "Cloud Security Basics",
+    "description": "Understand cloud security risks and best practices for using SaaS and cloud services.",
+    "category": "Cloud Security",
+    "content": "# Cloud Security Basics\n\nCloud services are convenient but introduce new security risks if misconfigured.\n\n## Shared Responsibility Model\n- Cloud provider: Secures the infrastructure\n- You: Secure your data, access controls, and configurations\n\n## Common Cloud Risks\n- Misconfigured public storage buckets\n- Weak or shared credentials\n- Excessive permissions\n- Shadow IT (unauthorized cloud services)\n\n## Best Practices\n- Use SSO and MFA for all cloud services\n- Review who has access to shared files regularly\n- Never store sensitive data in personal cloud accounts",
+    "durationMinutes": 5,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 13
+  },
+  {
+    "title": "Incident Reporting & Response",
+    "description": "Know when and how to report a security incident.",
+    "category": "Incident Response",
+    "content": "# Incident Reporting & Response\n\nFast reporting is critical. The average cost of a breach increases by 30% for every week it goes unreported.\n\n## What to Report\n- Clicked a phishing link\n- Opened a suspicious attachment\n- Lost or stolen device\n- Noticed unusual account activity\n\n## How to Report\n1. Do not panic\n2. Contact IT Security immediately\n3. Preserve evidence\n4. Document what happened and when\n\n## What Happens Next\nIT Security will investigate, contain the threat, and notify affected parties.",
+    "durationMinutes": 4,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 14
+  },
+  {
+    "title": "Vishing & Phone Scam Defense",
+    "description": "Recognize voice phishing and phone-based social engineering attacks.",
+    "category": "Social Engineering",
+    "content": "# Vishing & Phone Scam Defense\n\nVishing uses phone calls to steal credentials or financial information.\n\n## Common Vishing Scenarios\n- IT Support Scam: This is Microsoft support, we detected a virus\n- IRS Scam: You owe back taxes and will be arrested\n- Bank Fraud: We detected fraud, please verify your card number\n- Internal IT: This is the help desk, we need your password\n\n## Defense Rules\n- IT will NEVER ask for your password over the phone\n- Hang up and call back on a verified number\n- Report suspicious calls to IT Security",
+    "durationMinutes": 4,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 15
+  },
+  {
+    "title": "USB & Removable Media Security",
+    "description": "Understand the dangers of unknown USB devices and removable media.",
+    "category": "Physical Security",
+    "content": "# USB & Removable Media Security\n\nA USB drive found in a parking lot is one of the oldest attack vectors.\n\n## The Danger\nMalicious USB drives can automatically install malware, emulate a keyboard, or exfiltrate data silently.\n\n## The Rule\nNever plug in a USB drive you did not purchase yourself from a trusted retailer. This includes drives found in parking lots or received as gifts at conferences.\n\n## Authorized Media Only\nUse only company-approved storage devices. Use approved cloud storage for file transfers.",
+    "durationMinutes": 3,
+    "difficulty": "beginner",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 16
+  },
+  {
+    "title": "CMMC & DFARS Compliance Overview",
+    "description": "Security requirements for defense contractors under CMMC Level 2 and NIST 800-171.",
+    "category": "Compliance",
+    "content": "# CMMC & DFARS Compliance Overview\n\nDefense contractors handling Controlled Unclassified Information (CUI) must meet CMMC Level 2 requirements.\n\n## What is CMMC?\nCybersecurity Maturity Model Certification requiring contractors to implement 110 security practices from NIST SP 800-171.\n\n## Security Awareness Requirements\nNIST 800-171 Control 3.2.1 requires organizational personnel to be aware of security risks.\n\n## Phishing Simulation Requirement\nControl 3.2.2 requires training personnel to recognize and report potential indicators of insider threat.\n\n## Consequences of Non-Compliance\nLoss of DoD contracts and potential criminal charges under the False Claims Act.",
+    "durationMinutes": 5,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 17
+  },
+  {
+    "title": "NY DFS Part 500 Cybersecurity",
+    "description": "New York cybersecurity regulation requirements for financial services companies.",
+    "category": "Compliance",
+    "content": "# NY DFS Part 500 Cybersecurity Regulation\n\nNY DFS Part 500 applies to all financial services companies licensed in New York.\n\n## Training Requirements\n23 NYCRR 500.14(a) requires regular cybersecurity awareness training for all personnel.\n\n## What the Training Must Cover\n- Social engineering and phishing\n- Secure use of company systems\n- Password management\n- Incident reporting procedures\n\n## Annual Certification\nThe CISO must certify annually to the NY DFS Superintendent that the organization is in compliance.\n\n## Penalties\nNY DFS can impose fines of up to $1,000 per violation per day.",
+    "durationMinutes": 5,
+    "difficulty": "intermediate",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 18
+  },
+  {
+    "title": "Zero Trust Security Principles",
+    "description": "Understand the zero trust model and why perimeter-based security is obsolete.",
+    "category": "Advanced Security",
+    "content": "# Zero Trust Security Principles\n\nNever trust, always verify is the core principle of zero trust.\n\n## Why Zero Trust?\nTraditional perimeter security assumed everything inside the network was safe. Remote work and cloud have made this assumption dangerous.\n\n## Zero Trust Pillars\n- Identity: Verify every user with MFA, every time\n- Device: Only allow managed, compliant devices\n- Network: Micro-segment networks, assume breach\n- Application: Least-privilege access to each app\n\n## What This Means for You\n- You will be asked to authenticate more frequently\n- Access is granted based on need, not location",
+    "durationMinutes": 5,
+    "difficulty": "advanced",
+    "language": "en",
+    "isBuiltIn": true,
+    "sortOrder": 19
+  }
+]

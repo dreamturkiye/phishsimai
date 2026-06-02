@@ -54,7 +54,10 @@ import {
   updateTarget,
   updateTemplate,
 } from "./db";
-import { BUILT_IN_TEMPLATES, BUILT_IN_TRAINING_MODULES } from "./seed";
+import templateData from "./seed_templates.json";
+import moduleData from "./seed_modules.json";
+const BUILT_IN_TEMPLATES = templateData;
+const BUILT_IN_TRAINING_MODULES = moduleData;
 
 // ─── Helper: get org and assert membership ────────────────────────────────────
 async function requireOrgMember(orgId: number, userId: number, requireAdmin = false) {
@@ -366,7 +369,7 @@ Make it realistic and educational. The email should look authentic but contain s
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
-        return createTemplate({ ...input, industry: input.industry ?? null, createdByUserId: ctx.user.id, isBuiltIn: false });
+        return createTemplate({ ...input, industry: input.industry ?? null, createdByUserId: ctx.user.id, isBuiltIn: false, isMspTemplate: false, mspTenantId: null });
       }),
 
     update: protectedProcedure
@@ -415,13 +418,14 @@ Make it realistic and educational. The email should look authentic but contain s
           attackType: source.attackType,
           industry: source.industry,
           difficulty: source.difficulty,
-          isBuiltIn: false,
+                    isBuiltIn: false,
           isShared: false,
+          isMspTemplate: false,
+          mspTenantId: null,
           tags: source.tags,
         });
       }),
   }),
-
   // ─── Campaigns ──────────────────────────────────────────────────────────────
   campaigns: router({
     list: protectedProcedure
@@ -1037,6 +1041,109 @@ Make it realistic and educational. The email should look authentic but contain s
       }).length;
       return { totalCustomers, activeCustomers, totalCampaigns, avgClickRate, atRiskOrgs };
     }),
+    // ─── MSP Template Library ────────────────────────────────────────────────
+    // List all MSP-private templates for this MSP tenant
+    listMspTemplates: protectedProcedure.query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { mspTenants, templates } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+      if (!tenantRows[0]) return [];
+      return db.select().from(templates).where(eq(templates.mspTenantId, tenantRows[0].id));
+    }),
+    // Create a new MSP template
+    createMspTemplate: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        subject: z.string().min(1),
+        htmlBody: z.string().min(1),
+        attackType: z.enum(["credential_harvest", "link_click", "attachment", "vishing", "smishing", "pretexting"]).default("credential_harvest"),
+        difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+        industry: z.string().optional(),
+        tags: z.array(z.string()).default([]),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN", message: "MSP account required" });
+        return createTemplate({
+          name: input.name,
+          subject: input.subject,
+          htmlBody: input.htmlBody,
+          language: "en",
+          attackType: input.attackType,
+          difficulty: input.difficulty,
+          industry: input.industry ?? null,
+          tags: input.tags,
+          orgId: null,
+          createdByUserId: ctx.user.id,
+          isBuiltIn: false,
+          isShared: false,
+          isMspTemplate: true,
+          mspTenantId: tenantRows[0].id,
+        });
+      }),
+    // Delete an MSP template
+    deleteMspTemplate: protectedProcedure
+      .input(z.object({ templateId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants, templates } = await import("../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
+        await db.delete(templates).where(and(eq(templates.id, input.templateId), eq(templates.mspTenantId, tenantRows[0].id)));
+        return { success: true };
+      }),
+    // Push an MSP template to one or all customer orgs
+    pushTemplateToCustomers: protectedProcedure
+      .input(z.object({
+        templateId: z.number(),
+        targetOrgIds: z.array(z.number()).optional(), // empty = push to all customers
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const db = await getDb();
+        if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+        const { mspTenants, mspCustomerOrgs } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
+        const source = await getTemplateById(input.templateId);
+        if (!source || source.mspTenantId !== tenantRows[0].id) throw new TRPCError({ code: "NOT_FOUND" });
+        // Determine target orgs
+        let targetOrgIds = input.targetOrgIds ?? [];
+        if (targetOrgIds.length === 0) {
+          const customers = await db.select().from(mspCustomerOrgs).where(eq(mspCustomerOrgs.mspTenantId, tenantRows[0].id));
+          targetOrgIds = customers.map(c => c.orgId);
+        }
+        // Copy template to each target org
+        let pushed = 0;
+        for (const orgId of targetOrgIds) {
+          await createTemplate({
+            orgId,
+            createdByUserId: ctx.user.id,
+            name: source.name,
+            subject: source.subject,
+            htmlBody: source.htmlBody,
+            language: source.language,
+            attackType: source.attackType,
+            industry: source.industry,
+            difficulty: source.difficulty,
+            isBuiltIn: false,
+            isShared: false,
+            isMspTemplate: false,
+            mspTenantId: null,
+            tags: source.tags,
+          });
+          pushed++;
+        }
+        return { pushed };
+      }),
     // Get activity log
     getActivityLog: protectedProcedure.query(async ({ ctx }) => {
       const db = await getDb();
@@ -1057,17 +1164,18 @@ Make it realistic and educational. The email should look authentic but contain s
     seedBuiltIns: protectedProcedure.mutation(async ({ ctx }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
       // Seed templates
+      type TemplateInsert = Parameters<typeof createTemplate>[0];
       for (const t of BUILT_IN_TEMPLATES) {
-        await createTemplate({ ...t, isBuiltIn: true, isShared: false, orgId: null, createdByUserId: null });
+        await createTemplate({ ...t, isBuiltIn: true, isShared: false, orgId: null, createdByUserId: null } as TemplateInsert);
       }
       // Seed training modules
-      for (const m of BUILT_IN_TRAINING_MODULES) {
-        const existing = await getTrainingModules();
-        if (!existing.find(e => e.title === m.title)) {
-          const db = await import("./db").then(m => m.getDb());
-          if (db) {
-            const { trainingModules } = await import("../drizzle/schema");
-            await db.insert(trainingModules).values(m);
+      const db2 = await getDb();
+      if (db2) {
+        const { trainingModules } = await import("../drizzle/schema");
+        for (const m of BUILT_IN_TRAINING_MODULES) {
+          const existing = await getTrainingModules();
+          if (!existing.find(e => e.title === m.title)) {
+            await db2.insert(trainingModules).values(m as typeof trainingModules.$inferInsert);
           }
         }
       }

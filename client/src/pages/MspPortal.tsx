@@ -17,7 +17,8 @@ import { z } from "zod";
 import {
   Building2, Users, Shield, Plus, Settings, Activity,
   CheckCircle2, AlertCircle, Clock, ExternalLink, Palette,
-  Globe, Mail, Phone, BarChart3, ChevronRight, Zap
+  Globe, Mail, Phone, BarChart3, ChevronRight, Zap,
+  FileText, Send, Trash2, Eye, Code
 } from "lucide-react";
 import { getLoginUrl } from "@/const";
 
@@ -263,6 +264,7 @@ export default function MspPortal() {
           <div className="flex items-center justify-between mb-4">
             <TabsList className="bg-secondary/50">
               <TabsTrigger value="customers">Customers</TabsTrigger>
+              <TabsTrigger value="templates">Template Library</TabsTrigger>
               <TabsTrigger value="branding">White Label</TabsTrigger>
               <TabsTrigger value="activity">Activity Log</TabsTrigger>
             </TabsList>
@@ -514,8 +516,250 @@ export default function MspPortal() {
               </div>
             )}
           </TabsContent>
+
+          {/* ─── MSP Template Library Tab ─── */}
+          <TabsContent value="templates">
+            <MspTemplateLibrary customers={customers} />
+          </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+// ─── MSP Template Library Component ─────────────────────────────────────────
+function MspTemplateLibrary({ customers }: { customers: Array<{ org: { id: number; name: string; slug: string; logoUrl: string | null; gamificationEnabled: boolean; trainingEnabled: boolean; createdAt: Date; updatedAt: Date } | null; customer: { status: string } }> }) {
+  const [createOpen, setCreateOpen] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<{ name: string; htmlBody: string } | null>(null);
+  const [pushingId, setPushingId] = useState<number | null>(null);
+
+  const { data: mspTemplates = [], refetch } = trpc.msp.listMspTemplates.useQuery();
+
+  const createMutation = trpc.msp.createMspTemplate.useMutation({
+    onSuccess: () => { toast.success("MSP template created!"); setCreateOpen(false); refetch(); createForm.reset(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteMutation = trpc.msp.deleteMspTemplate.useMutation({
+    onSuccess: () => { toast.success("Template deleted"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const pushMutation = trpc.msp.pushTemplateToCustomers.useMutation({
+    onSuccess: (d) => { toast.success(`Pushed to ${d.pushed} customer org(s)!`); setPushingId(null); },
+    onError: (e) => { toast.error(e.message); setPushingId(null); },
+  });
+
+  const createSchema = z.object({
+    name: z.string().min(1),
+    subject: z.string().min(1),
+    htmlBody: z.string().min(1),
+    attackType: z.enum(["credential_harvest", "link_click", "attachment", "vishing", "smishing", "pretexting"]),
+    difficulty: z.enum(["easy", "medium", "hard"]),
+    industry: z.string().optional(),
+    tags: z.string().optional(),
+  });
+  const createForm = useForm({ resolver: zodResolver(createSchema), defaultValues: { attackType: "credential_harvest" as const, difficulty: "medium" as const } });
+  const [liveHtml, setLiveHtml] = useState("");
+
+  const handleCreate = createForm.handleSubmit((d) => {
+    createMutation.mutate({
+      name: d.name,
+      subject: d.subject,
+      htmlBody: d.htmlBody,
+      attackType: d.attackType,
+      difficulty: d.difficulty,
+      industry: d.industry,
+      tags: d.tags ? d.tags.split(",").map(t => t.trim()).filter(Boolean) : [],
+    });
+  });
+
+  const activeCustomerOrgs = customers.filter(c => c.customer.status === "active");
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">MSP Template Library</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Private templates visible only to you. Push to any or all customer orgs.</p>
+        </div>
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
+              New MSP Template
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create MSP Template</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Template Name *</Label>
+                  <Input placeholder="Chase Bank — Suspicious Login" {...createForm.register("name")} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email Subject Line *</Label>
+                  <Input placeholder="Action Required: Verify your account" {...createForm.register("subject")} />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Attack Type</Label>
+                  <Select defaultValue="credential_harvest" onValueChange={v => createForm.setValue("attackType", v as "credential_harvest" | "link_click" | "attachment" | "vishing" | "smishing" | "pretexting")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="credential_harvest">Credential Harvest</SelectItem>
+                      <SelectItem value="link_click">Link Click</SelectItem>
+                      <SelectItem value="attachment">Attachment</SelectItem>
+                      <SelectItem value="pretexting">Pretexting / BEC</SelectItem>
+                      <SelectItem value="smishing">Smishing</SelectItem>
+                      <SelectItem value="vishing">Vishing</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Difficulty</Label>
+                  <Select defaultValue="medium" onValueChange={v => createForm.setValue("difficulty", v as "easy" | "medium" | "hard")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Industry (optional)</Label>
+                  <Input placeholder="Finance, Healthcare..." {...createForm.register("industry")} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tags (comma-separated)</Label>
+                <Input placeholder="banking, urgent, login" {...createForm.register("tags")} />
+              </div>
+              {/* HTML Editor + Live Preview */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Code className="w-4 h-4 text-muted-foreground" />
+                  <Label>HTML Email Body *</Label>
+                  <span className="text-xs text-muted-foreground ml-auto">Live preview updates as you type</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 h-72">
+                  <Textarea
+                    placeholder="Paste HTML from a real email or write your own..."
+                    className="h-full font-mono text-xs resize-none"
+                    {...createForm.register("htmlBody", {
+                      onChange: (e) => setLiveHtml(e.target.value),
+                    })}
+                  />
+                  <div className="border border-border/60 rounded-lg overflow-hidden bg-white">
+                    <div className="bg-secondary/50 px-3 py-1.5 border-b border-border/60 flex items-center gap-1.5">
+                      <Eye className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Live Preview</span>
+                    </div>
+                    <iframe
+                      srcDoc={liveHtml || "<p style='font-family:sans-serif;color:#999;padding:16px'>Start typing HTML to see a live preview...</p>"}
+                      className="w-full h-full border-0"
+                      sandbox="allow-same-origin"
+                      title="Email Preview"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button type="submit" disabled={createMutation.isPending} className="flex-1">
+                  {createMutation.isPending ? "Saving..." : "Save MSP Template"}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Template List */}
+      {mspTemplates.length === 0 ? (
+        <Card className="border-border/60 border-dashed">
+          <CardContent className="py-16 text-center">
+            <FileText className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+            <p className="text-muted-foreground font-medium">No MSP templates yet</p>
+            <p className="text-sm text-muted-foreground/70 mt-1 mb-4">Create templates here and push them to any or all of your customer organizations.</p>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
+              Create First Template
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-3">
+          {mspTemplates.map(t => (
+            <Card key={t.id} className="border-border/60">
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-sm truncate">{t.name}</span>
+                      <Badge variant="outline" className="text-xs capitalize flex-shrink-0">{t.difficulty}</Badge>
+                      <Badge variant="outline" className="text-xs flex-shrink-0">{t.attackType.replace(/_/g, " ")}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">Subject: {t.subject}</p>
+                    {t.industry && <p className="text-xs text-muted-foreground/70 mt-0.5">Industry: {t.industry}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPreviewTemplate({ name: t.name, htmlBody: t.htmlBody })}
+                    >
+                      <Eye className="w-3.5 h-3.5 mr-1" />
+                      Preview
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={pushingId === t.id || pushMutation.isPending}
+                      onClick={() => {
+                        setPushingId(t.id);
+                        pushMutation.mutate({ templateId: t.id });
+                      }}
+                    >
+                      <Send className="w-3.5 h-3.5 mr-1" />
+                      {pushingId === t.id ? "Pushing..." : `Push to All (${activeCustomerOrgs.length})`}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      onClick={() => deleteMutation.mutate({ templateId: t.id })}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewTemplate} onOpenChange={() => setPreviewTemplate(null)}>
+        <DialogContent className="max-w-3xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>{previewTemplate?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="border border-border/60 rounded-lg overflow-hidden bg-white h-96">
+            <iframe
+              srcDoc={previewTemplate?.htmlBody ?? ""}
+              className="w-full h-full border-0"
+              sandbox="allow-same-origin"
+              title="Template Preview"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
