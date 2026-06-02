@@ -250,7 +250,7 @@ export async function bulkCreateTargets(rows: Omit<Target, "id" | "createdAt" | 
 }
 
 // ─── Templates ────────────────────────────────────────────────────────────────
-export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; language?: string; attackType?: string; difficulty?: string }) {
+export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; language?: string; attackType?: string; difficulty?: string; industry?: string }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
@@ -260,6 +260,7 @@ export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; 
   if (opts.language) conditions.push(eq(templates.language, opts.language as any));
   if (opts.attackType) conditions.push(eq(templates.attackType, opts.attackType as any));
   if (opts.difficulty) conditions.push(eq(templates.difficulty, opts.difficulty as any));
+  if (opts.industry) conditions.push(eq(templates.industry, opts.industry));
   return db.select().from(templates).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(templates.usageCount));
 }
 

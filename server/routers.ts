@@ -268,23 +268,35 @@ export const appRouter = router({
         language: z.string().optional(),
         attackType: z.string().optional(),
         difficulty: z.string().optional(),
+        industry: z.string().optional(),
+        search: z.string().optional(),
       }))
       .query(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
         const results: any[] = [];
         if (input.includeBuiltIn) {
-          const builtIn = await getTemplates({ isBuiltIn: true, language: input.language, attackType: input.attackType, difficulty: input.difficulty });
+          const builtIn = await getTemplates({ isBuiltIn: true, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
           results.push(...builtIn.map(t => ({ ...t, source: "built-in" })));
         }
         if (input.includeCommunity) {
-          const community = await getTemplates({ isShared: true, language: input.language, attackType: input.attackType, difficulty: input.difficulty });
+          const community = await getTemplates({ isShared: true, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
           results.push(...community.filter(t => !t.isBuiltIn).map(t => ({ ...t, source: "community" })));
         }
-        const orgTemplates = await getTemplates({ orgId: input.orgId, language: input.language, attackType: input.attackType, difficulty: input.difficulty });
+        const orgTemplates = await getTemplates({ orgId: input.orgId, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
         results.push(...orgTemplates.filter(t => !t.isBuiltIn).map(t => ({ ...t, source: "org" })));
         // Deduplicate by id
         const seen = new Set<number>();
-        return results.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+        let deduped = results.filter(t => { if (seen.has(t.id)) return false; seen.add(t.id); return true; });
+        // Client-side search filter
+        if (input.search) {
+          const q = input.search.toLowerCase();
+          deduped = deduped.filter(t =>
+            t.name.toLowerCase().includes(q) ||
+            t.subject.toLowerCase().includes(q) ||
+            (t.tags as string[]).some((tag: string) => tag.toLowerCase().includes(q))
+          );
+        }
+        return deduped;
       }),
 
     get: protectedProcedure

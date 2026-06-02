@@ -146,3 +146,14 @@
 - [x] Landing page: Privacy Policy and Terms of Service pages
 - [x] Add MSP pricing tier to pricing section
 - [x] Beta test all pages and fix any UI/UX issues
+
+## Phase 17: Professional Template Library
+- [x] Seed 100 real US-brand phishing templates into the live database
+- [x] Rebuild Templates.tsx into professional-grade library UI
+- [x] Left filter panel: attack type, difficulty, industry, language, source tabs
+- [x] Search bar with live filtering
+- [x] Template cards: brand icon/color, subject, tags, difficulty badge, attack type badge
+- [x] Full-screen preview modal with HTML iframe and metadata sidebar
+- [x] "Use Template" CTA in preview modal
+- [x] Empty state for no results
+- [x] Loading skeleton cards

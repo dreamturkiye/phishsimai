@@ -39,6 +39,17 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Scheduled heartbeat handlers
   app.post("/api/scheduled/campaign", scheduledCampaignHandler);
+
+  // One-time seed endpoint — inserts built-in templates + training modules
+  app.post("/api/admin/seed", async (_req, res) => {
+    try {
+      const { seedDatabase } = await import("../seed");
+      await seedDatabase();
+      res.json({ success: true, message: "Database seeded successfully" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message ?? String(err) });
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",
