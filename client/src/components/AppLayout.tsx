@@ -8,7 +8,7 @@ import { useState } from "react";
 import {
   Shield, LayoutDashboard, Mail, BookTemplate, Users, BarChart3,
   Settings, LogOut, ChevronDown, ChevronRight, Trophy, BookOpen,
-  Menu, X, Building2, Plus, ShieldCheck, Network
+  Menu, Building2, ShieldCheck, Network, ArrowLeftRight, ExternalLink
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -104,10 +104,16 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
   const { user, isAuthenticated, loading, logout } = useAuth();
   const [, navigate] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // BUG-06 FIX: multi-org switcher
+  const [activeOrgIdx, setActiveOrgIdx] = useState(0);
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
   const orgs = orgsData ?? [];
-  const currentOrg = orgs[0]?.org;
+  const currentOrg = orgs[activeOrgIdx]?.org ?? orgs[0]?.org;
+
+  // BUG-18 FIX: MSP impersonation mode via localStorage
+  const mspManagedOrg = (() => { try { return JSON.parse(localStorage.getItem("msp_managed_org") ?? "null"); } catch { return null; } })();
 
   // Check if user has an MSP tenant (for role-gated MSP nav item)
   const { data: mspTenant } = trpc.msp.getMyTenant.useQuery(undefined, { enabled: isAuthenticated });
@@ -135,17 +141,47 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="p-4 border-b border-sidebar-border">
-        <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2">
+        <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 w-full">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
             <Shield className="w-4 h-4 text-primary-foreground" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="font-bold text-sm leading-tight">PhishSim AI</div>
             {currentOrg && (
-              <div className="text-xs text-muted-foreground truncate max-w-[140px]">{currentOrg.name}</div>
+              <div className="text-xs text-muted-foreground truncate max-w-[120px]">{currentOrg.name}</div>
             )}
           </div>
         </button>
+        {/* BUG-06 FIX: Org switcher for multi-org users */}
+        {orgs.length > 1 && (
+          <div className="mt-2 relative">
+            <button
+              onClick={() => setShowOrgSwitcher(!showOrgSwitcher)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md bg-accent/50 hover:bg-accent text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeftRight className="w-3 h-3 flex-shrink-0" />
+              <span className="flex-1 text-left truncate">Switch Organization</span>
+              <ChevronDown className="w-3 h-3 flex-shrink-0" />
+            </button>
+            {showOrgSwitcher && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border/60 rounded-lg shadow-lg z-50 overflow-hidden">
+                {orgs.map((o, idx) => (
+                  <button
+                    key={o.org.id}
+                    onClick={() => { setActiveOrgIdx(idx); setShowOrgSwitcher(false); navigate("/dashboard"); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent/50 transition-colors ${
+                      idx === activeOrgIdx ? "bg-primary/10 text-primary" : "text-foreground"
+                    }`}
+                  >
+                    <Building2 className="w-3 h-3 flex-shrink-0" />
+                    <span className="flex-1 text-left truncate">{o.org.name}</span>
+                    {idx === activeOrgIdx && <Badge variant="outline" className="text-xs h-4 px-1 border-primary/30 text-primary">Active</Badge>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Nav */}
@@ -188,7 +224,26 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
   );
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* BUG-18 FIX: MSP impersonation banner */}
+      {mspManagedOrg && (
+        <div className="sticky top-0 z-50 bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-amber-400">
+            <Building2 className="w-4 h-4 flex-shrink-0" />
+            <span>Managing customer: <strong>{mspManagedOrg.orgName}</strong></span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-amber-500/40 text-amber-400 hover:bg-amber-500/10 h-7 text-xs"
+            onClick={() => { localStorage.removeItem("msp_managed_org"); navigate("/msp"); }}
+          >
+            <ExternalLink className="w-3 h-3 mr-1.5" />
+            Return to MSP Portal
+          </Button>
+        </div>
+      )}
+      <div className="flex flex-1">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-56 bg-sidebar border-r border-sidebar-border flex-shrink-0 fixed left-0 top-0 bottom-0 z-30">
         {sidebar}
@@ -225,6 +280,7 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
           {children}
         </div>
       </main>
+      </div>
     </div>
   );
 }

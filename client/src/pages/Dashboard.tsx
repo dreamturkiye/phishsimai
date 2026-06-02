@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,9 +36,9 @@ export default function Dashboard() {
   const { isAuthenticated, user } = useAuth();
   const [, navigate] = useLocation();
 
+  const { orgId, orgName: activeOrgName } = useActiveOrg();
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
   const org = orgsData?.[0]?.org;
-  const orgId = org?.id;
 
   const { data: analytics } = trpc.analytics.overview.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: campaigns } = trpc.campaigns.list.useQuery({ orgId: orgId! }, { enabled: !!orgId });
@@ -70,7 +71,7 @@ export default function Dashboard() {
             <div>
               <h2 className="text-xl font-bold mb-1">Welcome back, {firstName} 👋</h2>
               <p className="text-sm text-muted-foreground">
-                {org?.name} · {activeCampaigns > 0 ? `${activeCampaigns} active campaign${activeCampaigns > 1 ? "s" : ""}` : "No active campaigns"}
+                {activeOrgName ?? org?.name} · {activeCampaigns > 0 ? `${activeCampaigns} active campaign${activeCampaigns > 1 ? "s" : ""}` : "No active campaigns"}
               </p>
             </div>
             <Button onClick={() => navigate("/campaigns")} className="hidden sm:flex">

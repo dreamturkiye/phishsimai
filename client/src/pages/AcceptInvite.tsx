@@ -2,8 +2,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { useLocation } from "wouter";
-import { useState, useEffect } from "react";
+import { useLocation, useParams } from "wouter";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Shield, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { getLoginUrl } from "@/const";
@@ -11,14 +11,9 @@ import { getLoginUrl } from "@/const";
 export default function AcceptInvite() {
   const { isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
-  const [token, setToken] = useState("");
+  // BUG-03 FIX: read token from route path param /invite/:token
+  const { token = "" } = useParams<{ token: string }>();
   const [status, setStatus] = useState<"idle" | "accepting" | "success" | "error">("idle");
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const t = params.get("token");
-    if (t) setToken(t);
-  }, []);
 
   const acceptMutation = trpc.orgs.acceptInvite.useMutation({
     onSuccess: () => {
@@ -53,7 +48,7 @@ export default function AcceptInvite() {
             <Shield className="w-12 h-12 text-primary mx-auto mb-4" />
             <h2 className="font-bold text-lg mb-2">You've been invited!</h2>
             <p className="text-sm text-muted-foreground mb-6">Sign in to accept your invitation to join a PhishSim AI organization.</p>
-            <Button className="w-full" onClick={() => window.location.href = getLoginUrl()}>
+            <Button className="w-full" onClick={() => window.location.href = getLoginUrl(`/invite/${token}`)}>
               Sign In to Accept
             </Button>
           </CardContent>

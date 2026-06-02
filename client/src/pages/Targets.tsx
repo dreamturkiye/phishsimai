@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,7 @@ export default function Targets() {
   const [deptForm, setDeptForm] = useState({ name: "", description: "" });
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgId = orgsData?.[0]?.org?.id;
+  const { orgId } = useActiveOrg();
 
   const { data: targets, refetch: refetchTargets } = trpc.targets.list.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: departments, refetch: refetchDepts } = trpc.departments.list.useQuery({ orgId: orgId! }, { enabled: !!orgId });

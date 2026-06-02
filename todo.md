@@ -157,3 +157,18 @@
 - [x] "Use Template" CTA in preview modal
 - [x] Empty state for no results
 - [x] Loading skeleton cards
+
+## Phase 18: QA Bug Fixes (Pre-Launch)
+
+- [ ] BUG-01: CampaignDetail — Add template selector and target assignment sections
+- [ ] BUG-02: MSP Manage button — Use impersonateCustomer + org context switching
+- [ ] BUG-03: AcceptInvite — Read token from route path params not query string
+- [ ] BUG-04: OrgSettings invite — Show copyable invite link after creation
+- [ ] BUG-05: CampaignDetail results — Show employee name/email not raw targetId
+- [ ] BUG-06: Add org switcher in sidebar for multi-org users
+- [ ] BUG-07: Campaign launch validation — require template + targets + sender
+- [ ] BUG-08: MSP provision — auto-generate slug from org name
+- [ ] BUG-10: Gamification — show Demo Data badge when no real data
+- [ ] BUG-12: Templates "Use Template" — navigate to campaigns after fork
+- [ ] BUG-13: OrgSettings — add Copy Link button for pending invites
+- [ ] BUG-18: MSP impersonation banner — show "Managing: [Customer]" persistent banner

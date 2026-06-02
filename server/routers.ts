@@ -454,7 +454,13 @@ Make it realistic and educational. The email should look authentic but contain s
         const campaign = await getCampaignById(input.campaignId, input.orgId);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
         const results = await getCampaignResults(input.campaignId);
-        return { campaign, results };
+        // Enrich with template and target names
+        const template = campaign.templateId ? await getTemplateById(campaign.templateId) : null;
+        const allTargets = campaign.targetIds && campaign.targetIds.length > 0
+          ? await getTargets(input.orgId)
+          : [];
+        const campaignTargets = allTargets.filter(t => (campaign.targetIds ?? []).includes(t.id));
+        return { campaign, results, template: template ?? null, targets: campaignTargets };
       }),
 
     create: protectedProcedure

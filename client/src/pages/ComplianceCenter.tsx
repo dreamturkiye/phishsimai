@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -554,7 +555,7 @@ export default function ComplianceCenter() {
   const [activeTab, setActiveTab] = useState("all");
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgId = orgsData?.[0]?.org?.id;
+  const { orgId } = useActiveOrg();
   const orgName = orgsData?.[0]?.org?.name ?? "Your Organization";
 
   // Load persisted compliance records from DB

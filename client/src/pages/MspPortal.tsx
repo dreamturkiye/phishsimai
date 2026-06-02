@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -104,6 +105,16 @@ export default function MspPortal() {
   });
   const updateStatusMutation = trpc.msp.updateCustomerStatus.useMutation({
     onSuccess: () => { toast.success("Customer status updated!"); refetchCustomers(); },
+    onError: (e) => toast.error(e.message),
+  });
+  // BUG-02 FIX: impersonation stores org context in localStorage then navigates to dashboard
+  const [, navigate] = useLocation();
+  const impersonateMutation = trpc.msp.impersonateCustomer.useMutation({
+    onSuccess: (data) => {
+      localStorage.setItem("msp_managed_org", JSON.stringify({ orgId: data.orgId, orgName: data.orgName }));
+      toast.success(`Now managing ${data.orgName}`);
+      navigate("/dashboard");
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -383,10 +394,11 @@ export default function MspPortal() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => window.location.href = "/dashboard"}
+                            disabled={impersonateMutation.isPending}
+                            onClick={() => impersonateMutation.mutate({ customerOrgId: customer.id })}
                           >
                             <ExternalLink className="w-3 h-3 mr-1" />
-                            Manage
+                            {impersonateMutation.isPending ? "Loading..." : "Manage"}
                           </Button>
                         </div>
                       </div>

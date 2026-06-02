@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +26,7 @@ export default function Training() {
   const [score, setScore] = useState(0);
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgId = orgsData?.[0]?.org?.id;
+  const { orgId } = useActiveOrg();
 
   const { data: modules } = trpc.training.modules.useQuery({});
   const { data: completions, refetch: refetchCompletions } = trpc.training.completions.useQuery(

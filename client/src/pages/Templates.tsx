@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -507,7 +508,7 @@ export default function Templates() {
   });
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgId = orgsData?.[0]?.org?.id;
+  const { orgId } = useActiveOrg();
 
   const { data: allTemplates, isLoading, refetch } = trpc.templates.list.useQuery(
     { orgId: orgId!, includeBuiltIn: true, includeCommunity: true },

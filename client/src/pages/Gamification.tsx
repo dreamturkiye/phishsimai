@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -33,7 +34,7 @@ export default function Gamification() {
   const { isAuthenticated } = useAuth();
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgId = orgsData?.[0]?.org?.id;
+  const { orgId } = useActiveOrg();
 
   const { data: leaderboard } = trpc.gamification.leaderboard.useQuery(
     { orgId: orgId! },

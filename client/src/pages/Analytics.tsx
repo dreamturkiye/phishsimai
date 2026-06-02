@@ -1,6 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useActiveOrg } from "@/contexts/OrgContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from "recharts";
@@ -33,7 +34,7 @@ export default function Analytics() {
   const { isAuthenticated } = useAuth();
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgId = orgsData?.[0]?.org?.id;
+  const { orgId } = useActiveOrg();
 
   const { data: analytics } = trpc.analytics.overview.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: trendData } = trpc.analytics.campaignTrend.useQuery({ orgId: orgId! }, { enabled: !!orgId });

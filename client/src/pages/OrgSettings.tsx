@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Settings, Users, Mail, Shield, Plus, Trash2, Crown, UserCheck } from "lucide-react";
+import { Settings, Users, Mail, Shield, Plus, Trash2, Crown, UserCheck, Copy, CheckCheck, Clock } from "lucide-react";
 
 export default function OrgSettings() {
   const { isAuthenticated, user } = useAuth();
@@ -20,6 +20,9 @@ export default function OrgSettings() {
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
+  // BUG-04 FIX: track generated invite link and copy state
+  const [inviteLink, setInviteLink] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const { data: orgsData, refetch: refetchOrgs } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
   const org = orgsData?.[0]?.org;
@@ -31,13 +34,25 @@ export default function OrgSettings() {
     { enabled: !!orgId }
   );
 
+  // BUG-13 FIX: fetch pending invites to show with copy link
+  const { data: pendingInvites = [], refetch: refetchInvites } = trpc.orgs.invites.useQuery(
+    { orgId: orgId! },
+    { enabled: !!orgId && myRole === "admin" }
+  );
+
   const updateOrgMutation = trpc.orgs.update.useMutation({
     onSuccess: () => { toast.success("Settings saved"); refetchOrgs(); },
     onError: (e) => toast.error(e.message),
   });
 
+  // BUG-04 FIX: onSuccess now shows the invite link instead of closing
   const inviteMutation = trpc.orgs.invite.useMutation({
-    onSuccess: () => { toast.success("Invitation sent!"); setShowInvite(false); setInviteEmail(""); refetchMembers(); },
+    onSuccess: (data) => {
+      const link = `${window.location.origin}/invite/${data.token}`;
+      setInviteLink(link);
+      refetchMembers();
+      refetchInvites();
+    },
     onError: (e) => toast.error(e.message),
   });
 
@@ -49,6 +64,20 @@ export default function OrgSettings() {
   const [orgName, setOrgName] = useState(org?.name ?? "");
   const [gamificationEnabled, setGamificationEnabled] = useState(org?.gamificationEnabled ?? true);
   const [trainingEnabled, setTrainingEnabled] = useState(org?.trainingEnabled ?? true);
+
+  const handleCopyLink = (link: string) => {
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    toast.success("Invite link copied to clipboard!");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCloseInviteDialog = () => {
+    setShowInvite(false);
+    setInviteEmail("");
+    setInviteLink("");
+    setCopied(false);
+  };
 
   return (
     <AppLayout title="Organization Settings">
@@ -144,6 +173,51 @@ export default function OrgSettings() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* BUG-13 FIX: Pending invites with copy link */}
+            {myRole === "admin" && pendingInvites.filter(i => !i.acceptedAt).length > 0 && (
+              <Card className="border-border/60">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                    Pending Invitations ({pendingInvites.filter(i => !i.acceptedAt).length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {pendingInvites.filter(i => !i.acceptedAt).map((inv) => {
+                      const invLink = `${window.location.origin}/invite/${inv.token}`;
+                      const isExpired = new Date(inv.expiresAt) < new Date();
+                      return (
+                        <div key={inv.token} className="flex items-center gap-3 p-3 rounded-lg border border-border/40">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm">{inv.email}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {isExpired ? (
+                                <span className="text-red-400">Expired</span>
+                              ) : (
+                                <>Expires {new Date(inv.expiresAt).toLocaleDateString()} · {inv.role}</>
+                              )}
+                            </div>
+                          </div>
+                          {!isExpired && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-shrink-0"
+                              onClick={() => handleCopyLink(invLink)}
+                            >
+                              <Copy className="w-3 h-3 mr-1.5" />
+                              Copy Link
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="features" className="mt-4 space-y-4">
@@ -190,44 +264,75 @@ export default function OrgSettings() {
         </Tabs>
       </div>
 
-      {/* Invite dialog */}
-      <Dialog open={showInvite} onOpenChange={setShowInvite}>
-        <DialogContent className="sm:max-w-sm bg-card border-border/60">
+      {/* Invite dialog — BUG-04 FIX: shows copyable link after creation */}
+      <Dialog open={showInvite} onOpenChange={handleCloseInviteDialog}>
+        <DialogContent className="sm:max-w-md bg-card border-border/60">
           <DialogHeader><DialogTitle>Invite Team Member</DialogTitle></DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Email Address</Label>
-              <Input
-                type="email"
-                placeholder="colleague@company.com"
-                value={inviteEmail}
-                onChange={e => setInviteEmail(e.target.value)}
-                className="bg-background border-border/60"
-              />
+
+          {inviteLink ? (
+            /* Step 2: Show the invite link */
+            <div className="space-y-4 py-2">
+              <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                <CheckCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span className="text-sm text-emerald-400 font-medium">Invite link created!</span>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Share this link with {inviteEmail}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={inviteLink}
+                    className="bg-background border-border/60 text-xs font-mono"
+                  />
+                  <Button size="sm" variant="outline" onClick={() => handleCopyLink(inviteLink)} className="flex-shrink-0">
+                    {copied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Link expires in 7 days. Anyone with this link can join your organization.</p>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleCloseInviteDialog}>Done</Button>
+              </DialogFooter>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Role</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as "admin" | "member")}>
-                <SelectTrigger className="bg-background border-border/60">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="member">Member — Can view campaigns and results</SelectItem>
-                  <SelectItem value="admin">Admin — Full access to all settings</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInvite(false)}>Cancel</Button>
-            <Button
-              disabled={!inviteEmail || inviteMutation.isPending}
-              onClick={() => inviteMutation.mutate({ orgId: orgId!, email: inviteEmail, role: inviteRole })}
-            >
-              <Mail className="w-3.5 h-3.5 mr-1.5" />
-              {inviteMutation.isPending ? "Sending..." : "Send Invite"}
-            </Button>
-          </DialogFooter>
+          ) : (
+            /* Step 1: Enter email and role */
+            <>
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Email Address</Label>
+                  <Input
+                    type="email"
+                    placeholder="colleague@company.com"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    className="bg-background border-border/60"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Role</Label>
+                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as "admin" | "member")}>
+                    <SelectTrigger className="bg-background border-border/60">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">Member — Can view campaigns and results</SelectItem>
+                      <SelectItem value="admin">Admin — Full access to all settings</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCloseInviteDialog}>Cancel</Button>
+                <Button
+                  disabled={!inviteEmail || inviteMutation.isPending}
+                  onClick={() => inviteMutation.mutate({ orgId: orgId!, email: inviteEmail, role: inviteRole })}
+                >
+                  <Mail className="w-3.5 h-3.5 mr-1.5" />
+                  {inviteMutation.isPending ? "Creating..." : "Create Invite Link"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </AppLayout>
