@@ -5,17 +5,18 @@
   "outputDirectory": "dist/public",
   "framework": null,
   "functions": {
-    "dist/api/index.js": {
-      "maxDuration": 300
+    "api/index.ts": {
+      "maxDuration": 300,
+      "memory": 1024
     }
   },
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/dist/api/index.js"
+      "destination": "/api"
     },
     {
-      "source": "/((?!_next|favicon.ico).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],

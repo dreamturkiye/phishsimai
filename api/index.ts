@@ -35,6 +35,15 @@ app.post("/api/admin/seed", async (_req: any, res: any) => {
   }
 });
 
+// Health check (Vercel smoke test + uptime monitors)
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "phishsim-ai",
+    timestamp: Date.now(),
+  });
+});
+
 // tRPC
 app.use(
   "/api/trpc",
