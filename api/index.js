@@ -30883,10 +30883,25 @@ var init_schema2 = __esm({
 });
 
 // server/db.ts
+function normalizeDatabaseUrl(rawUrl) {
+  const url2 = new URL(rawUrl);
+  const port = url2.port ? `:${url2.port}` : "";
+  return `mysql://${url2.username}:${url2.password}@${url2.hostname}${port}${url2.pathname}`;
+}
+function formatDbError(error46) {
+  if (error46 instanceof DrizzleQueryError && error46.cause) {
+    const cause = error46.cause instanceof Error ? error46.cause.message : typeof error46.cause === "object" ? JSON.stringify(error46.cause) : String(error46.cause);
+    return `${error46.message} | ${cause}`;
+  }
+  if (error46 instanceof Error && error46.cause instanceof Error) {
+    return `${error46.message} | ${error46.cause.message}`;
+  }
+  return error46 instanceof Error ? error46.message : String(error46);
+}
 function buildPoolOptions() {
   const rawUrl = process.env.DATABASE_URL;
   if (!rawUrl) throw new Error("DATABASE_URL is not set");
-  const url2 = new URL(rawUrl);
+  const url2 = new URL(normalizeDatabaseUrl(rawUrl));
   const isServerless = Boolean(process.env.VERCEL);
   return {
     host: url2.hostname,
@@ -30911,7 +30926,7 @@ async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
       if (process.env.VERCEL) {
-        _tidbClient = connect({ url: process.env.DATABASE_URL });
+        _tidbClient = connect({ url: normalizeDatabaseUrl(process.env.DATABASE_URL) });
         _db = drizzle2({ client: _tidbClient });
       } else {
         _pool = import_promise.default.createPool(buildPoolOptions());
@@ -30933,9 +30948,9 @@ async function pingDb() {
     await db.execute(sql`SELECT 1`);
     return { ok: true };
   } catch (error46) {
-    const message2 = error46 instanceof Error ? error46.message : String(error46);
-    console.warn("[Database] Ping failed:", message2);
-    return { ok: false, error: message2 };
+    const detail = formatDbError(error46);
+    console.warn("[Database] Ping failed:", detail);
+    return { ok: false, error: detail };
   }
 }
 async function upsertUser(user) {
@@ -31258,6 +31273,7 @@ var init_db2 = __esm({
     "use strict";
     init_dist();
     init_drizzle_orm();
+    init_errors();
     init_mysql2();
     init_tidb_serverless();
     import_promise = __toESM(require("mysql2/promise"), 1);

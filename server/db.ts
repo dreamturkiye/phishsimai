@@ -1,5 +1,6 @@
 import { connect } from "@tidbcloud/serverless";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { DrizzleQueryError } from "drizzle-orm/errors";
 import { drizzle as drizzleMysql } from "drizzle-orm/mysql2";
 import { drizzle as drizzleTidb } from "drizzle-orm/tidb-serverless";
 import mysql from "mysql2/promise";
@@ -35,11 +36,33 @@ let _db: ReturnType<typeof drizzleMysql> | null = null;
 let _pool: ReturnType<typeof mysql.createPool> | null = null;
 let _tidbClient: ReturnType<typeof connect> | null = null;
 
+function normalizeDatabaseUrl(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  const port = url.port ? `:${url.port}` : "";
+  return `mysql://${url.username}:${url.password}@${url.hostname}${port}${url.pathname}`;
+}
+
+function formatDbError(error: unknown): string {
+  if (error instanceof DrizzleQueryError && error.cause) {
+    const cause =
+      error.cause instanceof Error
+        ? error.cause.message
+        : typeof error.cause === "object"
+          ? JSON.stringify(error.cause)
+          : String(error.cause);
+    return `${error.message} | ${cause}`;
+  }
+  if (error instanceof Error && error.cause instanceof Error) {
+    return `${error.message} | ${error.cause.message}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 function buildPoolOptions(): mysql.PoolOptions {
   const rawUrl = process.env.DATABASE_URL;
   if (!rawUrl) throw new Error("DATABASE_URL is not set");
 
-  const url = new URL(rawUrl);
+  const url = new URL(normalizeDatabaseUrl(rawUrl));
   const isServerless = Boolean(process.env.VERCEL);
 
   return {
@@ -67,7 +90,7 @@ export async function getDb() {
     try {
       if (process.env.VERCEL) {
         // HTTP driver — works from Vercel without TiDB IP allowlist.
-        _tidbClient = connect({ url: process.env.DATABASE_URL });
+        _tidbClient = connect({ url: normalizeDatabaseUrl(process.env.DATABASE_URL) });
         _db = drizzleTidb({ client: _tidbClient }) as ReturnType<typeof drizzleMysql>;
       } else {
         _pool = mysql.createPool(buildPoolOptions());
@@ -90,9 +113,9 @@ export async function pingDb(): Promise<{ ok: true } | { ok: false; error: strin
     await db.execute(sql`SELECT 1`);
     return { ok: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn("[Database] Ping failed:", message);
-    return { ok: false, error: message };
+    const detail = formatDbError(error);
+    console.warn("[Database] Ping failed:", detail);
+    return { ok: false, error: detail };
   }
 }
 
