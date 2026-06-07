@@ -59,7 +59,8 @@ class AuthService {
   }
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    const cookies = this.parseCookies(req.headers.cookie);
+    const headers = req.headers as Record<string, string | string[] | undefined>;
+    const cookies = this.parseCookies(headers.cookie as string | undefined);
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await this.verifySession(sessionCookie);
     if (!session) throw ForbiddenError("Invalid session");
