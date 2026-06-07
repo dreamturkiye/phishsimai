@@ -1,5 +1,7 @@
+import { connect } from "@tidbcloud/serverless";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle as drizzleMysql } from "drizzle-orm/mysql2";
+import { drizzle as drizzleTidb } from "drizzle-orm/tidb-serverless";
 import mysql from "mysql2/promise";
 import {
   Campaign,
@@ -29,8 +31,9 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: ReturnType<typeof drizzleMysql> | null = null;
 let _pool: ReturnType<typeof mysql.createPool> | null = null;
+let _tidbClient: ReturnType<typeof connect> | null = null;
 
 function buildPoolOptions(): mysql.PoolOptions {
   const rawUrl = process.env.DATABASE_URL;
@@ -62,12 +65,19 @@ function buildPoolOptions(): mysql.PoolOptions {
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _pool = mysql.createPool(buildPoolOptions());
-      _db = drizzle(_pool as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (process.env.VERCEL) {
+        // HTTP driver — works from Vercel without TiDB IP allowlist.
+        _tidbClient = connect({ url: process.env.DATABASE_URL });
+        _db = drizzleTidb({ client: _tidbClient }) as ReturnType<typeof drizzleMysql>;
+      } else {
+        _pool = mysql.createPool(buildPoolOptions());
+        _db = drizzleMysql(_pool as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+      }
     } catch (error) {
-      console.warn("[Database] Failed to create pool:", error);
+      console.warn("[Database] Failed to create connection:", error);
       _db = null;
       _pool = null;
+      _tidbClient = null;
     }
   }
   return _db;

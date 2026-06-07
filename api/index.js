@@ -167,8 +167,8 @@ var require_depd = __commonJS({
         process.emit("deprecation", err);
         return;
       }
-      var format = process.stderr.isTTY ? formatColor : formatPlain;
-      var output = format.call(this, msg, caller, stack.slice(i));
+      var format2 = process.stderr.isTTY ? formatColor : formatPlain;
+      var output = format2.call(this, msg, caller, stack.slice(i));
       process.stderr.write(output + "\n", "utf8");
     }
     function callSiteLocation(callSite) {
@@ -343,8 +343,8 @@ var require_bytes = __commonJS({
   "node_modules/.pnpm/bytes@3.1.2/node_modules/bytes/index.js"(exports2, module2) {
     "use strict";
     module2.exports = bytes;
-    module2.exports.format = format;
-    module2.exports.parse = parse3;
+    module2.exports.format = format2;
+    module2.exports.parse = parse4;
     var formatThousandsRegExp = /\B(?=(\d{3})+(?!\d))/g;
     var formatDecimalsRegExp = /(?:\.0*|(\.[^0]+)0+)$/;
     var map2 = {
@@ -358,14 +358,14 @@ var require_bytes = __commonJS({
     var parseRegExp = /^((-|\+)?(\d+(?:\.\d+)?)) *(kb|mb|gb|tb|pb)$/i;
     function bytes(value, options) {
       if (typeof value === "string") {
-        return parse3(value);
+        return parse4(value);
       }
       if (typeof value === "number") {
-        return format(value, options);
+        return format2(value, options);
       }
       return null;
     }
-    function format(value, options) {
+    function format2(value, options) {
       if (!Number.isFinite(value)) {
         return null;
       }
@@ -402,7 +402,7 @@ var require_bytes = __commonJS({
       }
       return str + unitSeparator + unit;
     }
-    function parse3(val) {
+    function parse4(val) {
       if (typeof val === "number" && !isNaN(val)) {
         return val;
       }
@@ -437,9 +437,9 @@ var require_content_type = __commonJS({
     var QESC_REGEXP = /\\([\u000b\u0020-\u00ff])/g;
     var QUOTE_REGEXP = /([\\"])/g;
     var TYPE_REGEXP = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+\/[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-    exports2.format = format;
-    exports2.parse = parse3;
-    function format(obj) {
+    exports2.format = format2;
+    exports2.parse = parse4;
+    function format2(obj) {
       if (!obj || typeof obj !== "object") {
         throw new TypeError("argument obj is required");
       }
@@ -462,7 +462,7 @@ var require_content_type = __commonJS({
       }
       return string4;
     }
-    function parse3(string4) {
+    function parse4(string4) {
       if (!string4) {
         throw new TypeError("argument string is required");
       }
@@ -928,7 +928,7 @@ var require_ms = __commonJS({
       options = options || {};
       var type = typeof val;
       if (type === "string" && val.length > 0) {
-        return parse3(val);
+        return parse4(val);
       } else if (type === "number" && isNaN(val) === false) {
         return options.long ? fmtLong(val) : fmtShort(val);
       }
@@ -936,7 +936,7 @@ var require_ms = __commonJS({
         "val is not a non-empty string or a valid number. val=" + JSON.stringify(val)
       );
     };
-    function parse3(str) {
+    function parse4(str) {
       str = String(str);
       if (str.length > 100) {
         return;
@@ -1058,10 +1058,10 @@ var require_debug = __commonJS({
           args.unshift("%O");
         }
         var index2 = 0;
-        args[0] = args[0].replace(/%([a-zA-Z%])/g, function(match, format) {
+        args[0] = args[0].replace(/%([a-zA-Z%])/g, function(match, format2) {
           if (match === "%%") return match;
           index2++;
-          var formatter = exports2.formatters[format];
+          var formatter = exports2.formatters[format2];
           if ("function" === typeof formatter) {
             var val = args[index2];
             match = formatter.call(self, val);
@@ -5254,7 +5254,7 @@ var require_read = __commonJS({
     var unpipe = require_unpipe();
     var zlib = require("zlib");
     module2.exports = read;
-    function read(req, res, next, parse3, debug, options) {
+    function read(req, res, next, parse4, debug, options) {
       var length;
       var opts = options;
       var stream;
@@ -5313,7 +5313,7 @@ var require_read = __commonJS({
         try {
           debug("parse body");
           str = typeof body !== "string" && encoding !== null ? iconv.decode(body, encoding) : body;
-          req.body = parse3(str);
+          req.body = parse4(str);
         } catch (err) {
           next(createError(400, err, {
             body: str,
@@ -5380,9 +5380,9 @@ var require_media_typer = __commonJS({
     var subtypeNameRegExp = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.-]{0,126}$/;
     var typeNameRegExp = /^[A-Za-z0-9][A-Za-z0-9!#$&^_-]{0,126}$/;
     var typeRegExp = /^ *([A-Za-z0-9][A-Za-z0-9!#$&^_-]{0,126})\/([A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}) *$/;
-    exports2.format = format;
-    exports2.parse = parse3;
-    function format(obj) {
+    exports2.format = format2;
+    exports2.parse = parse4;
+    function format2(obj) {
       if (!obj || typeof obj !== "object") {
         throw new TypeError("argument obj is required");
       }
@@ -5416,7 +5416,7 @@ var require_media_typer = __commonJS({
       }
       return string4;
     }
-    function parse3(string4) {
+    function parse4(string4) {
       if (!string4) {
         throw new TypeError("argument string is required");
       }
@@ -14246,7 +14246,7 @@ var require_json = __commonJS({
         throw new TypeError("option verify must be function");
       }
       var shouldParse = typeof type !== "function" ? typeChecker(type) : type;
-      function parse3(body) {
+      function parse4(body) {
         if (body.length === 0) {
           return {};
         }
@@ -14294,7 +14294,7 @@ var require_json = __commonJS({
           }));
           return;
         }
-        read(req, res, next, parse3, debug, {
+        read(req, res, next, parse4, debug, {
           encoding: charset,
           inflate,
           limit,
@@ -14373,7 +14373,7 @@ var require_raw = __commonJS({
         throw new TypeError("option verify must be function");
       }
       var shouldParse = typeof type !== "function" ? typeChecker(type) : type;
-      function parse3(buf) {
+      function parse4(buf) {
         return buf;
       }
       return function rawParser(req, res, next) {
@@ -14394,7 +14394,7 @@ var require_raw = __commonJS({
           next();
           return;
         }
-        read(req, res, next, parse3, debug, {
+        read(req, res, next, parse4, debug, {
           encoding: null,
           inflate,
           limit,
@@ -14431,7 +14431,7 @@ var require_text = __commonJS({
         throw new TypeError("option verify must be function");
       }
       var shouldParse = typeof type !== "function" ? typeChecker(type) : type;
-      function parse3(buf) {
+      function parse4(buf) {
         return buf;
       }
       return function textParser(req, res, next) {
@@ -14453,7 +14453,7 @@ var require_text = __commonJS({
           return;
         }
         var charset = getCharset(req) || defaultCharset;
-        read(req, res, next, parse3, debug, {
+        read(req, res, next, parse4, debug, {
           encoding: charset,
           inflate,
           limit,
@@ -14642,7 +14642,7 @@ var require_object_inspect = __commonJS({
         var s = "<" + $toLowerCase.call(String(obj.nodeName));
         var attrs = obj.attributes || [];
         for (var i = 0; i < attrs.length; i++) {
-          s += " " + attrs[i].name + "=" + wrapQuotes(quote(attrs[i].value), "double", opts);
+          s += " " + attrs[i].name + "=" + wrapQuotes(quote2(attrs[i].value), "double", opts);
         }
         s += ">";
         if (obj.childNodes && obj.childNodes.length) {
@@ -14745,7 +14745,7 @@ var require_object_inspect = __commonJS({
       var quoteChar = quotes[style];
       return quoteChar + s + quoteChar;
     }
-    function quote(s) {
+    function quote2(s) {
       return $replace.call(String(s), /"/g, "&quot;");
     }
     function canTrustToString(obj) {
@@ -14800,11 +14800,11 @@ var require_object_inspect = __commonJS({
       }
       return false;
     }
-    var hasOwn = Object.prototype.hasOwnProperty || function(key) {
+    var hasOwn2 = Object.prototype.hasOwnProperty || function(key) {
       return key in this;
     };
     function has(obj, key) {
-      return hasOwn.call(obj, key);
+      return hasOwn2.call(obj, key);
     }
     function toStr(obj) {
       return objectToString.call(obj);
@@ -15802,7 +15802,7 @@ var require_get_intrinsic = __commonJS({
       "%WeakSetPrototype%": ["WeakSet", "prototype"]
     };
     var bind = require_function_bind();
-    var hasOwn = require_hasown();
+    var hasOwn2 = require_hasown();
     var $concat = bind.call($call, Array.prototype.concat);
     var $spliceApply = bind.call($apply, Array.prototype.splice);
     var $replace = bind.call($call, String.prototype.replace);
@@ -15819,19 +15819,19 @@ var require_get_intrinsic = __commonJS({
         throw new $SyntaxError("invalid intrinsic syntax, expected opening `%`");
       }
       var result = [];
-      $replace(string4, rePropName, function(match, number4, quote, subString) {
-        result[result.length] = quote ? $replace(subString, reEscapeChar, "$1") : number4 || match;
+      $replace(string4, rePropName, function(match, number4, quote2, subString) {
+        result[result.length] = quote2 ? $replace(subString, reEscapeChar, "$1") : number4 || match;
       });
       return result;
     };
     var getBaseIntrinsic = function getBaseIntrinsic2(name2, allowMissing) {
       var intrinsicName = name2;
       var alias;
-      if (hasOwn(LEGACY_ALIASES, intrinsicName)) {
+      if (hasOwn2(LEGACY_ALIASES, intrinsicName)) {
         alias = LEGACY_ALIASES[intrinsicName];
         intrinsicName = "%" + alias[0] + "%";
       }
-      if (hasOwn(INTRINSICS, intrinsicName)) {
+      if (hasOwn2(INTRINSICS, intrinsicName)) {
         var value = INTRINSICS[intrinsicName];
         if (value === needsEval) {
           value = doEval(intrinsicName);
@@ -15880,7 +15880,7 @@ var require_get_intrinsic = __commonJS({
         }
         intrinsicBaseName += "." + part;
         intrinsicRealName = "%" + intrinsicBaseName + "%";
-        if (hasOwn(INTRINSICS, intrinsicRealName)) {
+        if (hasOwn2(INTRINSICS, intrinsicRealName)) {
           value = INTRINSICS[intrinsicRealName];
         } else if (value != null) {
           if (!(part in value)) {
@@ -15898,7 +15898,7 @@ var require_get_intrinsic = __commonJS({
               value = value[part];
             }
           } else {
-            isOwn = hasOwn(value, part);
+            isOwn = hasOwn2(value, part);
             value = value[part];
           }
           if (isOwn && !skipFurtherCaching) {
@@ -16232,7 +16232,7 @@ var require_utils = __commonJS({
       }
     };
     var limit = 1024;
-    var encode4 = function encode5(str, defaultEncoder, charset, kind, format) {
+    var encode4 = function encode5(str, defaultEncoder, charset, kind, format2) {
       if (str.length === 0) {
         return str;
       }
@@ -16253,7 +16253,7 @@ var require_utils = __commonJS({
         var arr = [];
         for (var i = 0; i < segment.length; ++i) {
           var c = segment.charCodeAt(i);
-          if (c === 45 || c === 46 || c === 95 || c === 126 || c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || format === formats.RFC1738 && (c === 40 || c === 41)) {
+          if (c === 45 || c === 46 || c === 95 || c === 126 || c >= 48 && c <= 57 || c >= 65 && c <= 90 || c >= 97 && c <= 122 || format2 === formats.RFC1738 && (c === 40 || c === 41)) {
             arr[arr.length] = segment.charAt(i);
             continue;
           }
@@ -16386,7 +16386,7 @@ var require_stringify = __commonJS({
       return typeof v === "string" || typeof v === "number" || typeof v === "boolean" || typeof v === "symbol" || typeof v === "bigint";
     };
     var sentinel = {};
-    var stringify = function stringify2(object2, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder2, filter, sort, allowDots, serializeDate, format, formatter, encodeValuesOnly, charset, sideChannel) {
+    var stringify = function stringify2(object2, prefix, generateArrayPrefix, commaRoundTrip, allowEmptyArrays, strictNullHandling, skipNulls, encodeDotInKeys, encoder2, filter, sort, allowDots, serializeDate, format2, formatter, encodeValuesOnly, charset, sideChannel) {
       var obj = object2;
       var tmpSc = sideChannel;
       var step = 0;
@@ -16419,14 +16419,14 @@ var require_stringify = __commonJS({
       }
       if (obj === null) {
         if (strictNullHandling) {
-          return encoder2 && !encodeValuesOnly ? encoder2(prefix, defaults.encoder, charset, "key", format) : prefix;
+          return encoder2 && !encodeValuesOnly ? encoder2(prefix, defaults.encoder, charset, "key", format2) : prefix;
         }
         obj = "";
       }
       if (isNonNullishPrimitive(obj) || utils.isBuffer(obj)) {
         if (encoder2) {
-          var keyValue = encodeValuesOnly ? prefix : encoder2(prefix, defaults.encoder, charset, "key", format);
-          return [formatter(keyValue) + "=" + formatter(encoder2(obj, defaults.encoder, charset, "value", format))];
+          var keyValue = encodeValuesOnly ? prefix : encoder2(prefix, defaults.encoder, charset, "key", format2);
+          return [formatter(keyValue) + "=" + formatter(encoder2(obj, defaults.encoder, charset, "value", format2))];
         }
         return [formatter(prefix) + "=" + formatter(String(obj))];
       }
@@ -16476,7 +16476,7 @@ var require_stringify = __commonJS({
           sort,
           allowDots,
           serializeDate,
-          format,
+          format2,
           formatter,
           encodeValuesOnly,
           charset,
@@ -16502,14 +16502,14 @@ var require_stringify = __commonJS({
       if (typeof opts.charset !== "undefined" && opts.charset !== "utf-8" && opts.charset !== "iso-8859-1") {
         throw new TypeError("The charset option must be either utf-8, iso-8859-1, or undefined");
       }
-      var format = formats["default"];
+      var format2 = formats["default"];
       if (typeof opts.format !== "undefined") {
         if (!has.call(formats.formatters, opts.format)) {
           throw new TypeError("Unknown format option provided.");
         }
-        format = opts.format;
+        format2 = opts.format;
       }
-      var formatter = formats.formatters[format];
+      var formatter = formats.formatters[format2];
       var filter = defaults.filter;
       if (typeof opts.filter === "function" || isArray(opts.filter)) {
         filter = opts.filter;
@@ -16540,7 +16540,7 @@ var require_stringify = __commonJS({
         encoder: typeof opts.encoder === "function" ? opts.encoder : defaults.encoder,
         encodeValuesOnly: typeof opts.encodeValuesOnly === "boolean" ? opts.encodeValuesOnly : defaults.encodeValuesOnly,
         filter,
-        format,
+        format: format2,
         formatter,
         serializeDate: typeof opts.serializeDate === "function" ? opts.serializeDate : defaults.serializeDate,
         skipNulls: typeof opts.skipNulls === "boolean" ? opts.skipNulls : defaults.skipNulls,
@@ -16845,11 +16845,11 @@ var require_lib2 = __commonJS({
   "node_modules/.pnpm/qs@6.13.0/node_modules/qs/lib/index.js"(exports2, module2) {
     "use strict";
     var stringify = require_stringify();
-    var parse3 = require_parse();
+    var parse4 = require_parse();
     var formats = require_formats();
     module2.exports = {
       formats,
-      parse: parse3,
+      parse: parse4,
       stringify
     };
   }
@@ -16884,7 +16884,7 @@ var require_urlencoded = __commonJS({
       }
       var queryparse = extended ? extendedparser(opts) : simpleparser(opts);
       var shouldParse = typeof type !== "function" ? typeChecker(type) : type;
-      function parse3(body) {
+      function parse4(body) {
         return body.length ? queryparse(body) : {};
       }
       return function urlencodedParser(req, res, next) {
@@ -16914,7 +16914,7 @@ var require_urlencoded = __commonJS({
           }));
           return;
         }
-        read(req, res, next, parse3, debug, {
+        read(req, res, next, parse4, debug, {
           debug,
           encoding: charset,
           inflate,
@@ -16927,7 +16927,7 @@ var require_urlencoded = __commonJS({
     function extendedparser(options) {
       var parameterLimit = options.parameterLimit !== void 0 ? options.parameterLimit : 1e3;
       var depth = typeof options.depth !== "number" ? Number(options.depth || 32) : options.depth;
-      var parse3 = parser("qs");
+      var parse4 = parser("qs");
       if (isNaN(parameterLimit) || parameterLimit < 1) {
         throw new TypeError("option parameterLimit must be a positive number");
       }
@@ -16948,7 +16948,7 @@ var require_urlencoded = __commonJS({
         var arrayLimit = Math.max(100, paramCount);
         debug("parse extended urlencoding");
         try {
-          return parse3(body, {
+          return parse4(body, {
             allowPrototypes: true,
             arrayLimit,
             depth,
@@ -17003,7 +17003,7 @@ var require_urlencoded = __commonJS({
     }
     function simpleparser(options) {
       var parameterLimit = options.parameterLimit !== void 0 ? options.parameterLimit : 1e3;
-      var parse3 = parser("querystring");
+      var parse4 = parser("querystring");
       if (isNaN(parameterLimit) || parameterLimit < 1) {
         throw new TypeError("option parameterLimit must be a positive number");
       }
@@ -17019,7 +17019,7 @@ var require_urlencoded = __commonJS({
           });
         }
         debug("parse urlencoding");
-        return parse3(body, void 0, void 0, { maxKeys: parameterLimit });
+        return parse4(body, void 0, void 0, { maxKeys: parameterLimit });
       };
     }
     function typeChecker(type) {
@@ -17161,26 +17161,26 @@ var require_escape_html = __commonJS({
       if (!match) {
         return str;
       }
-      var escape2;
+      var escape3;
       var html = "";
       var index2 = 0;
       var lastIndex = 0;
       for (index2 = match.index; index2 < str.length; index2++) {
         switch (str.charCodeAt(index2)) {
           case 34:
-            escape2 = "&quot;";
+            escape3 = "&quot;";
             break;
           case 38:
-            escape2 = "&amp;";
+            escape3 = "&amp;";
             break;
           case 39:
-            escape2 = "&#39;";
+            escape3 = "&#39;";
             break;
           case 60:
-            escape2 = "&lt;";
+            escape3 = "&lt;";
             break;
           case 62:
-            escape2 = "&gt;";
+            escape3 = "&gt;";
             break;
           default:
             continue;
@@ -17189,7 +17189,7 @@ var require_escape_html = __commonJS({
           html += str.substring(lastIndex, index2);
         }
         lastIndex = index2 + 1;
-        html += escape2;
+        html += escape3;
       }
       return lastIndex !== index2 ? html + str.substring(lastIndex, index2) : html;
     }
@@ -17201,7 +17201,7 @@ var require_parseurl = __commonJS({
   "node_modules/.pnpm/parseurl@1.3.3/node_modules/parseurl/index.js"(exports2, module2) {
     "use strict";
     var url2 = require("url");
-    var parse3 = url2.parse;
+    var parse4 = url2.parse;
     var Url = url2.Url;
     module2.exports = parseurl;
     module2.exports.original = originalurl;
@@ -17233,7 +17233,7 @@ var require_parseurl = __commonJS({
     }
     function fastparse(str) {
       if (typeof str !== "string" || str.charCodeAt(0) !== 47) {
-        return parse3(str);
+        return parse4(str);
       }
       var pathname = str;
       var query = null;
@@ -17261,7 +17261,7 @@ var require_parseurl = __commonJS({
           /* #  */
           case 160:
           case 65279:
-            return parse3(str);
+            return parse4(str);
         }
       }
       var url3 = Url !== void 0 ? new Url() : {};
@@ -17507,7 +17507,7 @@ var require_path_to_regexp = __commonJS({
       }
       path = path.replace(
         /\\.|(\/)?(\.)?:(\w+)(\(.*?\))?(\*)?(\?)?|[.*]|\/\(/g,
-        function(match, slash, format, key, capture, star, optional2, offset) {
+        function(match, slash, format2, key, capture, star, optional2, offset) {
           if (match[0] === "\\") {
             backtrack += match;
             pos += 2;
@@ -17519,7 +17519,7 @@ var require_path_to_regexp = __commonJS({
             pos += 1;
             return "\\.";
           }
-          if (slash || format) {
+          if (slash || format2) {
             backtrack = "";
           } else {
             backtrack += path.slice(pos, offset);
@@ -17535,17 +17535,17 @@ var require_path_to_regexp = __commonJS({
             return "/(?:";
           }
           slash = slash || "";
-          format = format ? "\\." : "";
+          format2 = format2 ? "\\." : "";
           optional2 = optional2 || "";
           capture = capture ? capture.replace(/\\.|\*/, function(m2) {
             return m2 === "*" ? "(.*)" : m2;
-          }) : backtrack ? "((?:(?!/|" + backtrack + ").)+?)" : "([^/" + format + "]+?)";
+          }) : backtrack ? "((?:(?!/|" + backtrack + ").)+?)" : "([^/" + format2 + "]+?)";
           keys.push({
             name: key,
             optional: !!optional2,
             offset: offset + extraOffset
           });
-          var result = "(?:" + format + slash + capture + (star ? "((?:[/" + format + "].+?)?)" : "") + ")" + optional2;
+          var result = "(?:" + format2 + slash + capture + (star ? "((?:[/" + format2 + "].+?)?)" : "") + ")" + optional2;
           extraOffset += result.length - match.length;
           return result;
         }
@@ -18412,7 +18412,7 @@ var require_content_disposition = __commonJS({
   "node_modules/.pnpm/content-disposition@0.5.4/node_modules/content-disposition/index.js"(exports2, module2) {
     "use strict";
     module2.exports = contentDisposition;
-    module2.exports.parse = parse3;
+    module2.exports.parse = parse4;
     var basename = require("path").basename;
     var Buffer2 = require_safe_buffer().Buffer;
     var ENCODE_URL_ATTR_CHAR_REGEXP = /[\x00-\x20"'()*,/:;<=>?@[\\\]{}\x7f]/g;
@@ -18430,7 +18430,7 @@ var require_content_disposition = __commonJS({
       var opts = options || {};
       var type = opts.type || "attachment";
       var params = createparams(filename, opts.fallback);
-      return format(new ContentDisposition(type, params));
+      return format2(new ContentDisposition(type, params));
     }
     function createparams(filename, fallback) {
       if (filename === void 0) {
@@ -18461,7 +18461,7 @@ var require_content_disposition = __commonJS({
       }
       return params;
     }
-    function format(obj) {
+    function format2(obj) {
       var parameters = obj.parameters;
       var type = obj.type;
       if (!type || typeof type !== "string" || !TOKEN_REGEXP.test(type)) {
@@ -18503,7 +18503,7 @@ var require_content_disposition = __commonJS({
     function getlatin1(val) {
       return String(val).replace(NON_LATIN1_REGEXP, "?");
     }
-    function parse3(string4) {
+    function parse4(string4) {
       if (!string4 || typeof string4 !== "string") {
         throw new TypeError("argument string is required");
       }
@@ -18773,7 +18773,7 @@ var require_ms2 = __commonJS({
       options = options || {};
       var type = typeof val;
       if (type === "string" && val.length > 0) {
-        return parse3(val);
+        return parse4(val);
       } else if (type === "number" && isFinite(val)) {
         return options.long ? fmtLong(val) : fmtShort(val);
       }
@@ -18781,7 +18781,7 @@ var require_ms2 = __commonJS({
         "val is not a non-empty string or a valid number. val=" + JSON.stringify(val)
       );
     };
-    function parse3(str) {
+    function parse4(str) {
       str = String(str);
       if (str.length > 100) {
         return;
@@ -19511,7 +19511,7 @@ var require_forwarded = __commonJS({
       if (!req) {
         throw new TypeError("argument req is required");
       }
-      var proxyAddrs = parse3(req.headers["x-forwarded-for"] || "");
+      var proxyAddrs = parse4(req.headers["x-forwarded-for"] || "");
       var socketAddr = getSocketAddr(req);
       var addrs = [socketAddr].concat(proxyAddrs);
       return addrs;
@@ -19519,7 +19519,7 @@ var require_forwarded = __commonJS({
     function getSocketAddr(req) {
       return req.socket ? req.socket.remoteAddress : req.connection.remoteAddress;
     }
-    function parse3(header) {
+    function parse4(header) {
       var end = header.length;
       var list = [];
       var start = header.length;
@@ -19910,7 +19910,7 @@ var require_ipaddr = __commonJS({
         transitional: new RegExp("^((?:" + ipv6Part + ")|(?:::)(?:" + ipv6Part + ")?)" + (ipv4Part + "\\." + ipv4Part + "\\." + ipv4Part + "\\." + ipv4Part) + ("(" + zoneIndex + ")?$"), "i")
       };
       expandIPv6 = function(string4, parts) {
-        var colonCount, lastColon, part, replacement, replacementCount, zoneId;
+        var colonCount, lastColon, part, replacement2, replacementCount, zoneId;
         if (string4.indexOf("::") !== string4.lastIndexOf("::")) {
           return null;
         }
@@ -19934,11 +19934,11 @@ var require_ipaddr = __commonJS({
           return null;
         }
         replacementCount = parts - colonCount;
-        replacement = ":";
+        replacement2 = ":";
         while (replacementCount--) {
-          replacement += "0:";
+          replacement2 += "0:";
         }
-        string4 = string4.replace("::", replacement);
+        string4 = string4.replace("::", replacement2);
         if (string4[0] === ":") {
           string4 = string4.slice(1);
         }
@@ -21332,7 +21332,7 @@ var require_request = __commonJS({
     var http2 = require("http");
     var fresh = require_fresh();
     var parseRange = require_range_parser();
-    var parse3 = require_parseurl();
+    var parse4 = require_parseurl();
     var proxyaddr = require_proxy_addr();
     var req = Object.create(http2.IncomingMessage.prototype);
     module2.exports = req;
@@ -21437,7 +21437,7 @@ var require_request = __commonJS({
       return subdomains2.slice(offset);
     });
     defineGetter(req, "path", function path() {
-      return parse3(this).pathname;
+      return parse4(this).pathname;
     });
     defineGetter(req, "hostname", function hostname3() {
       var trust = this.app.get("trust proxy fn");
@@ -21510,14 +21510,14 @@ var require_cookie_signature = __commonJS({
 var require_cookie = __commonJS({
   "node_modules/.pnpm/cookie@0.7.1/node_modules/cookie/index.js"(exports2) {
     "use strict";
-    exports2.parse = parse3;
+    exports2.parse = parse4;
     exports2.serialize = serialize;
     var __toString = Object.prototype.toString;
     var cookieNameRegExp = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
     var cookieValueRegExp = /^("?)[\u0021\u0023-\u002B\u002D-\u003A\u003C-\u005B\u005D-\u007E]*\1$/;
     var domainValueRegExp = /^([.]?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)([.][a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i;
     var pathValueRegExp = /^[\u0020-\u003A\u003D-\u007E]*$/;
-    function parse3(str, opt) {
+    function parse4(str, opt) {
       if (typeof str !== "string") {
         throw new TypeError("argument str must be a string");
       }
@@ -21685,7 +21685,7 @@ var require_vary = __commonJS({
       if (!field) {
         throw new TypeError("field argument is required");
       }
-      var fields = !Array.isArray(field) ? parse3(String(field)) : field;
+      var fields = !Array.isArray(field) ? parse4(String(field)) : field;
       for (var j = 0; j < fields.length; j++) {
         if (!FIELD_NAME_REGEXP.test(fields[j])) {
           throw new TypeError("field argument contains an invalid header name");
@@ -21695,7 +21695,7 @@ var require_vary = __commonJS({
         return header;
       }
       var val = header;
-      var vals = parse3(header.toLowerCase());
+      var vals = parse4(header.toLowerCase());
       if (fields.indexOf("*") !== -1 || vals.indexOf("*") !== -1) {
         return "*";
       }
@@ -21708,7 +21708,7 @@ var require_vary = __commonJS({
       }
       return val;
     }
-    function parse3(header) {
+    function parse4(header) {
       var end = 0;
       var list = [];
       var start = 0;
@@ -21892,10 +21892,10 @@ var require_response = __commonJS({
         }
       }
       var app2 = this.app;
-      var escape2 = app2.get("json escape");
+      var escape3 = app2.get("json escape");
       var replacer = app2.get("json replacer");
       var spaces = app2.get("json spaces");
-      var body = stringify(val, replacer, spaces, escape2);
+      var body = stringify(val, replacer, spaces, escape3);
       if (!this.get("Content-Type")) {
         this.set("Content-Type", "application/json");
       }
@@ -21914,10 +21914,10 @@ var require_response = __commonJS({
         }
       }
       var app2 = this.app;
-      var escape2 = app2.get("json escape");
+      var escape3 = app2.get("json escape");
       var replacer = app2.get("json replacer");
       var spaces = app2.get("json spaces");
-      var body = stringify(val, replacer, spaces, escape2);
+      var body = stringify(val, replacer, spaces, escape3);
       var callback = this.req.query[app2.get("jsonp callback name")];
       if (!this.get("Content-Type")) {
         this.set("X-Content-Type-Options", "nosniff");
@@ -22264,9 +22264,9 @@ var require_response = __commonJS({
       }
       file2.pipe(res2);
     }
-    function stringify(value, replacer, spaces, escape2) {
+    function stringify(value, replacer, spaces, escape3) {
       var json3 = replacer || spaces ? JSON.stringify(value, replacer, spaces) : JSON.stringify(value);
-      if (escape2 && typeof json3 === "string") {
+      if (escape3 && typeof json3 === "string") {
         json3 = json3.replace(/[<>&]/g, function(c) {
           switch (c.charCodeAt(0)) {
             case 60:
@@ -22468,7 +22468,351 @@ var require_express2 = __commonJS({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/entity.js
+// node_modules/.pnpm/@tidbcloud+serverless@0.3.0/node_modules/@tidbcloud/serverless/dist/index.js
+function format(query, values) {
+  return Array.isArray(values) ? replacePosition(query, values) : replaceNamed(query, values);
+}
+function replacePosition(query, values) {
+  let index2 = 0;
+  return query.replace(/\?/g, (match) => {
+    return index2 < values.length ? sanitize(values[index2++]) : match;
+  });
+}
+function replaceNamed(query, values) {
+  return query.replace(/:(\w+)/g, (match, name2) => {
+    return hasOwn(values, name2) ? sanitize(values[name2]) : match;
+  });
+}
+function hasOwn(obj, name2) {
+  return Object.prototype.hasOwnProperty.call(obj, name2);
+}
+function sanitize(value) {
+  if (value == null) {
+    return "null";
+  }
+  if (["number", "bigint"].includes(typeof value)) {
+    return String(value);
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (value instanceof Uint8Array) {
+    return uint8ArrayToHex(value);
+  }
+  if (typeof value === "string") {
+    return quote(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitize).join(", ");
+  }
+  if (value instanceof Date) {
+    return quote(value.toISOString().replace("Z", ""));
+  }
+  return quote(value.toString());
+}
+function quote(text2) {
+  return `'${escape2(text2)}'`;
+}
+function escape2(text2) {
+  return text2.replace(re, replacement);
+}
+function replacement(text2) {
+  switch (text2) {
+    case '"':
+      return '\\"';
+    case "'":
+      return "\\'";
+    case "\n":
+      return "\\n";
+    case "\r":
+      return "\\r";
+    case "	":
+      return "\\t";
+    case "\\":
+      return "\\\\";
+    case "\0":
+      return "\\0";
+    case "\b":
+      return "\\b";
+    case "":
+      return "\\Z";
+    default:
+      return "";
+  }
+}
+function uint8ArrayToHex(uint8) {
+  const digits = Array.from(uint8).map((i) => i.toString(16).padStart(2, "0"));
+  return `0x${digits.join("")}`;
+}
+function cast(field, value, decoder2) {
+  if (value === null) {
+    return null;
+  }
+  if (decoder2[field.type]) {
+    return decoder2[field.type](value);
+  }
+  switch (field.type) {
+    // bool will be converted to TINYINT
+    case "TINYINT":
+    case "UNSIGNED TINYINT":
+    case "SMALLINT":
+    case "UNSIGNED SMALLINT":
+    case "MEDIUMINT":
+    case "UNSIGNED MEDIUMINT":
+    case "INT":
+    case "UNSIGNED INT":
+    case "YEAR":
+      return parseInt(value, 10);
+    case "FLOAT":
+    case "DOUBLE":
+      return parseFloat(value);
+    case "BIGINT":
+    case "UNSIGNED BIGINT":
+    case "DECIMAL":
+    case "SET":
+    case "ENUM":
+    case "CHAR":
+    case "VARCHAR":
+    case "TEXT":
+    case "MEDIUMTEXT":
+    case "LONGTEXT":
+    case "TINYTEXT":
+    case "DATE":
+    case "TIME":
+    case "DATETIME":
+    case "TIMESTAMP":
+      return value;
+    case "BLOB":
+    case "TINYBLOB":
+    case "MEDIUMBLOB":
+    case "LONGBLOB":
+    case "BINARY":
+    case "VARBINARY":
+    case "BIT":
+      return hexToUint8Array(value);
+    case "JSON":
+      return JSON.parse(value);
+    default:
+      return value;
+  }
+}
+function hexToUint8Array(hexString) {
+  const uint8Array = new Uint8Array(hexString.length / 2);
+  for (let i = 0; i < hexString.length; i += 2) {
+    uint8Array[i / 2] = parseInt(hexString.substring(i, i + 2), 16);
+  }
+  return uint8Array;
+}
+async function postQuery(config2, body, session = "", isolationLevel = null, debug, statefulAction) {
+  let fetchCacheOption = { cache: "no-store" };
+  try {
+    new Request("x:", fetchCacheOption);
+  } catch (err) {
+    fetchCacheOption = {};
+  }
+  const requestId = generateUniqueId();
+  if (debug) {
+    console.log(`[serverless-js debug] request id: ${requestId}`);
+  }
+  const url2 = new URL("/v1beta/sql", `https://http-${config2.host}`);
+  const auth = btoa(`${config2.username}:${config2.password}`);
+  const { fetch: fetch2 } = config2;
+  const database = config2.database ?? "";
+  const headers = {
+    "Content-Type": "application/json",
+    "User-Agent": `serverless-js/${Version}`,
+    Authorization: `Basic ${auth}`,
+    "TiDB-Database": database,
+    "TiDB-Session": session,
+    "X-Debug-Trace-Id": requestId,
+    "Accept-Encoding": "gzip"
+  };
+  if (isolationLevel) {
+    headers["TiDB-Isolation-Level"] = isolationLevel;
+  }
+  if (statefulAction) {
+    headers["TiDB-Stateful-Action"] = statefulAction;
+  }
+  const response = await fetch2(url2.toString(), {
+    method: "POST",
+    body,
+    headers,
+    ...fetchCacheOption
+  });
+  if (debug) {
+    const traceId = response?.headers?.get("X-Debug-Trace-Id");
+    console.log(`[serverless-js debug] response id: ${traceId}`);
+    const contentEncoding = response?.headers?.get("Content-Encoding");
+    console.log(`[serverless-js debug] Content-Encoding: ${contentEncoding}`);
+  }
+  if (response.ok) {
+    const resp = await response.json();
+    const session2 = response.headers.get("TiDB-Session");
+    resp.session = session2 ?? "";
+    return resp;
+  } else {
+    let error46;
+    try {
+      const e = await response.json();
+      error46 = new DatabaseError(e.message, response.status, e);
+    } catch {
+      error46 = new DatabaseError(response.statusText, response.status, null);
+    }
+    throw error46;
+  }
+}
+function generateUniqueId() {
+  const datetime4 = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\d]/g, "").slice(0, 14);
+  return `${datetime4}${randomString(20)}`;
+}
+function randomString(n) {
+  let result = "";
+  const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const l = characters.length;
+  for (let i = 0; i < n; i++) {
+    result += characters[Math.floor(Math.random() * l)];
+  }
+  return result;
+}
+function connect(config2) {
+  return new Connection(config2);
+}
+function parseArrayRow(fields, rawRow, cast2, decoders) {
+  return fields.map((field, ix) => {
+    return cast2(field, rawRow[ix], decoders);
+  });
+}
+function parseObjectRow(fields, rawRow, cast2, decoders) {
+  return fields.reduce((acc, field, ix) => {
+    acc[field.name] = cast2(field, rawRow[ix], decoders);
+    return acc;
+  }, {});
+}
+function parse(fields, rows, cast2, arrayMode, decode4) {
+  return rows.map((row) => arrayMode === true ? parseArrayRow(fields, row, cast2, decode4) : parseObjectRow(fields, row, cast2, decode4));
+}
+var re, DatabaseError, Version, defaultExecuteOptions, Tx, Connection, StatefulConnection;
+var init_dist = __esm({
+  "node_modules/.pnpm/@tidbcloud+serverless@0.3.0/node_modules/@tidbcloud/serverless/dist/index.js"() {
+    re = /[\0\b\n\r\t\x1a\\"']/g;
+    DatabaseError = class extends Error {
+      constructor(message2, status, details) {
+        super(message2);
+        this.status = status;
+        this.details = details;
+      }
+    };
+    Version = "0.3.0";
+    defaultExecuteOptions = {};
+    Tx = class {
+      constructor(conn) {
+        this.conn = conn;
+      }
+      async execute(query, args = null, options = defaultExecuteOptions) {
+        return this.conn.execute(query, args, options);
+      }
+      async commit() {
+        return this.conn.execute("COMMIT");
+      }
+      async rollback() {
+        return this.conn.execute("ROLLBACK");
+      }
+    };
+    Connection = class _Connection {
+      constructor(config2) {
+        var _a;
+        this.session = null;
+        this.config = { ...config2 };
+        if (typeof fetch !== "undefined") {
+          (_a = this.config).fetch || (_a.fetch = fetch);
+        }
+        if (config2.url) {
+          const url2 = new URL(config2.url);
+          if (!this.config.username) {
+            this.config.username = decodeURIComponent(url2.username);
+          }
+          if (!this.config.password) {
+            this.config.password = decodeURIComponent(url2.password);
+          }
+          if (!this.config.host) {
+            this.config.host = url2.hostname;
+          }
+          if (!this.config.database) {
+            this.config.database = decodeURIComponent(url2.pathname.slice(1));
+          }
+        }
+      }
+      getConfig() {
+        return this.config;
+      }
+      async begin(txOptions = {}) {
+        const conn = new _Connection(this.config);
+        const tx = new Tx(conn);
+        await conn.execute("BEGIN", void 0, void 0, txOptions);
+        return tx;
+      }
+      async persist() {
+        const conn = new _Connection(this.config);
+        await conn.execute("", null, defaultExecuteOptions, {}, "open");
+        const stateful = new StatefulConnection(conn);
+        return stateful;
+      }
+      async execute(query, args = null, options = defaultExecuteOptions, txOptions = {}, statefulAction) {
+        const sql2 = args ? format(query, args) : query;
+        const body = JSON.stringify({ query: sql2 });
+        const debug = options.debug ?? this.config.debug ?? false;
+        if (debug) {
+          console.log(`[serverless-js debug] sql: ${sql2}`);
+        }
+        const resp = await postQuery(
+          this.config,
+          body,
+          this.session ?? "",
+          sql2 == "BEGIN" ? txOptions.isolation : null,
+          debug,
+          statefulAction
+        );
+        this.session = resp?.session ?? null;
+        if (this.session === null || this.session === "") {
+          throw new DatabaseError("empty session, please try again", 500, null);
+        }
+        const arrayMode = options.arrayMode ?? this.config.arrayMode ?? false;
+        const fullResult = options.fullResult ?? this.config.fullResult ?? false;
+        const decoders = { ...this.config.decoders, ...options.decoders };
+        const fields = resp?.types ?? [];
+        const rows = resp ? parse(fields, resp?.rows ?? [], cast, arrayMode, decoders) : [];
+        if (fullResult) {
+          const rowsAffected = resp?.rowsAffected ?? null;
+          const lastInsertId = resp?.sLastInsertID ?? null;
+          const typeByName = (acc, { name: name2, type }) => ({ ...acc, [name2]: type });
+          const types = fields.reduce(typeByName, {});
+          return {
+            statement: sql2,
+            types,
+            rows,
+            rowsAffected,
+            lastInsertId,
+            rowCount: rows.length
+          };
+        }
+        return rows;
+      }
+    };
+    StatefulConnection = class {
+      constructor(conn) {
+        this.conn = conn;
+      }
+      async execute(query, args = null, options = defaultExecuteOptions) {
+        return this.conn.execute(query, args, options);
+      }
+      async close() {
+        await this.conn.execute("", null, defaultExecuteOptions, {}, "close");
+      }
+    };
+  }
+});
+
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/entity.js
 function is(value, type) {
   if (!value || typeof value !== "object") {
     return false;
@@ -22494,16 +22838,16 @@ function is(value, type) {
 }
 var entityKind, hasOwnEntityKind;
 var init_entity = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/entity.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/entity.js"() {
     entityKind = Symbol.for("drizzle:entityKind");
     hasOwnEntityKind = Symbol.for("drizzle:hasOwnEntityKind");
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/column.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/column.js
 var Column;
 var init_column = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/column.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/column.js"() {
     init_entity();
     Column = class {
       constructor(table, config2) {
@@ -22557,10 +22901,10 @@ var init_column = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/column-builder.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/column-builder.js
 var ColumnBuilder;
 var init_column_builder = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/column-builder.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/column-builder.js"() {
     init_entity();
     ColumnBuilder = class {
       static [entityKind] = "ColumnBuilder";
@@ -22666,18 +23010,18 @@ var init_column_builder = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/table.utils.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/table.utils.js
 var TableName;
 var init_table_utils = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/table.utils.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/table.utils.js"() {
     TableName = Symbol.for("drizzle:Name");
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/foreign-keys.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/foreign-keys.js
 var ForeignKeyBuilder, ForeignKey;
 var init_foreign_keys = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/foreign-keys.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/foreign-keys.js"() {
     init_entity();
     init_table_utils();
     ForeignKeyBuilder = class {
@@ -22738,22 +23082,22 @@ var init_foreign_keys = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/tracing-utils.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tracing-utils.js
 function iife(fn, ...args) {
   return fn(...args);
 }
 var init_tracing_utils = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/tracing-utils.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tracing-utils.js"() {
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/unique-constraint.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/unique-constraint.js
 function uniqueKeyName(table, columns) {
   return `${table[TableName]}_${columns.join("_")}_unique`;
 }
 var UniqueConstraintBuilder, UniqueOnConstraintBuilder, UniqueConstraint;
 var init_unique_constraint = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/unique-constraint.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/unique-constraint.js"() {
     init_entity();
     init_table_utils();
     UniqueConstraintBuilder = class {
@@ -22804,7 +23148,7 @@ var init_unique_constraint = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/utils/array.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/utils/array.js
 function parsePgArrayValue(arrayString, startFrom, inQuotes) {
   for (let i = startFrom; i < arrayString.length; i++) {
     const char2 = arrayString[i];
@@ -22880,14 +23224,14 @@ function makePgArray(array2) {
   }).join(",")}}`;
 }
 var init_array = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/utils/array.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/utils/array.js"() {
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/common.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/common.js
 var PgColumnBuilder, PgColumn, ExtraConfigColumn, IndexedColumn, PgArrayBuilder, PgArray;
 var init_common = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/common.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/common.js"() {
     init_column_builder();
     init_column();
     init_entity();
@@ -23080,13 +23424,13 @@ var init_common = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/enum.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/enum.js
 function isPgEnum(obj) {
   return !!obj && typeof obj === "function" && isPgEnumSym in obj && obj[isPgEnumSym] === true;
 }
 var PgEnumObjectColumnBuilder, PgEnumObjectColumn, isPgEnumSym, PgEnumColumnBuilder, PgEnumColumn;
 var init_enum = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/enum.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/columns/enum.js"() {
     init_entity();
     init_common();
     PgEnumObjectColumnBuilder = class extends PgColumnBuilder {
@@ -23145,10 +23489,10 @@ var init_enum = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/subquery.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/subquery.js
 var Subquery, WithSubquery;
 var init_subquery = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/subquery.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/subquery.js"() {
     init_entity();
     Subquery = class {
       static [entityKind] = "Subquery";
@@ -23172,18 +23516,18 @@ var init_subquery = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/version.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/version.js
 var version;
 var init_version = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/version.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/version.js"() {
     version = "0.44.6";
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/tracing.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tracing.js
 var otel, rawTracer, tracer;
 var init_tracing = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/tracing.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tracing.js"() {
     init_tracing_utils();
     init_version();
     tracer = {
@@ -23220,15 +23564,15 @@ var init_tracing = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/view-common.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/view-common.js
 var ViewBaseConfig;
 var init_view_common = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/view-common.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/view-common.js"() {
     ViewBaseConfig = Symbol.for("drizzle:ViewBaseConfig");
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/table.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/table.js
 function isTable(table) {
   return typeof table === "object" && table !== null && IsDrizzleTable in table;
 }
@@ -23240,7 +23584,7 @@ function getTableUniqueName(table) {
 }
 var Schema, Columns, ExtraConfigColumns, OriginalName, BaseName, IsAlias, ExtraConfigBuilder, IsDrizzleTable, Table;
 var init_table = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/table.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/table.js"() {
     init_entity();
     init_table_utils();
     Schema = Symbol.for("drizzle:Schema");
@@ -23300,7 +23644,7 @@ var init_table = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/sql.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/sql.js
 function isSQLWrapper(value) {
   return value !== null && value !== void 0 && typeof value.getSQL === "function";
 }
@@ -23365,7 +23709,7 @@ function getViewName(view) {
 }
 var FakePrimitiveParam, StringChunk, SQL, Name, noopDecoder, noopEncoder, noopMapper, Param, Placeholder, IsDrizzleView, View;
 var init_sql = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/sql.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/sql.js"() {
     init_entity();
     init_enum();
     init_subquery();
@@ -23721,7 +24065,7 @@ var init_sql = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/alias.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/alias.js
 function aliasedTable(table, tableAlias) {
   return new Proxy(table, new TableAliasProxyHandler(tableAlias, false));
 }
@@ -23753,7 +24097,7 @@ function mapColumnsInSQLToAlias(query, alias) {
 }
 var ColumnAliasProxyHandler, TableAliasProxyHandler, RelationTableAliasProxyHandler;
 var init_alias = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/alias.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/alias.js"() {
     init_column();
     init_entity();
     init_sql();
@@ -23830,10 +24174,10 @@ var init_alias = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/errors.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/errors.js
 var DrizzleError, DrizzleQueryError, TransactionRollbackError;
 var init_errors = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/errors.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/errors.js"() {
     init_entity();
     DrizzleError = class extends Error {
       static [entityKind] = "DrizzleError";
@@ -23863,10 +24207,10 @@ params: ${params}`);
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/logger.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/logger.js
 var ConsoleLogWriter, DefaultLogger, NoopLogger;
 var init_logger = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/logger.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/logger.js"() {
     init_entity();
     ConsoleLogWriter = class {
       static [entityKind] = "ConsoleLogWriter";
@@ -23900,16 +24244,16 @@ var init_logger = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/operations.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/operations.js
 var init_operations = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/operations.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/operations.js"() {
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/query-promise.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/query-promise.js
 var QueryPromise;
 var init_query_promise = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/query-promise.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/query-promise.js"() {
     init_entity();
     QueryPromise = class {
       static [entityKind] = "QueryPromise";
@@ -23936,7 +24280,7 @@ var init_query_promise = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/utils.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/utils.js
 function mapResultRow(columns, row, joinsNotNullableMap) {
   const nullifyMap = {};
   const result = columns.reduce(
@@ -24088,7 +24432,7 @@ function isConfig(data) {
 }
 var textDecoder;
 var init_utils = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/utils.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/utils.js"() {
     init_column();
     init_entity();
     init_sql();
@@ -24099,10 +24443,10 @@ var init_utils = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/table.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/table.js
 var InlineForeignKeys, EnableRLS, PgTable;
 var init_table2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/table.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/table.js"() {
     init_entity();
     init_table();
     InlineForeignKeys = Symbol.for("drizzle:PgInlineForeignKeys");
@@ -24126,10 +24470,10 @@ var init_table2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/primary-keys.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/primary-keys.js
 var PrimaryKeyBuilder, PrimaryKey;
 var init_primary_keys = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/primary-keys.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/pg-core/primary-keys.js"() {
     init_entity();
     init_table2();
     PrimaryKeyBuilder = class {
@@ -24163,7 +24507,7 @@ var init_primary_keys = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/conditions.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/conditions.js
 function bindIfParam(value, column) {
   if (isDriverValueEncoder(column) && !isSQLWrapper(value) && !is(value, Param) && !is(value, Placeholder) && !is(value, Column) && !is(value, Table) && !is(value, View)) {
     return new Param(value, column);
@@ -24291,7 +24635,7 @@ function arrayOverlaps(column, values) {
 }
 var eq, ne, gt, gte, lt, lte;
 var init_conditions = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/conditions.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/conditions.js"() {
     init_column();
     init_entity();
     init_table();
@@ -24317,7 +24661,7 @@ var init_conditions = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/select.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/select.js
 function asc(column) {
   return sql`${column} asc`;
 }
@@ -24325,20 +24669,20 @@ function desc(column) {
   return sql`${column} desc`;
 }
 var init_select = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/select.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/select.js"() {
     init_sql();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/index.js
 var init_expressions = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/expressions/index.js"() {
     init_conditions();
     init_select();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/relations.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/relations.js
 function getOperators() {
   return {
     and,
@@ -24559,7 +24903,7 @@ function mapRelationalRow(tablesConfig, tableConfig, row, buildQueryResultSelect
 }
 var Relation, Relations, One, Many;
 var init_relations = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/relations.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/relations.js"() {
     init_table();
     init_column();
     init_entity();
@@ -24621,7 +24965,7 @@ var init_relations = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/aggregate.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/aggregate.js
 function count(expression) {
   return sql`count(${expression || sql.raw("*")})`.mapWith(Number);
 }
@@ -24647,14 +24991,14 @@ function min(expression) {
   return sql`min(${expression})`.mapWith(is(expression, Column) ? expression : String);
 }
 var init_aggregate = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/aggregate.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/aggregate.js"() {
     init_column();
     init_entity();
     init_sql();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/vector.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/vector.js
 function toSql(value) {
   return JSON.stringify(value);
 }
@@ -24695,29 +25039,29 @@ function jaccardDistance(column, value) {
   return sql`${column} <%> ${value}`;
 }
 var init_vector = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/vector.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/vector.js"() {
     init_sql();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/index.js
 var init_functions = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/functions/index.js"() {
     init_aggregate();
     init_vector();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/index.js
 var init_sql2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/sql/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/sql/index.js"() {
     init_expressions();
     init_functions();
     init_sql();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/index.js
 var drizzle_orm_exports = {};
 __export(drizzle_orm_exports, {
   BaseName: () => BaseName,
@@ -24840,7 +25184,7 @@ __export(drizzle_orm_exports, {
   textDecoder: () => textDecoder
 });
 var init_drizzle_orm = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/index.js"() {
     init_alias();
     init_column_builder();
     init_column();
@@ -24858,10 +25202,10 @@ var init_drizzle_orm = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/selection-proxy.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/selection-proxy.js
 var SelectionProxyHandler;
 var init_selection_proxy = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/selection-proxy.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/selection-proxy.js"() {
     init_alias();
     init_column();
     init_entity();
@@ -24937,10 +25281,10 @@ var init_selection_proxy = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/count.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/count.js
 var MySqlCountBuilder;
 var init_count = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/count.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/count.js"() {
     init_entity();
     init_sql();
     MySqlCountBuilder = class _MySqlCountBuilder extends SQL {
@@ -24989,10 +25333,10 @@ var init_count = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/checks.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/checks.js
 var CheckBuilder, Check;
 var init_checks = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/checks.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/checks.js"() {
     init_entity();
     CheckBuilder = class {
       constructor(name2, value) {
@@ -25019,10 +25363,10 @@ var init_checks = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/foreign-keys.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/foreign-keys.js
 var ForeignKeyBuilder2, ForeignKey2;
 var init_foreign_keys2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/foreign-keys.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/foreign-keys.js"() {
     init_entity();
     init_table_utils();
     ForeignKeyBuilder2 = class {
@@ -25083,13 +25427,13 @@ var init_foreign_keys2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/indexes.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/indexes.js
 function index(name2) {
   return new IndexBuilderOn(name2, false);
 }
 var IndexBuilderOn, IndexBuilder, Index;
 var init_indexes = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/indexes.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/indexes.js"() {
     init_entity();
     IndexBuilderOn = class {
       constructor(name2, unique) {
@@ -25139,13 +25483,13 @@ var init_indexes = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/unique-constraint.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/unique-constraint.js
 function uniqueKeyName2(table, columns) {
   return `${table[TableName]}_${columns.join("_")}_unique`;
 }
 var UniqueConstraintBuilder2, UniqueOnConstraintBuilder2, UniqueConstraint2;
 var init_unique_constraint2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/unique-constraint.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/unique-constraint.js"() {
     init_entity();
     init_table_utils();
     UniqueConstraintBuilder2 = class {
@@ -25189,10 +25533,10 @@ var init_unique_constraint2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/common.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/common.js
 var MySqlColumnBuilder, MySqlColumn, MySqlColumnBuilderWithAutoIncrement, MySqlColumnWithAutoIncrement;
 var init_common2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/common.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/common.js"() {
     init_column_builder();
     init_column();
     init_entity();
@@ -25266,7 +25610,7 @@ var init_common2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/bigint.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/bigint.js
 function bigint(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2.mode === "number") {
@@ -25276,7 +25620,7 @@ function bigint(a, b) {
 }
 var MySqlBigInt53Builder, MySqlBigInt53, MySqlBigInt64Builder, MySqlBigInt64;
 var init_bigint = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/bigint.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/bigint.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25333,14 +25677,14 @@ var init_bigint = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/binary.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/binary.js
 function binary(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlBinaryBuilder(name2, config2.length);
 }
 var MySqlBinaryBuilder, MySqlBinary;
 var init_binary = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/binary.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/binary.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25374,13 +25718,13 @@ var init_binary = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/boolean.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/boolean.js
 function boolean(name2) {
   return new MySqlBooleanBuilder(name2 ?? "");
 }
 var MySqlBooleanBuilder, MySqlBoolean;
 var init_boolean = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/boolean.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/boolean.js"() {
     init_entity();
     init_common2();
     MySqlBooleanBuilder = class extends MySqlColumnBuilder {
@@ -25411,14 +25755,14 @@ var init_boolean = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/char.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/char.js
 function char(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlCharBuilder(name2, config2);
 }
 var MySqlCharBuilder, MySqlChar;
 var init_char = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/char.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/char.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25448,7 +25792,7 @@ var init_char = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/custom.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/custom.js
 function customType(customTypeParams) {
   return (a, b) => {
     const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
@@ -25457,7 +25801,7 @@ function customType(customTypeParams) {
 }
 var MySqlCustomColumnBuilder, MySqlCustomColumn;
 var init_custom = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/custom.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/custom.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25500,7 +25844,7 @@ var init_custom = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.js
 function date(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2?.mode === "string") {
@@ -25510,7 +25854,7 @@ function date(a, b) {
 }
 var MySqlDateBuilder, MySqlDate, MySqlDateStringBuilder, MySqlDateString;
 var init_date = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25561,7 +25905,7 @@ var init_date = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/datetime.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/datetime.js
 function datetime(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2?.mode === "string") {
@@ -25571,7 +25915,7 @@ function datetime(a, b) {
 }
 var MySqlDateTimeBuilder, MySqlDateTime, MySqlDateTimeStringBuilder, MySqlDateTimeString;
 var init_datetime = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/datetime.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/datetime.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25636,7 +25980,7 @@ var init_datetime = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/decimal.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/decimal.js
 function decimal(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   const mode = config2?.mode;
@@ -25644,7 +25988,7 @@ function decimal(a, b = {}) {
 }
 var MySqlDecimalBuilder, MySqlDecimal, MySqlDecimalNumberBuilder, MySqlDecimalNumber, MySqlDecimalBigIntBuilder, MySqlDecimalBigInt;
 var init_decimal = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/decimal.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/decimal.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25764,14 +26108,14 @@ var init_decimal = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/double.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/double.js
 function double(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlDoubleBuilder(name2, config2);
 }
 var MySqlDoubleBuilder, MySqlDouble;
 var init_double = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/double.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/double.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25808,7 +26152,7 @@ var init_double = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/enum.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/enum.js
 function mysqlEnum(a, b) {
   if (typeof a === "string" && Array.isArray(b) || Array.isArray(a)) {
     const name2 = typeof a === "string" && a.length > 0 ? a : "";
@@ -25829,7 +26173,7 @@ function mysqlEnum(a, b) {
 }
 var MySqlEnumColumnBuilder, MySqlEnumColumn, MySqlEnumObjectColumnBuilder, MySqlEnumObjectColumn;
 var init_enum2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/enum.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/enum.js"() {
     init_entity();
     init_common2();
     MySqlEnumColumnBuilder = class extends MySqlColumnBuilder {
@@ -25877,14 +26221,14 @@ var init_enum2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/float.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/float.js
 function float(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlFloatBuilder(name2, config2);
 }
 var MySqlFloatBuilder, MySqlFloat;
 var init_float = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/float.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/float.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25921,14 +26265,14 @@ var init_float = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/int.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/int.js
 function int(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlIntBuilder(name2, config2);
 }
 var MySqlIntBuilder, MySqlInt;
 var init_int = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/int.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/int.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -25958,13 +26302,13 @@ var init_int = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/json.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/json.js
 function json(name2) {
   return new MySqlJsonBuilder(name2 ?? "");
 }
 var MySqlJsonBuilder, MySqlJson;
 var init_json = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/json.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/json.js"() {
     init_entity();
     init_common2();
     MySqlJsonBuilder = class extends MySqlColumnBuilder {
@@ -25989,14 +26333,14 @@ var init_json = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/mediumint.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/mediumint.js
 function mediumint(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlMediumIntBuilder(name2, config2);
 }
 var MySqlMediumIntBuilder, MySqlMediumInt;
 var init_mediumint = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/mediumint.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/mediumint.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26029,14 +26373,14 @@ var init_mediumint = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/real.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/real.js
 function real(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlRealBuilder(name2, config2);
 }
 var MySqlRealBuilder, MySqlReal;
 var init_real = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/real.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/real.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26069,13 +26413,13 @@ var init_real = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/serial.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/serial.js
 function serial(name2) {
   return new MySqlSerialBuilder(name2 ?? "");
 }
 var MySqlSerialBuilder, MySqlSerial;
 var init_serial = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/serial.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/serial.js"() {
     init_entity();
     init_common2();
     MySqlSerialBuilder = class extends MySqlColumnBuilderWithAutoIncrement {
@@ -26105,14 +26449,14 @@ var init_serial = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/smallint.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/smallint.js
 function smallint(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlSmallIntBuilder(name2, config2);
 }
 var MySqlSmallIntBuilder, MySqlSmallInt;
 var init_smallint = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/smallint.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/smallint.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26145,7 +26489,7 @@ var init_smallint = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/text.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/text.js
 function text(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlTextBuilder(name2, "text", config2);
@@ -26164,7 +26508,7 @@ function longtext(a, b = {}) {
 }
 var MySqlTextBuilder, MySqlText;
 var init_text = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/text.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/text.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26191,14 +26535,14 @@ var init_text = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/time.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/time.js
 function time(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlTimeBuilder(name2, config2);
 }
 var MySqlTimeBuilder, MySqlTime;
 var init_time = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/time.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/time.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26224,10 +26568,10 @@ var init_time = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.common.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.common.js
 var MySqlDateColumnBaseBuilder, MySqlDateBaseColumn;
 var init_date_common = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.common.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/date.common.js"() {
     init_entity();
     init_sql();
     init_common2();
@@ -26250,7 +26594,7 @@ var init_date_common = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/timestamp.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/timestamp.js
 function timestamp(a, b = {}) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   if (config2?.mode === "string") {
@@ -26260,7 +26604,7 @@ function timestamp(a, b = {}) {
 }
 var MySqlTimestampBuilder, MySqlTimestamp, MySqlTimestampStringBuilder, MySqlTimestampString;
 var init_timestamp = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/timestamp.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/timestamp.js"() {
     init_entity();
     init_utils();
     init_date_common();
@@ -26317,14 +26661,14 @@ var init_timestamp = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/tinyint.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/tinyint.js
 function tinyint(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlTinyIntBuilder(name2, config2);
 }
 var MySqlTinyIntBuilder, MySqlTinyInt;
 var init_tinyint = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/tinyint.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/tinyint.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26357,14 +26701,14 @@ var init_tinyint = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varbinary.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varbinary.js
 function varbinary(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlVarBinaryBuilder(name2, config2);
 }
 var MySqlVarBinaryBuilder, MySqlVarBinary;
 var init_varbinary = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varbinary.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varbinary.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26402,14 +26746,14 @@ var init_varbinary = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varchar.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varchar.js
 function varchar(a, b) {
   const { name: name2, config: config2 } = getColumnNameAndConfig(a, b);
   return new MySqlVarCharBuilder(name2, config2);
 }
 var MySqlVarCharBuilder, MySqlVarChar;
 var init_varchar = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varchar.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/varchar.js"() {
     init_entity();
     init_utils();
     init_common2();
@@ -26440,13 +26784,13 @@ var init_varchar = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/year.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/year.js
 function year(name2) {
   return new MySqlYearBuilder(name2 ?? "");
 }
 var MySqlYearBuilder, MySqlYear;
 var init_year = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/year.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/year.js"() {
     init_entity();
     init_common2();
     MySqlYearBuilder = class extends MySqlColumnBuilder {
@@ -26468,7 +26812,7 @@ var init_year = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/all.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/all.js
 function getMySqlColumnBuilders() {
   return {
     bigint,
@@ -26501,7 +26845,7 @@ function getMySqlColumnBuilders() {
   };
 }
 var init_all = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/all.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/all.js"() {
     init_bigint();
     init_binary();
     init_boolean();
@@ -26529,7 +26873,7 @@ var init_all = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/table.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/table.js
 function mysqlTableWithSchema(name2, columns, extraConfig, schema, baseName = name2) {
   const rawTable = new MySqlTable(name2, schema, baseName);
   const parsedColumns = typeof columns === "function" ? columns(getMySqlColumnBuilders()) : columns;
@@ -26552,7 +26896,7 @@ function mysqlTableWithSchema(name2, columns, extraConfig, schema, baseName = na
 }
 var InlineForeignKeys2, MySqlTable, mysqlTable;
 var init_table3 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/table.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/table.js"() {
     init_entity();
     init_table();
     init_all();
@@ -26576,10 +26920,10 @@ var init_table3 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/primary-keys.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/primary-keys.js
 var PrimaryKeyBuilder2, PrimaryKey2;
 var init_primary_keys2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/primary-keys.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/primary-keys.js"() {
     init_entity();
     init_table3();
     PrimaryKeyBuilder2 = class {
@@ -26613,15 +26957,15 @@ var init_primary_keys2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-common.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-common.js
 var MySqlViewConfig;
 var init_view_common2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-common.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-common.js"() {
     MySqlViewConfig = Symbol.for("drizzle:MySqlViewConfig");
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/utils.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/utils.js
 function extractUsedTable(table) {
   if (is(table, MySqlTable)) {
     return [`${table[Table.Symbol.BaseName]}`];
@@ -26643,7 +26987,7 @@ function toArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 var init_utils2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/utils.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/utils.js"() {
     init_entity();
     init_drizzle_orm();
     init_subquery();
@@ -26652,10 +26996,10 @@ var init_utils2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/delete.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/delete.js
 var MySqlDeleteBase;
 var init_delete = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/delete.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/delete.js"() {
     init_entity();
     init_query_promise();
     init_selection_proxy();
@@ -26762,7 +27106,7 @@ var init_delete = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/casing.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/casing.js
 function toSnakeCase(input) {
   const words = input.replace(/['\u2019]/g, "").match(/[\da-z]+|[A-Z]+(?![a-z])|[A-Z][\da-z]+/g) ?? [];
   return words.map((word) => word.toLowerCase()).join("_");
@@ -26779,7 +27123,7 @@ function noopCase(input) {
 }
 var CasingCache;
 var init_casing = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/casing.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/casing.js"() {
     init_entity();
     init_table();
     CasingCache = class {
@@ -26821,10 +27165,10 @@ var init_casing = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-base.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-base.js
 var MySqlViewBase;
 var init_view_base = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-base.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view-base.js"() {
     init_entity();
     init_sql();
     MySqlViewBase = class extends View {
@@ -26833,10 +27177,10 @@ var init_view_base = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/dialect.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/dialect.js
 var MySqlDialect;
 var init_dialect = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/dialect.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/dialect.js"() {
     init_alias();
     init_casing();
     init_column();
@@ -27276,7 +27620,7 @@ var init_dialect = __esm({
           }
           let selectedRelations = [];
           if (config2.with) {
-            selectedRelations = Object.entries(config2.with).filter((entry) => !!entry[1]).map(([tsKey, queryConfig]) => ({ tsKey, queryConfig, relation: tableConfig.relations[tsKey] }));
+            selectedRelations = Object.entries(config2.with).filter((entry) => !!entry[1]).map(([tsKey, queryConfig2]) => ({ tsKey, queryConfig: queryConfig2, relation: tableConfig.relations[tsKey] }));
           }
           let extras;
           if (config2.extras) {
@@ -27500,7 +27844,7 @@ var init_dialect = __esm({
           }
           let selectedRelations = [];
           if (config2.with) {
-            selectedRelations = Object.entries(config2.with).filter((entry) => !!entry[1]).map(([tsKey, queryConfig]) => ({ tsKey, queryConfig, relation: tableConfig.relations[tsKey] }));
+            selectedRelations = Object.entries(config2.with).filter((entry) => !!entry[1]).map(([tsKey, queryConfig2]) => ({ tsKey, queryConfig: queryConfig2, relation: tableConfig.relations[tsKey] }));
           }
           let extras;
           if (config2.extras) {
@@ -27667,10 +28011,10 @@ var init_dialect = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/query-builders/query-builder.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/query-builders/query-builder.js
 var TypedQueryBuilder;
 var init_query_builder = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/query-builders/query-builder.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/query-builders/query-builder.js"() {
     init_entity();
     TypedQueryBuilder = class {
       static [entityKind] = "TypedQueryBuilder";
@@ -27682,7 +28026,7 @@ var init_query_builder = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.js
 function createSetOperator(type, isAll) {
   return (leftSelect, rightSelect, ...restSelects) => {
     const setOperators = [rightSelect, ...restSelects].map((select) => ({
@@ -27702,7 +28046,7 @@ function createSetOperator(type, isAll) {
 }
 var MySqlSelectBuilder, MySqlSelectQueryBuilderBase, MySqlSelectBase, getMySqlSetOperators, union, unionAll, intersect, intersectAll, except, exceptAll;
 var init_select2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.js"() {
     init_entity();
     init_table3();
     init_query_builder();
@@ -28535,10 +28879,10 @@ var init_select2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query-builder.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query-builder.js
 var QueryBuilder;
 var init_query_builder2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query-builder.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query-builder.js"() {
     init_entity();
     init_dialect();
     init_selection_proxy();
@@ -28613,10 +28957,10 @@ var init_query_builder2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/insert.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/insert.js
 var MySqlInsertBuilder, MySqlInsertBase;
 var init_insert = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/insert.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/insert.js"() {
     init_entity();
     init_query_promise();
     init_sql();
@@ -28753,16 +29097,16 @@ var init_insert = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.types.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.types.js
 var init_select_types = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.types.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/select.types.js"() {
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/update.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/update.js
 var MySqlUpdateBuilder, MySqlUpdateBase;
 var init_update = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/update.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/update.js"() {
     init_entity();
     init_query_promise();
     init_selection_proxy();
@@ -28887,9 +29231,9 @@ var init_update = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/index.js
 var init_query_builders = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/index.js"() {
     init_delete();
     init_insert();
     init_query_builder2();
@@ -28899,10 +29243,10 @@ var init_query_builders = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query.js
 var RelationalQueryBuilder, MySqlRelationalQuery;
 var init_query = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/query-builders/query.js"() {
     init_entity();
     init_query_promise();
     init_relations();
@@ -29015,10 +29359,10 @@ var init_query = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/db.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/db.js
 var MySqlDatabase;
 var init_db = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/db.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/db.js"() {
     init_entity();
     init_selection_proxy();
     init_sql();
@@ -29249,7 +29593,7 @@ var init_db = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/cache.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/cache.js
 async function hashQuery(sql2, params) {
   const dataToHash = `${sql2}-${JSON.stringify(params)}`;
   const encoder2 = new TextEncoder();
@@ -29261,7 +29605,7 @@ async function hashQuery(sql2, params) {
 }
 var Cache, NoopCache;
 var init_cache = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/cache.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/cache.js"() {
     init_entity();
     Cache = class {
       static [entityKind] = "Cache";
@@ -29282,17 +29626,17 @@ var init_cache = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/index.js
 var init_core = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/cache/core/index.js"() {
     init_cache();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/session.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/session.js
 var MySqlPreparedQuery, MySqlSession, MySqlTransaction;
 var init_session = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/session.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/session.js"() {
     init_cache();
     init_entity();
     init_errors();
@@ -29429,13 +29773,13 @@ var init_session = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/session.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/session.js
 function isPool(client) {
   return "getConnection" in client;
 }
 var import_node_events, MySql2PreparedQuery, MySql2Session, MySql2Transaction;
 var init_session2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/session.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/session.js"() {
     import_node_events = require("node:events");
     init_core();
     init_column();
@@ -29676,7 +30020,7 @@ var init_session2 = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/driver.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/driver.js
 function construct(client, config2 = {}) {
   const dialect = new MySqlDialect({ casing: config2.casing });
   let logger;
@@ -29739,7 +30083,7 @@ function drizzle(...params) {
 }
 var import_mysql2, MySql2Driver, MySql2Database;
 var init_driver = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/driver.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/driver.js"() {
     import_mysql2 = require("mysql2");
     init_entity();
     init_logger();
@@ -29767,32 +30111,264 @@ var init_driver = __esm({
     MySql2Database = class extends MySqlDatabase {
       static [entityKind] = "MySql2Database";
     };
-    ((drizzle2) => {
+    ((drizzle22) => {
       function mock(config2) {
         return construct({}, config2);
       }
-      drizzle2.mock = mock;
+      drizzle22.mock = mock;
     })(drizzle || (drizzle = {}));
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/index.js
 var init_mysql2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql2/index.js"() {
     init_driver();
     init_session2();
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/alias.js
-var init_alias2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/alias.js"() {
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tidb-serverless/session.js
+var executeRawConfig, queryConfig, TiDBServerlessPreparedQuery, TiDBServerlessSession, TiDBServerlessTransaction;
+var init_session3 = __esm({
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tidb-serverless/session.js"() {
+    init_core();
+    init_column();
+    init_entity();
+    init_logger();
+    init_session();
+    init_sql();
+    init_utils();
+    executeRawConfig = { fullResult: true };
+    queryConfig = { arrayMode: true };
+    TiDBServerlessPreparedQuery = class extends MySqlPreparedQuery {
+      constructor(client, queryString, params, logger, cache2, queryMetadata, cacheConfig, fields, customResultMapper, generatedIds, returningIds) {
+        super(cache2, queryMetadata, cacheConfig);
+        this.client = client;
+        this.queryString = queryString;
+        this.params = params;
+        this.logger = logger;
+        this.fields = fields;
+        this.customResultMapper = customResultMapper;
+        this.generatedIds = generatedIds;
+        this.returningIds = returningIds;
+      }
+      static [entityKind] = "TiDBPreparedQuery";
+      async execute(placeholderValues = {}) {
+        const params = fillPlaceholders(this.params, placeholderValues);
+        this.logger.logQuery(this.queryString, params);
+        const { fields, client, queryString, joinsNotNullableMap, customResultMapper, returningIds, generatedIds } = this;
+        if (!fields && !customResultMapper) {
+          const res = await this.queryWithCache(queryString, params, async () => {
+            return await client.execute(queryString, params, executeRawConfig);
+          });
+          const insertId = res.lastInsertId ?? 0;
+          const affectedRows = res.rowsAffected ?? 0;
+          if (returningIds) {
+            const returningResponse = [];
+            let j = 0;
+            for (let i = insertId; i < insertId + affectedRows; i++) {
+              for (const column of returningIds) {
+                const key = returningIds[0].path[0];
+                if (is(column.field, Column)) {
+                  if (column.field.primary && column.field.autoIncrement) {
+                    returningResponse.push({ [key]: i });
+                  }
+                  if (column.field.defaultFn && generatedIds) {
+                    returningResponse.push({ [key]: generatedIds[j][key] });
+                  }
+                }
+              }
+              j++;
+            }
+            return returningResponse;
+          }
+          return res;
+        }
+        const rows = await this.queryWithCache(queryString, params, async () => {
+          return await client.execute(queryString, params, queryConfig);
+        });
+        if (customResultMapper) {
+          return customResultMapper(rows);
+        }
+        return rows.map((row) => mapResultRow(fields, row, joinsNotNullableMap));
+      }
+      iterator(_placeholderValues) {
+        throw new Error("Streaming is not supported by the TiDB Cloud Serverless driver");
+      }
+    };
+    TiDBServerlessSession = class _TiDBServerlessSession extends MySqlSession {
+      constructor(baseClient, dialect, tx, schema, options = {}) {
+        super(dialect);
+        this.baseClient = baseClient;
+        this.schema = schema;
+        this.options = options;
+        this.client = tx ?? baseClient;
+        this.logger = options.logger ?? new NoopLogger();
+        this.cache = options.cache ?? new NoopCache();
+      }
+      static [entityKind] = "TiDBServerlessSession";
+      logger;
+      client;
+      cache;
+      prepareQuery(query, fields, customResultMapper, generatedIds, returningIds, queryMetadata, cacheConfig) {
+        return new TiDBServerlessPreparedQuery(
+          this.client,
+          query.sql,
+          query.params,
+          this.logger,
+          this.cache,
+          queryMetadata,
+          cacheConfig,
+          fields,
+          customResultMapper,
+          generatedIds,
+          returningIds
+        );
+      }
+      all(query) {
+        const querySql = this.dialect.sqlToQuery(query);
+        this.logger.logQuery(querySql.sql, querySql.params);
+        return this.client.execute(querySql.sql, querySql.params);
+      }
+      async count(sql2) {
+        const res = await this.execute(sql2);
+        return Number(
+          res["rows"][0]["count"]
+        );
+      }
+      async transaction(transaction) {
+        const nativeTx = await this.baseClient.begin();
+        try {
+          const session = new _TiDBServerlessSession(this.baseClient, this.dialect, nativeTx, this.schema, this.options);
+          const tx = new TiDBServerlessTransaction(
+            this.dialect,
+            session,
+            this.schema
+          );
+          const result = await transaction(tx);
+          await nativeTx.commit();
+          return result;
+        } catch (err) {
+          await nativeTx.rollback();
+          throw err;
+        }
+      }
+    };
+    TiDBServerlessTransaction = class _TiDBServerlessTransaction extends MySqlTransaction {
+      static [entityKind] = "TiDBServerlessTransaction";
+      constructor(dialect, session, schema, nestedIndex = 0) {
+        super(dialect, session, schema, nestedIndex, "default");
+      }
+      async transaction(transaction) {
+        const savepointName = `sp${this.nestedIndex + 1}`;
+        const tx = new _TiDBServerlessTransaction(
+          this.dialect,
+          this.session,
+          this.schema,
+          this.nestedIndex + 1
+        );
+        await tx.execute(sql.raw(`savepoint ${savepointName}`));
+        try {
+          const result = await transaction(tx);
+          await tx.execute(sql.raw(`release savepoint ${savepointName}`));
+          return result;
+        } catch (err) {
+          await tx.execute(sql.raw(`rollback to savepoint ${savepointName}`));
+          throw err;
+        }
+      }
+    };
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tidb-serverless/driver.js
+function construct2(client, config2 = {}) {
+  const dialect = new MySqlDialect({ casing: config2.casing });
+  let logger;
+  if (config2.logger === true) {
+    logger = new DefaultLogger();
+  } else if (config2.logger !== false) {
+    logger = config2.logger;
+  }
+  let schema;
+  if (config2.schema) {
+    const tablesConfig = extractTablesRelationalConfig(
+      config2.schema,
+      createTableRelationsHelpers
+    );
+    schema = {
+      fullSchema: config2.schema,
+      schema: tablesConfig.tables,
+      tableNamesMap: tablesConfig.tableNamesMap
+    };
+  }
+  const session = new TiDBServerlessSession(client, dialect, void 0, schema, { logger, cache: config2.cache });
+  const db = new TiDBServerlessDatabase(dialect, session, schema, "default");
+  db.$client = client;
+  db.$cache = config2.cache;
+  if (db.$cache) {
+    db.$cache["invalidate"] = config2.cache?.onMutate;
+  }
+  return db;
+}
+function drizzle2(...params) {
+  if (typeof params[0] === "string") {
+    const instance = connect({
+      url: params[0]
+    });
+    return construct2(instance, params[1]);
+  }
+  if (isConfig(params[0])) {
+    const { connection, client, ...drizzleConfig } = params[0];
+    if (client) return construct2(client, drizzleConfig);
+    const instance = typeof connection === "string" ? connect({
+      url: connection
+    }) : connect(connection);
+    return construct2(instance, drizzleConfig);
+  }
+  return construct2(params[0], params[1]);
+}
+var TiDBServerlessDatabase;
+var init_driver2 = __esm({
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tidb-serverless/driver.js"() {
+    init_dist();
+    init_entity();
+    init_logger();
+    init_db();
+    init_dialect();
+    init_relations();
+    init_utils();
+    init_session3();
+    TiDBServerlessDatabase = class extends MySqlDatabase {
+      static [entityKind] = "TiDBServerlessDatabase";
+    };
+    ((drizzle22) => {
+      function mock(config2) {
+        return construct2({}, config2);
+      }
+      drizzle22.mock = mock;
+    })(drizzle2 || (drizzle2 = {}));
+  }
+});
+
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tidb-serverless/index.js
+var init_tidb_serverless = __esm({
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/tidb-serverless/index.js"() {
+    init_driver2();
+    init_session3();
+  }
+});
+
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/alias.js
+var init_alias2 = __esm({
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/alias.js"() {
+  }
+});
+
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/index.js
 var init_columns = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/columns/index.js"() {
     init_bigint();
     init_binary();
     init_boolean();
@@ -29821,7 +30397,7 @@ var init_columns = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view.js
 function mysqlViewWithSchema(name2, selection, schema) {
   if (selection) {
     return new ManualViewBuilder(name2, selection, schema);
@@ -29830,7 +30406,7 @@ function mysqlViewWithSchema(name2, selection, schema) {
 }
 var ViewBuilderCore, ViewBuilder, ManualViewBuilder, MySqlView;
 var init_view = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/view.js"() {
     init_entity();
     init_selection_proxy();
     init_utils();
@@ -29942,10 +30518,10 @@ var init_view = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/schema.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/schema.js
 var MySqlSchema;
 var init_schema = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/schema.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/schema.js"() {
     init_entity();
     init_table3();
     init_view();
@@ -29964,15 +30540,15 @@ var init_schema = __esm({
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/subquery.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/subquery.js
 var init_subquery2 = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/subquery.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/subquery.js"() {
   }
 });
 
-// node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/index.js
+// node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/index.js
 var init_mysql_core = __esm({
-  "node_modules/.pnpm/drizzle-orm@0.44.6_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/index.js"() {
+  "node_modules/.pnpm/drizzle-orm@0.44.6_@tidbcloud+serverless@0.3.0_mysql2@3.15.1/node_modules/drizzle-orm/mysql-core/index.js"() {
     init_alias2();
     init_checks();
     init_columns();
@@ -30334,12 +30910,18 @@ function buildPoolOptions() {
 async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _pool = import_promise.default.createPool(buildPoolOptions());
-      _db = drizzle(_pool);
+      if (process.env.VERCEL) {
+        _tidbClient = connect({ url: process.env.DATABASE_URL });
+        _db = drizzle2({ client: _tidbClient });
+      } else {
+        _pool = import_promise.default.createPool(buildPoolOptions());
+        _db = drizzle(_pool);
+      }
     } catch (error46) {
-      console.warn("[Database] Failed to create pool:", error46);
+      console.warn("[Database] Failed to create connection:", error46);
       _db = null;
       _pool = null;
+      _tidbClient = null;
     }
   }
   return _db;
@@ -30670,16 +31252,19 @@ async function updateOrgStripeSubscription(orgId, data) {
   if (!db) throw new Error("DB unavailable");
   await db.update(organizations).set(data).where(eq(organizations.id, orgId));
 }
-var import_promise, _db, _pool;
+var import_promise, _db, _pool, _tidbClient;
 var init_db2 = __esm({
   "server/db.ts"() {
     "use strict";
+    init_dist();
     init_drizzle_orm();
     init_mysql2();
+    init_tidb_serverless();
     import_promise = __toESM(require("mysql2/promise"), 1);
     init_schema2();
     _db = null;
     _pool = null;
+    _tidbClient = null;
   }
 });
 
@@ -30688,7 +31273,7 @@ var require_dist = __commonJS({
   "node_modules/.pnpm/cookie@1.0.2/node_modules/cookie/dist/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.parse = parse3;
+    exports2.parse = parse4;
     exports2.serialize = serialize;
     var cookieNameRegExp = /^[\u0021-\u003A\u003C\u003E-\u007E]+$/;
     var cookieValueRegExp = /^[\u0021-\u003A\u003C-\u007E]*$/;
@@ -30701,7 +31286,7 @@ var require_dist = __commonJS({
       C.prototype = /* @__PURE__ */ Object.create(null);
       return C;
     })();
-    function parse3(str, options) {
+    function parse4(str, options) {
       const obj = new NullObject();
       const len = str.length;
       if (len < 2)
@@ -55337,12 +55922,12 @@ function createMiddlewareFactory() {
   }
   return createMiddleware;
 }
-function createInputMiddleware(parse3) {
+function createInputMiddleware(parse4) {
   const inputMiddleware = async function inputValidatorMiddleware(opts) {
     let parsedInput;
     const rawInput = await opts.getRawInput();
     try {
-      parsedInput = await parse3(rawInput);
+      parsedInput = await parse4(rawInput);
     } catch (cause) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -55355,12 +55940,12 @@ function createInputMiddleware(parse3) {
   inputMiddleware._type = "input";
   return inputMiddleware;
 }
-function createOutputMiddleware(parse3) {
+function createOutputMiddleware(parse4) {
   const outputMiddleware = async function outputValidatorMiddleware({ next }) {
     const result = await next();
     if (!result.ok) return result;
     try {
-      const data = await parse3(result.data);
+      const data = await parse4(result.data);
       return (0, import_objectSpread2$2.default)((0, import_objectSpread2$2.default)({}, result), {}, { data });
     } catch (cause) {
       throw new TRPCError({
@@ -57565,7 +58150,7 @@ __export(external_exports, {
   object: () => object,
   optional: () => optional,
   overwrite: () => _overwrite,
-  parse: () => parse2,
+  parse: () => parse3,
   parseAsync: () => parseAsync2,
   partialRecord: () => partialRecord,
   pipe: () => pipe,
@@ -57869,7 +58454,7 @@ __export(core_exports2, {
   isValidBase64URL: () => isValidBase64URL,
   isValidJWT: () => isValidJWT,
   locales: () => locales_exports,
-  parse: () => parse,
+  parse: () => parse2,
   parseAsync: () => parseAsync,
   prettifyError: () => prettifyError,
   regexes: () => regexes_exports,
@@ -57987,7 +58572,7 @@ __export(util_exports, {
   getLengthableOrigin: () => getLengthableOrigin,
   getParsedType: () => getParsedType,
   getSizableOrigin: () => getSizableOrigin,
-  hexToUint8Array: () => hexToUint8Array,
+  hexToUint8Array: () => hexToUint8Array2,
   isObject: () => isObject2,
   isPlainObject: () => isPlainObject2,
   issue: () => issue,
@@ -58007,14 +58592,14 @@ __export(util_exports, {
   primitiveTypes: () => primitiveTypes,
   promiseAllObject: () => promiseAllObject,
   propertyKeyTypes: () => propertyKeyTypes,
-  randomString: () => randomString,
+  randomString: () => randomString2,
   required: () => required,
   safeExtend: () => safeExtend,
   shallowClone: () => shallowClone,
   stringifyPrimitive: () => stringifyPrimitive,
   uint8ArrayToBase64: () => uint8ArrayToBase64,
   uint8ArrayToBase64url: () => uint8ArrayToBase64url,
-  uint8ArrayToHex: () => uint8ArrayToHex,
+  uint8ArrayToHex: () => uint8ArrayToHex2,
   unwrapMessage: () => unwrapMessage
 });
 function assertEqual(val) {
@@ -58140,7 +58725,7 @@ function promiseAllObject(promisesObj) {
     return resolvedObj;
   });
 }
-function randomString(length = 10) {
+function randomString2(length = 10) {
   const chars = "abcdefghijklmnopqrstuvwxyz";
   let str = "";
   for (let i = 0; i < length; i++) {
@@ -58568,7 +59153,7 @@ function base64urlToUint8Array(base64url3) {
 function uint8ArrayToBase64url(bytes) {
   return uint8ArrayToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
-function hexToUint8Array(hex3) {
+function hexToUint8Array2(hex3) {
   const cleanHex = hex3.replace(/^0x/, "");
   if (cleanHex.length % 2 !== 0) {
     throw new Error("Invalid hex string length");
@@ -58579,7 +59164,7 @@ function hexToUint8Array(hex3) {
   }
   return bytes;
 }
-function uint8ArrayToHex(bytes) {
+function uint8ArrayToHex2(bytes) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 var Class = class {
@@ -58737,7 +59322,7 @@ var _parse = (_Err) => (schema, value, _ctx, _params) => {
   }
   return result.value;
 };
-var parse = /* @__PURE__ */ _parse($ZodRealError);
+var parse2 = /* @__PURE__ */ _parse($ZodRealError);
 var _parseAsync = (_Err) => async (schema, value, _ctx, params) => {
   const ctx = _ctx ? Object.assign(_ctx, { async: true }) : { async: true };
   let result = schema._zod.run({ value, issues: [] }, ctx);
@@ -61273,10 +61858,10 @@ var $ZodFunction = /* @__PURE__ */ $constructor("$ZodFunction", (inst, def) => {
       throw new Error("implement() must be called with a function");
     }
     return function(...args) {
-      const parsedArgs = inst._def.input ? parse(inst._def.input, args) : args;
+      const parsedArgs = inst._def.input ? parse2(inst._def.input, args) : args;
       const result = Reflect.apply(func, this, parsedArgs);
       if (inst._def.output) {
-        return parse(inst._def.output, result);
+        return parse2(inst._def.output, result);
       }
       return result;
     };
@@ -67976,13 +68561,13 @@ function _stringbool(Classes, _params) {
   });
   return codec2;
 }
-function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
+function _stringFormat(Class2, format2, fnOrRegex, _params = {}) {
   const params = normalizeParams(_params);
   const def = {
     ...normalizeParams(_params),
     check: "string_format",
     type: "string",
-    format,
+    format: format2,
     fn: typeof fnOrRegex === "function" ? fnOrRegex : (val) => fnOrRegex.test(val),
     ...params
   };
@@ -68047,13 +68632,13 @@ var JSONSchemaGenerator = class {
           case "string": {
             const json3 = _json;
             json3.type = "string";
-            const { minimum, maximum, format, patterns, contentEncoding } = schema._zod.bag;
+            const { minimum, maximum, format: format2, patterns, contentEncoding } = schema._zod.bag;
             if (typeof minimum === "number")
               json3.minLength = minimum;
             if (typeof maximum === "number")
               json3.maxLength = maximum;
-            if (format) {
-              json3.format = formatMap[format] ?? format;
+            if (format2) {
+              json3.format = formatMap[format2] ?? format2;
               if (json3.format === "")
                 delete json3.format;
             }
@@ -68076,8 +68661,8 @@ var JSONSchemaGenerator = class {
           }
           case "number": {
             const json3 = _json;
-            const { minimum, maximum, format, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
-            if (typeof format === "string" && format.includes("int"))
+            const { minimum, maximum, format: format2, multipleOf, exclusiveMaximum, exclusiveMinimum } = schema._zod.bag;
+            if (typeof format2 === "string" && format2.includes("int"))
               json3.type = "integer";
             else
               json3.type = "number";
@@ -68898,7 +69483,7 @@ var ZodRealError = $constructor("ZodError", initializer2, {
 });
 
 // node_modules/.pnpm/zod@4.1.12/node_modules/zod/v4/classic/parse.js
-var parse2 = /* @__PURE__ */ _parse(ZodRealError);
+var parse3 = /* @__PURE__ */ _parse(ZodRealError);
 var parseAsync2 = /* @__PURE__ */ _parseAsync(ZodRealError);
 var safeParse2 = /* @__PURE__ */ _safeParse(ZodRealError);
 var safeParseAsync2 = /* @__PURE__ */ _safeParseAsync(ZodRealError);
@@ -68931,7 +69516,7 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
     reg.add(inst, meta);
     return inst;
   });
-  inst.parse = (data, params) => parse2(inst, data, params, { callee: inst.parse });
+  inst.parse = (data, params) => parse3(inst, data, params, { callee: inst.parse });
   inst.safeParse = (data, params) => safeParse2(inst, data, params);
   inst.parseAsync = async (data, params) => parseAsync2(inst, data, params, { callee: inst.parseAsync });
   inst.safeParseAsync = async (data, params) => safeParseAsync2(inst, data, params);
@@ -69196,8 +69781,8 @@ var ZodCustomStringFormat = /* @__PURE__ */ $constructor("ZodCustomStringFormat"
   $ZodCustomStringFormat.init(inst, def);
   ZodStringFormat.init(inst, def);
 });
-function stringFormat(format, fnOrRegex, _params = {}) {
-  return _stringFormat(ZodCustomStringFormat, format, fnOrRegex, _params);
+function stringFormat(format2, fnOrRegex, _params = {}) {
+  return _stringFormat(ZodCustomStringFormat, format2, fnOrRegex, _params);
 }
 function hostname2(_params) {
   return _stringFormat(ZodCustomStringFormat, "hostname", regexes_exports.hostname, _params);
@@ -69207,11 +69792,11 @@ function hex2(_params) {
 }
 function hash(alg, params) {
   const enc = params?.enc ?? "hex";
-  const format = `${alg}_${enc}`;
-  const regex = regexes_exports[format];
+  const format2 = `${alg}_${enc}`;
+  const regex = regexes_exports[format2];
   if (!regex)
-    throw new Error(`Unrecognized hash format: ${format}`);
-  return _stringFormat(ZodCustomStringFormat, format, regex, params);
+    throw new Error(`Unrecognized hash format: ${format2}`);
+  return _stringFormat(ZodCustomStringFormat, format2, regex, params);
 }
 var ZodNumber = /* @__PURE__ */ $constructor("ZodNumber", (inst, def) => {
   $ZodNumber.init(inst, def);
