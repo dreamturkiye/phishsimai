@@ -5,7 +5,7 @@
   "outputDirectory": "dist/public",
   "framework": null,
   "functions": {
-    "api/index.cjs": {
+    "api/index.js": {
       "maxDuration": 300,
       "memory": 1024
     }
@@ -13,7 +13,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/index.cjs"
+      "destination": "/api/index.js"
     },
     {
       "source": "/(.*)",
