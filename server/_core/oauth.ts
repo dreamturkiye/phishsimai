@@ -4,7 +4,7 @@
 // POST /api/auth/login     — sign in, sets session cookie
 // GET  /api/auth/logout    — clears session cookie (also handled via tRPC)
 import { COOKIE_NAME } from "@shared/const";
-import type { Application } from "express";
+import type { Express } from "express";
 import * as db from "../db";
 import { sdk } from "./sdk";
 
@@ -37,7 +37,7 @@ function getSessionCookieOptions(req: any) {
   };
 }
 
-export function registerOAuthRoutes(app: Application) {
+export function registerOAuthRoutes(app: Express) {
   // POST /api/auth/register
   app.post("/api/auth/register", async (req: any, res: any) => {
     try {

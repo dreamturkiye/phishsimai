@@ -25,7 +25,7 @@ registerOAuthRoutes(app);
 app.post("/api/scheduled/campaign", scheduledCampaignHandler);
 
 // One-time seed endpoint
-app.post("/api/admin/seed", async (_req, res) => {
+app.post("/api/admin/seed", async (_req: any, res: any) => {
   try {
     const { seedDatabase } = await import("../server/seed");
     await seedDatabase();

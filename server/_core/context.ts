@@ -3,8 +3,10 @@ import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
 
 export type TrpcContext = {
-  req: CreateExpressContextOptions["req"];
-  res: CreateExpressContextOptions["res"];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  req: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  res: any;
   user: User | null;
 };
 

@@ -1,4 +1,3 @@
-import { Request, Response } from "express";
 import { getCampaigns, updateCampaign } from "./db";
 
 /**
@@ -7,7 +6,7 @@ import { getCampaigns, updateCampaign } from "./db";
  * Vercel calls this endpoint on the schedule defined in vercel.json.
  * Protected by the CRON_SECRET environment variable (set in Vercel).
  */
-export async function scheduledCampaignHandler(req: Request, res: Response) {
+export async function scheduledCampaignHandler(req: any, res: any) {
   try {
     // Verify Vercel Cron secret
     const cronSecret = process.env.CRON_SECRET;
