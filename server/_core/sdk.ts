@@ -58,9 +58,9 @@ class AuthService {
     return new Map(Object.entries(parsed));
   }
 
-  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    const headers = req.headers as Record<string, string | string[] | undefined>;
-    const cookies = this.parseCookies(headers.cookie as string | undefined);
+  async authenticateRequest(req: any): Promise<AuthenticatedUser> {
+    const cookieHeader = (req.headers?.cookie ?? req.headers?.Cookie) as string | undefined;
+    const cookies = this.parseCookies(cookieHeader);
     const sessionCookie = cookies.get(COOKIE_NAME);
     const session = await this.verifySession(sessionCookie);
     if (!session) throw ForbiddenError("Invalid session");
