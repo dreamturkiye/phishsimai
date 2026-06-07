@@ -30,23 +30,60 @@ import {
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _pool: ReturnType<typeof mysql.createPool> | null = null;
+
+function buildPoolOptions(): mysql.PoolOptions {
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) throw new Error("DATABASE_URL is not set");
+
+  const url = new URL(rawUrl);
+  const isServerless = Boolean(process.env.VERCEL);
+
+  return {
+    host: url.hostname,
+    port: Number(url.port || 4000),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.replace(/^\//, ""),
+    waitForConnections: true,
+    connectionLimit: isServerless ? 1 : 5,
+    maxIdle: 0,
+    idleTimeout: 10_000,
+    enableKeepAlive: true,
+    connectTimeout: 10_000,
+    // TiDB Cloud requires TLS; explicit config avoids mysql2 URI/ssl param conflicts.
+    ssl: {
+      minVersion: "TLSv1.2",
+      rejectUnauthorized: true,
+    },
+  };
+}
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      const pool = mysql.createPool({
-        uri: process.env.DATABASE_URL,
-        waitForConnections: true,
-        connectionLimit: 5,
-        ssl: { rejectUnauthorized: true },
-      });
-      _db = drizzle(pool as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+      _pool = mysql.createPool(buildPoolOptions());
+      _db = drizzle(_pool as any); // eslint-disable-line @typescript-eslint/no-explicit-any
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.warn("[Database] Failed to create pool:", error);
       _db = null;
+      _pool = null;
     }
   }
   return _db;
+}
+
+export async function pingDb(): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const db = await getDb();
+    if (!db) return { ok: false, error: "DATABASE_URL missing or pool unavailable" };
+    await db.execute(sql`SELECT 1`);
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[Database] Ping failed:", message);
+    return { ok: false, error: message };
+  }
 }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -474,4 +511,21 @@ export async function getUserByEmail(email: string) {
   if (!db) return null;
   const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result[0] ?? null;
+}
+
+// ─── Stripe Billing ───────────────────────────────────────────────────────────
+export async function updateOrgStripeSubscription(
+  orgId: number,
+  data: {
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    stripePriceId?: string;
+    plan: "free" | "starter" | "growth" | "pro" | "unlimited" | "enterprise";
+    planActivatedAt?: Date;
+    planExpiresAt?: Date;
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.update(organizations).set(data).where(eq(organizations.id, orgId));
 }

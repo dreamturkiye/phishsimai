@@ -36,6 +36,12 @@ export const organizations = mysqlTable("organizations", {
   logoUrl: text("logoUrl"),
   gamificationEnabled: boolean("gamificationEnabled").default(false).notNull(),
   trainingEnabled: boolean("trainingEnabled").default(true).notNull(),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 64 }),
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 64 }),
+  stripePriceId: varchar("stripePriceId", { length: 64 }),
+  plan: mysqlEnum("plan", ["free", "starter", "growth", "pro", "unlimited", "enterprise"]).default("free").notNull(),
+  planActivatedAt: timestamp("planActivatedAt"),
+  planExpiresAt: timestamp("planExpiresAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
