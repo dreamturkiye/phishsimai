@@ -1,7 +1,6 @@
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const mysql = require("mysql2/promise") as typeof import("mysql2/promise");
+import mysql from "mysql2/promise";
 import {
   Campaign,
   CampaignResult,
@@ -41,8 +40,7 @@ export async function getDb() {
         connectionLimit: 5,
         ssl: { rejectUnauthorized: true },
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      _db = drizzle(pool as any);
+      _db = drizzle(pool as any); // eslint-disable-line @typescript-eslint/no-explicit-any
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
