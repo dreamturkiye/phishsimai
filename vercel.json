@@ -6,7 +6,9 @@
   "framework": null,
   "functions": {
     "api/index.ts": {
-      "maxDuration": 300
+      "runtime": "nodejs22.x",
+      "maxDuration": 300,
+      "memory": 1024
     }
   },
   "rewrites": [
@@ -15,7 +17,7 @@
       "destination": "/api/index.ts"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!_next|favicon.ico).*)",
       "destination": "/index.html"
     }
   ],

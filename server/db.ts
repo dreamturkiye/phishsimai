@@ -1,5 +1,7 @@
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const mysql = require("mysql2/promise") as typeof import("mysql2/promise");
 import {
   Campaign,
   CampaignResult,
@@ -33,7 +35,14 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        waitForConnections: true,
+        connectionLimit: 5,
+        ssl: { rejectUnauthorized: true },
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      _db = drizzle(pool as any);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
