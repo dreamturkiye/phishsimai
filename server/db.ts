@@ -50,7 +50,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
   const values: InsertUser = { openId: user.openId };
   const updateSet: Record<string, unknown> = {};
-  const textFields = ["name", "email", "loginMethod"] as const;
+  const textFields = ["name", "email", "loginMethod", "passwordHash"] as const;
   type TextField = (typeof textFields)[number];
   const assignNullable = (field: TextField) => {
     const value = user[field];
@@ -67,9 +67,6 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (user.role !== undefined) {
     values.role = user.role;
     updateSet.role = user.role;
-  } else if (user.openId === ENV.ownerOpenId) {
-    values.role = "admin";
-    updateSet.role = "admin";
   }
   if (!values.lastSignedIn) values.lastSignedIn = new Date();
   if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
@@ -463,4 +460,11 @@ export async function getOrgPostureScore(orgId: number): Promise<number> {
   if (scores.length === 0) return 50;
   const avg = scores.reduce((sum, s) => sum + s.riskScore, 0) / scores.length;
   return Math.round(100 - avg); // posture = inverse of risk
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result[0] ?? null;
 }

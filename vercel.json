@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm install --no-frozen-lockfile && pnpm run build",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "outputDirectory": "dist/public",
+  "framework": null,
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 300
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/scheduled/campaign",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

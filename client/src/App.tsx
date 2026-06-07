@@ -20,6 +20,7 @@ import ComplianceCenter from "./pages/ComplianceCenter";
 import MspPortal from "./pages/MspPortal";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
+import Login from "./pages/Login";
 
 function Router() {
   return (
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/msp" component={MspPortal} />
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/terms" component={TermsOfService} />
+      <Route path="/login" component={Login} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
