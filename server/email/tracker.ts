@@ -1,0 +1,27 @@
+import type { Express } from "express";
+import { trackEvent } from "../db";
+
+const GIF = Buffer.from("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7","base64");
+
+function landingHtml(token: string): string {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security Awareness Training</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card{background:#1e293b;border-radius:16px;padding:40px;max-width:540px;width:100%;border:1px solid #334155;text-align:center}.icon{font-size:64px;margin-bottom:16px}h1{font-size:24px;font-weight:700;color:#f8fafc;margin-bottom:12px}p{font-size:15px;line-height:1.7;color:#94a3b8;margin-bottom:16px}.badge{display:inline-block;background:#6366f1;color:#fff;padding:6px 16px;border-radius:9999px;font-size:13px;font-weight:600;margin-bottom:24px}.btn{display:inline-block;background:#dc2626;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}.tips{background:#0f172a;border-radius:12px;padding:20px;margin-top:28px;text-align:left}.tips h3{font-size:14px;font-weight:600;color:#6366f1;margin-bottom:12px}.tips ul{list-style:none}.tips li{font-size:13px;color:#94a3b8;padding:4px 0 4px 20px;position:relative}.tips li::before{content:"→";position:absolute;left:0;color:#6366f1}.footer{margin-top:24px;font-size:12px;color:#475569}</style></head><body><div class="card"><div class="icon">⚠️</div><div class="badge">Security Awareness Training</div><h1>You Clicked a Simulated Phishing Link</h1><p>This was a <strong style="color:#f8fafc">simulated phishing test</strong> by your organization using PhishSim AI. No real data was collected and no harm was done.</p><p>Real phishing attacks look exactly like this. Your security team sent this to help you recognize the signs.</p><a href="/api/report/${token}" class="btn" onclick="this.textContent='Reported ✓';this.style.background='#16a34a'">Report as Phishing Test</a><div class="tips"><h3>How to spot phishing emails:</h3><ul><li>Check the sender email address carefully</li><li>Hover links before clicking to see the real URL</li><li>Be suspicious of urgency or unusual requests</li><li>Verify unexpected requests by phone before acting</li><li>Use your company phish-report button in Outlook</li></ul></div><p class="footer">Powered by <a href="https://phishsimai.com" style="color:#6366f1">PhishSim AI</a></p></div></body></html>`;
+}
+
+export function registerTrackingRoutes(app: Express): void {
+  const base = process.env.VITE_APP_URL ?? "https://phishsimai.com";
+  app.get("/t/:token", async (req, res) => {
+    try { if (req.params.token) await trackEvent(req.params.token,"open",{ip:req.ip??"" ,ua:req.headers["user-agent"]??""}); } catch(e){}
+    res.set("Content-Type","image/gif").set("Cache-Control","no-store").send(GIF);
+  });
+  app.get("/c/:token", async (req, res) => {
+    try { if (req.params.token) await trackEvent(req.params.token,"click",{ip:req.ip??"" ,ua:req.headers["user-agent"]??""}); } catch(e){}
+    res.redirect(302, "/landing/"+req.params.token);
+  });
+  app.get("/landing/:token", (req, res) => {
+    res.set("Content-Type","text/html").send(landingHtml(req.params.token));
+  });
+  app.post("/api/report/:token", async (req, res) => {
+    try { if (req.params.token) await trackEvent(req.params.token,"report"); } catch(e){}
+    res.json({ success:true, message:"Report submitted. Thank you for protecting your organization!" });
+  });
+}

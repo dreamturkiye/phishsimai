@@ -72,6 +72,12 @@ function checkLlmRateLimit(orgId: number): void {
   }
 }
 import moduleData from "./seed_modules.json";
+
+// ─── Billing helpers ──────────────────────────────────────────────────────────
+async function createStripeInstance() {
+  const { default: Stripe } = await import("stripe");
+  return new Stripe(process.env.STRIPE_SECRET_KEY ?? "", { apiVersion: "2025-05-28.basil" as any });
+}
 const BUILT_IN_TEMPLATES = templateData;
 const BUILT_IN_TRAINING_MODULES = moduleData;
 
@@ -179,7 +185,30 @@ export const appRouter = router({
         await acceptInvite(input.token, ctx.user.id);
         return { success: true, orgId: invite.orgId };
       }),
-  }),
+  }),    bulkImportCSV: protectedProcedure
+      .input(z.object({ orgId: z.number(), csvContent: z.string(), departmentId: z.number().optional() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        const raw = input.csvContent.replace(/\r/g, '');
+        const ls = raw.split('\n').filter((l: string) => l.trim());
+        if (ls.length < 2) throw new TRPCError({ code: 'BAD_REQUEST', message: 'CSV needs header + data rows' });
+        const h = ls[0].split(',').map((x: string) => x.trim().toLowerCase().replace(/[^a-z ]/g, ''));
+        const fc = (...ns: string[]) => ns.reduce((a: number, n: string) => a >= 0 ? a : h.indexOf(n), -1);
+        const fi=fc('first name','firstname','first'), li=fc('last name','lastname','last');
+        const ei=fc('email','email address'), ti=fc('title','job title','position');
+        if (ei < 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'No Email column found' });
+        const rows: any[] = [];
+        for (let i = 1; i < ls.length; i++) {
+          const c = ls[i].split(',').map((x: string) => x.trim().replace(/^\"|\"$/g, ''));
+          const em = c[ei]?.toLowerCase().trim();
+          if (!em || !em.includes('@') || !em.includes('.')) continue;
+          rows.push({ orgId: input.orgId, firstName: fi>=0?(c[fi]??''):'', lastName: li>=0?(c[li]??''):'', email: em, title: ti>=0?(c[ti]??null):null, departmentId: input.departmentId??null, isActive: true });
+        }
+        if (!rows.length) throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid emails in CSV' });
+        const count = await bulkCreateTargets(rows);
+        return { count, message: 'Imported '+count+' targets' };
+      }),
+
 
   // ─── Departments ────────────────────────────────────────────────────────────
   departments: router({
@@ -606,6 +635,38 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         } catch {
           return { total: 0, actorUserId: "", jobs: [] };
         }
+      }),
+    launch: protectedProcedure
+      .input(z.object({ orgId: z.number(), campaignId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        const campaign = await getCampaignById(input.campaignId, input.orgId);
+        if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
+        if (!campaign.templateId) throw new TRPCError({ code: "BAD_REQUEST", message: "No template assigned to campaign" });
+        const template = await getTemplateById(campaign.templateId, input.orgId);
+        if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
+        const allTargets = await getTargets(input.orgId);
+        const targets = allTargets.filter(t => (campaign.targetIds ?? []).includes(t.id));
+        if (targets.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No targets assigned. Add employees before launching." });
+        const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
+        const { sendCampaignEmail } = await import("../email/sender");
+        const { nanoid } = await import("nanoid");
+        let sent = 0;
+        for (const target of targets) {
+          const trackingToken = nanoid(32);
+          await createCampaignResult({ campaignId: campaign.id, targetId: target.id, orgId: input.orgId, trackingToken, emailSentAt: new Date(), emailOpenedAt: null, linkClickedAt: null, credentialSubmittedAt: null, reportedAt: null, trainingCompletedAt: null, ipAddress: null, userAgent: null });
+          await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
+          sent++;
+        }
+        await updateCampaign(input.campaignId, input.orgId, { status: "active" });
+        return { success: true, sent, message: `Campaign launched! ${sent} phishing emails sent.` };
+      }),
+
+    reportPhishing: publicProcedure
+      .input(z.object({ token: z.string().optional(), messageId: z.string().optional(), subject: z.string().optional(), notes: z.string().optional() }))
+      .mutation(async ({ input }) => {
+        if (input.token) await trackEvent(input.token, "report");
+        return { success: true, message: "Report submitted. Thank you for helping protect your organization!" };
       }),
   }),
 
@@ -1220,6 +1281,47 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
       }
       return { success: true };
     }),
+  }),
+
+  // ─── Billing ──────────────────────────────────────────────────────────────────
+  billing: router({
+    createCheckoutSession: protectedProcedure
+      .input(z.object({
+        orgId: z.number(),
+        priceId: z.string(),
+        billingInterval: z.enum(["monthly", "annual"]).default("monthly"),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        const stripe = await createStripeInstance();
+        const org = await getOrgById(input.orgId);
+        const appUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
+        const session = await stripe.checkout.sessions.create({
+          mode: "subscription",
+          payment_method_types: ["card"],
+          line_items: [{ price: input.priceId, quantity: 1 }],
+          metadata: { org_id: String(input.orgId), price_id: input.priceId },
+          success_url: `${appUrl}/settings?upgrade=success`,
+          cancel_url: `${appUrl}/settings?upgrade=cancelled`,
+          customer_email: ctx.user.email ?? undefined,
+        } as any);
+        return { url: session.url };
+      }),
+
+    getBillingPortalUrl: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const org = await getOrgById(input.orgId);
+        if (!org?.stripeCustomerId) throw new TRPCError({ code: "BAD_REQUEST", message: "No billing account found. Please subscribe first." });
+        const stripe = await createStripeInstance();
+        const appUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
+        const portal = await stripe.billingPortal.sessions.create({
+          customer: org.stripeCustomerId,
+          return_url: `${appUrl}/settings`,
+        } as any);
+        return { url: portal.url };
+      }),
   }),
 });
 
