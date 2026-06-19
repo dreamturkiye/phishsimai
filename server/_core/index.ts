@@ -86,11 +86,12 @@ async function startServer() {
   app.use("/api/trpc/auth", strictLimiter);
 
   // Body parsers — reduced limits to prevent DoS
+  // Stripe webhook must be registered BEFORE body parsers (express.raw needs the raw body for signature verification)
+  registerStripeWebhook(app);
+
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "5mb", extended: true }));
 
-  // MUST be before express.json — Stripe needs raw body
-  registerStripeWebhook(app);
   registerTrackingRoutes(app);
   registerStorageProxy(app);
   registerOAuthRoutes(app);

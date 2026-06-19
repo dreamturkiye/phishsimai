@@ -296,12 +296,9 @@ describe("msp router", () => {
 });
 
 describe("training.modules", () => {
-  it("returns training modules (public endpoint, no auth required)", async () => {
-    const db = await import("./db");
+  it("requires authentication (protected endpoint)", async () => {
     const ctx = makeCtx({ user: null });
     const caller = appRouter.createCaller(ctx);
-    const modules = await caller.training.modules({});
-    expect(db.getTrainingModules).toHaveBeenCalled();
-    expect(Array.isArray(modules)).toBe(true);
+    await expect(caller.training.modules({})).rejects.toThrow();
   });
 });

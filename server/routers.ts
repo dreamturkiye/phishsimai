@@ -649,7 +649,7 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         const targets = allTargets.filter(t => (campaign.targetIds ?? []).includes(t.id));
         if (targets.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No targets assigned. Add employees before launching." });
         const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
-        const { sendCampaignEmail } = await import("../email/sender");
+        const { sendCampaignEmail } = await import("./email/sender");
         const { nanoid } = await import("nanoid");
         let sent = 0;
         for (const target of targets) {
