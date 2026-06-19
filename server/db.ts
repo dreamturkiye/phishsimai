@@ -324,6 +324,35 @@ export async function bulkCreateTargets(rows: Omit<Target, "id" | "createdAt" | 
 }
 
 // ─── Templates ────────────────────────────────────────────────────────────────
+export async function getVerifiedDomains(orgId: number): Promise<string[]> {
+  try {
+    const db = await getDb();
+    if (!db) return [];
+    const { orgVerifiedDomains } = await import("../drizzle/schema");
+    const rows = await db.select({ domain: orgVerifiedDomains.domain })
+      .from(orgVerifiedDomains)
+      .where(eq(orgVerifiedDomains.orgId, orgId));
+    return rows.map(r => r.domain.toLowerCase());
+  } catch { return []; }
+}
+
+export async function addVerifiedDomain(orgId: number, domain: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  const clean = domain.toLowerCase().replace(/^@/, "").trim();
+  await db.insert(orgVerifiedDomains).values({ orgId, domain: clean });
+}
+
+export async function removeVerifiedDomain(orgId: number, domain: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  const clean = domain.toLowerCase().trim();
+  await db.delete(orgVerifiedDomains)
+    .where(and(eq(orgVerifiedDomains.orgId, orgId), eq(orgVerifiedDomains.domain, clean)));
+}
+
 export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; language?: string; attackType?: string; difficulty?: string; industry?: string }) {
   const db = await getDb();
   if (!db) return [];

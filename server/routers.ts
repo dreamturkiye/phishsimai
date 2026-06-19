@@ -11,7 +11,10 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import {
   acceptInvite,
+  addVerifiedDomain,
   bulkCreateTargets,
+  getVerifiedDomains,
+  removeVerifiedDomain,
   createCampaign,
   createCampaignResult,
   createDepartment,
@@ -205,11 +208,43 @@ export const appRouter = router({
           rows.push({ orgId: input.orgId, firstName: fi>=0?(c[fi]??''):'', lastName: li>=0?(c[li]??''):'', email: em, title: ti>=0?(c[ti]??null):null, departmentId: input.departmentId??null, isActive: true });
         }
         if (!rows.length) throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid emails in CSV' });
+        // SECURITY (A2): enforce recipient-domain allowlist if org has configured domains
+        const verifiedDomains = await getVerifiedDomains(input.orgId);
+        if (verifiedDomains.length > 0) {
+          const blocked = rows.filter((r: any) => {
+            const domain = r.email.split("@")[1]?.toLowerCase();
+            return !domain || !verifiedDomains.includes(domain);
+          });
+          if (blocked.length > 0) {
+            const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Email domains not verified: ${badDomains}. Add them under Settings → Verified Domains.` });
+          }
+        }
         const count = await bulkCreateTargets(rows);
         return { count, message: 'Imported '+count+' targets' };
       }),
 
 
+    listVerifiedDomains: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        return getVerifiedDomains(input.orgId);
+      }),
+    addVerifiedDomain: protectedProcedure
+      .input(z.object({ orgId: z.number(), domain: z.string().min(3).max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, "Invalid domain format") }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        await addVerifiedDomain(input.orgId, input.domain);
+        return { success: true };
+      }),
+    removeVerifiedDomain: protectedProcedure
+      .input(z.object({ orgId: z.number(), domain: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        await removeVerifiedDomain(input.orgId, input.domain);
+        return { success: true };
+      }),
   // ─── Departments ────────────────────────────────────────────────────────────
   departments: router({
     list: protectedProcedure
@@ -648,6 +683,18 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         const allTargets = await getTargets(input.orgId);
         const targets = allTargets.filter(t => (campaign.targetIds ?? []).includes(t.id));
         if (targets.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No targets assigned. Add employees before launching." });
+        // SECURITY (A2): enforce recipient-domain allowlist if org has configured domains
+        const verifiedDomains = await getVerifiedDomains(input.orgId);
+        if (verifiedDomains.length > 0) {
+          const blocked = targets.filter(t => {
+            const domain = t.email.split("@")[1]?.toLowerCase();
+            return !domain || !verifiedDomains.includes(domain);
+          });
+          if (blocked.length > 0) {
+            const badDomains = Array.from(new Set(blocked.map(t => t.email.split("@")[1]))).join(", ");
+            throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: ${blocked.length} target(s) have unverified domains: ${badDomains}` });
+          }
+        }
         const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
         const { sendCampaignEmail } = await import("./email/sender");
         const { nanoid } = await import("nanoid");

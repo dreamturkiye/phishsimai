@@ -343,3 +343,15 @@ export const mspActivityLog = mysqlTable("msp_activity_log", {
   index("msp_activity_log_mspId_idx").on(t.mspTenantId),
 ]);
 export type MspActivityLog = typeof mspActivityLog.$inferSelect;
+
+// ─── Org Verified Domains ─────────────────────────────────────────────────────
+export const orgVerifiedDomains = mysqlTable("org_verified_domains", {
+  id: int("id").autoincrement().primaryKey(),
+  orgId: int("orgId").notNull(),
+  domain: varchar("domain", { length: 253 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("org_verified_domains_orgId_idx").on(t.orgId),
+  uniqueIndex("org_verified_domains_orgId_domain_uniq").on(t.orgId, t.domain),
+]);
+export type OrgVerifiedDomain = typeof orgVerifiedDomains.$inferSelect;
