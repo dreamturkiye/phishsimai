@@ -338,10 +338,18 @@ export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; 
   return db.select().from(templates).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(templates.usageCount));
 }
 
-export async function getTemplateById(id: number): Promise<Template | undefined> {
+export async function getTemplateById(id: number, requestingOrgId?: number): Promise<Template | undefined> {
   const db = await getDb();
   if (!db) return undefined;
   const [t] = await db.select().from(templates).where(eq(templates.id, id));
+  if (!t) return undefined;
+  // SECURITY: Enforce template access control
+  // Built-in and shared/community templates are accessible to all
+  if (t.isBuiltIn || t.isShared) return t;
+  // Private org templates: only accessible by the owning org
+  if (requestingOrgId !== undefined && t.orgId !== requestingOrgId) {
+    return undefined; // Block cross-org private template access
+  }
   return t;
 }
 
@@ -415,9 +423,15 @@ export async function getCampaignByTaskUid(taskUid: string): Promise<Campaign | 
 }
 
 // ─── Campaign Results ─────────────────────────────────────────────────────────
-export async function getCampaignResults(campaignId: number): Promise<CampaignResult[]> {
+export async function getCampaignResults(campaignId: number, orgId?: number): Promise<CampaignResult[]> {
   const db = await getDb();
   if (!db) return [];
+  // SECURITY: Always scope by orgId when provided to enforce tenant isolation
+  if (orgId !== undefined) {
+    return db.select().from(campaignResults).where(
+      and(eq(campaignResults.campaignId, campaignId), eq(campaignResults.orgId, orgId))
+    );
+  }
   return db.select().from(campaignResults).where(eq(campaignResults.campaignId, campaignId));
 }
 
