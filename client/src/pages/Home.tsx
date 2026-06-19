@@ -55,7 +55,7 @@ const TESTIMONIALS = [
 
 const PLANS = [
   { name: "Starter", price: "$2", period: "/user/mo", description: "Perfect for small teams getting started.", features: ["Up to 50 employees", "Unlimited campaigns", "AI template generator", "5 training modules", "Basic analytics", "Email support"], cta: "Start Free Trial", highlight: false },
-  { name: "Professional", price: "$4", period: "/user/mo", description: "The complete platform for growing organizations.", features: ["Up to 500 employees", "Everything in Starter", "All 15+ training modules", "Compliance certificates (10 frameworks)", "Department analytics", "Gamification & leaderboards", "Multi-language campaigns", "Priority support"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
+  { name: "Professional", price: "$4", period: "/user/mo", description: "The MSP-ready platform. White-label, multi-client, compliance-mapped.", features: ["Up to 500 employees", "Everything in Starter", "All 15+ training modules", "Compliance certificates (10 frameworks)", "Department analytics", "Gamification & leaderboards", "Multi-language campaigns", "Priority support"], cta: "Start Free Trial", highlight: true, badge: "Best for MSPs" },
   { name: "Enterprise", price: "$6", period: "/user/mo", description: "Unlimited scale with MSP white-label.", features: ["Unlimited employees", "Everything in Professional", "MSP white-label portal", "Custom branding & domain", "Automated scheduling", "API access", "Dedicated account manager", "SLA guarantee"], cta: "Contact Sales", highlight: false },
 ];
 
@@ -81,7 +81,7 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
               <Shield className="w-4 h-4 text-violet-400" />
             </div>
-            <span className="font-bold text-lg tracking-tight">PhishSim AI</span>
+            <span className="font-bold text-lg tracking-tight">PhishSim AI ⚡</span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
@@ -133,15 +133,15 @@ export default function Home() {
           <div className="max-w-4xl mx-auto text-center">
             <Badge variant="outline" className="mb-6 border-violet-500/30 bg-violet-500/10 text-violet-300 text-xs px-3 py-1">
               <Zap className="w-3 h-3 mr-1.5" />
-              AI-Powered Phishing Simulation — 2x Better, Half the Price
+              Trusted by MSPs — Launch in 10 Min · No Credit Card · Cancel Anytime
             </Badge>
             <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6 leading-[1.05]">
-              Your employees{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">are your biggest</span>{" "}
-              security risk.
+              Your clients are{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">one click away</span>{" "}
+              from a breach.
             </h1>
             <p className="text-xl text-muted-foreground mb-4 max-w-2xl mx-auto leading-relaxed">
-              91% of cyberattacks start with a phishing email. PhishSim AI trains your team with realistic simulations, AI-generated templates, and automated compliance reporting — in minutes, not months.
+              PhishSim AI finds your clients' vulnerable employees before attackers do — then fixes the problem automatically. Add a recurring compliance revenue line. Retain clients who ask about security. Set up in 10 minutes.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 mb-10 text-sm">
               {["HIPAA Required", "GLBA Required", "CMMC Required", "NY DFS Required"].map(label => (
@@ -172,10 +172,10 @@ export default function Home() {
         <div className="container py-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
             {[
-              { value: "91%", label: "of breaches start with phishing" },
+              { value: "10 min", label: "from signup to first campaign live" },
               { value: "$4.9M", label: "average cost of a phishing breach" },
-              { value: "5 Laws", label: "mandate phishing training" },
-              { value: "2x", label: "better than KnowBe4 at half the price" },
+              { value: "3×", label: "client retention uplift vs no program" },
+              { value: "67%", label: "of employees click without training" },
             ].map(({ value, label }) => (
               <div key={label}>
                 <div className="text-3xl font-black text-foreground mb-1">{value}</div>
