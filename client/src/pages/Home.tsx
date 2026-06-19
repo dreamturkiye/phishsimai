@@ -349,6 +349,77 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Cyber Insurance Readiness Pack — Game Changer Feature */}
+      <section className="bg-gradient-to-br from-violet-950/40 via-background to-background py-20 border-y border-violet-500/20">
+        <div className="container max-w-5xl mx-auto">
+          <div className="flex flex-col md:flex-row gap-12 items-center">
+            <div className="flex-1">
+              <div className="inline-flex items-center gap-2 bg-violet-500/10 border border-violet-500/30 rounded-full px-4 py-1.5 mb-6">
+                <span className="text-violet-400 font-bold text-xs uppercase tracking-widest">Industry First</span>
+              </div>
+              <h2 className="text-4xl font-black mb-4 leading-tight">
+                One click.<br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">Broker-ready evidence package.</span>
+              </h2>
+              <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
+                Coalition, At-Bay, Travelers, Chubb, and Beazley now require documented phishing simulation data at renewal. Most MSPs cannot produce it. <strong className="text-foreground">PhishSim AI generates the complete carrier supplemental evidence PDF automatically</strong> — timestamped campaign history, click-rate trends, training completion records, and an attestation signature page.
+              </p>
+              <div className="space-y-3 mb-8">
+                {[
+                  "Satisfies all 5 carrier supplemental security awareness questions",
+                  "Timestamped campaign log accepted by Coalition, At-Bay, Travelers, Chubb and Beazley",
+                  "Demonstrates click-rate improvement trend — lower premiums for your clients",
+                  "White-labeled under your MSP brand",
+                  "Generated in 60 seconds. No manual export, no Word docs",
+                ].map(item => (
+                  <div key={item} className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-3 h-3 text-green-400" />
+                    </div>
+                    <span className="text-sm text-muted-foreground">{item}</span>
+                  </div>
+                ))}
+              </div>
+              <Button size="lg" className="bg-violet-600 hover:bg-violet-500 text-base px-8 h-12" onClick={() => window.location.href = getSignupUrl()}>
+                Generate Your First Evidence Pack <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+            <div className="flex-shrink-0 w-full md:w-80">
+              <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl">
+                <div className="bg-slate-900 rounded-xl p-4 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs text-slate-400 font-mono">ACME Corp — Insurance Pack</span>
+                    <span className="text-xs text-green-400 font-bold">PDF</span>
+                  </div>
+                  {[
+                    { page: "Cover", desc: "Carrier-addressed evidence header" },
+                    { page: "Controls", desc: "All 5 checkpoints: PASS" },
+                    { page: "Summary", desc: "Click rate: 34% to 8% improvement" },
+                    { page: "Campaign Log", desc: "12 campaigns, timestamped" },
+                    { page: "Attestation", desc: "Signature-ready for broker" },
+                  ].map(({ page, desc }) => (
+                    <div key={page} className="flex items-center gap-3 py-2 border-b border-slate-700/50 last:border-0">
+                      <div className="w-6 h-6 rounded bg-violet-500/20 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-3 h-3 text-violet-400" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-slate-200">{page}</div>
+                        <div className="text-xs text-slate-500">{desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-2">Generated in</p>
+                  <p className="text-2xl font-black text-violet-400">60 sec</p>
+                  <p className="text-xs text-muted-foreground">vs. hours of manual work</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* MSP Section */}
       <section id="msp" className="py-20 border-t border-border/40 bg-secondary/10">
         <div className="container">

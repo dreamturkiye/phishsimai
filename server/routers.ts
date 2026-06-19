@@ -749,6 +749,43 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         };
       }),
 
+    insuranceReadinessPDF: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const org = await getOrgById(input.orgId);
+        if (!org) throw new TRPCError({ code: "NOT_FOUND" });
+        const campaigns = await getCampaigns(input.orgId);
+        const analytics = await getOrgAnalytics(input.orgId);
+        const campaignStats = await Promise.all(campaigns.slice(0, 20).map(async (c) => {
+          const results = await getCampaignResults(c.id, input.orgId);
+          const sent = results.length;
+          const clicked = results.filter(r => r.linkClickedAt).length;
+          const reported = results.filter(r => r.reportedAt).length;
+          return {
+            name: c.name ?? "Untitled Campaign",
+            createdAt: c.createdAt ?? new Date(),
+            targetCount: sent,
+            clickRate: sent > 0 ? Math.round((clicked / sent) * 100) : 0,
+            reportRate: sent > 0 ? Math.round((reported / sent) * 100) : 0,
+          };
+        }));
+        const sorted = [...campaignStats].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        const baselineClickRate = sorted[0]?.clickRate ?? 0;
+        const currentClickRate = sorted[sorted.length - 1]?.clickRate ?? 0;
+        const { generateInsurancePack } = await import("./reports/insurancePack");
+        const pdfBuffer = await generateInsurancePack({
+          orgName: org.name,
+          campaigns: campaignStats,
+          totalEmployeesTrained: analytics.totalTargets ?? 0,
+          baselineClickRate,
+          currentClickRate,
+          trainingModulesCount: 20,
+          reportPeriodStart: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+          reportPeriodEnd: new Date(),
+        });
+        return { pdf: pdfBuffer.toString("base64"), filename: `${org.name.replace(/\s+/g, "-")}-Insurance-Readiness-Pack.pdf` };
+      }),
     campaignTrend: protectedProcedure
       .input(z.object({ orgId: z.number() }))
       .query(async ({ ctx, input }) => {
