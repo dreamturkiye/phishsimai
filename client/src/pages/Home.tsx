@@ -467,7 +467,7 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                <Button onClick={() => window.location.href = getSignupUrl()} className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => window.location.href = getLoginUrl()}>
+                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
                   {plan.cta}
                 </Button>
               </div>
