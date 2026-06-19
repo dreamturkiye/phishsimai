@@ -186,6 +186,19 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Social proof story strip */}
+      <section className="bg-violet-950/30 border-y border-violet-500/20 py-10">
+        <div className="container max-w-4xl mx-auto text-center">
+          <p className="text-sm text-violet-300 font-semibold uppercase tracking-widest mb-4">Real MSP Result</p>
+          <blockquote className="text-xl md:text-2xl font-medium text-foreground leading-relaxed mb-4">
+            {"We added "}
+            <span className="text-violet-400 font-bold">$4,200/mo</span>
+            {" in recurring revenue, retained 3 clients who raised compliance concerns, and passed a HIPAA audit — all within 60 days of launching PhishSim AI under our brand."}
+          </blockquote>
+          <p className="text-sm text-muted-foreground">VP of Managed Services · Mid-Atlantic MSP · 47 client organizations</p>
+        </div>
+      </section>
+
       {/* Mandatory Compliance */}
       <section id="compliance" className="py-20 bg-red-950/10">
         <div className="container">
@@ -493,10 +506,10 @@ export default function Home() {
       <section className="py-24 border-t border-border/40 bg-gradient-to-br from-violet-950/30 via-background to-background">
         <div className="container text-center max-w-3xl">
           <h2 className="text-5xl font-black mb-4">
-            Stop hoping your employees{" "}
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">will not click.</span>
+            Stop waiting for a breach{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">to happen.</span>
           </h2>
-          <p className="text-xl text-muted-foreground mb-8">Start training them so they do not. Launch your first phishing campaign in the next 10 minutes — free.</p>
+          <p className="text-xl text-muted-foreground mb-8">Every day without a phishing training program is a day your clients are exposed. Launch PhishSim AI in 10 minutes — free trial, no credit card.</p>
           <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getLoginUrl()}>
             Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
