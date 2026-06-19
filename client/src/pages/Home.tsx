@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { getLoginUrl } from "@/const";
+import { getLoginUrl, getSignupUrl } from "@/const";
 import {
   Shield, Zap, BarChart3, Users, Brain, CheckCircle2,
   ChevronRight, Star, Building2, Globe, Mail, Phone,
   Lock, AlertTriangle, FileText, Award, Clock, Target,
-  ArrowRight, X, Check, Play, TrendingUp, Layers, BookOpen, Palette
+  ArrowRight, X, Check, Play, TrendingUp, Layers, BookOpen, Palette, Menu
 } from "lucide-react";
 
 const MANDATORY_FRAMEWORKS = [
@@ -69,6 +69,7 @@ const FAQS = [
 ];
 
 export default function Home() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
 
   return (
@@ -90,12 +91,38 @@ export default function Home() {
             <a href="/msp" className="hover:text-foreground transition-colors">Partner Portal</a>
           </nav>
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
-            <Button size="sm" onClick={() => window.location.href = getLoginUrl()}>
-              Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+            <div className="hidden md:flex items-center gap-3">
+              <Button variant="ghost" size="sm" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
+              <Button size="sm" onClick={() => window.location.href = getSignupUrl()}>
+                Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </div>
+            <Button variant="ghost" size="sm" className="md:hidden p-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
           </div>
         </div>
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-border bg-background/95 backdrop-blur-sm px-4 py-4 flex flex-col gap-1">
+            {[
+              { label: "Features", href: "#features" },
+              { label: "Compliance", href: "#compliance" },
+              { label: "MSP / Partners", href: "#msp" },
+              { label: "Pricing", href: "#pricing" },
+              { label: "Partner Portal", href: "/msp" },
+            ].map(({ label, href }) => (
+              <a key={label} href={href} className="text-sm text-muted-foreground hover:text-foreground transition-colors py-3 border-b border-border/40 last:border-0"
+                onClick={() => setMobileMenuOpen(false)}>{label}</a>
+            ))}
+            <div className="flex flex-col gap-2 pt-3">
+              <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
+              <Button size="sm" className="w-full bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
+                Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Hero */}
@@ -124,11 +151,11 @@ export default function Home() {
               ))}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
-              <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getLoginUrl()}>
+              <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
                 Start Free 14-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-              <Button size="lg" variant="outline" className="text-base px-8 h-12" onClick={() => window.location.href = getLoginUrl()}>
-                <Play className="w-4 h-4 mr-2" /> See Live Demo
+              <Button size="lg" variant="outline" className="text-base px-8 h-12" onClick={() => window.location.href = "mailto:sales@phishsimai.com?subject=Demo%20Request&body=Hi%2C%20I%27d%20love%20to%20see%20a%20live%20demo%20of%20PhishSim%20AI.">
+                <Play className="w-4 h-4 mr-2" /> Book a Live Demo
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
@@ -213,7 +240,7 @@ export default function Home() {
             </div>
           </div>
           <div className="text-center">
-            <Button size="lg" className="bg-red-600 hover:bg-red-500 text-white" onClick={() => window.location.href = getLoginUrl()}>
+            <Button size="lg" className="bg-red-600 hover:bg-red-500 text-white" onClick={() => window.location.href = getSignupUrl()}>
               <Shield className="w-4 h-4 mr-2" /> Get Compliant Today — Free Trial
             </Button>
           </div>
@@ -427,7 +454,7 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => window.location.href = getLoginUrl()}>
+                <Button onClick={() => window.location.href = getSignupUrl()} className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => window.location.href = getLoginUrl()}>
                   {plan.cta}
                 </Button>
               </div>
@@ -498,8 +525,15 @@ export default function Home() {
             <div>
               <div className="font-semibold text-sm mb-3">Product</div>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                {["Features", "Pricing", "Compliance Center", "Training Modules", "Template Library", "Analytics"].map(item => (
-                  <li key={item}><a href="#" className="hover:text-foreground transition-colors">{item}</a></li>
+                {[
+                  { label: "Features", href: "#features" },
+                  { label: "Pricing", href: "#pricing" },
+                  { label: "Compliance Center", href: "#compliance" },
+                  { label: "Training Modules", href: "#features" },
+                  { label: "Template Library", href: "#features" },
+                  { label: "Analytics", href: "#features" },
+                ].map(({ label, href }) => (
+                  <li key={label}><a href={href} className="hover:text-foreground transition-colors">{label}</a></li>
                 ))}
               </ul>
             </div>
@@ -516,7 +550,7 @@ export default function Home() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 {[
                   { label: "MSP Partner Portal", href: "/msp" },
-                  { label: "About Us", href: "#" },
+                  { label: "About Us", href: "mailto:info@phishsimai.com" },
                   { label: "Contact Sales", href: "mailto:sales@phishsimai.com" },
                   { label: "Support", href: "mailto:support@phishsimai.com" },
                   { label: "Privacy Policy", href: "/privacy" },
