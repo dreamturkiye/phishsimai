@@ -115,7 +115,11 @@ export const appRouter = router({
       .input(z.object({ name: z.string().min(2).max(100) }))
       .mutation(async ({ ctx, input }) => {
         const slug = input.name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 50) + "-" + nanoid(6);
-        return createOrganization({ name: input.name, slug, userId: ctx.user.id });
+        const org = await createOrganization({ name: input.name, slug, userId: ctx.user.id });
+        import('./email/janet').then(({ sendWelcomeEmail }) =>
+          sendWelcomeEmail(ctx.user.email ?? '', org.name).catch(console.error)
+        );
+        return org;
       }),
 
     get: protectedProcedure
