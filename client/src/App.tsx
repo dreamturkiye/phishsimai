@@ -36,6 +36,8 @@ function Router() {
       <Route path="/gamification" component={Gamification} />
       <Route path="/settings" component={OrgSettings} />
       <Route path="/setup" component={OrgSetup} />
+      <Route path="/register" component={OrgSetup} />
+      <Route path="/pricing" component={Home} />
       <Route path="/invite/:token" component={AcceptInvite} />
       <Route path="/compliance" component={ComplianceCenter} />
       <Route path="/msp" component={MspPortal} />
