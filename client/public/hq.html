@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PhishSimAI HQ</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0a0a0f;color:#e8e8f0;font-size:14px}
+nav{background:#0f0f1a;border-bottom:1px solid #1e1e2e;padding:0 20px;display:flex;align-items:center;position:sticky;top:0;z-index:100;gap:0}
+.logo{font-size:15px;font-weight:700;color:#fff;margin-right:20px;padding:12px 0;flex-shrink:0}
+.logo span{color:#e53e3e}
+.tab{padding:12px 14px;font-size:12px;color:#6b6b8a;cursor:pointer;border:none;background:none;border-bottom:2px solid transparent;font-family:inherit}
+.tab.active{color:#e53e3e;border-bottom-color:#e53e3e}
+.ml-auto{margin-left:auto;display:flex;align-items:center;gap:8px}
+.badge{font-size:11px;padding:3px 10px;border-radius:99px;font-weight:600}
+.badge-green{background:#0d2b1a;color:#4ade80;border:1px solid #166534}
+.badge-red{background:#2d0f0f;color:#f87171;border:1px solid #991b1b}
+.main{max-width:1100px;margin:0 auto;padding:20px}
+.panel{display:none}.panel.active{display:block}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:16px}
+.metric{background:#0f0f1a;border:1px solid #1e1e2e;border-radius:10px;padding:12px 14px}
+.metric-label{font-size:10px;color:#6b6b8a;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px}
+.metric-value{font-size:24px;font-weight:600}
+.metric-sub{font-size:10px;color:#6b6b8a;margin-top:3px}
+.card{background:#0f0f1a;border:1px solid #1e1e2e;border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.card-title{font-size:11px;font-weight:700;color:#9090aa;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid #12121e}
+.btn{padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #2e2e42;background:#1a1a2e;color:#e8e8f0;font-family:inherit}
+.btn-accent{background:#e53e3e;color:#fff;border-color:#e53e3e}
+.btn-green{background:#0d2b1a;color:#4ade80;border-color:#166534}
+.btn-orange{background:#2a1f05;color:#f5a623;border-color:#854d0e}
+.inp{background:#1a1a2e;border:1px solid #2e2e42;border-radius:8px;padding:10px 13px;color:#e8e8f0;font-size:13px;font-family:inherit;outline:none;width:100%}
+.funnel-bar{height:5px;border-radius:3px;background:#1e1e2e;overflow:hidden;flex:1;margin:0 8px}
+.funnel-fill{height:100%;background:#e53e3e;border-radius:3px}
+.pill{font-size:10px;padding:2px 8px;border-radius:99px;font-weight:700}
+.chat-box{height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;background:#080810;border:1px solid #1e1e2e;border-radius:10px;padding:12px;margin-bottom:10px}
+.msg{padding:9px 12px;font-size:13px;line-height:1.55;max-width:84%}
+.msg-janet{background:#0c1a2e;border:1px solid #1e3a5f;border-radius:4px 10px 10px 10px;color:#c8d8f0;align-self:flex-start}
+.msg-you{background:#1a1a2e;border:1px solid #2e2e42;border-radius:10px 4px 10px 10px;align-self:flex-end}
+.msg-label{font-size:9px;color:#4a4a60;margin-bottom:3px;font-weight:700;letter-spacing:.5px}
+.voice-btn{flex:1;padding:11px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;border:none;font-family:inherit}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0f0f1a}::-webkit-scrollbar-thumb{background:#2e2e42;border-radius:2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+input:focus,textarea:focus{border-color:#e53e3e!important}
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">PhishSim<span>AI</span> <span style="font-size:9px;color:#4a4a60;font-weight:400">HQ</span></div>
+  <button class="tab active" onclick="showTab('overview',this)">Overview</button>
+  <button class="tab" onclick="showTab('janet',this)">Janet CGO</button>
+  <button class="tab" onclick="showTab('pipeline',this)">Pipeline</button>
+  <button class="tab" onclick="showTab('approvals',this)" id="tab-approvals">Approvals</button>
+  <button class="tab" onclick="showTab('memory',this)">Memory</button>
+  <button class="tab" onclick="showTab('health',this)">Health</button>
+  <div class="ml-auto">
+    <span class="badge badge-green" id="sys-badge">● Live</span>
+    <span style="font-size:10px;color:#4a4a60" id="refresh-ts"></span>
+    <button class="btn" onclick="loadData()" style="padding:5px 10px">↺</button>
+  </div>
+</nav>
+
+<div class="main">
+  <!-- OVERVIEW -->
+  <div id="panel-overview" class="panel active">
+    <div class="grid" id="metrics-grid">
+      <div class="metric"><div class="metric-label">MRR</div><div class="metric-value" id="m-mrr">$0</div><div class="metric-sub">Next: $500</div></div>
+      <div class="metric"><div class="metric-label">Touched</div><div class="metric-value" id="m-touched">0</div><div class="metric-sub" id="m-bounce">0% bounce</div></div>
+      <div class="metric"><div class="metric-label">Reply rate</div><div class="metric-value" id="m-reply" style="color:#f5a623">0%</div><div class="metric-sub">Target: 2%</div></div>
+      <div class="metric"><div class="metric-label">Prospects</div><div class="metric-value" id="m-prospects">0</div><div class="metric-sub">T2 eligible soon</div></div>
+      <div class="metric"><div class="metric-label">Engaged</div><div class="metric-value" id="m-engaged">0</div><div class="metric-sub">Hot leads</div></div>
+      <div class="metric"><div class="metric-label">Customers</div><div class="metric-value" id="m-customers" style="color:#4ade80">0</div><div class="metric-sub">Target: 3 wk4</div></div>
+    </div>
+    <div class="two-col">
+      <div class="card">
+        <div class="card-title">Pipeline funnel</div>
+        <div id="funnel"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Self-serve journey</div>
+        <div style="font-size:11px;line-height:2;color:#9090aa">
+          <span style="color:#4ade80">●</span> Cold email (ARIA 5-touch)<br>
+          <span style="color:#4ade80">●</span> Reply → Groq intent parser<br>
+          <span style="color:#4ade80">●</span> Interested → auto checkout email<br>
+          <span style="color:#4ade80">●</span> Stripe payment → customer<br>
+          <span style="color:#4ade80">●</span> Janet CS monitors retention
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Kaan AI OS v3.0 — PhishSimAi Edition</div>
+      <div style="font-size:12px;color:#9090aa;line-height:1.8">
+        Memory layer active · 8 sub-agents under Janet · L1-L4 autonomy controls · Self-healing watchdog · Evolution cycle weekly<br>
+        <span style="color:#e53e3e">ICP:</span> MSP owners (50-500 managed seats) + compliance buyers (SOC2/HIPAA/PCI) · Persona: Sarah Mitchell
+      </div>
+    </div>
+  </div>
+
+  <!-- JANET CGO -->
+  <div id="panel-janet" class="panel">
+    <div class="card" style="padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="voice-dot" style="width:8px;height:8px;border-radius:50%;background:#e53e3e"></div>
+        <span style="font-size:12px;color:#9090aa" id="voice-status">Hold to speak</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:11px;color:#6b6b8a">Voice output</span>
+        <button class="btn" id="voice-toggle" onclick="toggleVoice()" style="font-size:11px;padding:4px 10px">ON</button>
+        <button class="btn badge-red" id="stop-btn" onclick="stopAudio()" style="font-size:11px;padding:4px 10px;display:none">Stop</button>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:10px 14px;border-bottom:1px solid #1e1e2e;display:flex;align-items:center;gap:8px">
+        <div style="width:28px;height:28px;border-radius:50%;background:#e53e3e22;border:1px solid #e53e3e44;display:flex;align-items:center;justify-content:center;font-size:13px;color:#e53e3e;font-weight:700">J</div>
+        <div>
+          <div style="font-size:13px;font-weight:600">Janet — Chief Growth Officer</div>
+          <div style="font-size:10px;color:#6b6b8a">Groq LLaMA 3.3 · ElevenLabs Rachel · PhishSimAI v3.0</div>
+        </div>
+      </div>
+      <div class="chat-box" id="chat-msgs">
+        <div>
+          <div class="msg-label">JANET</div>
+          <div class="msg msg-janet">Morning, Kaan. PhishSimAI is live on Kaan AI OS v3.0. ARIA sequence is loaded with 5 compliance-focused touches — Sarah Mitchell persona. ICP locked: MSP owners with SOC2/HIPAA compliance pressure. One MSP = 10-100x LTV of direct SMB. First priority: close 3 founding MSPs at $49/mo to get testimonials. What do you want to focus on?</div>
+        </div>
+      </div>
+      <div style="padding:10px 12px;border-top:1px solid #1e1e2e;display:flex;gap:8px">
+        <input class="inp" id="chat-input" placeholder="Ask Janet anything about PhishSimAI..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}">
+        <button class="btn btn-accent" onclick="sendChat()" id="send-btn" style="flex-shrink:0;padding:10px 14px">Send</button>
+      </div>
+      <div style="padding:10px 12px;border-top:1px solid #12121e;display:flex;gap:8px">
+        <button class="voice-btn" id="mic-btn"
+          onmousedown="startRec()" onmouseup="stopRec()"
+          ontouchstart="startRec()" ontouchend="stopRec()"
+          style="background:#e53e3e;color:#fff">
+          Hold to speak
+        </button>
+        <button class="btn" onclick="clearChat()" style="flex-shrink:0">Clear</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Quick prompts</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" onclick="sendMsg('What should we focus on this week?')">This week focus?</button>
+        <button class="btn" onclick="sendMsg('How do we position against KnowBe4?')">vs KnowBe4?</button>
+        <button class="btn" onclick="sendMsg('What is our MSP channel strategy?')">MSP strategy?</button>
+        <button class="btn" onclick="sendMsg('Draft a LinkedIn post about phishing statistics')">LinkedIn post</button>
+        <button class="btn" onclick="sendMsg('How close are we to first customer?')">First customer?</button>
+        <button class="btn" onclick="sendMsg('What should our founding MSP pricing be?')">Pricing advice?</button>
+        <button class="btn" onclick="sendMsg('What architect task should we build next?')">Next build?</button>
+        <button class="btn" onclick="sendMsg('Run a full status report on PhishSimAI')">Full status</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PIPELINE -->
+  <div id="panel-pipeline" class="panel">
+    <div class="card">
+      <div class="card-title" id="pipeline-title">Leads</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="leads-table">
+          <thead><tr style="color:#6b6b8a;border-bottom:1px solid #1e1e2e">
+            <th style="text-align:left;padding:6px 8px;font-weight:600;font-size:11px">Name</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:600;font-size:11px">Company</th>
+            <th style="text-align:left;padding:6px 8px;font-weight:600;font-size:11px">Stage</th>
+            <th style="padding:6px 8px;font-weight:600;font-size:11px">T1</th>
+            <th style="padding:6px 8px;font-weight:600;font-size:11px">T2</th>
+            <th style="padding:6px 8px;font-weight:600;font-size:11px">Replied</th>
+            <th style="padding:6px 8px;font-weight:600;font-size:11px">Bounced</th>
+          </tr></thead>
+          <tbody id="leads-body"><tr><td colspan="7" style="padding:20px;text-align:center;color:#6b6b8a">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPROVALS -->
+  <div id="panel-approvals" class="panel">
+    <div class="card" id="tasks-container">
+      <div class="card-title">Architect task queue</div>
+      <div id="tasks-body" style="color:#6b6b8a;font-size:13px">Loading...</div>
+    </div>
+    <div class="card">
+      <div class="card-title">System controls</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-accent" onclick="triggerCron('sequence')">Run ARIA sequence</button>
+        <button class="btn" onclick="triggerCron('janet')">Run Janet brief</button>
+        <button class="btn" onclick="triggerCron('heartbeat')">Check health</button>
+        <button class="btn" onclick="seedMem()">Seed memory</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEMORY -->
+  <div id="panel-memory" class="panel">
+    <div class="card">
+      <div class="card-title">Janet memory</div>
+      <div id="memory-body" style="color:#6b6b8a;font-size:13px">Loading...</div>
+    </div>
+  </div>
+
+  <!-- HEALTH -->
+  <div id="panel-health" class="panel">
+    <div class="grid">
+      <div class="metric"><div class="metric-label">Bounce rate</div><div class="metric-value" id="h-bounce" style="color:#4ade80">0%</div><div class="metric-sub">Pause at 8%</div></div>
+      <div class="metric"><div class="metric-label">Sequences</div><div class="metric-value" style="color:#4ade80;font-size:18px">Live</div><div class="metric-sub">ARIA 5-touch</div></div>
+      <div class="metric"><div class="metric-label">Webhooks</div><div class="metric-value" style="color:#4ade80;font-size:18px">2 live</div><div class="metric-sub">Resend</div></div>
+      <div class="metric"><div class="metric-label">Janet</div><div class="metric-value" style="color:#4ade80;font-size:18px">Auto</div><div class="metric-sub">Daily brief 08:00</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">OS endpoints</div>
+      <div id="endpoints-list" style="font-size:12px">
+        <div class="row"><div><span style="width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:8px"></span><code style="color:#60a5fa">/api/os/sequence</code></div><span style="color:#6b6b8a">ARIA 5-touch</span></div>
+        <div class="row"><div><span style="width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:8px"></span><code style="color:#60a5fa">/api/os/janet</code></div><span style="color:#6b6b8a">Janet daily brief</span></div>
+        <div class="row"><div><span style="width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:8px"></span><code style="color:#60a5fa">/api/os/watchdog</code></div><span style="color:#6b6b8a">Bounce + stall detection</span></div>
+        <div class="row"><div><span style="width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:8px"></span><code style="color:#60a5fa">/api/os/heartbeat</code></div><span style="color:#6b6b8a">System health</span></div>
+        <div class="row"><div><span style="width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:8px"></span><code style="color:#60a5fa">/api/os/webhook/reply</code></div><span style="color:#6b6b8a">Inbound reply parser</span></div>
+        <div class="row" style="border:none"><div><span style="width:6px;height:6px;border-radius:50%;background:#4ade80;display:inline-block;margin-right:8px"></span><code style="color:#60a5fa">/api/os/hq</code></div><span style="color:#6b6b8a">HQ data + chat + TTS</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const HQ = 'ps-hq-2026'
+const CRON = '' // set via env in production
+let voiceOn = true, chatHistory = [], mediaRec = null, audioChunks = [], currentAudio = null, voiceState = 'idle'
+let data = null
+
+function showTab(name, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+  document.getElementById('panel-'+name).classList.add('active')
+  btn.classList.add('active')
+}
+
+async function loadData() {
+  try {
+    const r = await fetch('/api/os/hq?secret='+HQ)
+    data = await r.json()
+    if (!data.ok) return
+    const p = data.pipeline || {}
+    document.getElementById('m-mrr').textContent = '$' + (Number(p.customers||0)*249).toLocaleString()
+    document.getElementById('m-touched').textContent = p.touched || 0
+    document.getElementById('m-bounce').textContent = (p.bounceRate||'0') + '% bounce'
+    document.getElementById('m-reply').textContent = (p.replyRate||'0') + '%'
+    document.getElementById('m-reply').style.color = Number(p.replyRate||0)>=2 ? '#4ade80' : '#f5a623'
+    document.getElementById('m-prospects').textContent = p.prospects || 0
+    document.getElementById('m-engaged').textContent = p.engaged || 0
+    document.getElementById('m-customers').textContent = p.customers || 0
+    document.getElementById('h-bounce').textContent = (p.bounceRate||'0') + '%'
+    document.getElementById('refresh-ts').textContent = 'Updated ' + new Date().toLocaleTimeString()
+
+    // Funnel
+    const max = Number(p.touched||1) || 1
+    const funnelData = [['Touched',p.touched,max],['Prospects',p.prospects,max],['Engaged',p.engaged,max],['Customers',p.customers,max]]
+    document.getElementById('funnel').innerHTML = funnelData.map(([l,v,m]) =>
+      `<div style="display:flex;align-items:center;font-size:12px;margin-bottom:7px">
+        <span style="width:72px;color:#9090aa">${l}</span>
+        <div class="funnel-bar"><div class="funnel-fill" style="width:${m>0?(Number(v)/m*100):0}%"></div></div>
+        <span style="width:22px;text-align:right;font-weight:600">${v||0}</span>
+      </div>`).join('')
+
+    // Leads table
+    const stageColor = {customer:'#4ade80',engaged:'#f5a623',prospect:'#60a5fa',dead:'#6b6b8a',not_now:'#9090aa'}
+    const leads = data.recentLeads || []
+    document.getElementById('pipeline-title').textContent = leads.length + ' most recent leads'
+    document.getElementById('leads-body').innerHTML = leads.length === 0
+      ? '<tr><td colspan="7" style="padding:20px;text-align:center;color:#6b6b8a">No leads yet</td></tr>'
+      : leads.map(l => `<tr style="border-bottom:1px solid #12121e">
+          <td style="padding:7px 8px">${l.name||'-'}</td>
+          <td style="padding:7px 8px;color:#9090aa">${l.company||'-'}</td>
+          <td style="padding:7px 8px"><span class="pill" style="background:${(stageColor[l.pipeline_stage]||'#6b6b8a')}22;color:${stageColor[l.pipeline_stage]||'#6b6b8a'};border:1px solid ${(stageColor[l.pipeline_stage]||'#6b6b8a')}44">${l.pipeline_stage||'-'}</span></td>
+          <td style="padding:7px 8px;text-align:center;color:${l.touch1_sent_at?'#4ade80':'#4a4a60'}">${l.touch1_sent_at?'✓':'—'}</td>
+          <td style="padding:7px 8px;text-align:center;color:${l.touch2_sent_at?'#4ade80':'#4a4a60'}">${l.touch2_sent_at?'✓':'—'}</td>
+          <td style="padding:7px 8px;text-align:center;color:${l.replied?'#f5a623':'#4a4a60'}">${l.replied?'✓':'—'}</td>
+          <td style="padding:7px 8px;text-align:center;color:${l.bounced?'#f87171':'#4a4a60'}">${l.bounced?'✗':'—'}</td>
+        </tr>`).join('')
+
+    // Tasks
+    const tasks = data.archTasks || []
+    const taskEl = document.getElementById('tasks-body')
+    const tab = document.getElementById('tab-approvals')
+    const pending = tasks.filter(t => t.status==='pending').length
+    tab.textContent = 'Approvals' + (pending>0 ? ` (${pending})` : '')
+    taskEl.innerHTML = tasks.length===0 ? '<div style="color:#6b6b8a;padding:8px 0">No tasks queued</div>' :
+      tasks.map(t => `<div style="padding:12px;background:#0a0a14;border-radius:8px;border:1px solid #1e1e2e;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px">${(t.task||'').replace(/^\*+\s*/,'').slice(0,140)}</div>
+        <div style="display:flex;gap:8px;align-items:center;font-size:10px;color:#6b6b8a;margin-bottom:8px">
+          <span>${t.source||''}</span><span>${new Date(t.created_at).toLocaleDateString()}</span>
+          <span class="pill" style="background:${t.status==='done'?'#0d2b1a':t.status==='approved'?'#0c1a2e':'#2a1f05'};color:${t.status==='done'?'#4ade80':t.status==='approved'?'#60a5fa':'#f5a623'}">${t.status}</span>
+        </div>
+        ${t.status==='pending' ? `<div style="display:flex;gap:6px">
+          <button class="btn btn-green" style="font-size:11px" onclick="updateTask('${t.id}','approved','Approved by Kaan - queue for Qwen')">Approve → Qwen</button>
+          <button class="btn badge-red" style="font-size:11px" onclick="updateTask('${t.id}','rejected','Rejected by Kaan')">Reject</button>
+        </div>` : t.status==='approved' ? `<button class="btn" style="font-size:11px" onclick="updateTask('${t.id}','done','Completed')">Mark done</button>` : '<span style="font-size:11px;color:#4ade80">Done</span>'}
+      </div>`).join('')
+
+    // Memory
+    const mems = data.memory || []
+    const types = ['company','operating','campaign','strategic','customer']
+    document.getElementById('memory-body').innerHTML = types.map(type => {
+      const items = mems.filter(m => m.type===type)
+      if (!items.length) return ''
+      return `<div style="margin-bottom:14px">
+        <div style="font-size:10px;font-weight:700;color:#e53e3e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${type} (${items.length})</div>
+        ${items.map(m => `<div style="padding:6px 0;border-bottom:1px solid #12121e">
+          <div style="font-size:10px;color:#6b6b8a;margin-bottom:2px">${(m.key_name||m.key||'').replace(/_/g,' ')}</div>
+          <div style="font-size:12px;color:#c8c8e0;line-height:1.5">${(m.value||'').slice(0,200)}</div>
+        </div>`).join('')}
+      </div>`
+    }).join('')
+  } catch(e) { console.error(e) }
+}
+
+async function sendChat() {
+  const inp = document.getElementById('chat-input')
+  const msg = inp.value.trim()
+  if (!msg) return
+  sendMsg(msg)
+}
+
+async function sendMsg(text) {
+  document.getElementById('chat-input').value = ''
+  document.getElementById('send-btn').textContent = '...'
+  document.getElementById('send-btn').disabled = true
+  addMsg('you', text)
+  const thinkingId = 'thinking_' + Date.now()
+  addMsg('janet', '...', thinkingId)
+  chatHistory.push({role:'you', text})
+  try {
+    const r = await fetch('/api/os/hq/chat?secret='+HQ, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:text, history:chatHistory.slice(-6)})
+    })
+    const d = await r.json()
+    const reply = d.response || d.error || 'Error'
+    document.getElementById(thinkingId).textContent = reply
+    chatHistory.push({role:'janet', text:reply})
+    if (voiceOn && reply && voiceState==='idle') await speakText(reply)
+  } catch {
+    document.getElementById(thinkingId).textContent = 'Network error'
+  }
+  document.getElementById('send-btn').textContent = 'Send'
+  document.getElementById('send-btn').disabled = false
+}
+
+function addMsg(role, text, id) {
+  const box = document.getElementById('chat-msgs')
+  const wrap = document.createElement('div')
+  const lbl = document.createElement('div')
+  lbl.className = 'msg-label'
+  lbl.textContent = role==='janet' ? 'JANET' : 'YOU'
+  const m = document.createElement('div')
+  m.className = 'msg msg-'+role
+  m.textContent = text
+  if (id) m.id = id
+  wrap.appendChild(lbl); wrap.appendChild(m)
+  box.appendChild(wrap)
+  box.scrollTop = box.scrollHeight
+}
+
+async function speakText(text) {
+  setVoiceState('speaking')
+  try {
+    const r = await fetch('/api/os/hq/tts?secret='+HQ, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})
+    })
+    if (!r.ok) { setVoiceState('idle'); return }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    if (currentAudio) { currentAudio.pause(); URL.revokeObjectURL(currentAudio.src) }
+    currentAudio = new Audio(url)
+    currentAudio.onended = () => { setVoiceState('idle'); URL.revokeObjectURL(url) }
+    currentAudio.onerror = () => setVoiceState('idle')
+    document.getElementById('stop-btn').style.display='block'
+    await currentAudio.play()
+  } catch { setVoiceState('idle') }
+}
+
+function stopAudio() {
+  if (currentAudio) { currentAudio.pause(); currentAudio=null }
+  setVoiceState('idle')
+  document.getElementById('stop-btn').style.display='none'
+}
+
+async function startRec() {
+  if (voiceState !== 'idle') return
+  if (currentAudio) stopAudio()
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true})
+    audioChunks = []
+    mediaRec = new MediaRecorder(stream, {mimeType:'audio/webm'})
+    mediaRec.ondataavailable = e => { if(e.data.size>0) audioChunks.push(e.data) }
+    mediaRec.onstop = async () => {
+      stream.getTracks().forEach(t=>t.stop())
+      setVoiceState('transcribing')
+      const blob = new Blob(audioChunks, {type:'audio/webm'})
+      const fd = new FormData(); fd.append('audio', blob, 'audio.webm')
+      try {
+        const r = await fetch('/api/os/hq/stt?secret='+HQ, {method:'POST',body:fd})
+        const d = await r.json()
+        if (d.text?.trim()) { setVoiceState('thinking'); await sendMsg(d.text.trim()) }
+        else setVoiceState('idle')
+      } catch { setVoiceState('idle') }
+    }
+    mediaRec.start(); setVoiceState('recording')
+  } catch { alert('Mic access denied') }
+}
+
+function stopRec() {
+  if (voiceState==='recording' && mediaRec) mediaRec.stop()
+}
+
+const voiceColors = {idle:'#e53e3e',recording:'#ef4444',transcribing:'#6366f1',thinking:'#6366f1',speaking:'#10b981'}
+const voiceLabels = {idle:'Hold to speak',recording:'● Recording... release to send',transcribing:'Transcribing...',thinking:'Janet is thinking...',speaking:'Janet is speaking...'}
+
+function setVoiceState(s) {
+  voiceState = s
+  const btn = document.getElementById('mic-btn')
+  const dot = document.getElementById('voice-dot')
+  const stat = document.getElementById('voice-status')
+  btn.textContent = voiceLabels[s]
+  btn.style.background = voiceColors[s]
+  btn.style.color = s==='idle'||s==='recording' ? '#fff' : '#fff'
+  dot.style.background = voiceColors[s]
+  dot.style.animation = s==='recording'||s==='speaking' ? 'pulse 1s infinite' : 'none'
+  stat.textContent = voiceLabels[s]
+  document.getElementById('stop-btn').style.display = s==='speaking' ? 'block' : 'none'
+}
+
+function toggleVoice() {
+  voiceOn = !voiceOn
+  const btn = document.getElementById('voice-toggle')
+  btn.textContent = voiceOn ? 'ON' : 'OFF'
+  btn.style.background = voiceOn ? '#0d2b1a' : '#1a1a2e'
+  btn.style.color = voiceOn ? '#4ade80' : '#e8e8f0'
+  if (!voiceOn && currentAudio) stopAudio()
+}
+
+function clearChat() {
+  document.getElementById('chat-msgs').innerHTML = ''
+  chatHistory = []
+  addMsg('janet', 'Memory cleared. What do you want to focus on?')
+}
+
+async function updateTask(id, status, notes) {
+  await fetch('/api/os/hq/task?secret='+HQ, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({id,status,notes})
+  })
+  loadData()
+}
+
+async function triggerCron(type) {
+  const endpoints = {sequence:'/api/os/sequence',janet:'/api/os/janet',heartbeat:'/api/os/heartbeat',watchdog:'/api/os/watchdog'}
+  try {
+    const r = await fetch(endpoints[type], {headers:{Authorization:'Bearer '+CRON}})
+    const d = await r.json()
+    alert(type + ' triggered: ' + JSON.stringify(d).slice(0,200))
+  } catch(e) { alert('Error: ' + e.message) }
+}
+
+async function seedMem() {
+  const r = await fetch('/api/os/seed?secret='+HQ, {method:'POST'})
+  const d = await r.json()
+  alert('Seeded ' + d.seeded + ' memory entries')
+  loadData()
+}
+
+// Init
+loadData()
+setInterval(loadData, 30000)
+setInterval(() => {
+  const el = document.getElementById('refresh-ts')
+  if (el && data) el.textContent = 'Auto-refresh in ' + Math.ceil(30-((Date.now()%30000)/1000)) + 's'
+}, 1000)
+</script>
+</body>
+</html>
