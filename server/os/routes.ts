@@ -1,5 +1,7 @@
 import { Request, Response } from 'express'
 import { runJanetBrief, janetChat } from './janet'
+import { runLeadResearcher } from './agents/leadResearcher'
+import { getAgentHealth } from './agentHealth'
 import { runSequence } from './sequences'
 import { runWatchdog } from './watchdog'
 import { runHeartbeat } from './heartbeat'
@@ -136,4 +138,9 @@ export async function hqSeed(req: Request, res: Response) {
   if (!okHQ(req,res)) return
   try { const n=await seedPhishSimMemory(); res.json({ok:true,seeded:n}) }
   catch(e:any) { res.status(500).json({error:e.message}) }
+}
+
+export async function cronResearcher(req: Request, res: Response) {
+  if (!okCron(req,res)) return
+  try { res.json(await runLeadResearcher(6)) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
