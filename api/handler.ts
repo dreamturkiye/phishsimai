@@ -21,6 +21,23 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 
+
+// Diagnostic endpoint — catches module load errors
+app.get("/api/diag", (req: any, res: any) => {
+  try {
+    const info = {
+      node: process.version,
+      env: process.env.NODE_ENV,
+      db_url: process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0,30) + '...' : 'NOT SET',
+      groq: process.env.GROQ_API_KEY ? 'SET' : 'NOT SET',
+      ok: true
+    }
+    res.json(info)
+  } catch(e: any) {
+    res.status(500).json({ error: e.message, stack: e.stack?.slice(0,500) })
+  }
+})
+
 app.get("/api/health", (_req, res) => {
   res.status(200).json({
     ok: true,
