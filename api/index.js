@@ -23274,7 +23274,213 @@ Your Team: Sales, Marketing, Product, Research, Finance, CS, EA, Software Archit
 
 Control Levels: L1 Think | L2 Draft | L3 Execute with approval | L4 Autonomous (under thresholds)
 
+New agent under you: Smart Lead Researcher \u2014 runs hourly, discovers MSPs via AI + Hunter.io, deduplicates before adding to pipeline. Monitor via agent health. When pipeline <20 prospects, direct researcher to increase batch.
+
 Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 3-4 sentences max unless asked for more. No corporate speak.`;
+  }
+});
+
+// server/os/agentHealth.ts
+async function ensureHealthTable() {
+  const conn = getConn2();
+  await conn.execute(`CREATE TABLE IF NOT EXISTS agent_health (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    company_id VARCHAR(100) NOT NULL DEFAULT 'phishsimai',
+    agent_name VARCHAR(100) NOT NULL,
+    last_run_at TIMESTAMP NULL, last_success_at TIMESTAMP NULL,
+    status VARCHAR(50) DEFAULT 'unknown', consecutive_failures INT DEFAULT 0,
+    last_error TEXT, metrics JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_agent (company_id, agent_name)
+  )`);
+}
+async function reportAgentRun(agentName, success, metrics = {}, error, companyId = "phishsimai") {
+  const conn = getConn2();
+  await ensureHealthTable();
+  const m = JSON.stringify(metrics);
+  if (success) {
+    await conn.execute(
+      `INSERT INTO agent_health (company_id,agent_name,last_run_at,last_success_at,status,consecutive_failures,metrics)
+       VALUES (?,?,NOW(),NOW(),'healthy',0,?)
+       ON DUPLICATE KEY UPDATE last_run_at=NOW(),last_success_at=NOW(),status='healthy',consecutive_failures=0,last_error=NULL,metrics=VALUES(metrics),updated_at=NOW()`,
+      [companyId, agentName, m]
+    );
+  } else {
+    await conn.execute(
+      `INSERT INTO agent_health (company_id,agent_name,last_run_at,status,consecutive_failures,last_error,metrics)
+       VALUES (?,?,NOW(),'warning',1,?,?)
+       ON DUPLICATE KEY UPDATE last_run_at=NOW(),
+       status=CASE WHEN consecutive_failures>=2 THEN 'critical' ELSE 'warning' END,
+       consecutive_failures=consecutive_failures+1,last_error=VALUES(last_error),metrics=VALUES(metrics),updated_at=NOW()`,
+      [companyId, agentName, error ?? null, m]
+    );
+  }
+}
+async function checkAgentStaleness(companyId = "phishsimai") {
+  const conn = getConn2();
+  await ensureHealthTable();
+  const rows = await conn.execute(`SELECT agent_name,last_run_at FROM agent_health WHERE company_id=?`, [companyId]);
+  const alerts = [];
+  const now = Date.now();
+  for (const row of rows.rows || []) {
+    const threshold = STALE_THRESHOLDS[row.agent_name];
+    if (!threshold) continue;
+    const lastRun = row.last_run_at ? new Date(row.last_run_at).getTime() : 0;
+    if (now - lastRun > threshold) {
+      const h = ((now - lastRun) / 36e5).toFixed(1);
+      alerts.push(`${row.agent_name}: stale ${h}h`);
+      await conn.execute(`UPDATE agent_health SET status='critical',updated_at=NOW() WHERE company_id=? AND agent_name=?`, [companyId, row.agent_name]);
+    }
+  }
+  if (alerts.length > 0) await sendTelegram("PHISHSIMAI AGENT HEALTH ALERT\n" + alerts.join("\n") + "\nCheck HQ /api/os/hq");
+  return alerts;
+}
+var STALE_THRESHOLDS, getConn2;
+var init_agentHealth = __esm({
+  "server/os/agentHealth.ts"() {
+    "use strict";
+    init_dist();
+    init_telegram();
+    STALE_THRESHOLDS = {
+      aria: 3 * 36e5,
+      janet: 26 * 36e5,
+      researcher: 2 * 36e5,
+      watchdog: 4 * 36e5,
+      heartbeat: 3 * 36e5
+    };
+    getConn2 = () => connect({ url: process.env.DATABASE_URL });
+  }
+});
+
+// server/os/agents/leadResearcher.ts
+async function ensureResearchQueue() {
+  const conn = getConn3();
+  await conn.execute(`CREATE TABLE IF NOT EXISTS lead_research_queue (
+    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+    company_id VARCHAR(100) NOT NULL DEFAULT 'phishsimai',
+    domain VARCHAR(255) NOT NULL, company_name VARCHAR(255), source VARCHAR(100),
+    status VARCHAR(50) DEFAULT 'pending', icp_score INT DEFAULT 0, research_data JSON,
+    attempts INT DEFAULT 0, last_attempt_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_domain (company_id, domain)
+  )`);
+}
+async function discoverMSPsViaGroq(existingDomains, batchSize) {
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + process.env.GROQ_API_KEY },
+      body: JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: `You are a B2B lead researcher for the MSP/MSSP market.
+Generate ${batchSize} real MSP or MSSP company domains for cold outreach (phishing simulation and security awareness training).
+Target: US, Canada, UK, or Australia-based MSPs with 5-200 employees, serving SMBs with compliance pressure (SOC2, HIPAA, PCI, ISO27001).
+Return ONLY valid JSON array with no markdown: [{"domain":"example.com","company_name":"Example MSP","source":"ai_discovery"}]
+Real companies only. Avoid Accenture, IBM, Deloitte, or companies with >500 employees.
+Already found: ${[...existingDomains].slice(0, 20).join(", ")}` }],
+        max_tokens: 600,
+        temperature: 0.7
+      })
+    });
+    const d = await res.json();
+    const text = d.choices?.[0]?.message?.content || "[]";
+    const match = text.match(/\[[\s\S]*?\]/);
+    if (!match) return [];
+    const candidates = JSON.parse(match[0]);
+    return candidates.filter((c) => c.domain && !existingDomains.has(c.domain));
+  } catch {
+    return [];
+  }
+}
+async function enrichViaHunter(domain) {
+  const key = process.env.HUNTER_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${key}&limit=5`);
+    const d = await res.json();
+    if (!d.data?.emails?.length) return null;
+    const dm = d.data.emails.find(
+      (e) => MSP_TITLES.some((t) => (e.position || "").toLowerCase().includes(t.toLowerCase()))
+    ) || d.data.emails[0];
+    if (!dm?.value) return null;
+    return { email: dm.value, name: `${dm.first_name || ""} ${dm.last_name || ""}`.trim(), title: dm.position };
+  } catch {
+    return null;
+  }
+}
+async function runLeadResearcher(batchSize = 5) {
+  const conn = getConn3();
+  await ensureResearchQueue();
+  const stats = { discovered: 0, enriched: 0, added: 0, skipped: 0, errors: [] };
+  try {
+    const existingRows = await conn.execute(`SELECT domain FROM lead_research_queue WHERE company_id=? LIMIT 200`, [COMPANY_ID]);
+    const existingDomains = new Set((existingRows.rows || []).map((r) => r.domain));
+    const candidates = await discoverMSPsViaGroq(existingDomains, batchSize * 2);
+    for (const c of candidates) {
+      try {
+        await conn.execute(
+          `INSERT INTO lead_research_queue (company_id,domain,company_name,source,status) VALUES (?,?,?,?,'pending') ON DUPLICATE KEY UPDATE updated_at=NOW()`,
+          [COMPANY_ID, c.domain, c.company_name, c.source || "ai_discovery"]
+        );
+        stats.discovered++;
+      } catch {
+      }
+    }
+    const pending = await conn.execute(
+      `SELECT id,domain,company_name FROM lead_research_queue WHERE company_id=? AND status='pending' AND attempts<3 ORDER BY created_at ASC LIMIT ?`,
+      [COMPANY_ID, batchSize]
+    );
+    for (const item of pending.rows || []) {
+      try {
+        await conn.execute(`UPDATE lead_research_queue SET status='researching',attempts=attempts+1,last_attempt_at=NOW() WHERE id=?`, [item.id]);
+        const hunter = await enrichViaHunter(item.domain);
+        if (hunter?.email) {
+          stats.enriched++;
+          const dup = await conn.execute(`SELECT id FROM ps_outreach_leads WHERE LOWER(email)=LOWER(?) LIMIT 1`, [hunter.email]);
+          if ((dup.rows || []).length > 0) {
+            stats.skipped++;
+            await conn.execute(`UPDATE lead_research_queue SET status='duplicate',updated_at=NOW() WHERE id=?`, [item.id]);
+          } else {
+            await conn.execute(
+              `INSERT INTO ps_outreach_leads (email,name,company,title,source,pipeline_stage) VALUES (?,?,?,?,'lead_researcher','prospect') ON DUPLICATE KEY UPDATE updated_at=NOW()`,
+              [hunter.email, hunter.name || item.company_name, item.company_name || item.domain.split(".")[0], hunter.title || "Owner"]
+            );
+            stats.added++;
+            await conn.execute(`UPDATE lead_research_queue SET status='enriched',icp_score=72,updated_at=NOW() WHERE id=?`, [item.id]);
+          }
+        } else {
+          stats.skipped++;
+          await conn.execute(`UPDATE lead_research_queue SET status='pending',updated_at=NOW() WHERE id=?`, [item.id]);
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch (e) {
+        stats.errors.push(`${item.domain}: ${e.message?.slice(0, 80)}`);
+        await conn.execute(`UPDATE lead_research_queue SET status='failed',updated_at=NOW() WHERE id=?`, [item.id]);
+      }
+    }
+    await reportAgentRun("researcher", true, stats, void 0, COMPANY_ID);
+    if (stats.added > 0) {
+      await sendTelegram(`PHISHSIMAI RESEARCHER: +${stats.added} MSP leads
+Discovered:${stats.discovered} Skipped:${stats.skipped}`);
+    }
+  } catch (e) {
+    await reportAgentRun("researcher", false, {}, e.message, COMPANY_ID);
+    stats.errors.push("Fatal: " + e.message);
+  }
+  return stats;
+}
+var COMPANY_ID, MSP_TITLES, getConn3;
+var init_leadResearcher = __esm({
+  "server/os/agents/leadResearcher.ts"() {
+    "use strict";
+    init_dist();
+    init_agentHealth();
+    init_telegram();
+    COMPANY_ID = "phishsimai";
+    MSP_TITLES = ["Owner", "CEO", "Founder", "President", "Managing Director", "IT Director", "CISO", "Head of Security", "CTO"];
+    getConn3 = () => connect({ url: process.env.DATABASE_URL });
   }
 });
 
@@ -23464,10 +23670,7 @@ async function runWatchdog() {
   const conn = connect({ url: process.env.DATABASE_URL });
   const result = { checked_at: (/* @__PURE__ */ new Date()).toISOString(), issues_found: 0, actions_taken: [] };
   try {
-    const rows = await conn.execute(`SELECT
-      COUNT(CASE WHEN bounced=1 THEN 1 END) as b,
-      COUNT(*) as s
-      FROM ps_outreach_leads WHERE touch1_sent_at IS NOT NULL`);
+    const rows = await conn.execute(`SELECT COUNT(CASE WHEN bounced=1 THEN 1 END) as b, COUNT(*) as s FROM ps_outreach_leads WHERE touch1_sent_at IS NOT NULL`);
     const r = rows.rows?.[0] || {};
     const rate = Number(r.s) > 0 ? Number(r.b) / Number(r.s) * 100 : 0;
     if (rate > 8) {
@@ -23477,16 +23680,32 @@ async function runWatchdog() {
     } else {
       result.actions_taken.push(`Bounce OK: ${rate.toFixed(1)}%`);
     }
-    const stalled = await conn.execute(`SELECT COUNT(*) as n FROM ps_outreach_leads
-      WHERE touch1_sent_at IS NULL AND created_at < DATE_SUB(NOW(), INTERVAL 2 DAY)
-      AND bounced=0 AND unsubscribed=0 AND pipeline_stage NOT IN ('dead','customer')`);
+  } catch (e) {
+    result.actions_taken.push("Bounce check error: " + e.message?.slice(0, 80));
+  }
+  try {
+    const stalled = await conn.execute(`SELECT COUNT(*) as n FROM ps_outreach_leads WHERE touch1_sent_at IS NULL AND created_at < DATE_SUB(NOW(), INTERVAL 2 DAY) AND bounced=0 AND unsubscribed=0 AND pipeline_stage NOT IN ('dead','customer')`);
     const n = Number(stalled.rows?.[0]?.n || 0);
     if (n > 20) {
       result.issues_found++;
-      await sendTelegram(`PHISHSIMAI STALL: ${n} leads unsent >2 days. Check cron.`);
+      await sendTelegram(`PHISHSIMAI STALL: ${n} leads unsent >2 days.`);
+      result.actions_taken.push(`Stall alert: ${n} leads`);
+    } else {
+      result.actions_taken.push(`Lead stall OK: ${n} stalled`);
     }
   } catch (e) {
-    result.actions_taken.push(`watchdog error: ${e.message}`);
+    result.actions_taken.push("Stall check error: " + e.message?.slice(0, 80));
+  }
+  try {
+    const staleAgents = await checkAgentStaleness("phishsimai");
+    if (staleAgents.length > 0) {
+      result.issues_found += staleAgents.length;
+      result.actions_taken.push("Stale agents: " + staleAgents.join(", "));
+    } else {
+      result.actions_taken.push("All agents healthy");
+    }
+  } catch (e) {
+    result.actions_taken.push("Agent health error: " + e.message?.slice(0, 80));
   }
   return result;
 }
@@ -23495,6 +23714,7 @@ var init_watchdog = __esm({
     "use strict";
     init_dist();
     init_telegram();
+    init_agentHealth();
   }
 });
 
@@ -23619,6 +23839,7 @@ var routes_exports = {};
 __export(routes_exports, {
   cronHeartbeat: () => cronHeartbeat,
   cronJanet: () => cronJanet,
+  cronResearcher: () => cronResearcher,
   cronSequence: () => cronSequence,
   cronWatchdog: () => cronWatchdog,
   hqChat: () => hqChat,
@@ -23807,11 +24028,20 @@ async function hqSeed(req, res) {
     res.status(500).json({ error: e.message });
   }
 }
+async function cronResearcher(req, res) {
+  if (!okCron(req, res)) return;
+  try {
+    res.json(await runLeadResearcher(6));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
 var HQ, CRON;
 var init_routes = __esm({
   "server/os/routes.ts"() {
     "use strict";
     init_janet();
+    init_leadResearcher();
     init_sequences();
     init_watchdog();
     init_heartbeat();
