@@ -40,6 +40,10 @@
     {
       "path": "/api/os/heartbeat",
       "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/os/researcher",
+      "schedule": "0 * * * *"
     }
   ]
 }
