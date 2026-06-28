@@ -8,6 +8,7 @@ import { createContext } from "../server/_core/context";
 import { scheduledCampaignHandler } from "../server/scheduledHandlers";
 import { registerStripeWebhook } from "../server/stripe/webhook";
 import { pingDb } from "../server/db";
+import { cronSequence, cronJanet, cronWatchdog, cronHeartbeat, webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed } from "../server/os/routes";
 
 const app = express();
 
@@ -54,6 +55,20 @@ app.post("/api/admin/seed", async (_req, res) => {
   }
 });
 
+
+// ── Kaan AI OS v3.0 ─────────────────────────────────────────────────────────
+app.get("/api/os/sequence",      cronSequence);
+app.get("/api/os/janet",         cronJanet);
+app.get("/api/os/watchdog",      cronWatchdog);
+app.get("/api/os/heartbeat",     cronHeartbeat);
+app.post("/api/os/webhook/reply",webhookReply);
+app.get("/api/os/hq",            hqData);
+app.post("/api/os/hq/chat",      hqChat);
+app.post("/api/os/hq/tts",       hqTTS);
+app.post("/api/os/hq/task",      hqTask);
+app.get("/api/os/hq/memory",     hqMemoryGet);
+app.post("/api/os/seed",         hqSeed);
+// ─────────────────────────────────────────────────────────────────────────────
 app.use(
   "/api/trpc",
   createExpressMiddleware({ router: appRouter, createContext })
