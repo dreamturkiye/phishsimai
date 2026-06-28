@@ -14,6 +14,11 @@ import { serveStatic, setupVite } from "./vite";
 import { scheduledCampaignHandler } from "../scheduledHandlers";
 import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
+import {
+  cronSequence, cronJanet, cronWatchdog, cronHeartbeat,
+  webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed
+} from '../os/routes';
+
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -96,6 +101,21 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   app.post("/api/scheduled/campaign", scheduledCampaignHandler);
+
+  // ── Kaan AI OS v3.0 ─────────────────────────────────────────────────────
+  app.get("/api/os/sequence", cronSequence);
+  app.get("/api/os/janet", cronJanet);
+  app.get("/api/os/watchdog", cronWatchdog);
+  app.get("/api/os/heartbeat", cronHeartbeat);
+  app.post("/api/os/webhook/reply", webhookReply);
+  app.get("/api/os/hq", hqData);
+  app.post("/api/os/hq/chat", hqChat);
+  app.post("/api/os/hq/tts", hqTTS);
+  app.post("/api/os/hq/task", hqTask);
+  app.get("/api/os/hq/memory", hqMemoryGet);
+  app.post("/api/os/seed", hqSeed);
+  // ────────────────────────────────────────────────────────────────────────
+
 
   // SECURITY: Seed endpoint gated behind secret
   app.post("/api/admin/seed", async (req, res) => {
