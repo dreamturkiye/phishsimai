@@ -1,95 +1,58 @@
-// Vercel serverless Express app (bundled to api/index.js at build time)
+// Vercel serverless Express app
 import express from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "../server/_core/oauth";
-import { registerStorageProxy } from "../server/_core/storageProxy";
 import { appRouter } from "../server/routers";
 import { createContext } from "../server/_core/context";
 import { scheduledCampaignHandler } from "../server/scheduledHandlers";
-import { registerStripeWebhook } from "../server/stripe/webhook";
-import { pingDb } from "../server/db";
-import { cronSequence, cronJanet, cronWatchdog, cronHeartbeat, webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed } from "../server/os/routes";
 
 const app = express();
-
-// Stripe webhook must receive raw body — register before express.json()
-registerStripeWebhook(app);
-
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-registerStorageProxy(app);
-registerOAuthRoutes(app);
-
-
-// Diagnostic endpoint — catches module load errors
-app.get("/api/diag", (req: any, res: any) => {
-  try {
-    const info = {
-      node: process.version,
-      env: process.env.NODE_ENV,
-      db_url: process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0,30) + '...' : 'NOT SET',
-      groq: process.env.GROQ_API_KEY ? 'SET' : 'NOT SET',
-      ok: true
-    }
-    res.json(info)
-  } catch(e: any) {
-    res.status(500).json({ error: e.message, stack: e.stack?.slice(0,500) })
-  }
-})
-
 app.get("/api/health", (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "phishsim-ai",
-    timestamp: Date.now(),
-  });
-});
-
-app.get("/api/health/db", async (_req, res) => {
-  const result = await pingDb();
-  if (result.ok) {
-    return res.status(200).json({ ok: true, db: "connected", timestamp: Date.now() });
-  }
-  return res.status(503).json({
-    ok: false,
-    db: "error",
-    error: result.error,
-    timestamp: Date.now(),
-  });
+  res.status(200).json({ ok: true, service: "phishsim-ai", timestamp: Date.now() });
 });
 
 app.post("/api/scheduled/campaign", scheduledCampaignHandler);
 
-app.post("/api/admin/seed", async (_req, res) => {
-  try {
-    const { seedDatabase } = await import("../server/seed");
-    await seedDatabase();
-    res.json({ success: true, message: "Database seeded successfully" });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ success: false, error: message });
+// Kaan AI OS v3.0 routes
+let osRoutes: any = null;
+async function loadOSRoutes() {
+  if (!osRoutes) {
+    try {
+      osRoutes = await import("../server/os/routes");
+    } catch(e: any) {
+      console.error("OS routes load error:", e.message);
+    }
   }
+  return osRoutes;
+}
+
+app.all("/api/os/*", async (req: any, res: any) => {
+  const routes = await loadOSRoutes();
+  if (!routes) { return res.status(503).json({ error: "OS routes failed to load" }); }
+  
+  const path = req.path;
+  const method = req.method.toLowerCase();
+  
+  if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
+  if (path === "/api/os/sequence") return routes.cronSequence(req, res);
+  if (path === "/api/os/janet") return routes.cronJanet(req, res);
+  if (path === "/api/os/watchdog") return routes.cronWatchdog(req, res);
+  if (path === "/api/os/webhook/reply") return routes.webhookReply(req, res);
+  if (path === "/api/os/hq" && method === "get") return routes.hqData(req, res);
+  if (path === "/api/os/hq/chat" && method === "post") return routes.hqChat(req, res);
+  if (path === "/api/os/hq/tts" && method === "post") return routes.hqTTS(req, res);
+  if (path === "/api/os/hq/task" && method === "post") return routes.hqTask(req, res);
+  if (path === "/api/os/hq/memory" && method === "get") return routes.hqMemoryGet(req, res);
+  if (path === "/api/os/seed" && method === "post") return routes.hqSeed(req, res);
+  if (path === "/api/os/diag") return res.json({ node: process.version, env: process.env.NODE_ENV });
+  res.status(404).json({ error: "Unknown OS route" });
 });
 
-
-// ── Kaan AI OS v3.0 ─────────────────────────────────────────────────────────
-app.get("/api/os/sequence",      cronSequence);
-app.get("/api/os/janet",         cronJanet);
-app.get("/api/os/watchdog",      cronWatchdog);
-app.get("/api/os/heartbeat",     cronHeartbeat);
-app.post("/api/os/webhook/reply",webhookReply);
-app.get("/api/os/hq",            hqData);
-app.post("/api/os/hq/chat",      hqChat);
-app.post("/api/os/hq/tts",       hqTTS);
-app.post("/api/os/hq/task",      hqTask);
-app.get("/api/os/hq/memory",     hqMemoryGet);
-app.post("/api/os/seed",         hqSeed);
-// ─────────────────────────────────────────────────────────────────────────────
 app.use(
   "/api/trpc",
   createExpressMiddleware({ router: appRouter, createContext })
 );
 
-// CommonJS export for Vercel @vercel/node
 export = app;
