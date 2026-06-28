@@ -10,6 +10,7 @@
 | 2.0 | Jun 2026 | Janet CGO v1, memory layer, self-healing |
 | 2.1 | Jun 2026 | 8 sub-agents, magic checkout, reply parser |
 | **3.0** | **Jun 28 2026** | **Full HQ dashboard, voice interface, A/B engine, self-serve journey, V3 canonical template** |
+| **3.1** | **Jun 28 2026** | **Smart Lead Researcher Agent (hourly, Groq+Hunter), Agent Health Monitoring (agent_health table, staleness detection, HQ visibility)** |
 
 ---
 
