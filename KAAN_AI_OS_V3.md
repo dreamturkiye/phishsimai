@@ -500,3 +500,5 @@ From V3.0 onwards:
 1. ScrollFuel (scrollfuel.io) — v3.0 ✅
 2. PhishSimAi (phishsimai.com) — v3.0 [replicating]
 
+
+| **3.2** | **Jun 28 2026** | **Marcus Architect Agent, Bug Telemetry, QA Smoke, Live Issues HQ tab** |
