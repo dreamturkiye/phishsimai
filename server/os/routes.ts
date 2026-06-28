@@ -144,3 +144,42 @@ export async function cronResearcher(req: Request, res: Response) {
   if (!okCron(req,res)) return
   try { res.json(await runLeadResearcher(6)) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
+
+export async function bugReport(req: Request, res: Response) {
+  try {
+    const { error_message, stack_trace, component_name, user_action, url_path, user_email, browser, severity } = req.body
+    if (!error_message) { res.status(400).json({ error: 'error_message required' }); return }
+    const conn = connect({ url: process.env.DATABASE_URL! })
+    await conn.execute(`CREATE TABLE IF NOT EXISTS bug_reports (
+      id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()), error_message TEXT NOT NULL,
+      stack_trace TEXT, component_name VARCHAR(255), user_action TEXT, url_path VARCHAR(500),
+      user_email VARCHAR(255), browser TEXT, severity VARCHAR(50) DEFAULT 'medium',
+      status VARCHAR(50) DEFAULT 'open', occurrence_count INT DEFAULT 1,
+      first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      diagnosis JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`)
+    const dup = await conn.execute(`SELECT id FROM bug_reports WHERE error_message=? AND component_name=? AND last_seen > DATE_SUB(NOW(), INTERVAL 1 HOUR) LIMIT 1`, [error_message, component_name||'Unknown'])
+    if (((dup as any).rows||[]).length > 0) {
+      await conn.execute(`UPDATE bug_reports SET occurrence_count=occurrence_count+1, last_seen=NOW() WHERE id=?`, [(dup as any).rows[0].id])
+      res.json({ ok: true, duplicate: true }); return
+    }
+    const bugs = await conn.execute(`INSERT INTO bug_reports (error_message,stack_trace,component_name,user_action,url_path,user_email,browser,severity) VALUES (?,?,?,?,?,?,?,?)`,
+      [error_message, stack_trace||null, component_name||'Unknown', user_action||'unknown', url_path||'unknown', user_email||null, browser||null, severity||'medium'])
+    // Trigger architect for critical/high bugs
+    if (severity === 'critical' || severity === 'high') {
+      import('./architectAgent').then(({ runArchitectAgent }) => {
+        runArchitectAgent((bugs as any).lastInsertId?.toString() || '').catch(console.error)
+      })
+    }
+    res.json({ ok: true })
+  } catch(e: any) { res.status(500).json({ error: e.message }) }
+}
+
+export async function qaSmokePS(req: Request, res: Response) {
+  if (!okHQ(req,res) && !okCron(req,res)) return
+  try {
+    const { runQASmoke } = await import('./architectAgent')
+    res.json(await runQASmoke('manual'))
+  } catch(e: any) { res.status(500).json({ error: e.message }) }
+}
