@@ -20,10 +20,13 @@ app.get("/api/os/diag", (_req: any, res: any) => {
     env: process.env.NODE_ENV,
     db: process.env.DATABASE_URL ? "SET" : "MISSING",
     groq: process.env.GROQ_API_KEY ? "SET" : "MISSING",
-    hq_secret: process.env.HQ_SECRET || "ps-hq-2026"
+    hq_secret: process.env.HQ_SECRET || "MISSING"
   });
 });
 
+// Load OS routes lazily on first request.
+// IMPORTANT: do not cache import failures permanently — retry each request
+// so a transient bad deploy doesn't lock out the route forever.
 let _routesModule: any = null;
 
 async function getRoutes() {
@@ -32,48 +35,29 @@ async function getRoutes() {
   return _routesModule;
 }
 
-async function dispatchOsRoute(req: any, res: any) {
+app.all("/api/os/*", async (req: any, res: any) => {
   try {
     const routes = await getRoutes();
     const path = req.path;
     const method = req.method.toLowerCase();
 
-    // ── Crons (ScrollFuel parity) ───────────────────────────────────────
+    // ── Original v3 routes ──────────────────────────────────────────────
     if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
-    if (path === "/api/os/aria-daily") return routes.cronAriaDaily(req, res);
-    if (path === "/api/os/janet" || path === "/api/os/janet-cgo") return routes.cronJanetCgo(req, res);
+    if (path === "/api/os/janet") return routes.cronJanet(req, res);
     if (path === "/api/os/watchdog") return routes.cronWatchdog(req, res);
     if (path === "/api/os/researcher") return routes.cronResearcher(req, res);
-    if (path === "/api/os/discover") return routes.cronDiscover(req, res);
-    if (path === "/api/os/agent-watchdog") return routes.cronAgentWatchdog(req, res);
-    if (path === "/api/os/qa-smoke") return routes.qaSmokePS(req, res);
-
-    // ── Webhooks ────────────────────────────────────────────────────────
     if (path === "/api/os/webhook/reply") return routes.webhookReply(req, res);
-    if (path === "/api/os/webhooks/resend" && method === "post") return routes.webhookResend(req, res);
-
-    // ── HQ ──────────────────────────────────────────────────────────────
     if (path === "/api/os/hq" && method === "get") return routes.hqData(req, res);
     if (path === "/api/os/hq/chat" && method === "post") return routes.hqChat(req, res);
     if (path === "/api/os/hq/tts" && method === "post") return routes.hqTTS(req, res);
-    if (path === "/api/os/hq/stt" && method === "post") return routes.hqSTT(req, res);
     if (path === "/api/os/hq/task" && method === "post") return routes.hqTask(req, res);
-    if (path === "/api/os/hq/directive" && method === "post") return routes.hqDirective(req, res);
     if (path === "/api/os/hq/memory" && method === "get") return routes.hqMemoryGet(req, res);
     if (path === "/api/os/seed" && method === "post") return routes.hqSeed(req, res);
     if (path === "/api/os/bug-report" && method === "post") return routes.bugReport(req, res);
+    if (path === "/api/os/qa-smoke") return routes.qaSmokePS(req, res);
 
-    // ── Janet / Architect (ScrollFuel path aliases) ─────────────────────
-    if (path === "/api/os/janet/report" && method === "get") return routes.janetReport(req, res);
-    if (path === "/api/os/architect/pending" && method === "get") return routes.architectPending(req, res);
-    if (path === "/api/os/architect/complete" && method === "post") return routes.architectComplete(req, res);
-    if (path === "/api/os/architect-run") return routes.architectRun(req, res);
-
-    // ── Unified OS router (ScrollFuel /api/os) ──────────────────────────
-    if (path === "/api/os" && (method === "get" || method === "post")) return routes.osUnified(req, res);
-
-    // ── Kaan AI OS v4 ───────────────────────────────────────────────────
+    // ── Kaan AI OS v4 — Janet + 8 named specialist agents ───────────────
     if (path === "/api/os/v4/status") return routes.v4Status(req, res);
     if (path === "/api/os/v4/roster") return routes.v4Roster(req, res);
     if (path === "/api/os/v4/standup") return routes.v4Standup(req, res);
@@ -83,11 +67,9 @@ async function dispatchOsRoute(req: any, res: any) {
 
     return res.status(404).json({ error: "Unknown OS route: " + path });
   } catch (e: any) {
+    // Do not cache this failure — next request gets a fresh attempt
     return res.status(503).json({ error: "OS route failed", detail: e.message + " | " + (e.stack || "").slice(0, 400) });
   }
-}
-
-app.all("/api/os", dispatchOsRoute);
-app.all("/api/os/*", dispatchOsRoute);
+});
 
 export = app;

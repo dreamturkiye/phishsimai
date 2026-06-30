@@ -15,11 +15,8 @@ import { scheduledCampaignHandler } from "../scheduledHandlers";
 import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
-  cronSequence, cronAriaDaily, cronJanet, cronJanetCgo, cronWatchdog, cronHeartbeat,
-  cronResearcher, cronDiscover,
-  webhookReply, webhookResend, hqData, hqChat, hqTTS, hqSTT, hqTask, hqDirective,
-  hqMemoryGet, hqSeed, cronAgentWatchdog, bugReport, qaSmokePS,
-  janetReport, architectPending, architectComplete, architectRun, osUnified,
+  cronSequence, cronJanet, cronWatchdog, cronHeartbeat,
+  webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk
 } from '../os/routes';
 
@@ -106,34 +103,18 @@ async function startServer() {
   registerOAuthRoutes(app);
   app.post("/api/scheduled/campaign", scheduledCampaignHandler);
 
-  // ── Kaan AI OS v4.0 — ScrollFuel parity routes ───────────────────────────
+  // ── Kaan AI OS v3.0 ─────────────────────────────────────────────────────
   app.get("/api/os/sequence", cronSequence);
-  app.get("/api/os/aria-daily", cronAriaDaily);
-  app.get("/api/os/janet", cronJanetCgo);
-  app.get("/api/os/janet-cgo", cronJanetCgo);
+  app.get("/api/os/janet", cronJanet);
   app.get("/api/os/watchdog", cronWatchdog);
   app.get("/api/os/heartbeat", cronHeartbeat);
-  app.get("/api/os/researcher", cronResearcher);
-  app.get("/api/os/discover", cronDiscover);
   app.post("/api/os/webhook/reply", webhookReply);
-  app.post("/api/os/webhooks/resend", webhookResend);
   app.get("/api/os/hq", hqData);
   app.post("/api/os/hq/chat", hqChat);
   app.post("/api/os/hq/tts", hqTTS);
-  app.post("/api/os/hq/stt", hqSTT);
   app.post("/api/os/hq/task", hqTask);
-  app.post("/api/os/hq/directive", hqDirective);
   app.get("/api/os/hq/memory", hqMemoryGet);
-  app.get("/api/os/agent-watchdog", cronAgentWatchdog);
   app.post("/api/os/seed", hqSeed);
-  app.post("/api/os/bug-report", bugReport);
-  app.get("/api/os/qa-smoke", qaSmokePS);
-  app.get("/api/os/janet/report", janetReport);
-  app.get("/api/os/architect/pending", architectPending);
-  app.post("/api/os/architect/complete", architectComplete);
-  app.get("/api/os/architect-run", architectRun);
-  app.get("/api/os", osUnified);
-  app.post("/api/os", osUnified);
   // ── Kaan AI OS v4 — Janet + 8 named specialist agents ────────────────────
   app.get("/api/os/v4/status", v4Status);
   app.get("/api/os/v4/roster", v4Roster);

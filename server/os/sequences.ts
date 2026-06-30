@@ -1,188 +1,157 @@
-import { getSql } from './conn'
+import { connect } from '@tidbcloud/serverless'
 import { sendTelegram } from './telegram'
-import { AB_EXPERIMENTS, getVariant, recordImpression } from './abTest'
-import { reportAgentRun } from './agentHealth'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
-export const DAILY_SEND_LIMIT = 20
-export const PAUSE_ON_BOUNCE_RATE = 0.08
+const DAILY_CAP = 20
 
-async function sendEmail(to: string, subject: string, html: string, tags: { name: string; value: string }[] = []) {
+async function sendEmail(to: string, subject: string, html: string) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, tags }),
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.RESEND_API_KEY },
+    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html })
   })
   return res.json()
 }
 
-const SEQUENCE = [
-  {
-    touch: 2, delayDays: 3,
-    subject: (_n: string, co: string) => `Re: phishing simulation for ${co}`,
-    html: (name: string, co: string, ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
+function t1Html(name: string, co: string, ind: string, token: string) {
+  return `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
+<p>Hi ${name},</p>
+<p>Quick question — when did ${co} last run a phishing simulation for your team?</p>
+<p>I ask because 67% of breaches start with phishing, and most ${ind} organizations haven't tested their staff in 6+ months — creating real compliance exposure.</p>
+<p>We built PhishSimAI to fix this: 10-minute setup, AI-generated campaigns that evolve weekly, automated training for anyone who clicks.</p>
+<p>Happy to run a free simulation for your team this week. Worth a quick look?</p>
+<p>Sarah Mitchell<br>Head of Compliance Partnerships<br><a href="https://phishsimai.com">PhishSimAI</a></p>
+<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p>
+</div>`
+}
+
+function t2Html(name: string, co: string, ind: string, token: string) {
+  return `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
 <p>Hi ${name},</p>
 <p>Following up — a similar ${ind} company we worked with had 43% of employees click a phishing link in their first simulation. After 30 days of PhishSimAI training, that dropped to 4%.</p>
 <p>That result also satisfies SOC2 and HIPAA auditors looking for documented security awareness training.</p>
 <p>Free simulation offer still stands for ${co}. Just reply and I will set it up — no IT team needed.</p>
 <p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-  {
-    touch: 3, delayDays: 7,
-    subject: (_n: string, co: string) => `Free phishing test for ${co} — 2 slots left`,
-    html: (name: string, co: string, _ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
+<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p>
+</div>`
+}
+
+function t3Html(name: string, co: string, ind: string, token: string) {
+  return `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
 <p>${name},</p>
 <p>I run free phishing simulations for 3 companies per week to benchmark their risk before a real attacker does. Two slots left this week.</p>
 <p>If you want one for ${co}, just reply with your employee count. Takes under 10 minutes to launch.</p>
 <p>P.S. If easier to talk first: <a href="https://calendly.com/sarah-phishsimai" style="color:#e53e3e">calendly.com/sarah-phishsimai</a></p>
 <p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-  {
-    touch: 4, delayDays: 12,
-    subject: (_n: string, co: string) => `One question before I close your file`,
-    html: (name: string, co: string, _ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
+<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p>
+</div>`
+}
+
+function t4Html(name: string, co: string, ind: string, token: string) {
+  return `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
 <p>Hi ${name},</p>
 <p>Is phishing simulation something ${co} is actively prioritizing, or is the timing off?</p>
 <p>Either answer helps — just want to know whether to follow up or close your file.</p>
 <p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-  {
-    touch: 5, delayDays: 19,
-    subject: (_n: string, co: string) => `Closing your file`,
-    html: (name: string, co: string, _ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
+<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p>
+</div>`
+}
+
+function t5Html(name: string, co: string, ind: string, token: string) {
+  return `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
 <p>Hi ${name},</p>
 <p>Closing my file on ${co}. If compliance requirements change or you want to benchmark your team's phishing resilience, just reply and I will pick this up immediately.</p>
 <p>Stay safe — phishing attacks are up 48% this year.</p>
 <p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-]
-
-export async function getSequenceHealth(sql = getSql()) {
-  const rows = await sql`SELECT
-    count(*) filter(where bounced=true AND touch1_sent_at IS NOT NULL) as bounced,
-    count(*) filter(where touch1_sent_at is not null) as sent
-    FROM ps_outreach_leads`
-  const { bounced, sent } = rows[0]
-  const rate = Number(sent) > 0 ? Number(bounced) / Number(sent) : 0
-  return { rate, paused: rate >= PAUSE_ON_BOUNCE_RATE, bounced: Number(bounced), sent: Number(sent) }
+<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p>
+</div>`
 }
 
-export async function runFullSequence() {
-  const sql = getSql()
-  const health = await getSequenceHealth(sql)
-  if (health.paused) {
-    await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (PAUSE_ON_BOUNCE_RATE * 100) + '%. Sequence halted.')
-    return { paused: true, rate: health.rate, sent: 0 }
-  }
-
-  const now = new Date()
+export async function runSequence() {
+  const conn = connect({ url: process.env.DATABASE_URL! })
   let totalSent = 0
   const results: any[] = []
 
-  if (totalSent < DAILY_SEND_LIMIT) {
-    const exp = AB_EXPERIMENTS.touch1_subject
-    const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-      WHERE touch1_sent_at IS NULL AND bounced=false AND unsubscribed=false
-      AND pipeline_stage NOT IN ('dead','customer')
-      ORDER BY created_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
+  // Bounce rate check
+  try {
+    const rows = await conn.execute(`SELECT
+      COUNT(CASE WHEN bounced=1 THEN 1 END) as b,
+      COUNT(CASE WHEN touch1_sent_at IS NOT NULL THEN 1 END) as s
+      FROM ps_outreach_leads`)
+    const r = (rows as any).rows?.[0] || {}
+    const rate = Number(r.s)>0 ? Number(r.b)/Number(r.s) : 0
+    if (rate >= 0.08) {
+      await sendTelegram(`PHISHSIMAI SEQUENCE PAUSED: bounce rate ${(rate*100).toFixed(1)}%`)
+      return { paused: true, rate, sent: 0 }
+    }
+  } catch {}
 
-    for (const lead of t1Leads) {
-      if (totalSent >= DAILY_SEND_LIMIT) break
-      try {
-        const variant = getVariant(String(lead.id), 'touch1_subject')
-        const v = exp.active ? (variant === 'control' ? exp.control : exp.test) : exp.control
-        const token = Buffer.from(String(lead.email)).toString('base64url')
-        const ind = String(lead.industry || 'technology')
-        const subject = v.subject(String(lead.name), String(lead.company))
-        const html = v.html(String(lead.name), String(lead.company), ind).replace('{{TOKEN}}', token)
-        const result = await sendEmail(String(lead.email), subject, html, [
-          { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
-        ])
-        if (!result?.id) continue
-        const ts = now.toISOString()
-        await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect', stage_updated_at=${ts} WHERE id=${lead.id}`
-        await recordImpression(String(lead.id), 'touch1_subject', variant)
-        totalSent++
-        results.push({ touch: 1, company: lead.company, email: lead.email, subject, variant })
+  // Touch 1
+  try {
+    const rows = await conn.execute(
+      `SELECT id,name,company,email,industry FROM ps_outreach_leads
+      WHERE touch1_sent_at IS NULL AND bounced=0 AND unsubscribed=0
+      AND pipeline_stage NOT IN ('dead','customer')
+      ORDER BY created_at ASC LIMIT ?`, [DAILY_CAP]
+    )
+    const leads = (rows as any).rows || []
+    for (const lead of leads) {
+      if (totalSent >= DAILY_CAP) break
+      const token = Buffer.from(lead.email).toString('base64url')
+      const subject = `Quick compliance question for ${lead.company}`
+      const html = t1Html(lead.name, lead.company, lead.industry || 'technology', token)
+      const r = await sendEmail(lead.email, subject, html)
+      if (r.id) {
+        await conn.execute(`UPDATE ps_outreach_leads SET touch1_sent_at=NOW(), pipeline_stage='prospect', stage_updated_at=NOW() WHERE id=?`, [lead.id])
+        totalSent++; results.push({touch:1, company:lead.company, subject})
         await new Promise(r => setTimeout(r, 2000))
-      } catch (e: any) {
-        await sendTelegram('PS seq error: ' + (e?.message?.slice(0, 80) || ''))
       }
     }
-  }
+  } catch (e: any) { await sendTelegram(`PHISHSIMAI T1 ERROR: ${e.message}`) }
 
-  const touchDefs = [
-    { touch: 2, delayDays: 3 },
-    { touch: 3, delayDays: 7 },
-    { touch: 4, delayDays: 12 },
-    { touch: 5, delayDays: 19, final: true },
+  // Touches 2-4
+  const followups = [
+    { touch:2, prevCol:'touch1_sent_at', currCol:'touch2_sent_at', days:3,
+      subj:(co:string)=>`Re: phishing simulation for ${co}`, htmlFn:t2Html },
+    { touch:3, prevCol:'touch2_sent_at', currCol:'touch3_sent_at', days:7,
+      subj:(co:string)=>`Free phishing test for ${co} — 2 slots left`, htmlFn:t3Html },
+    { touch:4, prevCol:'touch3_sent_at', currCol:'touch4_sent_at', days:12,
+      subj:(co:string)=>`One question before I close your file`, htmlFn:t4Html },
+    { touch:5, prevCol:'touch4_sent_at', currCol:null, days:19,
+      subj:(co:string)=>`Closing your file`, htmlFn:t5Html },
   ]
 
-  for (const def of touchDefs) {
-    if (totalSent >= DAILY_SEND_LIMIT) break
-    const step = SEQUENCE.find(s => s.touch === def.touch)
-    if (!step) continue
-    const cutoff = new Date(now.getTime() - def.delayDays * 86400000).toISOString()
-
-    let leads: any[] = []
-    if (def.touch === 2) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch2_sent_at IS NULL AND touch1_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        ORDER BY touch1_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    } else if (def.touch === 3) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        ORDER BY touch2_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    } else if (def.touch === 4) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    } else {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    }
-
-    for (const lead of leads) {
-      if (totalSent >= DAILY_SEND_LIMIT) break
-      try {
-        const token = Buffer.from(String(lead.email)).toString('base64url')
-        const ind = String(lead.industry || 'technology')
-        const subject = step.subject(String(lead.name), String(lead.company))
-        const html = step.html(String(lead.name), String(lead.company), ind, token)
-        const result = await sendEmail(String(lead.email), subject, html, [
-          { name: 'touch', value: String(def.touch) }, { name: 'lead_id', value: String(lead.id) },
-        ])
-        if (!result?.id) continue
-        const ts = now.toISOString()
-        if (def.touch === 2) await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.touch === 3) await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.touch === 4) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.final) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts}, pipeline_stage='dead', stage_updated_at=${ts} WHERE id=${lead.id}`
-        totalSent++
-        results.push({ touch: def.touch, company: lead.company, email: lead.email, subject })
-        await new Promise(r => setTimeout(r, 2000))
-      } catch (e: any) {
-        await sendTelegram('PS seq error T' + def.touch + ': ' + (e?.message?.slice(0, 80) || ''))
+  for (const f of followups) {
+    if (totalSent >= DAILY_CAP) break
+    try {
+      const cutoff = new Date(Date.now() - f.days * 86400000).toISOString().slice(0,19).replace('T',' ')
+      const rows = await conn.execute(
+        `SELECT id,name,company,email,industry FROM ps_outreach_leads
+        WHERE ${f.currCol || 'touch4_sent_at'} IS NULL AND ${f.prevCol} < ?
+        AND replied=0 AND bounced=0 AND unsubscribed=0
+        ORDER BY ${f.prevCol} ASC LIMIT ?`,
+        [cutoff, DAILY_CAP - totalSent]
+      )
+      const leads = (rows as any).rows || []
+      for (const lead of leads) {
+        if (totalSent >= DAILY_CAP) break
+        const token = Buffer.from(lead.email).toString('base64url')
+        const subject = f.subj(lead.company)
+        const html = f.htmlFn(lead.name, lead.company, lead.industry || 'technology', token)
+        const r = await sendEmail(lead.email, subject, html)
+        if (r.id) {
+          if (f.currCol) await conn.execute(`UPDATE ps_outreach_leads SET ${f.currCol}=NOW() WHERE id=?`, [lead.id])
+          else await conn.execute(`UPDATE ps_outreach_leads SET touch4_sent_at=NOW(), pipeline_stage='dead', stage_updated_at=NOW() WHERE id=?`, [lead.id])
+          totalSent++; results.push({touch:f.touch, company:lead.company, subject})
+          await new Promise(r => setTimeout(r, 2000))
+        }
       }
-    }
+    } catch {}
   }
 
   if (totalSent > 0) {
-    const lines = results.map((r: any) => 'T' + r.touch + ': ' + r.company + (r.variant ? ' [' + r.variant + ']' : '') + ' - ' + r.subject).join('\n')
-    await sendTelegram('PHISHSIMAI ARIA SEQUENCE: ' + totalSent + ' sent\n' + lines)
+    await sendTelegram(`PHISHSIMAI ARIA: ${totalSent} sent\n` + results.map(r=>`T${r.touch}: ${r.company}`).join('\n'))
   }
-  await reportAgentRun('aria', totalSent >= 0, { sent: totalSent }, undefined, 'phishsimai').catch(() => {})
-  return { sent: totalSent, results, bounceRate: health.rate }
+  return { sent: totalSent, results }
 }
-
-export const runSequence = runFullSequence

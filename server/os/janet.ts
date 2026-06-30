@@ -1,4 +1,4 @@
-import { getSql } from './conn'
+import { connect } from '@tidbcloud/serverless'
 import { sendTelegram } from './telegram'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
 import { runSalesAgent } from './agents/sales'
@@ -62,7 +62,7 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
 
   let summary = ''
   const archTasks: string[] = []
-  const conn = getSql()
+  const conn = connect({ url: process.env.DATABASE_URL! })
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -80,7 +80,14 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
     for (const m of matches) {
       archTasks.push(m[1].trim())
       try {
-        await conn`INSERT INTO os_architect_tasks (task, source) VALUES (${m[1].trim()}, 'janet_phishsimai')`
+        await conn.execute(`CREATE TABLE IF NOT EXISTS os_architect_tasks (
+          id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+          task TEXT NOT NULL, status VARCHAR(50) DEFAULT 'pending',
+          source VARCHAR(100) DEFAULT 'janet', notes TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )`)
+        await conn.execute(`INSERT INTO os_architect_tasks (task, source) VALUES (?, 'janet_phishsimai')`, [m[1].trim()])
       } catch {}
     }
   } catch (e: any) {

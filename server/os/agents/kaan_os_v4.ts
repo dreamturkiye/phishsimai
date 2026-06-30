@@ -1,4 +1,4 @@
-import { getSql } from '../conn'
+import { connect } from '@tidbcloud/serverless'
 import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
 
@@ -62,7 +62,7 @@ export interface AgentReport {
   timestamp: string
 }
 
-const getConn = () => getSql()
+const getConn = () => connect({ url: process.env.DATABASE_URL! })
 
 // ── Agent profiles ──────────────────────────────────────────────────────────
 export const AGENTS: Record<AgentId, AgentProfile> = {
@@ -122,51 +122,57 @@ export const AGENTS: Record<AgentId, AgentProfile> = {
   }
 }
 
-// ── Schema (Neon Postgres — same as ScrollFuel Kaan AI OS v4) ───────────────
+// ── Schema (TiDB / MySQL dialect) ───────────────────────────────────────────
 async function ensureOSTables() {
-  const sql = getSql()
-  await sql`CREATE TABLE IF NOT EXISTS agent_tasks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id TEXT NOT NULL,
-    issued_by TEXT NOT NULL DEFAULT 'janet',
-    title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    priority TEXT NOT NULL DEFAULT 'medium',
-    due_in_hours INT NOT NULL DEFAULT 24,
-    status TEXT NOT NULL DEFAULT 'assigned',
-    result TEXT,
-    janet_feedback TEXT,
-    performance_score INT,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ,
-    company_id TEXT NOT NULL DEFAULT 'phishsimai'
-  )`.catch(() => {})
+  const conn = getConn()
+  await conn.execute(`
+    CREATE TABLE IF NOT EXISTS agent_tasks (
+      id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+      agent_id VARCHAR(50) NOT NULL,
+      issued_by VARCHAR(50) NOT NULL DEFAULT 'janet',
+      title VARCHAR(500) NOT NULL,
+      description TEXT NOT NULL,
+      priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+      due_in_hours INT NOT NULL DEFAULT 24,
+      status VARCHAR(30) NOT NULL DEFAULT 'assigned',
+      result TEXT,
+      janet_feedback TEXT,
+      performance_score INT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      completed_at TIMESTAMP NULL,
+      company_id VARCHAR(100) NOT NULL DEFAULT 'phishsimai'
+    )
+  `).catch(() => {})
 
-  await sql`CREATE TABLE IF NOT EXISTS agent_meetings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    meeting_type TEXT NOT NULL,
-    participants TEXT NOT NULL,
-    agenda TEXT NOT NULL,
-    transcript TEXT,
-    decisions TEXT,
-    next_steps TEXT,
-    held_at TIMESTAMPTZ DEFAULT NOW(),
-    company_id TEXT NOT NULL DEFAULT 'phishsimai'
-  )`.catch(() => {})
+  await conn.execute(`
+    CREATE TABLE IF NOT EXISTS agent_meetings (
+      id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+      meeting_type VARCHAR(50) NOT NULL,
+      participants TEXT NOT NULL,
+      agenda TEXT NOT NULL,
+      transcript TEXT,
+      decisions TEXT,
+      next_steps TEXT,
+      held_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      company_id VARCHAR(100) NOT NULL DEFAULT 'phishsimai'
+    )
+  `).catch(() => {})
 
-  await sql`CREATE TABLE IF NOT EXISTS agent_performance (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    agent_id TEXT NOT NULL,
-    period TEXT NOT NULL,
-    tasks_completed INT DEFAULT 0,
-    avg_score FLOAT DEFAULT 0,
-    strengths TEXT,
-    improvement_areas TEXT,
-    janet_notes TEXT,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    company_id TEXT NOT NULL DEFAULT 'phishsimai',
-    UNIQUE(agent_id, period, company_id)
-  )`.catch(() => {})
+  await conn.execute(`
+    CREATE TABLE IF NOT EXISTS agent_performance (
+      id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
+      agent_id VARCHAR(50) NOT NULL,
+      period VARCHAR(20) NOT NULL,
+      tasks_completed INT DEFAULT 0,
+      avg_score FLOAT DEFAULT 0,
+      strengths TEXT,
+      improvement_areas TEXT,
+      janet_notes TEXT,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      company_id VARCHAR(100) NOT NULL DEFAULT 'phishsimai',
+      UNIQUE KEY uniq_agent_period (agent_id, period, company_id)
+    )
+  `).catch(() => {})
 }
 
 // ── LLM call (raw fetch, no SDK dependency) ────────────────────────────────────
@@ -188,19 +194,23 @@ async function llm(system: string, user: string, maxTokens = 1000): Promise<stri
 
 // ── Agent memory ──────────────────────────────────────────────────────────────
 async function getAgentMemory(agentId: AgentId, companyId = 'phishsimai'): Promise<string> {
-  const sql = getSql()
+  const conn = getConn()
   const [tasksRes, perfRes, memories] = await Promise.all([
-    sql`SELECT title, result, janet_feedback, performance_score, completed_at
-        FROM agent_tasks WHERE agent_id=${agentId} AND status IN ('reviewed','completed') AND company_id=${companyId}
-        ORDER BY completed_at DESC LIMIT 10`.catch(() => [] as any[]),
-    sql`SELECT strengths, improvement_areas, janet_notes, updated_at
-        FROM agent_performance WHERE agent_id=${agentId} AND company_id=${companyId}
-        ORDER BY updated_at DESC LIMIT 3`.catch(() => [] as any[]),
+    conn.execute(
+      `SELECT title, result, janet_feedback, performance_score, completed_at
+       FROM agent_tasks WHERE agent_id=? AND status IN ('reviewed','completed') AND company_id=?
+       ORDER BY completed_at DESC LIMIT 10`, [agentId, companyId]
+    ).catch(() => ({ rows: [] })),
+    conn.execute(
+      `SELECT strengths, improvement_areas, janet_notes, updated_at
+       FROM agent_performance WHERE agent_id=? AND company_id=?
+       ORDER BY updated_at DESC LIMIT 3`, [agentId, companyId]
+    ).catch(() => ({ rows: [] })),
     recallMemory(companyId, undefined, 20).then((m: any[]) => m.filter((x: any) => x.source === agentId)).catch(() => [] as any[])
   ])
 
-  const tasks = tasksRes as any[]
-  const perf = perfRes as any[]
+  const tasks = (tasksRes as any).rows || []
+  const perf = (perfRes as any).rows || []
 
   const taskHistory = tasks.slice(0, 5).map((t: any) =>
     `Task: "${t.title}" | Score: ${t.performance_score || '?'}/10 | Feedback: ${t.janet_feedback || 'none'}`
@@ -240,30 +250,30 @@ You improve based on feedback. Your goal is to be indispensable.`
 
 // ── Live company context (PhishSimAi's real tables) ────────────────────────────
 async function getCompanyContext(): Promise<string> {
-  const sql = getSql()
+  const conn = getConn()
   const [leadsRes, orgsRes, campaignsRes] = await Promise.all([
-    sql`SELECT
-        count(*) as total,
-        count(*) filter(where replied=true) as replied,
-        count(*) filter(where pipeline_stage='customer') as customers,
-        count(*) filter(where pipeline_stage='engaged') as engaged
-      FROM ps_outreach_leads`.catch(() => [{ total: 0, replied: 0, customers: 0, engaged: 0 }]),
-    sql`SELECT
-        count(*) filter(where plan='starter') as starter,
-        count(*) filter(where plan='growth') as growth,
-        count(*) filter(where plan='pro') as pro,
-        count(*) filter(where plan='unlimited') as unlimited,
-        count(*) filter(where plan != 'free') as active
-      FROM organizations`.catch(() => [{ starter: 0, growth: 0, pro: 0, unlimited: 0, active: 0 }]),
-    sql`SELECT
-        count(*) as total,
-        count(*) filter(where "createdAt" > NOW() - interval '7 days') as this_week
-      FROM campaigns`.catch(() => [{ total: 0, this_week: 0 }])
+    conn.execute(`SELECT
+        COUNT(*) as total,
+        COUNT(CASE WHEN replied=1 THEN 1 END) as replied,
+        COUNT(CASE WHEN pipeline_stage='customer' THEN 1 END) as customers,
+        COUNT(CASE WHEN pipeline_stage='engaged' THEN 1 END) as engaged
+      FROM ps_outreach_leads`).catch(() => ({ rows: [{ total: 0, replied: 0, customers: 0, engaged: 0 }] })),
+    conn.execute(`SELECT
+        COUNT(CASE WHEN plan='starter' THEN 1 END) as starter,
+        COUNT(CASE WHEN plan='growth' THEN 1 END) as growth,
+        COUNT(CASE WHEN plan='pro' THEN 1 END) as pro,
+        COUNT(CASE WHEN plan='unlimited' THEN 1 END) as unlimited,
+        COUNT(CASE WHEN plan != 'free' THEN 1 END) as active
+      FROM organizations`).catch(() => ({ rows: [{ starter: 0, growth: 0, pro: 0, unlimited: 0, active: 0 }] })),
+    conn.execute(`SELECT
+        COUNT(*) as total,
+        COUNT(CASE WHEN createdAt > DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 END) as this_week
+      FROM campaigns`).catch(() => ({ rows: [{ total: 0, this_week: 0 }] }))
   ])
 
-  const l = (leadsRes as any[])[0] || { total: 0, replied: 0, customers: 0, engaged: 0 }
-  const o = (orgsRes as any[])[0] || { starter: 0, growth: 0, pro: 0, unlimited: 0, active: 0 }
-  const c = (campaignsRes as any[])[0] || { total: 0, this_week: 0 }
+  const l = (leadsRes as any).rows?.[0] || { total: 0, replied: 0, customers: 0, engaged: 0 }
+  const o = (orgsRes as any).rows?.[0] || { starter: 0, growth: 0, pro: 0, unlimited: 0, active: 0 }
+  const c = (campaignsRes as any).rows?.[0] || { total: 0, this_week: 0 }
 
   const mrr = (Number(o.starter) || 0) * 149 + (Number(o.growth) || 0) * 299 + (Number(o.pro) || 0) * 749 + (Number(o.unlimited) || 0) * 1499
 
