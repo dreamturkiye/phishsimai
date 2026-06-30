@@ -1,4 +1,4 @@
-import { osVersionForCompany } from './version'
+import { neon } from '@neondatabase/serverless'
 import { getSql } from './conn'
 
 export type MemoryType = 'company' | 'customer' | 'campaign' | 'strategic' | 'operating'
@@ -74,7 +74,7 @@ export async function seedPhishSimMemory() {
     { company_id:'phishsimai', type:'operating', key:'autonomy_level', value:'L3 — execute with approval for sends >20/day. L4 for tagging, task creation, CRM updates.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'strategic', key:'week1_priority', value:'Close first 3 MSP clients. One MSP = 10-100x LTV of direct SMB. Offer founding rate $49/mo first 3 months.', confidence:0.9, source:'janet' },
     { company_id:'phishsimai', type:'operating', key:'tone', value:'Professional, compliance-urgency, data-driven. Reference breach stats. Position as compliance tool not just security tool.', confidence:1, source:'founder' },
-    { company_id:'phishsimai', type:'operating', key:'os_version', value: osVersionForCompany('phishsimai'), confidence:1, source:'system' },
+    { company_id:'phishsimai', type:'operating', key:'os_version', value:'Kaan AI OS v4 — PhishSimAI Edition', confidence:1, source:'system' },
   ]
   for (const e of entries) await rememberFact(e)
   return entries.length

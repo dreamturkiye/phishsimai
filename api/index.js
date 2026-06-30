@@ -27809,21 +27809,6 @@ var init_telegram = __esm({
   }
 });
 
-// server/os/version.ts
-function osVersionForCompany(companyId) {
-  if (companyId === "phishsimai") return `${KAAN_OS_LABEL} \u2014 PhishSimAI Edition`;
-  return `${KAAN_OS_LABEL} \u2014 ScrollFuel Edition`;
-}
-var KAAN_OS_VERSION, KAAN_OS_LABEL, KAAN_OS_SYSTEM;
-var init_version = __esm({
-  "server/os/version.ts"() {
-    "use strict";
-    KAAN_OS_VERSION = "4.0";
-    KAAN_OS_LABEL = `Kaan AI OS v${KAAN_OS_VERSION}`;
-    KAAN_OS_SYSTEM = `${KAAN_OS_LABEL} \u2014 Janet CGO + 8 Specialists`;
-  }
-});
-
 // server/os/memory.ts
 async function ensureMemoryTable() {
   const sql = getSql();
@@ -27895,7 +27880,7 @@ async function seedPhishSimMemory() {
     { company_id: "phishsimai", type: "operating", key: "autonomy_level", value: "L3 \u2014 execute with approval for sends >20/day. L4 for tagging, task creation, CRM updates.", confidence: 1, source: "founder" },
     { company_id: "phishsimai", type: "strategic", key: "week1_priority", value: "Close first 3 MSP clients. One MSP = 10-100x LTV of direct SMB. Offer founding rate $49/mo first 3 months.", confidence: 0.9, source: "janet" },
     { company_id: "phishsimai", type: "operating", key: "tone", value: "Professional, compliance-urgency, data-driven. Reference breach stats. Position as compliance tool not just security tool.", confidence: 1, source: "founder" },
-    { company_id: "phishsimai", type: "operating", key: "os_version", value: osVersionForCompany("phishsimai"), confidence: 1, source: "system" }
+    { company_id: "phishsimai", type: "operating", key: "os_version", value: "Kaan AI OS v4 \u2014 PhishSimAI Edition", confidence: 1, source: "system" }
   ];
   for (const e of entries) await rememberFact(e);
   return entries.length;
@@ -27903,7 +27888,6 @@ async function seedPhishSimMemory() {
 var init_memory = __esm({
   "server/os/memory.ts"() {
     "use strict";
-    init_version();
     init_conn();
   }
 });
@@ -29493,7 +29477,7 @@ Brief:
 
 ${kaanBrief}
 
-_${KAAN_OS_SYSTEM} | ${(/* @__PURE__ */ new Date()).toLocaleTimeString()}_`).catch(() => {
+_Janet OS v4 | ${(/* @__PURE__ */ new Date()).toLocaleTimeString()}_`).catch(() => {
   });
   return { janet_brief: kaanBrief, standup, pending_tasks_executed: executed, timestamp: (/* @__PURE__ */ new Date()).toISOString() };
 }
@@ -29516,7 +29500,7 @@ async function getOSStatus(companyId = "phishsimai") {
     })),
     meetings,
     total_tasks: tasks.reduce((acc, t) => acc + Number(t.count), 0),
-    system: KAAN_OS_SYSTEM
+    system: "Kaan AI OS v4 \u2014 Janet CGO + 8 Specialists (PhishSim AI)"
   };
 }
 var getConn, AGENTS;
@@ -29526,7 +29510,6 @@ var init_kaan_os_v4 = __esm({
     init_conn();
     init_memory();
     init_telegram();
-    init_version();
     getConn = () => getSql();
     AGENTS = {
       janet: {
@@ -30744,8 +30727,6 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/os/diag", (_req, res) => {
   res.json({
     ok: true,
-    kaan_os: "4.0",
-    kaan_os_label: "Kaan AI OS v4.0 \u2014 PhishSimAI Edition",
     node: process.version,
     env: process.env.NODE_ENV,
     db: process.env.DATABASE_URL ? "SET" : "MISSING",

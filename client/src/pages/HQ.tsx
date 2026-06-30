@@ -237,7 +237,7 @@ export default function HQPage() {
       `}</style>
 
       <nav style={s.nav}>
-        <div style={s.logo}>PhishSim<span style={{ color:'#ef4444' }}>AI</span> <span style={{ fontSize:9, color:'#4a4a60', fontWeight:400 }}>HQ · Kaan AI OS v4.0</span></div>
+        <div style={s.logo}>PhishSim<span style={{ color:'#ef4444' }}>AI</span> <span style={{ fontSize:9, color:'#4a4a60', fontWeight:400 }}>HQ</span></div>
         {tabs.map(([id, label]) => (
           <button key={id} style={{ ...s.tab, ...(tab===id?s.tabActive:{}) }} onClick={() => setTab(id)}>{label}</button>
         ))}
