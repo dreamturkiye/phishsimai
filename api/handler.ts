@@ -16,6 +16,8 @@ app.get("/api/health", (_req: any, res: any) => {
 app.get("/api/os/diag", (_req: any, res: any) => {
   res.json({
     ok: true,
+    kaan_os: "4.0",
+    kaan_os_label: "Kaan AI OS v4.0 — PhishSimAI Edition",
     node: process.version,
     env: process.env.NODE_ENV,
     db: process.env.DATABASE_URL ? "SET" : "MISSING",

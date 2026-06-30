@@ -1,13 +1,13 @@
 import { getSql } from '../conn'
 import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
+import { KAAN_OS_SYSTEM } from '../version'
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees  (PhishSimAi / TiDB build)
+//  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees  (PhishSimAI Edition)
 //
 //  Same philosophy as ScrollFuel's OS: persistent memory, performance records,
-//  task assignment + review, standups, weekly reviews. Rewritten for TiDB
-//  (MySQL dialect via @tidbcloud/serverless) instead of Neon/Postgres.
+//  task assignment + review, standups, weekly reviews. Neon Postgres.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type AgentId =
@@ -686,7 +686,7 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
   const kaanBrief = await llm(maxSystem,
     `Prepare Kaan's morning brief. Standup summary: ${standup.janet_summary.slice(0, 500)}\nTasks executed: ${executed}\n\nBrief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
 
-  await sendTelegram(`☀️ *KAAN'S MORNING BRIEF — PhishSim AI*\n\n${kaanBrief}\n\n_Janet OS v4 | ${new Date().toLocaleTimeString()}_`).catch(() => {})
+  await sendTelegram(`☀️ *KAAN'S MORNING BRIEF — PhishSim AI*\n\n${kaanBrief}\n\n_${KAAN_OS_SYSTEM} | ${new Date().toLocaleTimeString()}_`).catch(() => {})
 
   return { janet_brief: kaanBrief, standup, pending_tasks_executed: executed, timestamp: new Date().toISOString() }
 }
@@ -714,6 +714,6 @@ export async function getOSStatus(companyId = 'phishsimai') {
     })),
     meetings,
     total_tasks: tasks.reduce((acc: number, t: any) => acc + Number(t.count), 0),
-    system: 'Kaan AI OS v4 — Janet CGO + 8 Specialists (PhishSim AI)'
+    system: KAAN_OS_SYSTEM
   }
 }
