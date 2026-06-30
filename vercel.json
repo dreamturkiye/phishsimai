@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install --no-frozen-lockfile && npx vite build",
+  "buildCommand": "pnpm install --no-frozen-lockfile && npm run build",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "outputDirectory": "dist/public",
   "framework": null,
@@ -48,6 +48,14 @@
     {
       "path": "/api/os/qa-smoke",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/os/v4/full",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/os/v4/weekly-review",
+      "schedule": "0 10 * * 1"
     }
   ]
 }
