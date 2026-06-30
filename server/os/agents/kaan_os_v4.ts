@@ -1,4 +1,3 @@
-import Groq from 'groq-sdk'
 import { connect } from '@tidbcloud/serverless'
 import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
@@ -176,16 +175,21 @@ async function ensureOSTables() {
   `).catch(() => {})
 }
 
-// ── LLM call ──────────────────────────────────────────────────────────────────
+// ── LLM call (raw fetch, no SDK dependency) ────────────────────────────────────
 async function llm(system: string, user: string, maxTokens = 1000): Promise<string> {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  const res = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    max_tokens: maxTokens,
-    temperature: 0.7,
-    messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: maxTokens,
+      temperature: 0.7,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
+    })
   })
-  return res.choices[0]?.message?.content || ''
+  if (!res.ok) return ''
+  const d = await res.json()
+  return d.choices?.[0]?.message?.content || ''
 }
 
 // ── Agent memory ──────────────────────────────────────────────────────────────
@@ -483,6 +487,7 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
     const agentId = Object.values(AGENTS).find(a => a.name.toLowerCase() === agentName)?.id
     if (agentId && taskTitle && agentId !== 'janet') {
       const t = await issueTask(agentId as AgentId, {
+        agent_id: agentId as AgentId,
         title: taskTitle.slice(0, 100),
         description: `Issued during daily standup: ${taskTitle}`,
         priority: 'high', due_in_hours: 24
@@ -579,6 +584,7 @@ export async function runWeeklyReview(companyId = 'phishsimai'): Promise<{
     const match = weeklyPlan.match(namePattern)
     if (match) {
       const t = await issueTask(agent.id, {
+        agent_id: agent.id,
         title: `Week ${new Date().toISOString().slice(0, 10)}: ${match[1].slice(0, 80)}`,
         description: `Weekly assignment from Janet's review: ${match[1]}`,
         priority: 'high', due_in_hours: 168
@@ -645,6 +651,7 @@ export async function janetTellAgent(
   companyId = 'phishsimai'
 ): Promise<{ task_issued: any; agent_response: string }> {
   const task = await issueTask(agentId, {
+    agent_id: agentId,
     title: instruction.slice(0, 80),
     description: instruction,
     priority: 'high', due_in_hours: 24
