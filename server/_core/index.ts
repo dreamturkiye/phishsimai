@@ -19,7 +19,7 @@ import {
   webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk
 } from '../os/routes';
-
+import { outreachDiscoverHandler, outreachSequenceHandler, outreachLinkedInHandler } from "../outreach/outreachCrons";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -102,6 +102,47 @@ async function startServer() {
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   app.post("/api/scheduled/campaign", scheduledCampaignHandler);
+  app.post("/api/scheduled/outreach-discover", outreachDiscoverHandler);
+  app.post("/api/scheduled/outreach-sequence", outreachSequenceHandler);
+  app.post("/api/scheduled/outreach-linkedin", outreachLinkedInHandler);
+
+  // One-time migration: create outreach_leads table
+  app.post("/api/admin/migrate-outreach", async (_req, res) => {
+    try {
+      const { getDb } = await import("../db");
+      const { sql } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("No DB connection");
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS outreach_leads (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          email VARCHAR(320) UNIQUE NOT NULL,
+          name VARCHAR(255),
+          company VARCHAR(255),
+          sector VARCHAR(128),
+          country VARCHAR(2),
+          job_title VARCHAR(255),
+          domain VARCHAR(255),
+          linkedin_url TEXT,
+          source VARCHAR(64) DEFAULT 'apollo',
+          touch1_sent_at TIMESTAMP NULL,
+          touch2_sent_at TIMESTAMP NULL,
+          touch3_sent_at TIMESTAMP NULL,
+          touch4_sent_at TIMESTAMP NULL,
+          replied BOOLEAN DEFAULT FALSE,
+          unsubscribed BOOLEAN DEFAULT FALSE,
+          bounced BOOLEAN DEFAULT FALSE,
+          bounced_at TIMESTAMP NULL,
+          linkedin_queued BOOLEAN DEFAULT FALSE,
+          status VARCHAR(64) DEFAULT 'new',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      res.json({ success: true, message: "outreach_leads table created" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message ?? String(err) });
+    }
+  });
 
   // ── Kaan AI OS v3.0 ─────────────────────────────────────────────────────
   app.get("/api/os/sequence", cronSequence);
