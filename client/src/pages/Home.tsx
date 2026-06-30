@@ -591,10 +591,7 @@ export default function Home() {
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-10">
             <div className="col-span-2">
               <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-7 h-7 rounded-lg bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
-                  <Shield className="w-3.5 h-3.5 text-violet-400" />
-                </div>
-                <span className="font-bold">PhishSim AI</span>
+                <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-6 w-auto" />
               </div>
               <p className="text-sm text-muted-foreground mb-4 leading-relaxed max-w-xs">The AI-powered phishing simulation platform that keeps your organization secure and compliant.</p>
               <div className="space-y-1.5 text-sm text-muted-foreground">
