@@ -16,7 +16,8 @@ import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
   cronSequence, cronJanet, cronWatchdog, cronHeartbeat,
-  webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed
+  webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed,
+  v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk
 } from '../os/routes';
 
 
@@ -114,6 +115,14 @@ async function startServer() {
   app.post("/api/os/hq/task", hqTask);
   app.get("/api/os/hq/memory", hqMemoryGet);
   app.post("/api/os/seed", hqSeed);
+  // ── Kaan AI OS v4 — Janet + 8 named specialist agents ────────────────────
+  app.get("/api/os/v4/status", v4Status);
+  app.get("/api/os/v4/roster", v4Roster);
+  app.get("/api/os/v4/standup", v4Standup);
+  app.get("/api/os/v4/weekly-review", v4WeeklyReview);
+  app.get("/api/os/v4/full", v4Full);
+  app.get("/api/os/v4/agent/:name", v4AgentTalk);
+  app.post("/api/os/v4/agent/:name", v4AgentTalk);
   // ────────────────────────────────────────────────────────────────────────
 
 
