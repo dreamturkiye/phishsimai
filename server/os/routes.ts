@@ -134,6 +134,11 @@ export async function hqData(req: Request, res: Response) {
       count(*) filter(where event='replied') as replied
       FROM ab_impressions WHERE experiment_key='touch1_subject' GROUP BY variant`.catch(() => [] as any[])
 
+    // Cancel malformed architect tasks (e.g. "**" from bad Janet markdown output)
+    await sql`UPDATE os_architect_tasks SET status='cancelled', notes='Auto-cancelled: malformed task title', updated_at=NOW()
+      WHERE status IN ('pending','approved','queued','running')
+        AND (trim(task) IN ('**','*','***') OR length(trim(regexp_replace(task, '^[*\\s]+', ''))) < 8)`.catch(() => {})
+
     const archTasks = await sql`SELECT id, task, status, source, created_at, notes
       FROM os_architect_tasks ORDER BY created_at DESC LIMIT 10`.catch(() => [] as any[])
 

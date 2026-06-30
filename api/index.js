@@ -27935,6 +27935,7 @@ async function seedPhishSimMemory() {
     { company_id: "phishsimai", type: "company", key: "differentiator", value: "AI-generated phishing templates that evolve weekly. 10-minute setup. White-label for MSPs. Automated training post-click.", confidence: 1, source: "founder" },
     { company_id: "phishsimai", type: "company", key: "domain", value: "phishsimai.com \u2014 Resend verified, sarah@phishsimai.com outbound sender", confidence: 1, source: "system" },
     { company_id: "phishsimai", type: "company", key: "persona", value: "Sarah Mitchell - Head of Compliance Partnerships. Professional, compliance-focused outreach.", confidence: 1, source: "founder" },
+    { company_id: "phishsimai", type: "company", key: "linkedin_sarah", value: "Sarah Mitchell | Head of Compliance Partnerships @ PhishSimAI | LinkedIn voice: professional, warm, compliance-first (not salesy). Posts about MSP compliance (HIPAA, SOC2, NY DFS, CMMC), breach stats (67% start with phishing, $4.45M avg cost), phishing simulation ROI, audit readiness. Connection request tone: peer MSP/compliance professional. DM opener: reference their sector + compliance gap. Sign-off: Sarah Mitchell, Head of Compliance Partnerships, PhishSimAI. Email: sarah@phishsimai.com. Never claim founder \u2014 she is Head of Compliance Partnerships. CTA: free phishing simulation or compliance audit.", confidence: 1, source: "founder" },
     { company_id: "phishsimai", type: "campaign", key: "touch1_best_subject", value: "Phishing simulation for {company} \u2014 free compliance audit", confidence: 0.7, source: "initial" },
     { company_id: "phishsimai", type: "campaign", key: "current_sequence", value: "5-touch email: T1(d0), T2(d3), T3(d7), T4(d12), T5(d19). Daily cap 20. Pause >8% bounce.", confidence: 1, source: "system" },
     { company_id: "phishsimai", type: "campaign", key: "outreach_batch_1", value: "0 MSP leads seeded yet. Target: MSP owners + IT Directors 50-500 employees. Compliance-driven.", confidence: 1, source: "system" },
@@ -30787,6 +30788,10 @@ async function hqData(req, res) {
       count(*) filter(where event='sent') as sent,
       count(*) filter(where event='replied') as replied
       FROM ab_impressions WHERE experiment_key='touch1_subject' GROUP BY variant`.catch(() => []);
+    await sql`UPDATE os_architect_tasks SET status='cancelled', notes='Auto-cancelled: malformed task title', updated_at=NOW()
+      WHERE status IN ('pending','approved','queued','running')
+        AND (trim(task) IN ('**','*','***') OR length(trim(regexp_replace(task, '^[*\\s]+', ''))) < 8)`.catch(() => {
+    });
     const archTasks = await sql`SELECT id, task, status, source, created_at, notes
       FROM os_architect_tasks ORDER BY created_at DESC LIMIT 10`.catch(() => []);
     const memory = await recallMemory(COMPANY2, void 0, 40);

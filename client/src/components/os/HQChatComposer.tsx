@@ -22,7 +22,7 @@ type Props = {
   placeholder?: string
 }
 
-const ACCEPT = '.csv,.txt,.md,.json,.png,.jpg,.jpeg,.gif,.webp'
+const ACCEPT = '.csv,.txt,.md,.json,.xlsx,.xls,.docx,.doc,.pdf,.png,.jpg,.jpeg,.gif,.webp'
 
 async function fileToBase64(file: File): Promise<string> {
   const buf = await file.arrayBuffer()
@@ -38,12 +38,13 @@ export function HQChatComposer({
   onSend,
   disabled = false,
   secret,
-  placeholder = 'Message Janet — Shift+Enter for new line. Attach CSV, text, images…',
+  placeholder = 'Message Janet — Shift+Enter for new line. Attach CSV, Excel, PDF, Word, images…',
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [attachments, setAttachments] = useState<HQAttachment[]>([])
   const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const resize = useCallback(() => {
     const el = textareaRef.current
@@ -92,54 +93,82 @@ export function HQChatComposer({
       alert(e.message || 'File upload failed')
     } finally {
       setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      if (!disabled && !uploading && (value.trim() || attachments.length)) {
-        onSend(value.trim(), attachments)
-        onChange('')
-        setAttachments([])
-      }
-    }
+  function handleSend() {
+    if (disabled || uploading) return
+    if (!value.trim() && !attachments.length) return
+    onSend(value.trim(), attachments)
+    onChange('')
+    setAttachments([])
   }
 
   return (
-    <div>
+    <div
+      onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => {
+        e.preventDefault()
+        setDragOver(false)
+        if (e.dataTransfer.files?.length) ingestFiles(e.dataTransfer.files)
+      }}
+      style={{
+        padding: '10px 12px',
+        borderTop: '1px solid #1e1e2e',
+        background: dragOver ? '#12122a' : 'transparent',
+      }}
+    >
       {attachments.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
           {attachments.map(a => (
-            <span key={a.id} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, background: '#16161f', border: '1px solid #2a2a3e', color: '#aaa' }}>
-              {a.filename}
-              {a.leadsImported ? ` (+${a.leadsImported} leads)` : ''}
+            <div
+              key={a.id}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, fontSize: 11,
+                padding: '4px 8px', borderRadius: 6, background: '#16161f',
+                border: '1px solid #2a2a3e', color: '#c8c8e0',
+              }}
+            >
+              <span>{a.kind === 'image' ? '🖼' : '📎'} {a.filename}</span>
+              {a.leadsImported != null && a.leadsImported > 0 && (
+                <span style={{ color: '#4ade80' }}>+{a.leadsImported} leads</span>
+              )}
               <button
                 type="button"
                 onClick={() => setAttachments(prev => prev.filter(x => x.id !== a.id))}
-                style={{ marginLeft: 6, background: 'none', border: 'none', color: '#666', cursor: 'pointer' }}
+                style={{ border: 'none', background: 'none', color: '#9090aa', cursor: 'pointer', padding: 0, fontSize: 14 }}
+                aria-label="Remove attachment"
               >×</button>
-            </span>
+            </div>
           ))}
         </div>
       )}
+
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        <input ref={fileRef} type="file" accept={ACCEPT} multiple style={{ display: 'none' }}
+          onChange={e => { if (e.target.files) ingestFiles(e.target.files) }} />
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
           disabled={disabled || uploading}
           style={{ padding: '10px 12px', borderRadius: 8, border: '1px solid #2a2a3e', background: '#0e0e16', color: '#888', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}
-          title="Attach files"
+          title="Attach CSV, Excel, PDF, Word, text, or image"
         >
           {uploading ? '…' : '📎'}
         </button>
-        <input ref={fileRef} type="file" accept={ACCEPT} multiple style={{ display: 'none' }}
-          onChange={e => { if (e.target.files) ingestFiles(e.target.files); e.target.value = '' }} />
         <textarea
           ref={textareaRef}
           value={value}
           onChange={e => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSend()
+            }
+          }}
+          onPaste={() => setTimeout(resize, 0)}
           disabled={disabled || uploading}
           placeholder={placeholder}
           rows={1}
@@ -151,12 +180,15 @@ export function HQChatComposer({
         />
         <button
           type="button"
-          onClick={() => { onSend(value.trim(), attachments); onChange(''); setAttachments([]) }}
+          onClick={handleSend}
           disabled={disabled || uploading || (!value.trim() && !attachments.length)}
-          style={{ padding: '10px 14px', borderRadius: 7, border: 'none', background: '#ef4444', color: '#fff', fontSize: 12, cursor: 'pointer', flexShrink: 0 }}
+          style={{ padding: '10px 14px', borderRadius: 7, border: 'none', background: '#ef4444', color: '#fff', fontSize: 12, cursor: 'pointer', flexShrink: 0, opacity: disabled || uploading || (!value.trim() && !attachments.length) ? 0.5 : 1 }}
         >
-          Send
+          {disabled ? '…' : 'Send'}
         </button>
+      </div>
+      <div style={{ fontSize: 10, color: '#4a4a60', marginTop: 6 }}>
+        Enter to send · Shift+Enter for new line · Drop files here · CSV/Excel leads auto-import to pipeline
       </div>
     </div>
   )
