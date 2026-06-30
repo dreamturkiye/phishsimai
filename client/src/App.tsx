@@ -21,6 +21,7 @@ import MspPortal from "./pages/MspPortal";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import Login from "./pages/Login";
+import HQ from "./pages/HQ";
 
 function Router() {
   return (
@@ -44,6 +45,7 @@ function Router() {
       <Route path="/privacy" component={PrivacyPolicy} />
       <Route path="/terms" component={TermsOfService} />
       <Route path="/login" component={Login} />
+      <Route path="/hq" component={HQ} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
