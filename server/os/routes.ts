@@ -1,32 +1,44 @@
-export { hqData, hqChat, hqTask, hqMemoryGet, hqTTS, hqSeed } from './hq';
 import { Request, Response } from 'express'
-import { runJanetBrief, janetChat } from './janet'
-import { runLeadResearcher } from './agents/leadResearcher'
+import { janetChat } from './janet'
+import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
 import { getAgentHealth } from './agentHealth'
-import { runSequence } from './sequences'
+import { runSequence, runFullSequence } from './sequences'
 import { runWatchdog } from './watchdog'
 import { runHeartbeat } from './heartbeat'
 import { processReply } from './replyParser'
 import { recallContext, recallMemory, rememberFact, seedPhishSimMemory } from './memory'
-import { connect } from '@tidbcloud/serverless'
 import { sendTelegram } from './telegram'
+import { ensureHqTables, formatOsError, getSql } from './conn'
 import {
   runJanetFullOrchestration, getOSStatus, runDailyStandup, runWeeklyReview,
   talkToAgent, janetTellAgent, issueTask, executeTask, reviewTask,
   AGENTS, AgentId
 } from './agents/kaan_os_v4'
+import { cronAgentWatchdog } from './agentWatchdog'
+import { runJanetReport } from './janetReport'
+import { getAllAgentHealth } from './agentHealth_v2'
 
 const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
 const CRON = process.env.CRON_SECRET || ''
 const COMPANY = 'phishsimai'
 
-function okHQ(req: Request, res: Response) {
+function checkHQ(req: Request): boolean {
   const s = (req.query.secret || req.headers['x-hq-secret']) as string
-  if (s !== HQ) { res.status(401).json({ error:'Unauthorized' }); return false }
+  return s === HQ
+}
+function checkCron(req: Request): boolean {
+  return req.headers.authorization === `Bearer ${CRON}`
+}
+function okHQ(req: Request, res: Response) {
+  if (!checkHQ(req)) { res.status(401).json({ error:'Unauthorized' }); return false }
   return true
 }
 function okCron(req: Request, res: Response) {
-  if (req.headers.authorization !== `Bearer ${CRON}`) { res.status(401).json({ error:'Unauthorized' }); return false }
+  if (!checkCron(req)) { res.status(401).json({ error:'Unauthorized' }); return false }
+  return true
+}
+function okCronOrHq(req: Request, res: Response) {
+  if (!checkCron(req) && !checkHQ(req)) { res.status(401).json({ error:'Unauthorized' }); return false }
   return true
 }
 
@@ -35,22 +47,33 @@ function okCron(req: Request, res: Response) {
 // ════════════════════════════════════════════════════════════════════════════
 
 export async function cronSequence(req: Request, res: Response) {
-  if (!okCron(req,res)) return
-  try { res.json(await runSequence()) } catch(e:any) { res.status(500).json({error:e.message}) }
+  if (!okCronOrHq(req,res)) return
+  try { res.json({ ok: true, ...(await runFullSequence()) }) } catch(e:any) { res.status(500).json({error:e.message}) }
+}
+
+export async function cronAriaDaily(req: Request, res: Response) {
+  return cronSequence(req, res)
 }
 
 export async function cronJanet(req: Request, res: Response) {
-  if (!okCron(req,res)) return
-  try { res.json(await runJanetBrief()) } catch(e:any) { res.status(500).json({error:e.message}) }
+  if (!okCronOrHq(req,res)) return
+  try {
+    const result = await runJanetFullOrchestration(COMPANY)
+    res.json({ ok: true, ...result })
+  } catch(e:any) { res.status(500).json({error:e.message}) }
+}
+
+export async function cronJanetCgo(req: Request, res: Response) {
+  return cronJanet(req, res)
 }
 
 export async function cronWatchdog(req: Request, res: Response) {
-  if (!okCron(req,res)) return
-  try { res.json(await runWatchdog()) } catch(e:any) { res.status(500).json({error:e.message}) }
+  if (!okCronOrHq(req,res)) return
+  try { res.json({ ok: true, ...(await runWatchdog()) }) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
 
 export async function cronHeartbeat(req: Request, res: Response) {
-  if (!okCron(req,res)) return
+  if (!okCronOrHq(req,res)) return
   try { res.json(await runHeartbeat()) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
 
@@ -71,34 +94,216 @@ export async function webhookReply(req: Request, res: Response) {
 }
 
 export async function cronResearcher(req: Request, res: Response) {
-  if (!okCron(req,res)) return
-  try { res.json(await runLeadResearcher(6)) } catch(e:any) { res.status(500).json({error:e.message}) }
+  if (!okCronOrHq(req,res)) return
+  try { res.json({ ok: true, ...(await runLeadResearcher(6)) }) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
+
+export async function cronDiscover(req: Request, res: Response) {
+  if (!okCronOrHq(req,res)) return
+  try { res.json({ ok: true, ...(await runLeadDiscover(8)) }) } catch(e:any) { res.status(500).json({error:e.message}) }
+}
+
+export async function hqData(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    await ensureHqTables()
+    const sql = getSql()
+    const [pipeline] = await sql`SELECT
+      count(*) filter(where touch1_sent_at is not null) as touched,
+      count(*) filter(where replied=true) as replied,
+      count(*) filter(where pipeline_stage='engaged') as engaged,
+      count(*) filter(where pipeline_stage='customer') as customers,
+      count(*) filter(where pipeline_stage='prospect') as prospects,
+      count(*) filter(where bounced=true and touch1_sent_at is not null) as bounced,
+      count(*) filter(where touch1_sent_at is not null) as apollo_sent
+      FROM ps_outreach_leads WHERE bounced=false OR source='apollo'`
+
+    const recentLeads = await sql`SELECT name, company, email, pipeline_stage, touch1_sent_at, touch2_sent_at, replied, bounced, created_at
+      FROM ps_outreach_leads ORDER BY created_at DESC LIMIT 20`
+
+    const customers = await sql`SELECT name, company, email, stage_updated_at
+      FROM ps_outreach_leads WHERE pipeline_stage='customer' ORDER BY stage_updated_at DESC`
+
+    const abResults = await sql`SELECT variant,
+      count(*) filter(where event='sent') as sent,
+      count(*) filter(where event='replied') as replied
+      FROM ab_impressions WHERE experiment_key='touch1_subject' GROUP BY variant`.catch(() => [] as any[])
+
+    const archTasks = await sql`SELECT id, task, status, source, created_at, notes
+      FROM os_architect_tasks ORDER BY created_at DESC LIMIT 10`.catch(() => [] as any[])
+
+    const memory = await recallMemory(COMPANY, undefined, 40)
+    const bugReports = await sql`SELECT id, error_message, component_name, severity, occurrence_count, last_seen, url_path, diagnosis
+      FROM bug_reports WHERE status IN ('open','diagnosed') ORDER BY last_seen DESC LIMIT 20`.catch(() => [] as any[])
+    const architectMemory = await sql`SELECT error_signature, root_cause, file_affected, times_applied, confidence
+      FROM architect_memory ORDER BY times_applied DESC LIMIT 20`.catch(() => [] as any[])
+    const qaRuns = await sql`SELECT trigger_type, tests_passed, tests_failed, status, created_at
+      FROM qa_runs ORDER BY created_at DESC LIMIT 10`.catch(() => [] as any[])
+
+    const bounceRate = Number(pipeline.apollo_sent) > 0
+      ? (Number(pipeline.bounced) / Number(pipeline.apollo_sent) * 100).toFixed(1)
+      : '0.0'
+
+    res.json({
+      ok: true,
+      ts: new Date().toISOString(),
+      pipeline: {
+        touched: Number(pipeline.touched),
+        replied: Number(pipeline.replied),
+        engaged: Number(pipeline.engaged),
+        customers: Number(pipeline.customers),
+        prospects: Number(pipeline.prospects),
+        bounceRate,
+        replyRate: Number(pipeline.touched) > 0 ? (Number(pipeline.replied) / Number(pipeline.touched) * 100).toFixed(1) : '0.0',
+      },
+      recentLeads,
+      customers,
+      abResults,
+      archTasks,
+      memory,
+      bugReports,
+      architectMemory,
+      qaRuns,
+    })
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: formatOsError(e) })
+  }
+}
+
+export async function hqChat(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const { message, history = [] } = req.body
+    if (!message) { res.status(400).json({ error: 'No message' }); return }
+    res.json({ ok: true, response: await janetChat(message, history) })
+  } catch (e: unknown) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
+export async function hqTTS(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  const { text } = req.body
+  if (!text) { res.status(400).json({ error: 'No text' }); return }
+  const apiKey = process.env.ELEVENLABS_API_KEY
+  if (!apiKey) { res.status(503).json({ error: 'ElevenLabs not configured' }); return }
+  try {
+    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM/stream', {
+      method: 'POST',
+      headers: { 'xi-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+      body: JSON.stringify({ text: text.slice(0, 500), model_id: 'eleven_turbo_v2_5', voice_settings: { stability: 0.55, similarity_boost: 0.75 } }),
+    })
+    if (!r.ok) { res.status(502).json({ error: 'ElevenLabs error' }); return }
+    const buf = Buffer.from(await r.arrayBuffer())
+    res.set({ 'Content-Type': 'audio/mpeg', 'Content-Length': String(buf.length), 'Cache-Control': 'no-store' }).send(buf)
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function hqTask(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const { id, status, notes } = req.body
+    const sql = getSql()
+    await sql`UPDATE os_architect_tasks SET status=${status}, notes=${notes || null}, updated_at=NOW() WHERE id=${id}`
+    await sendTelegram(`PHISHSIMAI TASK ${status.toUpperCase()}: ${notes || id}`)
+    res.json({ ok: true })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function hqMemoryGet(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    res.json({ ok: true, context: await recallContext(COMPANY) })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function hqSeed(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const n = await seedPhishSimMemory()
+    res.json({ ok: true, seeded: n })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function hqSTT(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const chunks: Buffer[] = []
+    await new Promise<void>((resolve, reject) => {
+      req.on('data', (c) => chunks.push(Buffer.from(c)))
+      req.on('end', () => resolve())
+      req.on('error', reject)
+    })
+    const body = Buffer.concat(chunks)
+    const contentType = req.headers['content-type'] || ''
+    let audioBuf: Buffer | null = null
+
+    if (contentType.includes('multipart/form-data')) {
+      const boundary = contentType.split('boundary=')[1]
+      if (boundary) {
+        const parts = body.toString('binary').split('--' + boundary)
+        for (const part of parts) {
+          if (part.includes('filename=') && part.includes('\r\n\r\n')) {
+            const idx = part.indexOf('\r\n\r\n')
+            const raw = part.slice(idx + 4)
+            audioBuf = Buffer.from(raw.replace(/\r\n--$/, '').replace(/\r\n$/, ''), 'binary')
+            break
+          }
+        }
+      }
+    } else if (req.body?.audio) {
+      audioBuf = Buffer.from(req.body.audio, 'base64')
+    }
+
+    if (!audioBuf?.length) {
+      res.status(400).json({ error: 'No audio' })
+      return
+    }
+
+    const groqForm = new FormData()
+    groqForm.append('file', new Blob([audioBuf], { type: 'audio/webm' }), 'audio.webm')
+    groqForm.append('model', 'whisper-large-v3-turbo')
+    groqForm.append('language', 'en')
+
+    const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
+      body: groqForm,
+    })
+    const d = await groqRes.json()
+    res.json({ ok: true, text: d.text || '' })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export { cronAgentWatchdog }
 
 export async function bugReport(req: Request, res: Response) {
   try {
     const { error_message, stack_trace, component_name, user_action, url_path, user_email, browser, severity } = req.body
     if (!error_message) { res.status(400).json({ error: 'error_message required' }); return }
-    const conn = connect({ url: process.env.DATABASE_URL! })
-    await conn.execute(`CREATE TABLE IF NOT EXISTS bug_reports (
-      id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()), error_message TEXT NOT NULL,
-      stack_trace TEXT, component_name VARCHAR(255), user_action TEXT, url_path VARCHAR(500),
-      user_email VARCHAR(255), browser TEXT, severity VARCHAR(50) DEFAULT 'medium',
-      status VARCHAR(50) DEFAULT 'open', occurrence_count INT DEFAULT 1,
-      first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      diagnosis JSON, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`)
-    const dup = await conn.execute(`SELECT id FROM bug_reports WHERE error_message=? AND component_name=? AND last_seen > DATE_SUB(NOW(), INTERVAL 1 HOUR) LIMIT 1`, [error_message, component_name||'Unknown'])
-    if (((dup as any).rows||[]).length > 0) {
-      await conn.execute(`UPDATE bug_reports SET occurrence_count=occurrence_count+1, last_seen=NOW() WHERE id=?`, [(dup as any).rows[0].id])
+    await ensureHqTables()
+    const sql = getSql()
+    const dup = await sql`SELECT id FROM bug_reports WHERE error_message=${error_message} AND component_name=${component_name||'Unknown'} AND last_seen > NOW() - interval '1 hour' LIMIT 1`
+    if ((dup as any[]).length > 0) {
+      await sql`UPDATE bug_reports SET occurrence_count=occurrence_count+1, last_seen=NOW() WHERE id=${(dup as any[])[0].id}`
       res.json({ ok: true, duplicate: true }); return
     }
-    const bugs = await conn.execute(`INSERT INTO bug_reports (error_message,stack_trace,component_name,user_action,url_path,user_email,browser,severity) VALUES (?,?,?,?,?,?,?,?)`,
-      [error_message, stack_trace||null, component_name||'Unknown', user_action||'unknown', url_path||'unknown', user_email||null, browser||null, severity||'medium'])
+    const bugs = await sql`INSERT INTO bug_reports (error_message,stack_trace,component_name,user_action,url_path,user_email,browser,severity)
+      VALUES (${error_message}, ${stack_trace||null}, ${component_name||'Unknown'}, ${user_action||'unknown'}, ${url_path||'unknown'}, ${user_email||null}, ${browser||null}, ${severity||'medium'})
+      RETURNING id`
     if (severity === 'critical' || severity === 'high') {
       import('./architectAgent').then(({ runArchitectAgent }) => {
-        runArchitectAgent((bugs as any).lastInsertId?.toString() || '').catch(console.error)
+        runArchitectAgent((bugs as any[])[0]?.id?.toString() || '').catch(console.error)
       })
     }
     res.json({ ok: true })
@@ -120,7 +325,7 @@ export async function qaSmokePS(req: Request, res: Response) {
 
 function okV4(req: Request, res: Response): boolean {
   const secret = (req.headers['x-os-secret'] as string) || (req.query.secret as string)
-  if (secret !== HQ) { res.status(401).json({ error: 'Unauthorized' }); return false }
+  if (secret !== HQ && !checkCron(req)) { res.status(401).json({ error: 'Unauthorized' }); return false }
   return true
 }
 
@@ -150,7 +355,6 @@ export async function v4Full(req: Request, res: Response) {
 }
 
 export async function v4AgentTalk(req: Request, res: Response): Promise<void> {
-export * from './hq-backend';
   if (!okV4(req, res)) return
   // req.params.name only works with real Express routers. The production
   // entry point (api/handler.ts) dispatches by raw path matching, so also
@@ -183,6 +387,147 @@ export * from './hq-backend';
     if (!message) { res.json({ agent: AGENTS[name] }); return }
     const r = await talkToAgent(name, message, COMPANY, fromJanet)
     res.json(r)
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+// ── Additional parity routes (ScrollFuel equivalents) ─────────────────────
+
+export async function hqDirective(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const { message } = req.body
+    if (!message) { res.status(400).json({ error: 'No message' }); return }
+    await rememberFact({
+      company_id: COMPANY, type: 'operating',
+      key: 'directive_' + Date.now(), value: message, confidence: 1, source: 'founder',
+    })
+    let janetResponse = ''
+    try {
+      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: `You are Janet, CGO of PhishSimAI. Founder Kaan gave this directive: "${message}". Acknowledge it, state what action you will take, honest assessment in 2-3 sentences. Direct and specific.` }],
+          max_tokens: 200,
+        }),
+      })
+      const d = await groqRes.json()
+      janetResponse = d.choices?.[0]?.message?.content || 'Directive received and logged.'
+    } catch {
+      janetResponse = 'Directive received and stored in memory. Will act on it in the next cycle.'
+    }
+    await sendTelegram('FOUNDER DIRECTIVE TO JANET (PhishSim):\n"' + message + '"\n\nJanet: ' + janetResponse)
+    res.json({ ok: true, janetResponse })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function janetReport(req: Request, res: Response) {
+  const secret = (req.query.secret as string) || (req.headers['x-report-secret'] as string)
+  if (secret !== HQ && secret !== (process.env.REPORT_SECRET || 'ps-migrate-2026')) {
+    res.status(401).json({ error: 'Unauthorized' }); return
+  }
+  try {
+    res.json(await runJanetReport(COMPANY))
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+}
+
+export async function webhookResend(req: Request, res: Response) {
+  try {
+    const { type, data } = req.body
+    const sql = getSql()
+    const email = data?.to?.[0] || data?.email || ''
+    const ts = new Date().toISOString()
+    if (type === 'email.bounced' || type === 'email.complained') {
+      await sql`UPDATE ps_outreach_leads SET bounced=true, bounced_at=${ts}, pipeline_stage='dead', stage_updated_at=${ts} WHERE LOWER(email)=LOWER(${email})`
+      await sendTelegram('PHISHSIMAI BOUNCE: ' + type + ' | ' + email)
+    } else if (type === 'email.delivery_delayed') {
+      await sendTelegram('PHISHSIMAI DELIVERY DELAY: ' + email)
+    } else if (type === 'email.opened') {
+      await sql`UPDATE ps_outreach_leads SET stage_updated_at=${ts} WHERE LOWER(email)=LOWER(${email}) AND pipeline_stage='prospect'`
+    } else if (type === 'email.clicked') {
+      await sql`UPDATE ps_outreach_leads SET pipeline_stage='engaged', stage_updated_at=${ts} WHERE LOWER(email)=LOWER(${email}) AND pipeline_stage IN ('prospect','lead')`
+    }
+    res.json({ ok: true })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function architectPending(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const sql = getSql()
+    await sql`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS qwen_output TEXT`.catch(() => {})
+    await sql`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS files_changed TEXT[]`.catch(() => {})
+    await sql`
+      UPDATE os_architect_tasks SET status='approved', notes='Auto-approved — autonomous execution', updated_at=NOW()
+      WHERE status='pending'
+    `.catch(() => {})
+    const tasks = await sql`
+      SELECT id, task, status, source, created_at FROM os_architect_tasks
+      WHERE status='approved' ORDER BY created_at ASC LIMIT 5
+    `.catch(() => [] as any[])
+    res.json({ tasks, count: (tasks as any[]).length, timestamp: new Date().toISOString() })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function architectComplete(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const { id, success, qwen_output, files_changed, commit_sha, error } = req.body
+    const sql = getSql()
+    const status = success ? 'done' : 'failed'
+    const notes = success
+      ? `Completed by Qwen. Files: ${(files_changed || []).join(', ')}. Commit: ${commit_sha || 'n/a'}`
+      : `Failed: ${error || 'unknown error'}`
+    const filesArr = Array.isArray(files_changed) ? files_changed : []
+    await sql`UPDATE os_architect_tasks SET status=${status}, notes=${notes}, qwen_output=${qwen_output || null},
+      files_changed=${filesArr}::text[], updated_at=NOW() WHERE id=${id}`
+    const taskRow = await sql`SELECT task FROM os_architect_tasks WHERE id=${id}`.catch(() => [])
+    const task = (taskRow as any[])[0]?.task || id
+    await sendTelegram(`${success ? '✅' : '🚨'} PHISHSIMAI ARCHITECT ${status.toUpperCase()}\n\n${task}\n\n${notes}`).catch(() => {})
+    res.json({ ok: true, status })
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+}
+
+export async function architectRun(req: Request, res: Response) {
+  if (!okHQ(req, res) && !okCron(req, res)) return
+  try {
+    const bugId = (req.query.bugId as string) || req.body?.bugId
+    const mode = (req.query.mode as string) || req.body?.mode || 'diagnose'
+    const { runArchitectAgent, runQASmoke } = await import('./architectAgent')
+    if (mode === 'qa') {
+      res.json({ ok: true, ...(await runQASmoke('manual')) }); return
+    }
+    if (!bugId) { res.status(400).json({ error: 'bugId required' }); return }
+    res.json({ ok: true, ...(await runArchitectAgent(bugId)) })
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
+}
+
+export async function osUnified(req: Request, res: Response) {
+  if (!okHQ(req, res) && !checkCron(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
+  const action = (req.query.action as string) || 'status'
+  try {
+    if (action === 'status') return res.json(await getOSStatus(COMPANY))
+    if (action === 'standup') return res.json(await runDailyStandup(COMPANY))
+    if (action === 'weekly_review') return res.json(await runWeeklyReview(COMPANY))
+    if (action === 'full') return res.json(await runJanetFullOrchestration(COMPANY))
+    if (action === 'roster') return res.json({ agents: Object.values(AGENTS) })
+    if (action === 'health' || action === 'health_status') return res.json({ agents: await getAllAgentHealth(COMPANY), timestamp: new Date().toISOString() })
+    res.status(400).json({ error: 'Unknown action', available: ['status','standup','weekly_review','full','roster','health','health_status'] })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
   }

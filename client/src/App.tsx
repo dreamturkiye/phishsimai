@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { installGlobalErrorHandlers } from "@/lib/errorTelemetry";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
@@ -53,6 +55,7 @@ function Router() {
 }
 
 function App() {
+  useEffect(() => { installGlobalErrorHandlers(); }, []);
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark">

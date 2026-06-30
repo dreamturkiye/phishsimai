@@ -26,20 +26,36 @@
       "schedule": "0 * * * *"
     },
     {
-      "path": "/api/os/sequence",
+      "path": "/api/os/janet-cgo",
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/os/janet",
-      "schedule": "0 8 * * *"
+      "path": "/api/os/v4/weekly-review",
+      "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/os/agent-watchdog",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/os/heartbeat",
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/os/watchdog",
       "schedule": "0 */3 * * *"
     },
     {
-      "path": "/api/os/heartbeat",
-      "schedule": "0 */2 * * *"
+      "path": "/api/os/discover",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/os/aria-daily",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/os/sequence",
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/os/researcher",
@@ -48,14 +64,6 @@
     {
       "path": "/api/os/qa-smoke",
       "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/os/v4/full",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/os/v4/weekly-review",
-      "schedule": "0 10 * * 1"
     }
   ]
 }

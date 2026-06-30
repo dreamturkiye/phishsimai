@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Component, ReactNode } from "react";
+import { reportBug } from "@/lib/errorTelemetry";
 
 interface Props {
   children: ReactNode;
@@ -19,6 +20,10 @@ class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error) {
+    reportBug(error, "ErrorBoundary", "react_render_error");
   }
 
   render() {

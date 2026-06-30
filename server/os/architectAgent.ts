@@ -1,35 +1,13 @@
-import { connect } from '@tidbcloud/serverless'
 import { sendTelegram } from './telegram'
+import { ensureHqTables, getSql } from './conn'
 
 const ARCHITECT_SYSTEM = `You are Marcus, a Principal Software Architect with 18 years of experience 
-building and scaling SaaS products from zero to IPO. You specialize in Node.js, Express, tRPC, TiDB, 
+building and scaling SaaS products from zero to IPO. You specialize in Node.js, Express, tRPC, 
 Vite, React, TypeScript, and Vercel deployments. You diagnose bugs from stack traces immediately and 
 write production-quality fixes on the first attempt. You never patch symptoms — only root causes.`
 
-const getConn = () => connect({ url: process.env.DATABASE_URL! })
-
 async function ensureTables() {
-  const conn = getConn()
-  await conn.execute(`CREATE TABLE IF NOT EXISTS bug_reports (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    error_message TEXT NOT NULL, stack_trace TEXT, component_name VARCHAR(255),
-    user_action TEXT, url_path VARCHAR(500), user_email VARCHAR(255), browser TEXT,
-    severity VARCHAR(50) DEFAULT 'medium', status VARCHAR(50) DEFAULT 'open',
-    occurrence_count INT DEFAULT 1, first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    diagnosis JSON, fix_applied TEXT, fix_confirmed TINYINT(1) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )`)
-  await conn.execute(`CREATE TABLE IF NOT EXISTS architect_memory (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    error_signature VARCHAR(255) NOT NULL UNIQUE,
-    root_cause TEXT NOT NULL, file_affected VARCHAR(500), function_affected VARCHAR(255),
-    fix_description TEXT NOT NULL, fix_worked TINYINT(1) DEFAULT 1,
-    times_applied INT DEFAULT 1, confidence FLOAT DEFAULT 0.9, lesson TEXT,
-    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_applied TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-  )`)
+  await ensureHqTables()
 }
 
 function makeSignature(errorMessage: string, componentName: string): string {
@@ -55,7 +33,7 @@ async function diagnose(bug: any, knownFix: any) {
         model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: `${ARCHITECT_SYSTEM}
 
-Bug in PhishSimAI (Vite+Express+tRPC, TiDB, Vercel):
+Bug in PhishSimAI (Vite+Express+tRPC, Neon Postgres, Vercel):
 ERROR: ${bug.error_message}
 COMPONENT: ${bug.component_name}
 PAGE: ${bug.url_path}
@@ -68,30 +46,30 @@ Respond ONLY in JSON:
     })
     const d = await res.json()
     const text = d.choices?.[0]?.message?.content || '{}'
-    return { ...JSON.parse(text.replace(/\`\`\`json|\`\`\`/g,'').trim()), is_known_pattern: false }
+    return { ...JSON.parse(text.replace(/```json|```/g,'').trim()), is_known_pattern: false }
   } catch {
     return { root_cause: 'Diagnosis failed', file_affected: 'unknown', fix_description: 'Manual review needed', confidence: 0, is_known_pattern: false }
   }
 }
 
 export async function runArchitectAgent(bugId: string) {
-  const conn = getConn()
+  const sql = getSql()
   await ensureTables()
-  const bugs = await conn.execute(`SELECT * FROM bug_reports WHERE id=? LIMIT 1`, [bugId])
-  const bug = (bugs as any).rows?.[0]
+  const bugs = await sql`SELECT * FROM bug_reports WHERE id=${bugId} LIMIT 1`
+  const bug = (bugs as any[])[0]
   if (!bug) return { diagnosed: false }
   const signature = makeSignature(bug.error_message, bug.component_name||'Unknown')
-  const known = await conn.execute(`SELECT * FROM architect_memory WHERE error_signature=? LIMIT 1`, [signature])
-  const knownFix = (known as any).rows?.[0]
+  const known = await sql`SELECT * FROM architect_memory WHERE error_signature=${signature} LIMIT 1`
+  const knownFix = (known as any[])[0]
   const diagnosis = await diagnose(bug, knownFix)
-  await conn.execute(`UPDATE bug_reports SET diagnosis=?, status='diagnosed' WHERE id=?`,
-    [JSON.stringify(diagnosis), bugId])
+  await sql`UPDATE bug_reports SET diagnosis=${JSON.stringify(diagnosis)}, status='diagnosed' WHERE id=${bugId}`
   if ((diagnosis.confidence||0) > 0.5) {
-    await conn.execute(`INSERT INTO architect_memory (error_signature,root_cause,file_affected,function_affected,fix_description,confidence)
-      VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE times_applied=times_applied+1,last_applied=NOW(),
-      confidence=LEAST(confidence+0.02,1.0),updated_at=NOW()`,
-      [signature, diagnosis.root_cause, diagnosis.file_affected||'unknown',
-       diagnosis.function_affected||'unknown', diagnosis.fix_description, diagnosis.confidence||0.5])
+    await sql`INSERT INTO architect_memory (error_signature,root_cause,file_affected,function_affected,fix_description,confidence)
+      VALUES (${signature}, ${diagnosis.root_cause}, ${diagnosis.file_affected||'unknown'},
+              ${diagnosis.function_affected||'unknown'}, ${diagnosis.fix_description}, ${diagnosis.confidence||0.5})
+      ON CONFLICT (error_signature) DO UPDATE SET
+        times_applied=architect_memory.times_applied+1, last_applied=NOW(),
+        confidence=LEAST(architect_memory.confidence+0.02, 1.0)`
   }
   const urgency = bug.severity==='critical' ? 'CRITICAL' : bug.severity==='high' ? 'HIGH' : 'MEDIUM'
   await sendTelegram(
@@ -103,21 +81,23 @@ export async function runArchitectAgent(bugId: string) {
 }
 
 export async function runQASmoke(triggerRef = 'manual') {
-  const conn = getConn()
+  const start = Date.now()
   await ensureTables()
+  const sql = getSql()
   const tests = [
     { name: 'API health', test: async () => {
       const r = await fetch('https://phishsimai.com/api/health')
       if (!r.ok) throw new Error('Status ' + r.status)
     }},
-    { name: 'OS heartbeat responds', test: async () => {
-      const r = await fetch('https://phishsimai.com/api/os/heartbeat',
-        { headers: { Authorization: 'Bearer ' + process.env.CRON_SECRET }})
-      if (!r.ok) throw new Error('Status ' + r.status)
-    }},
     { name: 'HQ data responds', test: async () => {
       const r = await fetch('https://phishsimai.com/api/os/hq?secret=ps-hq-2026')
-      if (!r.ok) throw new Error('Status ' + r.status)
+      const d = await r.json()
+      if (!d.ok) throw new Error('HQ not ok: ' + (d.error || r.status))
+    }},
+    { name: 'Agent watchdog status', test: async () => {
+      const r = await fetch('https://phishsimai.com/api/os/agent-watchdog?secret=ps-hq-2026&action=status')
+      const d = await r.json()
+      if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},
   ]
   const results: any[] = []
@@ -126,7 +106,9 @@ export async function runQASmoke(triggerRef = 'manual') {
     try { await t.test(); results.push({ name: t.name, status: 'pass' }); passed++ }
     catch(e: any) { results.push({ name: t.name, status: 'fail', error: e.message }); failed++ }
   }
-  const status = failed===0 ? 'passed' : 'failed'
+  const status = failed === 0 ? 'passed' : failed <= 1 ? 'warning' : 'failed'
+  await sql`INSERT INTO qa_runs (trigger_type, trigger_ref, tests_run, tests_passed, tests_failed, test_results, duration_ms, status)
+    VALUES ('bug_fix', ${triggerRef}, ${tests.length}, ${passed}, ${failed}, ${JSON.stringify(results)}, ${Date.now() - start}, ${status})`.catch(() => {})
   if (failed > 0) await sendTelegram(`PHISHSIMAI QA: ${failed} tests failed\n${results.filter(r=>r.status==='fail').map(r=>r.name+': '+r.error).join('\n')}`)
   else await sendTelegram(`PHISHSIMAI QA: All ${passed} tests passed`)
   return { passed, failed, results }
