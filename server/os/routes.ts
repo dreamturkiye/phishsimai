@@ -229,13 +229,14 @@ export async function v4Full(req: Request, res: Response) {
   try { res.json(await runJanetFullOrchestration(COMPANY)) } catch (e: any) { res.status(500).json({ error: e.message }) }
 }
 
-export async function v4AgentTalk(req: Request, res: Response) {
+export async function v4AgentTalk(req: Request, res: Response): Promise<void> {
   if (!okV4(req, res)) return
   const name = req.params.name as AgentId
   if (!AGENTS[name]) { res.status(400).json({ error: `Unknown agent: ${name}`, available: Object.keys(AGENTS) }); return }
-  const message = (req.method === 'GET' ? req.query.message : req.body.message) as string
-  const mode = req.body?.mode as string | undefined
-  try {
+  const message: string = (req.method === 'GET' ? req.query.message : req.body.message) as string
+  const mode: string | undefined = req.body?.mode
+
+  async function handle(): Promise<void> {
     if (mode === 'task') {
       const task = await issueTask(name, { agent_id: name, title: req.body.title || message?.slice(0,80), description: message || '', priority: req.body.priority || 'high', due_in_hours: 24 }, COMPANY)
       const result = await executeTask(task.task_id, COMPANY)
@@ -249,5 +250,11 @@ export async function v4AgentTalk(req: Request, res: Response) {
     }
     if (!message) { res.json({ agent: AGENTS[name] }); return }
     res.json(await talkToAgent(name, message, COMPANY, req.body?.from_janet || false))
-  } catch (e: any) { res.status(500).json({ error: e.message }) }
+  }
+
+  try {
+    await handle()
+  } catch (e: any) {
+    res.status(500).json({ error: e.message })
+  }
 }
