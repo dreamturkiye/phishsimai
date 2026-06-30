@@ -1,22 +1,45 @@
 #!/bin/bash
 # PhishSimAI HQ Backend — Direct MySQL Migration
 
+set -e
+
 if [ -z "$DATABASE_URL" ]; then
-    echo "❌ DATABASE_URL not set"
+    echo "❌ ERROR: DATABASE_URL not set"
+    echo ""
+    echo "Example:"
+    echo '  export DATABASE_URL="mysql://myuser:mypass@tidb.example.com:4000/mydb"'
     exit 1
 fi
 
-# Parse DATABASE_URL: mysql://user:password@host:4000/database
-DB_USER=$(echo $DATABASE_URL | sed -E 's|mysql://([^:]+):.*|\1|')
-DB_PASS=$(echo $DATABASE_URL | sed -E 's|mysql://[^:]+:([^@]+)@.*|\1|')
-DB_HOST=$(echo $DATABASE_URL | sed -E 's|.*@([^:]+):.*|\1|')
-DB_PORT=$(echo $DATABASE_URL | sed -E 's|.*:([0-9]+)/.*|\1|')
-DB_NAME=$(echo $DATABASE_URL | sed -E 's|.*@[^/]+/(.+)$|\1|')
+echo "🔗 Parsing connection string..."
 
-echo "🔗 Connecting to TiDB: $DB_HOST:$DB_PORT"
+# Remove mysql:// prefix
+CONN_STR="${DATABASE_URL#mysql://}"
+
+# Extract user and password
+USER_PASS="${CONN_STR%%@*}"
+DB_USER="${USER_PASS%%:*}"
+DB_PASS="${USER_PASS#*:}"
+
+# Extract host, port, and database
+HOST_DB="${CONN_STR##*@}"
+HOST_PORT="${HOST_DB%%/*}"
+DB_NAME="${HOST_DB##*/}"
+
+# Split host and port
+DB_HOST="${HOST_PORT%%:*}"
+DB_PORT="${HOST_PORT##*:}"
+
+echo "   Host: $DB_HOST"
+echo "   Port: $DB_PORT"
+echo "   User: $DB_USER"
+echo "   Database: $DB_NAME"
 echo ""
 
-mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" << 'SQL'
+echo "🚀 Running migrations..."
+echo ""
+
+mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" 2>&1 << 'SQL'
 CREATE TABLE IF NOT EXISTS agent_status (
   id VARCHAR(36) PRIMARY KEY DEFAULT UUID(),
   name VARCHAR(50) NOT NULL UNIQUE,
@@ -87,10 +110,20 @@ CREATE TABLE IF NOT EXISTS completion_reports (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL
 
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ All tables created successfully"
-else
-    echo ""
-    echo "⚠️  Migration encountered issues (tables may already exist)"
-fi
+echo ""
+echo "✅ All tables created successfully!"
+echo ""
+echo "📝 Seeding test agents..."
+curl -s -X POST https://phishsimai.com/api/os/seed   -H "Content-Type: application/json"   -d '{"secret":"ps-hq-2026"}' | python3 -m json.tool
+
+echo ""
+echo "✅ Testing HQ endpoint..."
+curl -s "https://phishsimai.com/api/os/hq?secret=ps-hq-2026" | python3 -m json.tool | head -25
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════"
+echo "✅ PHISHSIMAI HQ BACKEND FULLY DEPLOYED!"
+echo "═══════════════════════════════════════════════════════════════"
+echo ""
+echo "Dashboard: https://phishsimai.com/hq"
+echo ""
