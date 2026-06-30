@@ -70,7 +70,7 @@ export async function runLeadResearcher(batchSize = 5): Promise<{
 
   try {
     const existingRows = await conn.execute(`SELECT domain FROM lead_research_queue WHERE company_id=? LIMIT 200`, [COMPANY_ID])
-    const existingDomains = new Set(((existingRows as any).rows || []).map((r: any) => r.domain))
+    const existingDomains = new Set<string>(((existingRows as any).rows || []).map((r: any) => String(r.domain)))
 
     // Step 1: Discover MSPs
     const candidates = await discoverMSPsViaGroq(existingDomains, batchSize * 2)
