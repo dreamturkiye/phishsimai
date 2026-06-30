@@ -78,10 +78,7 @@ export default function Home() {
       <header className="border-b border-border/40 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container flex items-center justify-between h-16">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-violet-500/20 border border-violet-500/30 flex items-center justify-center">
-              <Shield className="w-4 h-4 text-violet-400" />
-            </div>
-            <span className="font-bold text-lg tracking-tight">PhishSim AI ⚡</span>
+            <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-8 w-auto" />
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#features" className="hover:text-foreground transition-colors">Features</a>
@@ -323,7 +320,7 @@ export default function Home() {
                 <tr className="border-b border-border/60 bg-secondary/30">
                   <th className="text-left p-4 font-semibold text-muted-foreground w-1/3">Feature</th>
                   <th className="p-4 text-center font-bold text-violet-400 bg-violet-500/5">
-                    <div className="flex items-center justify-center gap-1.5"><Shield className="w-3.5 h-3.5" />PhishSim AI</div>
+                    <div className="flex items-center justify-center gap-1.5"><img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-4 w-auto" /></div>
                   </th>
                   <th className="p-4 text-center font-medium text-muted-foreground">KnowBe4</th>
                   <th className="p-4 text-center font-medium text-muted-foreground">Proofpoint</th>
