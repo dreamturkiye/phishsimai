@@ -230,6 +230,7 @@ export async function v4Full(req: Request, res: Response) {
 }
 
 export async function v4AgentTalk(req: Request, res: Response): Promise<void> {
+export * from './hq-backend';
   if (!okV4(req, res)) return
   // req.params.name only works with real Express routers. The production
   // entry point (api/handler.ts) dispatches by raw path matching, so also
