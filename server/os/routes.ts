@@ -237,7 +237,7 @@ export async function v4AgentTalk(req: Request, res: Response) {
   const mode = req.body?.mode as string | undefined
   try {
     if (mode === 'task') {
-      const task = await issueTask(name, { title: req.body.title || message?.slice(0,80), description: message || '', priority: req.body.priority || 'high', due_in_hours: 24 }, COMPANY)
+      const task = await issueTask(name, { agent_id: name, title: req.body.title || message?.slice(0,80), description: message || '', priority: req.body.priority || 'high', due_in_hours: 24 }, COMPANY)
       const result = await executeTask(task.task_id, COMPANY)
       const review = await reviewTask(task.task_id, COMPANY)
       res.json({ task, result: result.result, review: review.feedback, score: review.score })
