@@ -142,11 +142,8 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
       {/* Logo */}
       <div className="p-4 border-b border-sidebar-border">
         <button onClick={() => navigate("/dashboard")} className="flex items-center gap-2 w-full">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-            <Shield className="w-4 h-4 text-primary-foreground" />
-          </div>
+          <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-7 w-auto flex-shrink-0" />
           <div className="min-w-0 flex-1">
-            <div className="font-bold text-sm leading-tight">PhishSim AI</div>
             {currentOrg && (
               <div className="text-xs text-muted-foreground truncate max-w-[120px]">{currentOrg.name}</div>
             )}
