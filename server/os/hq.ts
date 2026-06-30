@@ -1,16 +1,10 @@
-import { createConnection, Connection } from '@tidbcloud/serverless';
+import { connect } from '@tidbcloud/serverless';
 import { janetChat } from './janet';
 
-let dbConn: Connection | null = null;
-
-async function getDb(): Promise<Connection> {
-  if (dbConn) return dbConn;
-  
+function getDb() {
   const dbUrl = process.env.DATABASE_URL || '';
   if (!dbUrl) throw new Error('DATABASE_URL not set');
-  
-  dbConn = await createConnection({ url: dbUrl });
-  return dbConn;
+  return connect({ url: dbUrl });
 }
 
 // Mock data for when database isn't available
@@ -34,7 +28,7 @@ export async function hqData(req: any, res: any) {
     }
 
     try {
-      const db = await getDb();
+      const db = getDb();
 
       // Try to fetch from database
       const agents = await db.execute(
