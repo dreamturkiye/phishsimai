@@ -231,7 +231,11 @@ export async function v4Full(req: Request, res: Response) {
 
 export async function v4AgentTalk(req: Request, res: Response): Promise<void> {
   if (!okV4(req, res)) return
-  const name = req.params.name as AgentId
+  // req.params.name only works with real Express routers. The production
+  // entry point (api/handler.ts) dispatches by raw path matching, so also
+  // support extracting the agent id from the URL path directly.
+  const pathParts = (req.path || '').split('/').filter(Boolean)
+  const name = (req.params?.name || pathParts[pathParts.length - 1] || '') as AgentId
   if (!AGENTS[name]) { res.status(400).json({ error: `Unknown agent: ${name}`, available: Object.keys(AGENTS) }); return }
 
   const body: any = req.body || {}
