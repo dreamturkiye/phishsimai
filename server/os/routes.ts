@@ -9,7 +9,8 @@ import { runHeartbeat } from './heartbeat'
 import { processReply } from './replyParser'
 import { recallContext, recallMemory, rememberFact, seedPhishSimMemory } from './memory'
 import { connect } from '@tidbcloud/serverless'
-import { sendTelegram } from './telegram'
+import { handleIncomingTelegram } from './telegramCommands'
+import { getTelegramConfig, sendTelegramTest, registerTelegramWebhook } from './telegram'
 import {
   runJanetFullOrchestration, getOSStatus, runDailyStandup, runWeeklyReview,
   talkToAgent, janetTellAgent, issueTask, executeTask, reviewTask,
@@ -101,6 +102,14 @@ export async function bugReport(req: Request, res: Response) {
         runArchitectAgent((bugs as any).lastInsertId?.toString() || '').catch(console.error)
       })
     }
+    const { sendTelegram } = await import('./telegram')
+    await sendTelegram(
+      `🚨 <b>JANET — BUG DETECTED</b>\n` +
+      `Page: ${url_path || 'unknown'}\n` +
+      `Component: ${component_name || 'Unknown'}\n` +
+      `Error: ${String(error_message).slice(0, 200)}\n` +
+      `Severity: ${severity || 'medium'}`
+    )
     res.json({ ok: true })
   } catch(e: any) { res.status(500).json({ error: e.message }) }
 }
@@ -111,6 +120,34 @@ export async function qaSmokePS(req: Request, res: Response) {
     const { runQASmoke } = await import('./architectAgent')
     res.json(await runQASmoke('manual'))
   } catch(e: any) { res.status(500).json({ error: e.message }) }
+}
+
+export async function telegramWebhook(req: Request, res: Response) {
+  try {
+    await handleIncomingTelegram(req.body)
+    res.json({ ok: true })
+  } catch {
+    res.json({ ok: true })
+  }
+}
+
+export async function telegramTest(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  const result = await sendTelegramTest()
+  res.json({ config: getTelegramConfig(), ...result })
+}
+
+export async function telegramStatus(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  res.json({ ok: true, telegram: getTelegramConfig() })
+}
+
+export async function telegramSetupWebhook(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  const base = (req.body?.base_url || req.query.base_url || 'https://phishsimai.com') as string
+  const webhookUrl = `${String(base).replace(/\/$/, '')}/api/os/webhook/telegram`
+  const result = await registerTelegramWebhook(webhookUrl)
+  res.json({ webhook: webhookUrl, ...result })
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -150,7 +187,6 @@ export async function v4Full(req: Request, res: Response) {
 }
 
 export async function v4AgentTalk(req: Request, res: Response): Promise<void> {
-export * from './hq-backend';
   if (!okV4(req, res)) return
   // req.params.name only works with real Express routers. The production
   // entry point (api/handler.ts) dispatches by raw path matching, so also

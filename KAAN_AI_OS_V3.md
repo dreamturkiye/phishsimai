@@ -416,8 +416,19 @@ SF_GROWTH_MONTHLY/ANNUAL
 SF_AGENCY_MONTHLY/ANNUAL
 CRON_SECRET                     — Cron job authentication
 NEXT_PUBLIC_APP_URL             — Base URL
-TELEGRAM_BOT_TOKEN
-TELEGRAM_CHAT_ID
+TELEGRAM_BOT_TOKEN              — @BotFather bot token (founder DM alerts)
+TELEGRAM_CHAT_ID                — Your Telegram chat id (from getUpdates)
+HQ_SECRET                       — ps-hq-2026 (HQ + telegram test routes)
+
+Setup (same as ScrollFuel):
+```bash
+./scripts/setup-telegram.sh --vercel
+# Then verify:
+curl "https://phishsimai.com/api/os/telegram/test?secret=ps-hq-2026"
+```
+
+Telegram receives: MSP reply alerts, Janet daily brief, bug detection, QA smoke, architect tasks, pipeline commands (PROSPECT domain.com).
+Webhook: `POST https://phishsimai.com/api/os/webhook/telegram`
 MARKETING_START_DATE            — Week number calculation base
 ```
 

@@ -132,7 +132,7 @@ export async function janetChat(message: string, history: {role:string,text:stri
   await rememberFact({ company_id:companyId, type:'operating', key:`directive_${Date.now()}`,
     value:`${message} -> ${response.slice(0,150)}`, confidence:0.8, source:'founder_hq' })
   if (/focus|priorit|change|stop|start|add|approve|target|try|test|pivot/i.test(message)) {
-    await sendTelegram(`FOUNDER->JANET (PhishSim):\n"${message}"\n\nJanet: ${response}`)
+    await sendTelegram(`FOUNDER → JANET\n"${message}"\n\nJanet: ${response}`)
   }
   return response
 }

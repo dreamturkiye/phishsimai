@@ -105,11 +105,9 @@ export async function hqTask(req: any, res: any) {
     );
 
     // Notify via Telegram
-    if (process.env.TELEGRAM_CHAT_ID && task.length > 0) {
-      await tg.sendMessage(
-        process.env.TELEGRAM_CHAT_ID,
-        `🏗️ ARCHITECT TASK\n${task.substring(0, 200)}`
-      ).catch(() => {});
+    if (task.length > 0) {
+      const { sendTelegram } = await import('./telegram')
+      await sendTelegram(`🏗️ <b>ARCHITECT TASK</b>\n${task.substring(0, 400)}`)
     }
 
     res.json({ 

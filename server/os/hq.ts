@@ -1,4 +1,5 @@
 import { createConnection, Connection } from '@tidbcloud/serverless';
+import { janetChat } from './janet';
 
 let dbConn: Connection | null = null;
 
@@ -80,22 +81,23 @@ export async function hqData(req: any, res: any) {
   }
 }
 
+
 export async function hqChat(req: any, res: any) {
-  const { secret, agent_name, message } = req.body;
-  if (secret !== process.env.HQ_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { secret, message, history = [] } = req.body || {}
+    const qSecret = req.query?.secret
+    if (secret !== process.env.HQ_SECRET && qSecret !== process.env.HQ_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+    if (!message?.trim()) {
+      return res.status(400).json({ error: 'Message required' })
+    }
+    const response = await janetChat(message, history)
+    return res.json({ ok: true, response, agent: 'janet', timestamp: new Date().toISOString() })
+  } catch (e: any) {
+    console.error('hqChat error:', e.message)
+    return res.status(500).json({ error: e.message })
   }
-
-  if (!message) {
-    return res.status(400).json({ error: 'Message required' });
-  }
-
-  return res.json({
-    ok: true,
-    agent: agent_name || 'janet',
-    reply: `Acknowledged: ${message.substring(0, 50)}...`,
-    timestamp: new Date().toISOString()
-  });
 }
 
 export async function hqTask(req: any, res: any) {

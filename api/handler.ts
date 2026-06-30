@@ -20,7 +20,8 @@ app.get("/api/os/diag", (_req: any, res: any) => {
     env: process.env.NODE_ENV,
     db: process.env.DATABASE_URL ? "SET" : "MISSING",
     groq: process.env.GROQ_API_KEY ? "SET" : "MISSING",
-    hq_secret: process.env.HQ_SECRET || "MISSING"
+    hq_secret: process.env.HQ_SECRET ? "SET" : "MISSING",
+    telegram: process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID ? "SET" : "MISSING",
   });
 });
 
@@ -56,6 +57,10 @@ app.all("/api/os/*", async (req: any, res: any) => {
     if (path === "/api/os/seed" && method === "post") return routes.hqSeed(req, res);
     if (path === "/api/os/bug-report" && method === "post") return routes.bugReport(req, res);
     if (path === "/api/os/qa-smoke") return routes.qaSmokePS(req, res);
+    if (path === "/api/os/webhook/telegram" && method === "post") return routes.telegramWebhook(req, res);
+    if (path === "/api/os/telegram/test") return routes.telegramTest(req, res);
+    if (path === "/api/os/telegram/status") return routes.telegramStatus(req, res);
+    if (path === "/api/os/telegram/setup-webhook" && method === "post") return routes.telegramSetupWebhook(req, res);
 
     // ── Kaan AI OS v4 — Janet + 8 named specialist agents ───────────────
     if (path === "/api/os/v4/status") return routes.v4Status(req, res);
