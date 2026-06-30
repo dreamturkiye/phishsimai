@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { HQChatComposer, type HQAttachment } from '../components/os/HQChatComposer'
 
 const SECRET = 'ps-hq-2026'
 
@@ -31,7 +32,7 @@ export default function HQPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
   const [msgs, setMsgs] = useState<Msg[]>([
-    { role: 'janet', id: 0, text: "Hi Kaan. PhishSim AI HQ is online. I'm coordinating Marcus, Aria, Nova, Rex, Scout, Finn, Vera, and Max. What do you want to focus on?" }
+    { role: 'janet', id: 0, text: "Hi Kaan. PhishSim AI HQ is online — Kaan AI OS v4.5. I'm coordinating Marcus (Architect), Aria, Nova, Rex, Scout, Finn, Vera, and Max. Attach CSVs to import leads, or ask me anything." }
   ])
   const [input, setInput] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
@@ -57,21 +58,25 @@ export default function HQPage() {
   useEffect(() => { const t = setInterval(refresh, 30000); return () => clearInterval(t) }, [refresh])
   useEffect(() => { if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight }, [msgs])
 
-  async function send() {
-    if (!input.trim() || chatBusy) return
-    const text = input.trim()
-    setInput('')
-    setMsgs(m => [...m, { role: 'you', id: msgId, text }])
+  async function sendMessage(text: string, attachments: HQAttachment[] = []) {
+    if ((!text.trim() && !attachments.length) || chatBusy) return
+    const display = text.trim() || `[${attachments.length} file(s) attached]`
+    setMsgs(m => [...m, { role: 'you', id: msgId, text: display }])
     setMsgId(i => i + 1)
     setChatBusy(true)
     try {
       const r = await fetch('/api/os/hq/chat?secret=' + SECRET, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: msgs.slice(-6).map(m => ({ role: m.role, text: m.text })) })
+        body: JSON.stringify({
+          message: text,
+          attachments: attachments.map(a => ({ filename: a.filename, summary: a.summary, textContent: a.textPreview, kind: a.kind })),
+          history: msgs.slice(-6).map(m => ({ role: m.role, text: m.text })),
+        }),
       })
       const d = await r.json()
       setMsgs(m => [...m, { role: 'janet', id: msgId + 1, text: d.response || 'No response.' }])
       setMsgId(i => i + 2)
+      if (attachments.some(a => a.leadsImported)) refresh()
     } catch {
       setMsgs(m => [...m, { role: 'janet', id: msgId + 1, text: 'Connection error — try again.' }])
       setMsgId(i => i + 2)
@@ -162,11 +167,13 @@ export default function HQPage() {
               ))}
               {chatBusy && <div style={{ color: '#666', fontSize: 12 }}>Janet is thinking...</div>}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input style={s.input} value={input} onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && send()} placeholder="Ask Janet anything..." />
-              <button style={{ ...s.btn, ...s.btnAccent }} onClick={send} disabled={chatBusy}>Send</button>
-            </div>
+            <HQChatComposer
+              value={input}
+              onChange={setInput}
+              onSend={sendMessage}
+              disabled={chatBusy}
+              secret={SECRET}
+            />
           </div>
         </>}
 

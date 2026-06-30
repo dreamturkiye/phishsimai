@@ -46,6 +46,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/os/agent-watchdog",
+      "schedule": "0 */2 * * *"
+    },
+    {
       "path": "/api/os/qa-smoke",
       "schedule": "0 */6 * * *"
     },

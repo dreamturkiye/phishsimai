@@ -1,4 +1,4 @@
-import { connect } from '@tidbcloud/serverless'
+import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 
 const VALID = ['PROSPECT', 'ENGAGED', 'TRIAL', 'DEAD', 'CUSTOMER', 'NEGOTIATING'] as const
@@ -25,22 +25,21 @@ export async function processTelegramCommand(text: string): Promise<{ ok: boolea
     return { ok: false, message: `Unknown command: ${cmd}` }
   }
 
-  const conn = connect({ url: process.env.DATABASE_URL! })
-  const rows = await conn.execute(
-    `SELECT id, email, name, company, pipeline_stage FROM ps_outreach_leads
-     WHERE LOWER(email) LIKE ? OR LOWER(company) LIKE ? LIMIT 1`,
-    [`%${domain}%`, `%${domain}%`]
-  )
-  const lead = ((rows as any).rows || [])[0]
+  const sql = getSql()
+  const rows = await sql`
+    SELECT id, email, name, company, pipeline_stage FROM ps_outreach_leads
+    WHERE LOWER(email) LIKE ${'%' + domain + '%'} OR LOWER(company) LIKE ${'%' + domain + '%'}
+    LIMIT 1
+  `
+  const lead = rows[0] as { id: number; email: string; name: string; company: string; pipeline_stage: string } | undefined
   if (!lead) {
     return { ok: false, message: `No lead found for: ${domain}` }
   }
 
   const stage = STAGE[cmd]
-  await conn.execute(
-    `UPDATE ps_outreach_leads SET pipeline_stage=?, stage_updated_at=NOW() WHERE id=?`,
-    [stage, lead.id]
-  )
+  await sql`
+    UPDATE ps_outreach_leads SET pipeline_stage=${stage}, stage_updated_at=NOW() WHERE id=${lead.id}
+  `
 
   if (cmd === 'CUSTOMER') {
     await sendTelegram(`🎉 <b>CUSTOMER</b> ${lead.company} (${lead.email}) — pipeline updated via Telegram`)

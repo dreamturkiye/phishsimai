@@ -1,31 +1,33 @@
-import { connect } from '@tidbcloud/serverless'
+import { getSql } from '../conn'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
 
 const COMPANY_ID = 'phishsimai'
-const MSP_TITLES = ['Owner','CEO','Founder','President','Managing Director','IT Director','CISO','Head of Security','CTO']
+const MSP_TITLES = ['Owner', 'CEO', 'Founder', 'President', 'Managing Director', 'IT Director', 'CISO', 'Head of Security', 'CTO']
 
-const getConn = () => connect({ url: process.env.DATABASE_URL! })
-
-async function ensureResearchQueue() {
-  const conn = getConn()
-  await conn.execute(`CREATE TABLE IF NOT EXISTS lead_research_queue (
-    id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-    company_id VARCHAR(100) NOT NULL DEFAULT 'phishsimai',
-    domain VARCHAR(255) NOT NULL, company_name VARCHAR(255), source VARCHAR(100),
-    status VARCHAR(50) DEFAULT 'pending', icp_score INT DEFAULT 0, research_data JSON,
-    attempts INT DEFAULT 0, last_attempt_at TIMESTAMP NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_domain (company_id, domain)
-  )`)
+async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
+  await sql`CREATE TABLE IF NOT EXISTS lead_research_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id TEXT NOT NULL DEFAULT 'phishsimai',
+    domain TEXT NOT NULL,
+    company_name TEXT,
+    source TEXT,
+    status TEXT DEFAULT 'pending',
+    icp_score INTEGER DEFAULT 0,
+    research_data JSONB DEFAULT '{}',
+    attempts INTEGER DEFAULT 0,
+    last_attempt_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(company_id, domain)
+  )`
 }
 
 async function discoverMSPsViaGroq(existingDomains: Set<string>, batchSize: number) {
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         messages: [{ role: 'user', content: `You are a B2B lead researcher for the MSP/MSSP market.
@@ -34,8 +36,8 @@ Target: US, Canada, UK, or Australia-based MSPs with 5-200 employees, serving SM
 Return ONLY valid JSON array with no markdown: [{"domain":"example.com","company_name":"Example MSP","source":"ai_discovery"}]
 Real companies only. Avoid Accenture, IBM, Deloitte, or companies with >500 employees.
 Already found: ${[...existingDomains].slice(0, 20).join(', ')}` }],
-        max_tokens: 600, temperature: 0.7
-      })
+        max_tokens: 600, temperature: 0.7,
+      }),
     })
     const d = await res.json()
     const text = d.choices?.[0]?.message?.content || '[]'
@@ -61,68 +63,71 @@ async function enrichViaHunter(domain: string) {
   } catch { return null }
 }
 
-export async function runLeadResearcher(batchSize = 5): Promise<{
-  discovered: number; enriched: number; added: number; skipped: number; errors: string[]
-}> {
-  const conn = getConn()
-  await ensureResearchQueue()
+export async function runLeadDiscover(batchSize = 8) {
+  const sql = getSql()
+  await ensureResearchQueue(sql)
+  const existing = await sql`SELECT domain FROM lead_research_queue WHERE company_id = ${COMPANY_ID} LIMIT 200`
+  const existingDomains = new Set(existing.map((r: any) => r.domain))
+  const candidates = await discoverMSPsViaGroq(existingDomains, batchSize)
+  let discovered = 0
+  for (const c of candidates) {
+    try {
+      await sql`INSERT INTO lead_research_queue (company_id, domain, company_name, source, status)
+        VALUES (${COMPANY_ID}, ${c.domain}, ${c.company_name}, ${c.source || 'ai_discovery'}, 'pending')
+        ON CONFLICT (company_id, domain) DO NOTHING`
+      discovered++
+    } catch {}
+  }
+  return { discovered, candidates: candidates.length }
+}
+
+export async function runLeadResearcher(batchSize = 6) {
+  const sql = getSql()
+  await ensureResearchQueue(sql)
   const stats = { discovered: 0, enriched: 0, added: 0, skipped: 0, errors: [] as string[] }
+  const start = Date.now()
 
   try {
-    const existingRows = await conn.execute(`SELECT domain FROM lead_research_queue WHERE company_id=? LIMIT 200`, [COMPANY_ID])
-    const existingDomains = new Set<string>(((existingRows as any).rows || []).map((r: any) => String(r.domain)))
+    const discover = await runLeadDiscover(batchSize * 2)
+    stats.discovered = discover.discovered
 
-    // Step 1: Discover MSPs
-    const candidates = await discoverMSPsViaGroq(existingDomains, batchSize * 2)
-    for (const c of candidates) {
+    const pending = await sql`
+      SELECT id, domain, company_name FROM lead_research_queue
+      WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < 3
+      ORDER BY created_at ASC LIMIT ${batchSize}`
+
+    for (const item of pending) {
       try {
-        await conn.execute(
-          `INSERT INTO lead_research_queue (company_id,domain,company_name,source,status) VALUES (?,?,?,?,'pending') ON DUPLICATE KEY UPDATE updated_at=NOW()`,
-          [COMPANY_ID, c.domain, c.company_name, c.source || 'ai_discovery']
-        )
-        stats.discovered++
-      } catch {}
-    }
-
-    // Step 2: Process pending
-    const pending = await conn.execute(
-      `SELECT id,domain,company_name FROM lead_research_queue WHERE company_id=? AND status='pending' AND attempts<3 ORDER BY created_at ASC LIMIT ?`,
-      [COMPANY_ID, batchSize]
-    )
-
-    for (const item of ((pending as any).rows || [])) {
-      try {
-        await conn.execute(`UPDATE lead_research_queue SET status='researching',attempts=attempts+1,last_attempt_at=NOW() WHERE id=?`, [item.id])
-        const hunter = await enrichViaHunter(item.domain)
+        await sql`UPDATE lead_research_queue SET status='researching', attempts=attempts+1, last_attempt_at=NOW() WHERE id=${item.id}`
+        const hunter = await enrichViaHunter(String(item.domain))
 
         if (hunter?.email) {
           stats.enriched++
-          const dup = await conn.execute(`SELECT id FROM ps_outreach_leads WHERE LOWER(email)=LOWER(?) LIMIT 1`, [hunter.email])
-          if (((dup as any).rows || []).length > 0) {
+          const dup = await sql`SELECT id FROM ps_outreach_leads WHERE LOWER(email) = LOWER(${hunter.email}) LIMIT 1`
+          if (dup.length > 0) {
             stats.skipped++
-            await conn.execute(`UPDATE lead_research_queue SET status='duplicate',updated_at=NOW() WHERE id=?`, [item.id])
+            await sql`UPDATE lead_research_queue SET status='duplicate', updated_at=NOW() WHERE id=${item.id}`
           } else {
-            await conn.execute(
-              `INSERT INTO ps_outreach_leads (email,name,company,title,source,pipeline_stage) VALUES (?,?,?,?,'lead_researcher','prospect') ON DUPLICATE KEY UPDATE updated_at=NOW()`,
-              [hunter.email, hunter.name || item.company_name, item.company_name || item.domain.split('.')[0], hunter.title || 'Owner']
-            )
+            await sql`INSERT INTO ps_outreach_leads (email, name, company, title, source, pipeline_stage)
+              VALUES (${hunter.email}, ${hunter.name || item.company_name}, ${item.company_name || String(item.domain).split('.')[0]}, ${hunter.title || 'Owner'}, 'lead_researcher', 'prospect')
+              ON CONFLICT (email) DO NOTHING`
             stats.added++
-            await conn.execute(`UPDATE lead_research_queue SET status='enriched',icp_score=72,updated_at=NOW() WHERE id=?`, [item.id])
+            await sql`UPDATE lead_research_queue SET status='enriched', icp_score=72, updated_at=NOW() WHERE id=${item.id}`
           }
         } else {
           stats.skipped++
-          await conn.execute(`UPDATE lead_research_queue SET status='pending',updated_at=NOW() WHERE id=?`, [item.id])
+          await sql`UPDATE lead_research_queue SET status='pending', updated_at=NOW() WHERE id=${item.id}`
         }
         await new Promise(r => setTimeout(r, 1500))
       } catch (e: any) {
         stats.errors.push(`${item.domain}: ${e.message?.slice(0, 80)}`)
-        await conn.execute(`UPDATE lead_research_queue SET status='failed',updated_at=NOW() WHERE id=?`, [item.id])
+        await sql`UPDATE lead_research_queue SET status='failed', updated_at=NOW() WHERE id=${item.id}`
       }
     }
 
-    await reportAgentRun('researcher', true, stats, undefined, COMPANY_ID)
+    await reportAgentRun('researcher', true, { ...stats, duration_ms: Date.now() - start }, undefined, COMPANY_ID)
     if (stats.added > 0) {
-      await sendTelegram(`PHISHSIMAI RESEARCHER: +${stats.added} MSP leads\nDiscovered:${stats.discovered} Skipped:${stats.skipped}`)
+      await sendTelegram(`PHISHSIMAI RESEARCHER: +${stats.added} MSP leads\nDiscovered:${stats.discovered} Enriched:${stats.enriched} Skipped:${stats.skipped}`)
     }
   } catch (e: any) {
     await reportAgentRun('researcher', false, {}, e.message, COMPANY_ID)
