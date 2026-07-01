@@ -4,6 +4,7 @@ import { checkAgentStaleness, reportAgentRun } from './agentHealth'
 import { checkEmployeeStaleness } from './agentHealth_v2'
 import { runOpsRecoveryTick } from './opsRecovery'
 import { runLeadResearcher } from './agents/leadResearcher'
+import { resolveSystemAlert } from './selfHeal'
 
 const RESEARCHER_PROACTIVE_MS = 55 * 60 * 1000
 
@@ -22,6 +23,7 @@ async function ensureResearcherRunning(companyId: string, actions: string[]) {
     actions.push(
       `Researcher proactive: discovered=${heal.discovered} added=${heal.added} enriched=${heal.enriched}`
     )
+    await resolveSystemAlert('agent_stale:researcher', 'researcher proactive run completed', companyId)
   } catch (e: any) {
     actions.push('Researcher proactive failed: ' + e.message?.slice(0, 120))
   }
@@ -74,6 +76,8 @@ export async function runWatchdog() {
   }
 
   try {
+    await ensureResearcherRunning('phishsimai', result.actions_taken)
+
     const recovery = await runOpsRecoveryTick('phishsimai')
     if (recovery.restarts.length > 0) {
       result.issues_found += recovery.restarts.filter((r) => !r.ok).length
@@ -91,7 +95,6 @@ export async function runWatchdog() {
     } else if (recovery.restarts.length === 0) {
       result.actions_taken.push('All ops + employee agents healthy')
     }
-    await ensureResearcherRunning('phishsimai', result.actions_taken)
   } catch (e: any) {
     result.actions_taken.push('Agent health check error: ' + e.message?.slice(0, 100))
   }

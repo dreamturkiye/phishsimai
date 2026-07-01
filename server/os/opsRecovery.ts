@@ -5,7 +5,7 @@ import { sendTelegram } from './telegram'
 
 export type HealableOpsAgent = (typeof HEALABLE_OPS_AGENTS)[number]
 
-const HEAL_COOLDOWN_MS = 5 * 60 * 1000
+const HEAL_COOLDOWN_MS = 30 * 60 * 1000
 const inFlight = new Set<string>()
 
 function healKey(companyId: string, agentName: string) {
@@ -52,15 +52,15 @@ export async function dispatchOpsRestart(
   }
 
   inFlight.add(key)
-  const alertKey = 'ops_restart:' + agentName
+  const alertKey = 'agent_stale:' + agentName
   const alertDetail = `${reason}${detail ? ': ' + detail : ''} — Janet restarting now`
 
   try {
-    await openSystemAlert(alertKey, alertDetail)
+    await openSystemAlert(alertKey, alertDetail, companyId)
     await markHealAttempt(companyId, agentName)
     const result = await healOpsAgent(agentName, companyId)
-    await resolveSystemAlert(alertKey, `restarted OK: ${result}`)
-    await resolveSystemAlert('agent_stale:' + agentName, 'restarted by Janet')
+    await resolveSystemAlert(alertKey, `restarted OK: ${result}`, companyId)
+    await resolveSystemAlert('ops_restart:' + agentName, 'superseded', companyId).catch(() => {})
     await sendTelegram(`✅ Janet restarted ${agentName}\n${result}`).catch(() => {})
     return { ok: true, message: result }
   } catch (e: any) {

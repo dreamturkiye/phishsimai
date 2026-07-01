@@ -100,19 +100,19 @@ export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<str
     const lastRunAt = rowMap.get(agentName)
     const lastRun = lastRunAt ? new Date(lastRunAt as string).getTime() : 0
     const stale = !lastRun || now - lastRun > threshold
+    const healable = HEALABLE_OPS_AGENTS.includes(agentName as any)
     if (stale) {
       const h = lastRun ? ((now - lastRun) / 3600000).toFixed(1) : 'never'
       alerts.push(`${agentName}: stale ${h}h`)
-      await openSystemAlert('agent_stale:' + agentName, `stale ${h}h`)
       await sql`INSERT INTO agent_health (company_id, agent_name, status, updated_at)
         VALUES (${companyId}, ${agentName}, 'critical', NOW())
         ON CONFLICT (company_id, agent_name) DO UPDATE SET
           status='critical', updated_at=NOW()`
-      if (HEALABLE_OPS_AGENTS.includes(agentName as any)) {
-        await dispatchOpsRestart(agentName, 'stale', companyId, `${h}h`).catch(() => {})
+      if (!healable) {
+        await openSystemAlert('agent_stale:' + agentName, `stale ${h}h`, companyId)
       }
     } else {
-      await resolveSystemAlert('agent_stale:' + agentName, 'running within threshold')
+      await resolveSystemAlert('agent_stale:' + agentName, 'running within threshold', companyId)
     }
   }
   return alerts

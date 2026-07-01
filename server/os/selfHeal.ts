@@ -22,6 +22,30 @@ export async function isAlertOpen(key: string, companyId = COMPANY_ID): Promise<
   return (rows as any[]).length > 0
 }
 
+const ALERT_NOTIFY_COOLDOWN_MS = 4 * 60 * 60 * 1000
+
+async function getLastAlertNotifyMs(key: string, companyId: string): Promise<number> {
+  const sql = getSql()
+  await ensureMemoryTable()
+  const rows = await sql`
+    SELECT value FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key=${'alert_notify:' + key}
+    LIMIT 1
+  `.catch(() => [])
+  const v = (rows as any[])[0]?.value
+  const ts = v ? Date.parse(String(v)) : 0
+  return Number.isFinite(ts) ? ts : 0
+}
+
+async function markAlertNotified(key: string, companyId: string) {
+  const sql = getSql()
+  await sql`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${companyId}, 'operating', ${'alert_notify:' + key}, ${new Date().toISOString()}, 1, 'janet')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value=${new Date().toISOString()}, updated_at=NOW()
+  `.catch(() => {})
+}
+
 export async function openSystemAlert(key: string, detail: string, companyId = COMPANY_ID) {
   await ensureMemoryTable()
   const wasOpen = await isAlertOpen(key, companyId)
@@ -31,7 +55,10 @@ export async function openSystemAlert(key: string, detail: string, companyId = C
     VALUES (${companyId}, 'operating', ${'system_alert:' + key}, ${detail}, 1, 'janet')
     ON CONFLICT (company_id, type, key) DO UPDATE SET value=${detail}, updated_at=NOW()
   `.catch(() => {})
-  if (!wasOpen) {
+  const lastNotify = await getLastAlertNotifyMs(key, companyId)
+  const cooldownOk = Date.now() - lastNotify > ALERT_NOTIFY_COOLDOWN_MS
+  if (!wasOpen && cooldownOk) {
+    await markAlertNotified(key, companyId)
     await sendTelegram(
       `🚨 <b>JANET — SYSTEM ISSUE</b>\n` +
       `${key}: ${detail}\n` +
