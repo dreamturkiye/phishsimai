@@ -1,5 +1,5 @@
 import { getSql } from './conn'
-import { sendTelegram } from './telegram'
+import { openSystemAlert, resolveSystemAlert } from './selfHeal'
 
 export type AgentStatus = 'healthy' | 'warning' | 'critical' | 'unknown'
 
@@ -14,11 +14,11 @@ export interface AgentHealthRecord {
 }
 
 const STALE_THRESHOLDS: Record<string, number> = {
-  aria: 3 * 60 * 60 * 1000,
+  aria: 25 * 60 * 60 * 1000,
   janet: 26 * 60 * 60 * 1000,
-  researcher: 2 * 60 * 60 * 1000,
-  watchdog: 4 * 60 * 60 * 1000,
-  heartbeat: 3 * 60 * 60 * 1000,
+  researcher: 90 * 60 * 1000,
+  watchdog: 2 * 60 * 60 * 1000,
+  heartbeat: 2 * 60 * 60 * 1000,
 }
 
 export async function ensureHealthTable() {
@@ -93,12 +93,12 @@ export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<str
     if (now - lastRun > threshold) {
       const h = ((now - lastRun) / 3600000).toFixed(1)
       alerts.push(`${row.agent_name}: stale ${h}h`)
+      await openSystemAlert('agent_stale:' + row.agent_name, `stale ${h}h`)
       await sql`UPDATE agent_health SET status='critical', updated_at=NOW()
         WHERE company_id=${companyId} AND agent_name=${row.agent_name}`
+    } else {
+      await resolveSystemAlert('agent_stale:' + row.agent_name, 'running within threshold')
     }
-  }
-  if (alerts.length > 0) {
-    await sendTelegram('PHISHSIMAI AGENT HEALTH ALERT\n' + alerts.join('\n') + '\nCheck HQ health tab.')
   }
   return alerts
 }

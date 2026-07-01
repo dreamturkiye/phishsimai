@@ -35,19 +35,19 @@
     },
     {
       "path": "/api/os/watchdog",
-      "schedule": "0 */3 * * *"
-    },
-    {
-      "path": "/api/os/heartbeat",
-      "schedule": "0 */2 * * *"
-    },
-    {
-      "path": "/api/os/researcher",
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/os/heartbeat",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/os/researcher",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/os/agent-watchdog",
-      "schedule": "0 */2 * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/os/qa-smoke",

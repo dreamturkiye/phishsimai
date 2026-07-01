@@ -1,7 +1,29 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
-import { checkAgentStaleness } from './agentHealth'
+import { checkAgentStaleness, reportAgentRun } from './agentHealth'
 import { runLeadResearcher } from './agents/leadResearcher'
+
+const RESEARCHER_PROACTIVE_MS = 55 * 60 * 1000
+
+async function ensureResearcherRunning(companyId: string, actions: string[]) {
+  const sql = getSql()
+  const rows = await sql`
+    SELECT last_success_at, last_run_at FROM agent_health
+    WHERE company_id=${companyId} AND agent_name='researcher'
+    LIMIT 1
+  `
+  const last = rows[0]?.last_success_at || rows[0]?.last_run_at
+  const age = last ? Date.now() - new Date(last as string).getTime() : Infinity
+  if (age < RESEARCHER_PROACTIVE_MS) return
+  try {
+    const heal = await runLeadResearcher(6)
+    actions.push(
+      `Researcher proactive: discovered=${heal.discovered} added=${heal.added} enriched=${heal.enriched}`
+    )
+  } catch (e: any) {
+    actions.push('Researcher proactive failed: ' + e.message?.slice(0, 120))
+  }
+}
 
 export async function runWatchdog() {
   const sql = getSql()
@@ -67,8 +89,15 @@ export async function runWatchdog() {
     } else {
       result.actions_taken.push('All agents healthy')
     }
+    await ensureResearcherRunning('phishsimai', result.actions_taken)
   } catch (e: any) {
     result.actions_taken.push('Agent health check error: ' + e.message?.slice(0, 100))
+  }
+
+  try {
+    await reportAgentRun('watchdog', true, { issues: result.issues_found, actions: result.actions_taken.length })
+  } catch {
+    await reportAgentRun('watchdog', false, {}, 'failed to record watchdog run').catch(() => {})
   }
 
   return result
