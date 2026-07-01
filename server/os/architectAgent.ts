@@ -149,22 +149,23 @@ export async function runArchitectAgent(bugId: string) {
   return { diagnosed: true, diagnosis, architectTaskId }
 }
 
-export async function runQASmoke(triggerRef = 'manual') {
+export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
   const start = Date.now()
   await ensureTables()
   const sql = getSql()
+  const root = (baseUrl || 'https://phishsimai.com').replace(/\/$/, '')
   const tests = [
     { name: 'API health', test: async () => {
-      const r = await fetch('https://phishsimai.com/api/health')
+      const r = await fetch(`${root}/api/health`)
       if (!r.ok) throw new Error('Status ' + r.status)
     }},
     { name: 'HQ data responds', test: async () => {
-      const r = await fetch('https://phishsimai.com/api/os/hq?secret=ps-hq-2026')
+      const r = await fetch(`${root}/api/os/hq?secret=ps-hq-2026`)
       const d = await r.json()
       if (!d.ok) throw new Error('HQ not ok: ' + (d.error || r.status))
     }},
     { name: 'Agent watchdog status', test: async () => {
-      const r = await fetch('https://phishsimai.com/api/os/agent-watchdog?secret=ps-hq-2026&action=status')
+      const r = await fetch(`${root}/api/os/agent-watchdog?secret=ps-hq-2026&action=status`)
       const d = await r.json()
       if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},
@@ -180,5 +181,5 @@ export async function runQASmoke(triggerRef = 'manual') {
     VALUES ('bug_fix', ${triggerRef}, ${tests.length}, ${passed}, ${failed}, ${JSON.stringify(results)}, ${Date.now() - start}, ${status})`.catch(() => {})
   if (failed > 0) await sendTelegram(`PHISHSIMAI QA: ${failed} tests failed\n${results.filter(r=>r.status==='fail').map(r=>r.name+': '+r.error).join('\n')}`)
   else await sendTelegram(`PHISHSIMAI QA: All ${passed} tests passed`)
-  return { passed, failed, results }
+  return { passed, failed, results, baseUrl: root }
 }

@@ -353,7 +353,9 @@ export async function qaSmokePS(req: Request, res: Response) {
   if (!okHQ(req,res) && !okCron(req,res)) return
   try {
     const { runQASmoke } = await import('./architectAgent')
-    res.json(await runQASmoke('manual'))
+    const trigger = (req.query.trigger as string) || 'manual'
+    const baseUrl = (req.query.base_url as string) || undefined
+    res.json({ ok: true, ...(await runQASmoke(trigger, baseUrl)) })
   } catch(e: any) { res.status(500).json({ error: e.message }) }
 }
 
@@ -512,23 +514,8 @@ export async function webhookResend(req: Request, res: Response) {
 }
 
 export async function architectPending(req: Request, res: Response) {
-  if (!okHQ(req, res)) return
-  try {
-    const sql = getSql()
-    await sql`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS qwen_output TEXT`.catch(() => {})
-    await sql`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS files_changed TEXT[]`.catch(() => {})
-    await sql`
-      UPDATE os_architect_tasks SET status='approved', notes='Auto-approved — autonomous execution', updated_at=NOW()
-      WHERE status='pending'
-    `.catch(() => {})
-    const tasks = await sql`
-      SELECT id, task, status, source, created_at FROM os_architect_tasks
-      WHERE status='approved' ORDER BY created_at ASC LIMIT 5
-    `.catch(() => [] as any[])
-    res.json({ tasks, count: (tasks as any[]).length, timestamp: new Date().toISOString() })
-  } catch (e: any) {
-    res.status(500).json({ error: e.message })
-  }
+  const { architectPending: pick } = await import('./architectPending')
+  return pick(req, res)
 }
 
 export async function architectComplete(req: Request, res: Response) {

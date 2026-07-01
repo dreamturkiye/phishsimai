@@ -73,7 +73,7 @@ export async function queueJanetArchitectTask(opts: {
     const id = randomUUID()
     await sql`
       INSERT INTO os_architect_tasks (id, task, source, status, notes, bug_id)
-      VALUES (${id}, ${opts.task.slice(0, 4000)}, 'janet', 'pending', ${opts.notes || 'Janet → Marcus: autonomous self-heal'}, ${opts.bugId || null})
+      VALUES (${id}, ${opts.task.slice(0, 4000)}, 'janet', 'queued', ${opts.notes || 'Janet → Marcus: autonomous self-heal'}, ${opts.bugId || null})
     `
 
     await sendTelegram(
