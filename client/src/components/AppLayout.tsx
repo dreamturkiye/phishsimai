@@ -13,12 +13,21 @@ import {
 import { cn } from "@/lib/utils";
 import MiaWidget from "@/components/MiaWidget";
 
-interface NavItem {
+interface NavLeaf {
   label: string;
   href: string;
   icon: React.ElementType;
+}
+
+interface NavItem extends NavLeaf {
   badge?: string;
-  children?: { label: string; href: string; icon: React.ElementType }[];
+  children?: NavLeaf[];
+}
+
+function NavIcon({ icon: Icon, className }: { icon?: React.ElementType; className?: string }) {
+  // ARCH-FIX: fallback when lucide icon import is missing — prevents ? placeholders
+  const Safe = Icon ?? Shield;
+  return <Safe className={className} aria-hidden />;
 }
 
 const navItems: NavItem[] = [
@@ -59,13 +68,13 @@ function NavLink({ item, depth = 0 }: { item: NavItem; depth?: number }) {
               : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
           )}
         >
-          <item.icon className="w-4 h-4 flex-shrink-0" />
+          <NavIcon icon={item.icon} className="w-4 h-4 flex-shrink-0" />
           <span className="flex-1 text-left">{item.label}</span>
           {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         </button>
         {open && (
           <div className="ml-4 mt-1 space-y-0.5 border-l border-border/50 pl-3">
-            {item.children.map(child => (
+            {(item.children ?? []).map(child => (
               <NavLink key={child.href} item={child} depth={1} />
             ))}
           </div>
@@ -84,7 +93,7 @@ function NavLink({ item, depth = 0 }: { item: NavItem; depth?: number }) {
           : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
       )}
     >
-      <item.icon className="w-4 h-4 flex-shrink-0" />
+      <NavIcon icon={item.icon} className="w-4 h-4 flex-shrink-0" />
       <span>{item.label}</span>
       {item.badge && (
         <Badge variant="secondary" className="ml-auto text-xs py-0 px-1.5 h-4">
@@ -110,7 +119,7 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
-  const orgs = orgsData ?? [];
+  const orgs = Array.isArray(orgsData) ? orgsData : [];
   const currentOrg = orgs[activeOrgIdx]?.org ?? orgs[0]?.org;
 
   // BUG-18 FIX: MSP impersonation mode via localStorage

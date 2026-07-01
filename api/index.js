@@ -38226,7 +38226,7 @@ async function seedPhishSimMemory() {
     { company_id: "phishsimai", type: "company", key: "persona", value: "Sarah Mitchell - Head of Compliance Partnerships. Professional, compliance-focused outreach.", confidence: 1, source: "founder" },
     { company_id: "phishsimai", type: "company", key: "mia_cs", value: "Mia \u2014 in-app customer success agent on PhishSim dashboard. Helps trial users activate (targets \u2192 campaign \u2192 launch), answers product questions, collects feedback to product_feedback + Telegram. Distinct from Janet (HQ CGO) and Sarah (outbound).", confidence: 1, source: "founder" },
     { company_id: "phishsimai", type: "company", key: "founder_workflow", value: "Kaan operates as Founder/GM/PM/Software Architect ONLY. NEVER writes application code in Cursor. Specs in docs/architect/SPEC-*.md. Implementation: local Ollama codegeex4:9b. Architect verifies build/test/probe then deploys. Saved 2026-06-30.", confidence: 1, source: "founder" },
-    { company_id: "phishsimai", type: "company", key: "os_version", value: "4.5.1-self-heal-spec", confidence: 1, source: "architect" },
+    { company_id: "phishsimai", type: "company", key: "os_version", value: "4.5.1", confidence: 1, source: "architect" },
     { company_id: "phishsimai", type: "operating", key: "self_heal_probe_20260630", value: "Probe SELF_HEAL_PROBE: Telegram 1+2 OK. Marcus diagnosis FAILED (confidence 0%, Diagnosis failed). Spec SPEC-self-heal-v4.5.1 written. Frontend telemetry + await Marcus + diagnosis fix required.", confidence: 1, source: "architect" },
     { company_id: "phishsimai", type: "company", key: "linkedin_sarah", value: "Sarah Mitchell | Head of Compliance Partnerships @ PhishSimAI | LinkedIn voice: professional, warm, compliance-first (not salesy). Posts about MSP compliance (HIPAA, SOC2, NY DFS, CMMC), breach stats (67% start with phishing, $4.45M avg cost), phishing simulation ROI, audit readiness. Connection request tone: peer MSP/compliance professional. DM opener: reference their sector + compliance gap. Sign-off: Sarah Mitchell, Head of Compliance Partnerships, PhishSimAI. Email: sarah@phishsimai.com. Never claim founder \u2014 she is Head of Compliance Partnerships. CTA: free phishing simulation or compliance audit.", confidence: 1, source: "founder" },
     { company_id: "phishsimai", type: "campaign", key: "touch1_best_subject", value: "Phishing simulation for {company} \u2014 free compliance audit", confidence: 0.7, source: "initial" },
@@ -38785,7 +38785,7 @@ async function queueJanetArchitectTask(opts) {
     const id = (0, import_crypto.randomUUID)();
     await sql2`
       INSERT INTO os_architect_tasks (id, task, source, status, notes, bug_id)
-      VALUES (${id}, ${opts.task.slice(0, 4e3)}, 'janet', 'pending', ${opts.notes || "Janet \u2192 Marcus: autonomous self-heal"}, ${opts.bugId || null})
+      VALUES (${id}, ${opts.task.slice(0, 4e3)}, 'janet', 'queued', ${opts.notes || "Janet \u2192 Marcus: autonomous self-heal"}, ${opts.bugId || null})
     `;
     await sendTelegram(
       `<b>JANET \u2192 MARCUS</b>
@@ -41437,22 +41437,23 @@ Task: ${architectTaskId}` : "")
   );
   return { diagnosed: true, diagnosis, architectTaskId };
 }
-async function runQASmoke(triggerRef = "manual") {
+async function runQASmoke(triggerRef = "manual", baseUrl) {
   const start = Date.now();
   await ensureTables();
   const sql2 = getSql();
+  const root = (baseUrl || "https://phishsimai.com").replace(/\/$/, "");
   const tests = [
     { name: "API health", test: async () => {
-      const r = await fetch("https://phishsimai.com/api/health");
+      const r = await fetch(`${root}/api/health`);
       if (!r.ok) throw new Error("Status " + r.status);
     } },
     { name: "HQ data responds", test: async () => {
-      const r = await fetch("https://phishsimai.com/api/os/hq?secret=ps-hq-2026");
+      const r = await fetch(`${root}/api/os/hq?secret=ps-hq-2026`);
       const d2 = await r.json();
       if (!d2.ok) throw new Error("HQ not ok: " + (d2.error || r.status));
     } },
     { name: "Agent watchdog status", test: async () => {
-      const r = await fetch("https://phishsimai.com/api/os/agent-watchdog?secret=ps-hq-2026&action=status");
+      const r = await fetch(`${root}/api/os/agent-watchdog?secret=ps-hq-2026&action=status`);
       const d2 = await r.json();
       if (!d2.total || d2.total < 9) throw new Error("Expected 9 agents, got " + d2.total);
     } }
@@ -41476,7 +41477,7 @@ async function runQASmoke(triggerRef = "manual") {
   if (failed > 0) await sendTelegram(`PHISHSIMAI QA: ${failed} tests failed
 ${results.filter((r) => r.status === "fail").map((r) => r.name + ": " + r.error).join("\n")}`);
   else await sendTelegram(`PHISHSIMAI QA: All ${passed} tests passed`);
-  return { passed, failed, results };
+  return { passed, failed, results, baseUrl: root };
 }
 var init_architectAgent = __esm({
   "server/os/architectAgent.ts"() {
@@ -41489,12 +41490,159 @@ var init_architectAgent = __esm({
   }
 });
 
+// server/os/architectTasks.ts
+function isValidArchitectTask(task) {
+  const t = task.trim();
+  if (t.length < MIN_TASK_LEN) return false;
+  if (/^\*+$/.test(t)) return false;
+  if (/^[\W_]+$/.test(t)) return false;
+  if (/^(n\/a|none|todo|tbd)$/i.test(t)) return false;
+  return true;
+}
+var MIN_TASK_LEN;
+var init_architectTasks = __esm({
+  "server/os/architectTasks.ts"() {
+    "use strict";
+    MIN_TASK_LEN = 12;
+  }
+});
+
+// server/os/architectPending.ts
+var architectPending_exports = {};
+__export(architectPending_exports, {
+  architectPending: () => architectPending
+});
+function okHQ(req) {
+  const secret = req.headers["x-os-secret"] || req.query.secret;
+  return secret === HQ2;
+}
+async function ensureTaskColumns() {
+  const sql2 = getSql();
+  await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS qwen_output TEXT`.catch(() => {
+  });
+  await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS files_changed TEXT[]`.catch(() => {
+  });
+  await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS bug_id UUID`.catch(() => {
+  });
+  await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS notes TEXT`.catch(() => {
+  });
+  await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`.catch(() => {
+  });
+}
+async function runQueueCleanup() {
+  const sql2 = getSql();
+  let dupCancelled = 0;
+  try {
+    const dup = await sql2`
+      UPDATE os_architect_tasks older
+      SET status='cancelled',
+          notes='Duplicate — superseded by earlier task for same bug',
+          updated_at=NOW()
+      WHERE older.status IN ('queued','pending','approved','running')
+        AND older.bug_id IS NOT NULL
+        AND older.id <> (
+          SELECT id FROM os_architect_tasks keeper
+          WHERE keeper.bug_id = older.bug_id
+            AND keeper.status IN ('queued','pending','approved','running','done')
+          ORDER BY
+            CASE keeper.status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 WHEN 'pending' THEN 2 WHEN 'done' THEN 3 ELSE 4 END,
+            keeper.created_at ASC
+          LIMIT 1
+        )
+      RETURNING older.id
+    `;
+    dupCancelled = dup.length;
+  } catch {
+  }
+  return { dupCancelled };
+}
+async function architectPending(req, res) {
+  if (!okHQ(req)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  try {
+    await ensureTaskColumns();
+    const sql2 = getSql();
+    const peek = req.query.peek === "1";
+    const cleanup = req.query.cleanup === "1";
+    if (peek) {
+      let cleanupResult;
+      if (cleanup) cleanupResult = await runQueueCleanup();
+      if (req.query.requeue_running === "1") {
+        await sql2`
+          UPDATE os_architect_tasks
+          SET status='queued', notes='Requeued after stuck run', updated_at=NOW()
+          WHERE status='running'
+        `.catch(() => {
+        });
+      }
+      const tasks2 = await sql2`
+        SELECT id, task, status, source, bug_id, created_at, left(notes, 80) as notes
+        FROM os_architect_tasks ORDER BY created_at DESC LIMIT 10
+      `.catch(() => []);
+      const queued = await sql2`
+        SELECT count(*)::int as n FROM os_architect_tasks
+        WHERE status IN ('queued','pending','approved')
+      `.catch(() => [{ n: 0 }]);
+      res.json({
+        peek: true,
+        queued_count: queued[0]?.n ?? 0,
+        tasks: tasks2,
+        cleanup: cleanupResult,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      return;
+    }
+    await runQueueCleanup();
+    await sql2`
+      UPDATE os_architect_tasks
+      SET status='cancelled', notes='Rejected — malformed task', updated_at=NOW()
+      WHERE status IN ('queued','pending','approved','running')
+        AND (length(trim(task)) < 12 OR trim(task) IN ('**','*','***'))
+    `.catch(() => {
+    });
+    const picked = await sql2`
+      UPDATE os_architect_tasks
+      SET status='running',
+          notes='Autonomous execution started — dev branch pipeline',
+          updated_at=NOW()
+      WHERE id IN (
+        SELECT id FROM os_architect_tasks
+        WHERE status IN ('queued','pending','approved')
+        ORDER BY created_at ASC
+        LIMIT 5
+      )
+      RETURNING id, task, status, source, created_at, bug_id
+    `.catch(() => []);
+    const tasks = picked.filter((t) => isValidArchitectTask(t.task));
+    res.json({
+      tasks,
+      count: tasks.length,
+      autonomy: "no_approval_required",
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: msg, tasks: [], count: 0 });
+  }
+}
+var HQ2;
+var init_architectPending = __esm({
+  "server/os/architectPending.ts"() {
+    "use strict";
+    init_conn();
+    init_architectTasks();
+    HQ2 = process.env.HQ_SECRET || "ps-hq-2026";
+  }
+});
+
 // server/os/routes.ts
 var routes_exports = {};
 __export(routes_exports, {
   architectCode: () => architectCode,
   architectComplete: () => architectComplete,
-  architectPending: () => architectPending,
+  architectPending: () => architectPending2,
   architectRun: () => architectRun,
   bugReport: () => bugReport,
   cronAgentWatchdog: () => cronAgentWatchdog,
@@ -41533,12 +41681,12 @@ __export(routes_exports, {
 });
 function checkHQ(req) {
   const s = req.query.secret || req.headers["x-hq-secret"];
-  return s === HQ2;
+  return s === HQ3;
 }
 function checkCron(req) {
   return req.headers.authorization === `Bearer ${CRON2}`;
 }
-function okHQ(req, res) {
+function okHQ2(req, res) {
   if (!checkHQ(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return false;
@@ -41639,7 +41787,7 @@ async function cronDiscover(req, res) {
   }
 }
 async function hqData(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     await ensureHqTables();
     const sql2 = getSql();
@@ -41700,7 +41848,7 @@ async function hqData(req, res) {
   }
 }
 async function hqChat(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const { message: message2, history = [], attachments = [] } = req.body;
     if (!message2?.trim() && !attachments?.length) {
@@ -41716,7 +41864,7 @@ ${formatAttachmentsForPrompt(attachments)}` : message2.trim();
   }
 }
 async function hqIngest(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const files = req.body?.files || [];
     if (!files.length) return res.status(400).json({ ok: false, error: "No files" });
@@ -41736,7 +41884,7 @@ async function hqIngest(req, res) {
   }
 }
 async function hqTTS(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   const { text: text2 } = req.body;
   if (!text2) {
     res.status(400).json({ error: "No text" });
@@ -41764,7 +41912,7 @@ async function hqTTS(req, res) {
   }
 }
 async function hqTask(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const { id, status, notes } = req.body;
     const sql2 = getSql();
@@ -41776,7 +41924,7 @@ async function hqTask(req, res) {
   }
 }
 async function hqMemoryGet(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     res.json({ ok: true, context: await recallContext(COMPANY2) });
   } catch (e) {
@@ -41784,7 +41932,7 @@ async function hqMemoryGet(req, res) {
   }
 }
 async function hqSeed(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const n = await seedPhishSimMemory();
     res.json({ ok: true, seeded: n });
@@ -41793,7 +41941,7 @@ async function hqSeed(req, res) {
   }
 }
 async function hqSTT(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const chunks = [];
     await new Promise((resolve, reject) => {
@@ -41873,17 +42021,19 @@ Error: ${String(error_message).slice(0, 200)}`
   }
 }
 async function qaSmokePS(req, res) {
-  if (!okHQ(req, res) && !okCron(req, res)) return;
+  if (!okHQ2(req, res) && !okCron(req, res)) return;
   try {
     const { runQASmoke: runQASmoke2 } = await Promise.resolve().then(() => (init_architectAgent(), architectAgent_exports));
-    res.json(await runQASmoke2("manual"));
+    const trigger = req.query.trigger || "manual";
+    const baseUrl = req.query.base_url || void 0;
+    res.json({ ok: true, ...await runQASmoke2(trigger, baseUrl) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 }
 function okV4(req, res) {
   const secret = req.headers["x-os-secret"] || req.query.secret;
-  if (secret !== HQ2 && !checkCron(req)) {
+  if (secret !== HQ3 && !checkCron(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return false;
   }
@@ -41980,7 +42130,7 @@ async function v4AgentTalk(req, res) {
   }
 }
 async function hqDirective(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const { message: message2 } = req.body;
     if (!message2) {
@@ -42013,7 +42163,7 @@ async function hqDirective(req, res) {
 }
 async function janetReport(req, res) {
   const secret = req.query.secret || req.headers["x-report-secret"];
-  if (secret !== HQ2 && secret !== (process.env.REPORT_SECRET || "ps-migrate-2026")) {
+  if (secret !== HQ3 && secret !== (process.env.REPORT_SECRET || "ps-migrate-2026")) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -42044,30 +42194,12 @@ async function webhookResend(req, res) {
     res.status(500).json({ error: e.message });
   }
 }
-async function architectPending(req, res) {
-  if (!okHQ(req, res)) return;
-  try {
-    const sql2 = getSql();
-    await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS qwen_output TEXT`.catch(() => {
-    });
-    await sql2`ALTER TABLE os_architect_tasks ADD COLUMN IF NOT EXISTS files_changed TEXT[]`.catch(() => {
-    });
-    await sql2`
-      UPDATE os_architect_tasks SET status='approved', notes='Auto-approved — autonomous execution', updated_at=NOW()
-      WHERE status='pending'
-    `.catch(() => {
-    });
-    const tasks = await sql2`
-      SELECT id, task, status, source, created_at FROM os_architect_tasks
-      WHERE status='approved' ORDER BY created_at ASC LIMIT 5
-    `.catch(() => []);
-    res.json({ tasks, count: tasks.length, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+async function architectPending2(req, res) {
+  const { architectPending: pick } = await Promise.resolve().then(() => (init_architectPending(), architectPending_exports));
+  return pick(req, res);
 }
 async function architectComplete(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   try {
     const { id, success, qwen_output, files_changed, commit_sha, error, prod_url, qa_prod } = req.body;
     const sql2 = getSql();
@@ -42100,7 +42232,7 @@ ${notes}`).catch(() => {
   }
 }
 async function architectRun(req, res) {
-  if (!okHQ(req, res) && !okCron(req, res)) return;
+  if (!okHQ2(req, res) && !okCron(req, res)) return;
   try {
     const bugId = req.query.bugId || req.body?.bugId;
     const mode = req.query.mode || req.body?.mode || "diagnose";
@@ -42119,7 +42251,7 @@ async function architectRun(req, res) {
   }
 }
 async function osUnified(req, res) {
-  if (!okHQ(req, res) && !checkCron(req)) {
+  if (!okHQ2(req, res) && !checkCron(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -42145,22 +42277,22 @@ async function telegramWebhook(req, res) {
   }
 }
 async function telegramTest(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   const result = await sendTelegramTest();
   res.json({ config: getTelegramConfig(), ...result });
 }
 async function telegramStatus(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   res.json({ ok: true, telegram: getTelegramConfig() });
 }
 async function telegramSetupWebhook(req, res) {
-  if (!okHQ(req, res)) return;
+  if (!okHQ2(req, res)) return;
   const base = req.body?.base_url || req.query.base_url || "https://phishsimai.com";
   const webhookUrl = `${String(base).replace(/\/$/, "")}/api/os/webhook/telegram`;
   const result = await registerTelegramWebhook(webhookUrl);
   res.json({ webhook: webhookUrl, ...result });
 }
-var HQ2, CRON2, COMPANY2;
+var HQ3, CRON2, COMPANY2;
 var init_routes2 = __esm({
   "server/os/routes.ts"() {
     "use strict";
@@ -42184,7 +42316,7 @@ var init_routes2 = __esm({
     init_janetReport();
     init_agentHealth_v2();
     init_architectCode();
-    HQ2 = process.env.HQ_SECRET || "ps-hq-2026";
+    HQ3 = process.env.HQ_SECRET || "ps-hq-2026";
     CRON2 = process.env.CRON_SECRET || "";
     COMPANY2 = "phishsimai";
   }
