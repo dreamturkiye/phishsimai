@@ -1,56 +1,107 @@
 import { sendTelegram } from './telegram'
 import { ensureHqTables, getSql } from './conn'
-import { buildMarcusTaskFromBug } from './marcus'
+import {
+  buildMarcusDiagnosisPrompt,
+  buildMarcusTaskFromBug,
+  getMarcusMemoryContext,
+  makeErrorSignature,
+  MARCUS_SYSTEM,
+} from './marcus'
 import { queueJanetArchitectTask } from './selfHeal'
+import { llmComplete } from './llmChat'
 
-const ARCHITECT_SYSTEM = `You are Marcus, a Principal Software Architect with 18 years of experience 
-building and scaling SaaS products from zero to IPO. You specialize in Node.js, Express, tRPC, 
-Vite, React, TypeScript, and Vercel deployments. You diagnose bugs from stack traces immediately and 
-write production-quality fixes on the first attempt. You never patch symptoms — only root causes.`
+export interface ArchitectDiagnosis {
+  root_cause: string
+  file_affected: string
+  function_affected: string
+  fix_description: string
+  fix_code_hint: string
+  confidence: number
+  is_known_pattern: boolean
+  qwen_task: string
+}
 
 async function ensureTables() {
   await ensureHqTables()
 }
 
-function makeSignature(errorMessage: string, componentName: string): string {
-  const cleaned = errorMessage.replace(/https?:\/\/[^\s]+/g,'URL').replace(/\d+/g,'N').slice(0,120)
-  return (componentName + '::' + cleaned).toLowerCase()
+function parseDiagnosisJson(text: string): Record<string, unknown> {
+  const cleaned = (text || '').replace(/```json|```/g, '').trim()
+  try {
+    return JSON.parse(cleaned)
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/)
+    if (match) return JSON.parse(match[0])
+    throw new Error('JSON parse failed')
+  }
 }
 
-async function diagnose(bug: any, knownFix: any) {
+async function callMarcusDiagnosis(prompt: string): Promise<Record<string, unknown>> {
+  const { text } = await llmComplete({
+    messages: [
+      { role: 'system', content: MARCUS_SYSTEM },
+      { role: 'user', content: prompt },
+    ],
+    max_tokens: 500,
+    temperature: 0.1,
+  })
+  return parseDiagnosisJson(text || '{}')
+}
+
+async function diagnose(bug: any, knownFix: any, memoryContext: string): Promise<ArchitectDiagnosis> {
   if (knownFix) {
-    return {
+    const parsed = {
       root_cause: knownFix.root_cause,
       file_affected: knownFix.file_affected,
+      function_affected: knownFix.function_affected,
       fix_description: knownFix.fix_description,
-      confidence: Math.min(parseFloat(knownFix.confidence||'0.9')+0.05, 1.0),
-      is_known_pattern: true
+      fix_code_hint: 'Apply known fix pattern: ' + knownFix.fix_description,
+      confidence: Math.min(parseFloat(String(knownFix.confidence || '0.9')) + 0.05, 1.0),
+    }
+    return {
+      ...parsed,
+      is_known_pattern: true,
+      qwen_task: buildMarcusTaskFromBug(bug, parsed),
     }
   }
+
+  const prompt = buildMarcusDiagnosisPrompt(bug, memoryContext)
+
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: `${ARCHITECT_SYSTEM}
-
-Bug in PhishSimAI (Vite+Express+tRPC, Neon Postgres, Vercel):
-ERROR: ${bug.error_message}
-COMPONENT: ${bug.component_name}
-PAGE: ${bug.url_path}
-STACK: ${(bug.stack_trace||'').slice(0,1000)}
-
-Respond ONLY in JSON:
-{"root_cause":"specific","file_affected":"exact path","function_affected":"name","fix_description":"what to do","confidence":0.8}` }],
-        max_tokens: 300, temperature: 0.1
-      })
-    })
-    const d = await res.json()
-    const text = d.choices?.[0]?.message?.content || '{}'
-    return { ...JSON.parse(text.replace(/```json|```/g,'').trim()), is_known_pattern: false }
-  } catch {
-    return { root_cause: 'Diagnosis failed', file_affected: 'unknown', fix_description: 'Manual review needed', confidence: 0, is_known_pattern: false }
+    let parsed: Record<string, unknown>
+    try {
+      parsed = await callMarcusDiagnosis(prompt)
+    } catch {
+      parsed = await callMarcusDiagnosis(prompt + '\n\nRespond with ONLY valid JSON, no markdown fences.')
+    }
+    const diagnosis = {
+      root_cause: String(parsed.root_cause || 'Unknown root cause'),
+      file_affected: String(parsed.file_affected || 'unknown'),
+      function_affected: String(parsed.function_affected || 'unknown'),
+      fix_description: String(parsed.fix_description || 'Investigate stack trace'),
+      fix_code_hint: String(parsed.fix_code_hint || parsed.fix_description || ''),
+      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : parseFloat(String(parsed.confidence || '0.5')),
+      is_known_pattern: false,
+    }
+    return {
+      ...diagnosis,
+      qwen_task: buildMarcusTaskFromBug(bug, diagnosis),
+    }
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e)
+    const fallback = {
+      root_cause: `LLM diagnosis unavailable (${err})`,
+      file_affected: bug.stack_trace?.match(/at .+\((.+:\d+:\d+)\)/)?.[1]?.split(':')[0] || 'unknown',
+      function_affected: 'unknown',
+      fix_description: 'Manual investigation required — use stack trace below',
+      fix_code_hint: (bug.stack_trace || '').split('\n').slice(0, 3).join('\n'),
+      confidence: 0.3,
+      is_known_pattern: false,
+    }
+    return {
+      ...fallback,
+      qwen_task: buildMarcusTaskFromBug(bug, fallback),
+    }
   }
 }
 
@@ -60,12 +111,25 @@ export async function runArchitectAgent(bugId: string) {
   const bugs = await sql`SELECT * FROM bug_reports WHERE id=${bugId} LIMIT 1`
   const bug = (bugs as any[])[0]
   if (!bug) return { diagnosed: false }
-  const signature = makeSignature(bug.error_message, bug.component_name||'Unknown')
+
+  const signature = makeErrorSignature(bug.error_message, bug.component_name || 'Unknown')
   const known = await sql`SELECT * FROM architect_memory WHERE error_signature=${signature} LIMIT 1`
   const knownFix = (known as any[])[0]
-  const diagnosis = await diagnose(bug, knownFix)
+  const memoryContext = await getMarcusMemoryContext()
+  const diagnosis = await diagnose(bug, knownFix, memoryContext)
+
   await sql`UPDATE bug_reports SET diagnosis=${JSON.stringify(diagnosis)}, status='diagnosed' WHERE id=${bugId}`
-  if ((diagnosis.confidence||0) > 0.5) {
+
+  let architectTaskId: string | null = null
+  if (diagnosis.qwen_task && (diagnosis.confidence || 0) > 0.2) {
+    architectTaskId = await queueJanetArchitectTask({
+      task: diagnosis.qwen_task,
+      bugId,
+      notes: `Marcus diagnosis conf=${Math.round((diagnosis.confidence || 0) * 100)}%`,
+    })
+  }
+
+  if ((diagnosis.confidence || 0) > 0.5) {
     await sql`INSERT INTO architect_memory (error_signature,root_cause,file_affected,function_affected,fix_description,confidence)
       VALUES (${signature}, ${diagnosis.root_cause}, ${diagnosis.file_affected||'unknown'},
               ${diagnosis.function_affected||'unknown'}, ${diagnosis.fix_description}, ${diagnosis.confidence||0.5})
@@ -73,19 +137,15 @@ export async function runArchitectAgent(bugId: string) {
         times_applied=architect_memory.times_applied+1, last_applied=NOW(),
         confidence=LEAST(architect_memory.confidence+0.02, 1.0)`
   }
-  const architectTaskId = await queueJanetArchitectTask({
-    task: buildMarcusTaskFromBug(bug, diagnosis),
-    bugId,
-    notes: `Marcus diagnosis conf=${Math.round((diagnosis.confidence || 0) * 100)}%`,
-  })
 
-  const urgency = bug.severity==='critical' ? 'CRITICAL' : bug.severity==='high' ? 'HIGH' : 'MEDIUM'
+  const urgency = bug.severity === 'critical' ? 'CRITICAL' : bug.severity === 'high' ? 'HIGH' : 'MEDIUM'
   await sendTelegram(
-    `${urgency} BUG — PhishSimAI\n${bug.component_name}: ${bug.error_message?.slice(0,100)}\n` +
+    `${urgency} BUG — PhishSimAI\n${bug.component_name}: ${bug.error_message?.slice(0, 100)}\n` +
     `Marcus: ${diagnosis.root_cause}\nFile: ${diagnosis.file_affected}\n` +
-    `Fix: ${diagnosis.fix_description}\nConfidence: ${Math.round((diagnosis.confidence||0)*100)}%` +
+    `Fix: ${diagnosis.fix_description}\nConfidence: ${Math.round((diagnosis.confidence || 0) * 100)}%` +
     (architectTaskId ? `\nTask: ${architectTaskId}` : '')
   )
+
   return { diagnosed: true, diagnosis, architectTaskId }
 }
 

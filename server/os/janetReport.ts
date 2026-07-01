@@ -1,5 +1,6 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome } from './memory'
 import { runSalesAgent } from './agents/sales'
 import { runResearchAgent } from './agents/research'
@@ -46,13 +47,11 @@ If architect task needed: ARCHITECT_TASK: [what to build and why]`
   const architectTasksQueued: string[] = []
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 600 }),
+    const report = await llmComplete({
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 600,
     })
-    const d = await res.json()
-    executiveSummary = d.choices?.[0]?.message?.content || ''
+    executiveSummary = report.text
     for (const match of executiveSummary.matchAll(/ARCHITECT_TASK:\s*(.+)/gi)) {
       const task = match[1].trim()
       architectTasksQueued.push(task)

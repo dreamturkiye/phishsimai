@@ -53,6 +53,38 @@ export async function recordMarcusDeployOutcome(opts: {
   `.catch(() => {})
 }
 
+export function buildMarcusDiagnosisPrompt(bug: {
+  error_message: string
+  component_name: string
+  user_action: string
+  url_path: string
+  stack_trace?: string
+}, memoryContext: string): string {
+  return `${MARCUS_SYSTEM}
+
+${memoryContext}
+
+You are diagnosing a bug report from PhishSimAI (Vite React + Express + tRPC, Neon PostgreSQL, Vercel):
+
+ERROR MESSAGE: ${bug.error_message}
+COMPONENT: ${bug.component_name}
+USER WAS DOING: ${bug.user_action}
+PAGE: ${bug.url_path}
+STACK TRACE:
+${(bug.stack_trace || '').slice(0, 1500)}
+${PHISHSIM_CODEBASE_CONTEXT}
+
+Think step by step. Recall memory patterns if relevant. Then respond ONLY in valid JSON, no markdown:
+{
+  "root_cause": "specific root cause in one sentence",
+  "file_affected": "exact file path relative to repo root",
+  "function_affected": "function or component name",
+  "fix_description": "what the fix must do — actionable, specific",
+  "fix_code_hint": "key implementation detail or code direction",
+  "confidence": 0.0
+}`
+}
+
 export function buildMarcusCodePrompt(opts: {
   task: string
   repoTree: string
@@ -65,6 +97,38 @@ export function buildMarcusCodePrompt(opts: {
     `TASK:\n${opts.task}\n\nRespond FILE: path\n---\ncontent\n---END---`
 }
 
-export function buildMarcusTaskFromBug(bug: any, diagnosis: any): string {
-  return `# MARCUS BUG FIX — PhishSimAI\nError: ${bug.error_message}\nRoot cause: ${diagnosis.root_cause}\nFile: ${diagnosis.file_affected}\nFix: ${diagnosis.fix_description}`
+export function buildMarcusTaskFromBug(
+  bug: { error_message: string; component_name: string; user_action?: string; url_path: string; severity?: string; stack_trace?: string },
+  diagnosis: { root_cause?: string; file_affected?: string; function_affected?: string; fix_description?: string; fix_code_hint?: string }
+): string {
+  return `# MARCUS BUG FIX — PhishSimAI Production
+
+## Bug Report
+- **Error**: ${bug.error_message}
+- **Component**: ${bug.component_name}
+- **User was doing**: ${bug.user_action || 'unknown'}
+- **Page**: ${bug.url_path}
+- **Severity**: ${bug.severity || 'medium'}
+
+## Marcus Diagnosis (you — follow your own analysis)
+- **Root cause**: ${diagnosis.root_cause}
+- **File to fix**: ${diagnosis.file_affected}
+- **Function/Component**: ${diagnosis.function_affected}
+- **What the fix must do**: ${diagnosis.fix_description}
+- **Implementation direction**: ${diagnosis.fix_code_hint || diagnosis.fix_description}
+
+## Stack Trace
+${(bug.stack_trace || '').slice(0, 800)}
+
+## Requirements
+1. Fix ONLY the root cause — no patches, no workarounds
+2. Production-quality TypeScript code
+3. Do not break any existing functionality
+4. Add a comment: // ARCH-FIX: [brief description] to mark the change
+5. Output the complete fixed file (or the specific function if file is large)
+
+## Pipeline (autonomous — Janet queued you)
+1. Apply fix on \`dev\` branch only
+2. Watcher runs preview QA → merges to master → prod QA
+3. Do NOT deploy directly to production`
 }

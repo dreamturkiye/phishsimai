@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { janetChat } from './janet'
+import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
 import { getAgentHealth } from './agentHealth'
 import { runSequence, runFullSequence } from './sequences'
@@ -139,12 +140,12 @@ export async function hqData(req: Request, res: Response) {
       WHERE status IN ('pending','approved','queued','running')
         AND (trim(task) IN ('**','*','***') OR length(trim(regexp_replace(task, '^[*\\s]+', ''))) < 8)`.catch(() => {})
 
-    const archTasks = await sql`SELECT id, task, status, source, created_at, notes
+    const archTasks = await sql`SELECT id, task, status, source, created_at, notes, bug_id
       FROM os_architect_tasks ORDER BY created_at DESC LIMIT 10`.catch(() => [] as any[])
 
     const memory = await recallMemory(COMPANY, undefined, 40)
-    const bugReports = await sql`SELECT id, error_message, component_name, severity, occurrence_count, last_seen, url_path, diagnosis
-      FROM bug_reports WHERE status IN ('open','diagnosed') ORDER BY last_seen DESC LIMIT 20`.catch(() => [] as any[])
+    const bugReports = await sql`SELECT id, error_message, component_name, severity, status, occurrence_count, last_seen, url_path, diagnosis
+      FROM bug_reports WHERE status IN ('open','diagnosed') OR status IS NULL ORDER BY last_seen DESC LIMIT 20`.catch(() => [] as any[])
     const architectMemory = await sql`SELECT error_signature, root_cause, file_affected, times_applied, confidence
       FROM architect_memory ORDER BY times_applied DESC LIMIT 20`.catch(() => [] as any[])
     const qaRuns = await sql`SELECT trigger_type, tests_passed, tests_failed, status, created_at
@@ -330,20 +331,21 @@ export async function bugReport(req: Request, res: Response) {
     const dup = await sql`SELECT id FROM bug_reports WHERE error_message=${error_message} AND component_name=${component_name||'Unknown'} AND last_seen > NOW() - interval '1 hour' LIMIT 1`
     if ((dup as any[]).length > 0) {
       await sql`UPDATE bug_reports SET occurrence_count=occurrence_count+1, last_seen=NOW() WHERE id=${(dup as any[])[0].id}`
-      res.json({ ok: true, duplicate: true }); return
+      res.json({ ok: true, duplicate: true, bug_id: (dup as any[])[0].id }); return
     }
-    const bugs = await sql`INSERT INTO bug_reports (error_message,stack_trace,component_name,user_action,url_path,user_email,browser,severity)
-      VALUES (${error_message}, ${stack_trace||null}, ${component_name||'Unknown'}, ${user_action||'unknown'}, ${url_path||'unknown'}, ${user_email||null}, ${browser||null}, ${severity||'medium'})
+    const scoredSeverity = severity || 'medium'
+    const bugs = await sql`INSERT INTO bug_reports (error_message,stack_trace,component_name,user_action,url_path,user_email,browser,severity,status)
+      VALUES (${error_message}, ${stack_trace||null}, ${component_name||'Unknown'}, ${user_action||'unknown'}, ${url_path||'unknown'}, ${user_email||null}, ${browser||null}, ${scoredSeverity}, 'open')
       RETURNING id`
-    if (severity === 'critical' || severity === 'high' || severity === 'medium') {
-      import('./architectAgent').then(({ runArchitectAgent }) => {
-        runArchitectAgent((bugs as any[])[0]?.id?.toString() || '').catch(console.error)
-      })
-    }
+    const bugId = (bugs as any[])[0]?.id?.toString() || ''
+
     await sendTelegram(
       `🚨 <b>JANET — BUG DETECTED</b>\nPage: ${url_path || 'unknown'}\nError: ${String(error_message).slice(0, 200)}`
     ).catch(() => {})
-    res.json({ ok: true, bug_id: (bugs as any[])[0]?.id })
+
+    const { runArchitectAgent } = await import('./architectAgent')
+    const diagnosis = await runArchitectAgent(bugId).catch(e => ({ diagnosed: false, error: e.message }))
+    res.json({ ok: true, bug_id: bugId, severity: scoredSeverity, diagnosis })
   } catch(e: any) { res.status(500).json({ error: e.message }) }
 }
 
@@ -460,17 +462,11 @@ export async function hqDirective(req: Request, res: Response) {
     })
     let janetResponse = ''
     try {
-      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: `You are Janet, CGO of PhishSimAI. Founder Kaan gave this directive: "${message}". Acknowledge it, state what action you will take, honest assessment in 2-3 sentences. Direct and specific.` }],
-          max_tokens: 200,
-        }),
+      const reply = await llmComplete({
+        messages: [{ role: 'user', content: `You are Janet, CGO of PhishSimAI. Founder Kaan gave this directive: "${message}". Acknowledge it, state what action you will take, honest assessment in 2-3 sentences. Direct and specific.` }],
+        max_tokens: 200,
       })
-      const d = await groqRes.json()
-      janetResponse = d.choices?.[0]?.message?.content || 'Directive received and logged.'
+      janetResponse = reply.text || 'Directive received and logged.'
     } catch {
       janetResponse = 'Directive received and stored in memory. Will act on it in the next cycle.'
     }

@@ -19,6 +19,8 @@ import {
   webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk
 } from '../os/routes';
+import { miaSpeak, miaFeedbackDigest } from '../mia/routes';
+import { mountMiaApi } from '../mia/vercelMount';
 import { outreachDiscoverHandler, outreachSequenceHandler, outreachLinkedInHandler } from "../outreach/outreachCrons";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -164,6 +166,7 @@ async function startServer() {
   app.get("/api/os/v4/full", v4Full);
   app.get("/api/os/v4/agent/:name", v4AgentTalk);
   app.post("/api/os/v4/agent/:name", v4AgentTalk);
+  mountMiaApi(app);
   // ────────────────────────────────────────────────────────────────────────
 
 

@@ -22,6 +22,35 @@ export async function isAlertOpen(key: string, companyId = COMPANY_ID): Promise<
   return (rows as any[]).length > 0
 }
 
+export async function openSystemAlert(key: string, detail: string, companyId = COMPANY_ID) {
+  await ensureMemoryTable()
+  const wasOpen = await isAlertOpen(key, companyId)
+  const sql = getSql()
+  await sql`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${companyId}, 'operating', ${'system_alert:' + key}, ${detail}, 1, 'janet')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value=${detail}, updated_at=NOW()
+  `.catch(() => {})
+  if (!wasOpen) {
+    await sendTelegram(
+      `🚨 <b>JANET — SYSTEM ISSUE</b>\n` +
+      `${key}: ${detail}\n` +
+      `Marcus dispatched autonomously if code fix is needed.`
+    )
+  }
+}
+
+export async function resolveSystemAlert(key: string, detail: string, companyId = COMPANY_ID) {
+  const wasOpen = await isAlertOpen(key, companyId)
+  if (!wasOpen) return
+  const sql = getSql()
+  await sql`
+    DELETE FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key=${'system_alert:' + key}
+  `.catch(() => {})
+  await sendTelegram(`✅ <b>JANET — RESOLVED</b>\n${key}: ${detail}`)
+}
+
 export async function queueJanetArchitectTask(opts: {
   task: string
   bugId?: string

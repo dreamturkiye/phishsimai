@@ -1,6 +1,7 @@
 import { getSql } from '../conn'
 import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
+import { llmComplete } from '../llmChat'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees  (PhishSimAi / TiDB build)
@@ -169,21 +170,15 @@ async function ensureOSTables() {
   )`.catch(() => {})
 }
 
-// ── LLM call (raw fetch, no SDK dependency) ────────────────────────────────────
+// ── LLM call — Gemini → Groq → Ollama chain (shared with Janet) ─────────────
 async function llm(system: string, user: string, maxTokens = 1000): Promise<string> {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      max_tokens: maxTokens,
-      temperature: 0.7,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
-    })
+  const { text } = await llmComplete({
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    max_tokens: maxTokens,
+    temperature: 0.7,
   })
-  if (!res.ok) return ''
-  const d = await res.json()
-  return d.choices?.[0]?.message?.content || ''
+  if (!text?.trim()) throw new Error('LLM returned empty response')
+  return text
 }
 
 // ── Agent memory ──────────────────────────────────────────────────────────────

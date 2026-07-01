@@ -2,6 +2,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { generateMagicCheckoutLink, buildCheckoutEmail } from './magicLink'
 import { recordConversion } from './abTest'
+import { llmComplete } from './llmChat'
 
 export type ReplyIntent =
   | 'interested' | 'not_now' | 'not_interested' | 'question'
@@ -19,17 +20,12 @@ async function sendEmail(to: string, subject: string, html: string) {
 
 async function classifyIntent(body: string) {
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: 'Classify this email reply from an IT professional or MSP. JSON only, no markdown.\nEmail: """' + body.slice(0, 800) + '"""\nReturn: {"intent":"interested|not_now|not_interested|question|unsubscribe|out_of_office|spam_complaint|unknown","confidence":0.0-1.0,"summary":"one sentence"}' }],
-        max_tokens: 100,
-      }),
+    const { text } = await llmComplete({
+      messages: [{ role: 'user', content: 'Classify this email reply from an IT professional or MSP. JSON only, no markdown.\nEmail: """' + body.slice(0, 800) + '"""\nReturn: {"intent":"interested|not_now|not_interested|question|unsubscribe|out_of_office|spam_complaint|unknown","confidence":0.0-1.0,"summary":"one sentence"}' }],
+      max_tokens: 100,
+      temperature: 0.2,
     })
-    const d = await res.json()
-    return JSON.parse(d.choices?.[0]?.message?.content || '{}')
+    return JSON.parse(text || '{}')
   } catch {
     return { intent: 'unknown' as ReplyIntent, confidence: 0, summary: 'Parse failed' }
   }
@@ -43,13 +39,11 @@ async function buildAutoResponse(lead: any, intent: ReplyIntent, replyBody: stri
   const prompt = prompts[intent] || ''
   if (!prompt) return ''
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], max_tokens: 200 }),
+    const { text } = await llmComplete({
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 200,
     })
-    const d = await res.json()
-    return d.choices?.[0]?.message?.content || ''
+    return text || ''
   } catch { return '' }
 }
 

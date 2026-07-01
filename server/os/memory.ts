@@ -43,8 +43,8 @@ export async function recallMemory(companyId: string, type?: MemoryType, limit =
   return await sql`SELECT * FROM janet_memory WHERE company_id=${companyId} ORDER BY updated_at DESC LIMIT ${limit}` as any
 }
 
-export async function recallContext(companyId: string): Promise<string> {
-  const mems = await recallMemory(companyId, undefined, 40)
+export async function recallContext(companyId: string, limit = 40): Promise<string> {
+  const mems = await recallMemory(companyId, undefined, limit)
   if (!mems.length) return 'No memory yet.'
   const grouped: Record<string, string[]> = {}
   for (const m of mems) {
@@ -67,6 +67,10 @@ export async function seedPhishSimMemory() {
     { company_id:'phishsimai', type:'company', key:'differentiator', value:'AI-generated phishing templates that evolve weekly. 10-minute setup. White-label for MSPs. Automated training post-click.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'company', key:'domain', value:'phishsimai.com — Resend verified, sarah@phishsimai.com outbound sender', confidence:1, source:'system' },
     { company_id:'phishsimai', type:'company', key:'persona', value:'Sarah Mitchell - Head of Compliance Partnerships. Professional, compliance-focused outreach.', confidence:1, source:'founder' },
+    { company_id:'phishsimai', type:'company', key:'mia_cs', value:'Mia — in-app customer success agent on PhishSim dashboard. Helps trial users activate (targets → campaign → launch), answers product questions, collects feedback to product_feedback + Telegram. Distinct from Janet (HQ CGO) and Sarah (outbound).', confidence:1, source:'founder' },
+    { company_id:'phishsimai', type:'company', key:'founder_workflow', value:'Kaan operates as Founder/GM/PM/Software Architect ONLY. NEVER writes application code in Cursor. Specs in docs/architect/SPEC-*.md. Implementation: local Ollama codegeex4:9b. Architect verifies build/test/probe then deploys. Saved 2026-06-30.', confidence:1, source:'founder' },
+    { company_id:'phishsimai', type:'company', key:'os_version', value:'4.5.1', confidence:1, source:'architect' },
+    { company_id:'phishsimai', type:'operating', key:'self_heal_probe_20260630', value:'Probe SELF_HEAL_PROBE: Telegram 1+2 OK. Marcus diagnosis FAILED (confidence 0%, Diagnosis failed). Spec SPEC-self-heal-v4.5.1 written. Frontend telemetry + await Marcus + diagnosis fix required.', confidence:1, source:'architect' },
     { company_id:'phishsimai', type:'company', key:'linkedin_sarah', value:'Sarah Mitchell | Head of Compliance Partnerships @ PhishSimAI | LinkedIn voice: professional, warm, compliance-first (not salesy). Posts about MSP compliance (HIPAA, SOC2, NY DFS, CMMC), breach stats (67% start with phishing, $4.45M avg cost), phishing simulation ROI, audit readiness. Connection request tone: peer MSP/compliance professional. DM opener: reference their sector + compliance gap. Sign-off: Sarah Mitchell, Head of Compliance Partnerships, PhishSimAI. Email: sarah@phishsimai.com. Never claim founder — she is Head of Compliance Partnerships. CTA: free phishing simulation or compliance audit.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'campaign', key:'touch1_best_subject', value:'Phishing simulation for {company} — free compliance audit', confidence:0.7, source:'initial' },
     { company_id:'phishsimai', type:'campaign', key:'current_sequence', value:'5-touch email: T1(d0), T2(d3), T3(d7), T4(d12), T5(d19). Daily cap 20. Pause >8% bounce.', confidence:1, source:'system' },

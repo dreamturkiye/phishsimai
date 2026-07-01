@@ -11,6 +11,7 @@ import {
   Menu, Building2, ShieldCheck, Network, ArrowLeftRight, ExternalLink
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import MiaWidget from "@/components/MiaWidget";
 
 interface NavItem {
   label: string;
@@ -276,6 +277,9 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
         <div className="flex-1 p-4 lg:p-6">
           {children}
         </div>
+        {currentOrg && (
+          <MiaWidget orgId={currentOrg.id} orgName={currentOrg.name} />
+        )}
       </main>
       </div>
     </div>

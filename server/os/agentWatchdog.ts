@@ -3,6 +3,7 @@ import { getAllAgentHealth, reportAgentHealth, ensureAgentHealthTable, markHeali
 import { talkToAgent, AGENTS, AgentId } from './agents/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { getSql } from './conn'
+import { queueJanetArchitectTask } from './selfHeal'
 
 const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
 const CRON = process.env.CRON_SECRET || ''
@@ -131,6 +132,10 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
     await sendTelegram(`✅ ${agent.name} — HEALED\n${agent.title}\nResponse: ${healResult.ms}ms\n${healResult.preview}`).catch(() => {})
   } else {
     await sendTelegram(`🚨 ${agent.name} — HEAL FAILED\n${agent.title}\nError: ${healResult.error}`).catch(() => {})
+    await queueJanetArchitectTask({
+      task: `Agent ${agent.name} heal failed: ${healResult.error}. Investigate LLM chain and agent health.`,
+      notes: `agent_id=${targetId}`,
+    }).catch(() => {})
   }
 
   const finalAgents = await getAllAgentHealth(companyId)

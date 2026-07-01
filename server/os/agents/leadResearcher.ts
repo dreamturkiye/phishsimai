@@ -1,6 +1,7 @@
 import { getSql } from '../conn'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
+import { llmComplete } from '../llmChat'
 
 const COMPANY_ID = 'phishsimai'
 const MSP_TITLES = ['Owner', 'CEO', 'Founder', 'President', 'Managing Director', 'IT Director', 'CISO', 'Head of Security', 'CTO']
@@ -25,23 +26,17 @@ async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
 
 async function discoverMSPsViaGroq(existingDomains: Set<string>, batchSize: number) {
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: `You are a B2B lead researcher for the MSP/MSSP market.
+    const { text } = await llmComplete({
+      messages: [{ role: 'user', content: `You are a B2B lead researcher for the MSP/MSSP market.
 Generate ${batchSize} real MSP or MSSP company domains for cold outreach (phishing simulation and security awareness training).
 Target: US, Canada, UK, or Australia-based MSPs with 5-200 employees, serving SMBs with compliance pressure (SOC2, HIPAA, PCI, ISO27001).
 Return ONLY valid JSON array with no markdown: [{"domain":"example.com","company_name":"Example MSP","source":"ai_discovery"}]
 Real companies only. Avoid Accenture, IBM, Deloitte, or companies with >500 employees.
 Already found: ${[...existingDomains].slice(0, 20).join(', ')}` }],
-        max_tokens: 600, temperature: 0.7,
-      }),
+      max_tokens: 600,
+      temperature: 0.7,
     })
-    const d = await res.json()
-    const text = d.choices?.[0]?.message?.content || '[]'
-    const match = text.match(/\[[\s\S]*?\]/)
+    const match = (text || '[]').match(/\[[\s\S]*?\]/)
     if (!match) return []
     const candidates = JSON.parse(match[0])
     return candidates.filter((c: any) => c.domain && !existingDomains.has(c.domain))

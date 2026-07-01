@@ -1,6 +1,8 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
+import { openSystemAlert } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
 import { runMarketingAgent } from './agents/marketing'
 import { runProductAgent } from './agents/product'
@@ -65,17 +67,11 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
   const conn = getSql()
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 400
-      })
+    const brief = await llmComplete({
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 400,
     })
-    const d = await res.json()
-    summary = d.choices?.[0]?.message?.content || ''
+    summary = brief.text
     const matches = [...summary.matchAll(/ARCHITECT_TASK:\s*(.+)/gi)]
     for (const m of matches) {
       archTasks.push(m[1].trim())
@@ -103,7 +99,7 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {
-  const memCtx = await recallContext(companyId)
+  const memCtx = await recallContext(companyId, 25)
   const messages = [
     ...history.slice(-6).map(m => ({
       role: m.role === 'janet' ? 'assistant' : 'user',
@@ -111,17 +107,20 @@ export async function janetChat(message: string, history: {role:string,text:stri
     })),
     { role: 'user', content: message }
   ]
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
+  let response: string
+  try {
+    const chat = await llmComplete({
       messages: [{ role: 'system', content: JANET_SYSTEM + '\n\nMEMORY:\n' + memCtx }, ...messages],
-      max_tokens: 300, temperature: 0.7
+      max_tokens: 400,
+      temperature: 0.7,
     })
-  })
-  const d = await res.json()
-  const response = d.choices?.[0]?.message?.content?.trim() || 'No response'
+    response = chat.text
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e)
+    await openSystemAlert('janet_hq_chat', err).catch(() => {})
+    await sendTelegram(`🚨 <b>JANET HQ CHAT DOWN</b>\n${err}`).catch(() => {})
+    return `Janet is temporarily unavailable (${err}). Try again shortly — Gemini/Ollama/Groq may be rate-limited.`
+  }
   await rememberFact({ company_id:companyId, type:'operating', key:`directive_${Date.now()}`,
     value:`${message} -> ${response.slice(0,150)}`, confidence:0.8, source:'founder_hq' })
   if (/focus|priorit|change|stop|start|add|approve|target|try|test|pivot/i.test(message)) {
