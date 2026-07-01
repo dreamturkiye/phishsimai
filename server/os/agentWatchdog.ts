@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getAllAgentHealth, reportAgentHealth, ensureAgentHealthTable, markHealing, recordHeal } from './agentHealth_v2'
 import { reportAgentRun } from './agentHealth'
+import { runOpsRecoveryTick } from './opsRecovery'
 import { talkToAgent, AGENTS, AgentId } from './agents/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { getSql } from './conn'
@@ -71,6 +72,8 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
   const companyId = (req.query.company_id as string) || COMPANY
   await ensureAgentHealthTable(getSql())
 
+  const opsRecovery = action === 'check' ? await runOpsRecoveryTick(companyId).catch(() => ({ checked: 0, restarts: [] })) : null
+
   if (action === 'status') {
     const agents = await getAllAgentHealth(companyId)
     const healthy = agents.filter((a) => a.status === 'healthy').length
@@ -120,6 +123,7 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
       ok: true,
       overall: 'healthy',
       summary: `${agents.length}/${agents.length} agents healthy, spot checked ${AGENTS[randomId].name}`,
+      ops_recovery: opsRecovery,
       spot_check: { agent: AGENTS[randomId].name, status: spot.ok ? 'ok' : 'fail', ms: spot.ms, preview: spot.preview },
       timestamp: new Date().toISOString(),
     })
@@ -154,6 +158,7 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
     ok: true,
     overall,
     summary: `${healthyCount}/${finalAgents.length} agents healthy`,
+    ops_recovery: opsRecovery,
     this_run: {
       agent_healed: targetId,
       agent_name: agent.name,

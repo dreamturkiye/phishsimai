@@ -2,7 +2,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { checkAgentStaleness, reportAgentRun } from './agentHealth'
 import { checkEmployeeStaleness } from './agentHealth_v2'
-import { healOpsAgent } from './opsAgents'
+import { runOpsRecoveryTick } from './opsRecovery'
 import { runLeadResearcher } from './agents/leadResearcher'
 
 const RESEARCHER_PROACTIVE_MS = 55 * 60 * 1000
@@ -74,23 +74,21 @@ export async function runWatchdog() {
   }
 
   try {
+    const recovery = await runOpsRecoveryTick('phishsimai')
+    if (recovery.restarts.length > 0) {
+      result.issues_found += recovery.restarts.filter((r) => !r.ok).length
+      result.actions_taken.push(
+        'Janet ops recovery: ' + recovery.restarts.map((r) => `${r.agent}(${r.reason})=${r.ok ? 'ok' : 'fail'}`).join(', ')
+      )
+    }
+
     const staleAgents = await checkAgentStaleness('phishsimai')
     const staleEmployees = await checkEmployeeStaleness('phishsimai')
     const allStale = [...staleAgents, ...staleEmployees]
     if (allStale.length > 0) {
       result.issues_found += allStale.length
-      result.actions_taken.push('Stale agents: ' + allStale.join(', '))
-      for (const stale of staleAgents) {
-        const agentName = stale.split(':')[0]
-        if (!['researcher', 'discover', 'aria', 'janet'].includes(agentName)) continue
-        try {
-          const healMsg = await healOpsAgent(agentName, 'phishsimai')
-          result.actions_taken.push(`${agentName} self-heal: ${healMsg}`)
-        } catch (e: any) {
-          result.actions_taken.push(`${agentName} self-heal failed: ${e.message?.slice(0, 120)}`)
-        }
-      }
-    } else {
+      result.actions_taken.push('Still flagged: ' + allStale.join(', '))
+    } else if (recovery.restarts.length === 0) {
       result.actions_taken.push('All ops + employee agents healthy')
     }
     await ensureResearcherRunning('phishsimai', result.actions_taken)

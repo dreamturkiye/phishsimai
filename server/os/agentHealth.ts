@@ -1,6 +1,7 @@
 import { getSql } from './conn'
 import { openSystemAlert, resolveSystemAlert } from './selfHeal'
-import { getExpectedOpsAgents } from './opsAgents'
+import { getExpectedOpsAgents, HEALABLE_OPS_AGENTS } from './opsAgents'
+import { dispatchOpsRestart } from './opsRecovery'
 
 export type AgentStatus = 'healthy' | 'warning' | 'critical' | 'unknown'
 
@@ -70,6 +71,9 @@ export async function reportAgentRun(
         consecutive_failures = agent_health.consecutive_failures + 1,
         last_error = ${error ?? null}, metrics = ${metricsJson}::jsonb, updated_at = NOW()
     `
+    if (HEALABLE_OPS_AGENTS.includes(agentName as any)) {
+      await dispatchOpsRestart(agentName, 'error', companyId, error?.slice(0, 120)).catch(() => {})
+    }
   }
 }
 
@@ -104,6 +108,9 @@ export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<str
         VALUES (${companyId}, ${agentName}, 'critical', NOW())
         ON CONFLICT (company_id, agent_name) DO UPDATE SET
           status='critical', updated_at=NOW()`
+      if (HEALABLE_OPS_AGENTS.includes(agentName as any)) {
+        await dispatchOpsRestart(agentName, 'stale', companyId, `${h}h`).catch(() => {})
+      }
     } else {
       await resolveSystemAlert('agent_stale:' + agentName, 'running within threshold')
     }
