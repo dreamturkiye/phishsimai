@@ -2,6 +2,7 @@ import { getSql } from '../conn'
 import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
+import { reportAgentRun } from '../agentHealth'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees  (PhishSimAi / TiDB build)
@@ -682,6 +683,8 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
     `Prepare Kaan's morning brief. Standup summary: ${standup.janet_summary.slice(0, 500)}\nTasks executed: ${executed}\n\nBrief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
 
   await sendTelegram(`☀️ *KAAN'S MORNING BRIEF — PhishSim AI*\n\n${kaanBrief}\n\n_Janet OS v4 | ${new Date().toLocaleTimeString()}_`).catch(() => {})
+
+  await reportAgentRun('janet', true, { tasks_executed: executed, standup_agents: standup.reports?.length ?? 0 }, undefined, companyId).catch(() => {})
 
   return { janet_brief: kaanBrief, standup, pending_tasks_executed: executed, timestamp: new Date().toISOString() }
 }

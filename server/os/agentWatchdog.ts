@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { getAllAgentHealth, reportAgentHealth, ensureAgentHealthTable, markHealing, recordHeal } from './agentHealth_v2'
+import { reportAgentRun } from './agentHealth'
 import { talkToAgent, AGENTS, AgentId } from './agents/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { getSql } from './conn'
@@ -114,6 +115,7 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
   if (!targetId) {
     const randomId = allIds[Math.floor(Math.random() * allIds.length)]
     const spot = await pingAgent(randomId, companyId)
+    await reportAgentRun('agent_watchdog', spot.ok, { overall: 'healthy', spot_check: randomId }).catch(() => {})
     res.json({
       ok: true,
       overall: 'healthy',
@@ -143,6 +145,10 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
   const stillUnhealthy = finalAgents.filter((a) => priorityOf(a.status) < 99).length
   const overall = healthyCount === finalAgents.length ? 'healthy'
     : healthyCount > finalAgents.length * 0.7 ? 'degraded' : 'critical'
+
+  await reportAgentRun('agent_watchdog', overall !== 'critical', {
+    overall, healthy: healthyCount, total: finalAgents.length, remaining_unhealthy: stillUnhealthy,
+  }).catch(() => {})
 
   res.json({
     ok: true,

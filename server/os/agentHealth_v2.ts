@@ -1,6 +1,7 @@
 import { neon } from '@neondatabase/serverless'
 import { AGENTS, AgentId } from './agents/kaan_os_v4'
 import { getSql } from './conn'
+import { openSystemAlert, resolveSystemAlert } from './selfHeal'
 
 export type HealthStatus = 'healthy' | 'warning' | 'critical' | 'unknown' | 'healing'
 
@@ -139,4 +140,40 @@ export async function recordHeal(agentId: AgentId, companyId = 'phishsimai') {
     SET self_heal_count = self_heal_count + 1, last_heal_at = NOW(), updated_at = NOW()
     WHERE company_id = ${companyId} AND agent_id = ${agentId}
   `.catch(() => {})
+}
+
+const EMPLOYEE_PING_THRESHOLDS: Partial<Record<AgentId, number>> = {
+  janet: 26 * 60 * 60 * 1000,
+}
+const DEFAULT_EMPLOYEE_PING_MS = 6 * 60 * 60 * 1000
+
+export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<string[]> {
+  const sql = getSql()
+  await ensureAgentHealthTable(sql)
+  const rows = await sql`
+    SELECT agent_id, last_success_at, status, consecutive_failures
+    FROM agent_health_v2 WHERE company_id = ${companyId}
+  `.catch(() => [] as any[])
+
+  const alerts: string[] = []
+  const now = Date.now()
+  const expectedIds = Object.keys(AGENTS) as AgentId[]
+
+  for (const agentId of expectedIds) {
+    const row = (rows as any[]).find((r) => r.agent_id === agentId)
+    const threshold = EMPLOYEE_PING_THRESHOLDS[agentId] ?? DEFAULT_EMPLOYEE_PING_MS
+    const lastSuccess = row?.last_success_at ? new Date(row.last_success_at).getTime() : 0
+    const stale = !lastSuccess || now - lastSuccess > threshold
+    const critical = row?.status === 'critical' || (row?.consecutive_failures ?? 0) >= 3
+
+    if (stale || critical) {
+      const h = lastSuccess ? ((now - lastSuccess) / 3600000).toFixed(1) : 'never'
+      const label = AGENTS[agentId]?.name || agentId
+      alerts.push(`employee:${agentId}: ${h}h${critical ? ' critical' : ''}`)
+      await openSystemAlert('employee_stale:' + agentId, `${label} last ping ${h}h ago`)
+    } else {
+      await resolveSystemAlert('employee_stale:' + agentId, 'employee responding within threshold')
+    }
+  }
+  return alerts
 }

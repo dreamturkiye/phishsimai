@@ -61,19 +61,27 @@ async function enrichViaHunter(domain: string) {
 export async function runLeadDiscover(batchSize = 8) {
   const sql = getSql()
   await ensureResearchQueue(sql)
-  const existing = await sql`SELECT domain FROM lead_research_queue WHERE company_id = ${COMPANY_ID} LIMIT 200`
-  const existingDomains = new Set(existing.map((r: any) => r.domain))
-  const candidates = await discoverMSPsViaGroq(existingDomains, batchSize)
-  let discovered = 0
-  for (const c of candidates) {
-    try {
-      await sql`INSERT INTO lead_research_queue (company_id, domain, company_name, source, status)
-        VALUES (${COMPANY_ID}, ${c.domain}, ${c.company_name}, ${c.source || 'ai_discovery'}, 'pending')
-        ON CONFLICT (company_id, domain) DO NOTHING`
-      discovered++
-    } catch {}
+  const start = Date.now()
+  try {
+    const existing = await sql`SELECT domain FROM lead_research_queue WHERE company_id = ${COMPANY_ID} LIMIT 200`
+    const existingDomains = new Set(existing.map((r: any) => r.domain))
+    const candidates = await discoverMSPsViaGroq(existingDomains, batchSize)
+    let discovered = 0
+    for (const c of candidates) {
+      try {
+        await sql`INSERT INTO lead_research_queue (company_id, domain, company_name, source, status)
+          VALUES (${COMPANY_ID}, ${c.domain}, ${c.company_name}, ${c.source || 'ai_discovery'}, 'pending')
+          ON CONFLICT (company_id, domain) DO NOTHING`
+        discovered++
+      } catch {}
+    }
+    const result = { discovered, candidates: candidates.length }
+    await reportAgentRun('discover', true, { ...result, duration_ms: Date.now() - start })
+    return result
+  } catch (e: any) {
+    await reportAgentRun('discover', false, {}, e.message)
+    throw e
   }
-  return { discovered, candidates: candidates.length }
 }
 
 export async function runLeadResearcher(batchSize = 6) {
