@@ -6,6 +6,7 @@ function SelfHealTestProbe({ armed }: { armed: boolean }) {
     if (!armed) return
     const err = new Error('SELF_HEAL_TEST v4.5.1: intentional probe')
     reportBug(err, 'SelfHealTestProbe', 'heal_test_armed')
+    // ARCH-FIX: report bug to Janet without throwing — keeps page alive after self-heal
   }, [armed])
 
   if (!armed) {
