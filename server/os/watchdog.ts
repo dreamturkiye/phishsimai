@@ -1,6 +1,7 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { checkAgentStaleness } from './agentHealth'
+import { runLeadResearcher } from './agents/leadResearcher'
 
 export async function runWatchdog() {
   const sql = getSql()
@@ -53,6 +54,16 @@ export async function runWatchdog() {
     if (staleAgents.length > 0) {
       result.issues_found += staleAgents.length
       result.actions_taken.push('Stale agents: ' + staleAgents.join(', '))
+      if (staleAgents.some(s => s.startsWith('researcher:'))) {
+        try {
+          const heal = await runLeadResearcher(6)
+          result.actions_taken.push(
+            `Researcher self-heal: discovered=${heal.discovered} added=${heal.added} enriched=${heal.enriched}`
+          )
+        } catch (e: any) {
+          result.actions_taken.push('Researcher self-heal failed: ' + e.message?.slice(0, 120))
+        }
+      }
     } else {
       result.actions_taken.push('All agents healthy')
     }
