@@ -10,6 +10,10 @@ import { runResearchAgent } from './agents/research'
 import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
 import { runEAAgent } from './agents/ea'
+import { JANET_VOICE_RULES } from './janetVoiceRules'
+import { getJanetOpsSnapshot } from './janetOpsSnapshot'
+import { talkToAgent, AGENTS, type AgentId } from './agents/kaan_os_v4'
+import { getNextSarahLinkedInPreview } from './social/sarahLinkedIn'
 
 
 // Smart Lead Researcher context added to Janet — v3.1
@@ -33,7 +37,25 @@ Control Levels: L1 Think | L2 Draft | L3 Execute with approval | L4 Autonomous (
 
 New agent under you: Smart Lead Researcher — runs hourly, discovers MSPs via AI + Hunter.io, deduplicates before adding to pipeline. Monitor via agent health. When pipeline <20 prospects, direct researcher to increase batch.
 
-Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 3-4 sentences max unless asked for more. No corporate speak.`
+Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 3-4 sentences max unless asked for more. No corporate speak.
+
+When Kaan asks operational questions (posting schedule, Sarah LinkedIn, pipeline, agents): answer from LIVE OPS DATA in the prompt. If blocked, state the blocker and your immediate action — never loop on "waiting for confirmation".
+
+You have real employees (Marcus, Aria, Nova, Rex, Scout, Finn, Vera, Max) with live health pings. Reference their status. If Kaan asks you to check with someone, you can relay what they last reported — do not pretend to wait hours for marketing.`
+
+function detectEmployeeAsk(message: string): AgentId | null {
+  const m = message.toLowerCase()
+  for (const id of Object.keys(AGENTS) as AgentId[]) {
+    if (id === 'janet') continue
+    const name = AGENTS[id].name.toLowerCase()
+    if (m.includes(name) && /ask|check|what.*(doing|up to)|status|talk to|ping/i.test(m)) return id
+  }
+  return null
+}
+
+function wantsLinkedInPreview(message: string): boolean {
+  return /linkedin/i.test(message) && /preview|show|see|look like|full post|draft/i.test(message)
+}
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
@@ -100,6 +122,21 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {
   const memCtx = await recallContext(companyId, 25)
+  const ops = await getJanetOpsSnapshot(companyId).catch(() => null)
+
+  let extraContext = ''
+  const employeeId = detectEmployeeAsk(message)
+  if (employeeId) {
+    const reply = await talkToAgent(employeeId, message, companyId, true).catch(() => null)
+    if (reply) extraContext += `\n\nLIVE EMPLOYEE REPLY (${reply.agent}):\n${reply.response}`
+  }
+  if (wantsLinkedInPreview(message)) {
+    const preview = await getNextSarahLinkedInPreview().catch(() => null)
+    if (preview) {
+      extraContext += `\n\nSARAH LINKEDIN PREVIEW (${preview.status}):\nHook: ${preview.hook}\n\n${preview.body.slice(0, 400)}${preview.previewUrl ? `\n\nSafari preview link for Kaan: ${preview.previewUrl}` : '\n\nTell Kaan to open HQ → Social tab for the Safari preview link.'}`
+    }
+  }
+
   const messages = [
     ...history.slice(-6).map(m => ({
       role: m.role === 'janet' ? 'assistant' : 'user',
@@ -110,7 +147,7 @@ export async function janetChat(message: string, history: {role:string,text:stri
   let response: string
   try {
     const chat = await llmComplete({
-      messages: [{ role: 'system', content: JANET_SYSTEM + '\n\nMEMORY:\n' + memCtx }, ...messages],
+      messages: [{ role: 'system', content: JANET_SYSTEM + '\n\nLIVE OPS DATA (authoritative):\n' + (ops?.text || 'unavailable') + extraContext + '\n\nMEMORY:\n' + memCtx }, ...messages],
       max_tokens: 400,
       temperature: 0.7,
     })
@@ -127,4 +164,28 @@ export async function janetChat(message: string, history: {role:string,text:stri
     await sendTelegram(`FOUNDER->JANET (PhishSim):\n"${message}"\n\nJanet: ${response}`)
   }
   return response
+}
+
+/** Shorter voice-mode replies for always-on bidirectional calls. */
+export async function janetVoiceChat(message: string, history: { role: string; text: string }[] = [], companyId = 'phishsimai') {
+  const memCtx = await recallContext(companyId, 20)
+  const ops = await getJanetOpsSnapshot(companyId).catch(() => null)
+  const messages = [
+    ...history.slice(-6).map(m => ({
+      role: m.role === 'janet' ? 'assistant' as const : 'user' as const,
+      content: m.text,
+    })),
+    { role: 'user' as const, content: message },
+  ]
+  try {
+    const chat = await llmComplete({
+      messages: [{ role: 'system', content: JANET_SYSTEM + JANET_VOICE_RULES + '\n\nLIVE OPS DATA (authoritative):\n' + (ops?.text || 'unavailable') + '\n\nMEMORY:\n' + memCtx }, ...messages],
+      max_tokens: 220,
+      temperature: 0.7,
+    })
+    return chat.text
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e)
+    return `Janet is temporarily unavailable (${err}).`
+  }
 }

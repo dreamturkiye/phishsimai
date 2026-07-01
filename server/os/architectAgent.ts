@@ -9,6 +9,12 @@ import {
 } from './marcus'
 import { queueJanetArchitectTask } from './selfHeal'
 import { llmComplete } from './llmChat'
+import {
+  assertHomepageStyled,
+  insertSmokeBugReport,
+  isCriticalFrontendFailure,
+} from './qaSmokeFrontend'
+import { openSystemAlert, resolveSystemAlert } from './selfHeal'
 
 export interface ArchitectDiagnosis {
   root_cause: string
@@ -155,6 +161,14 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
   const sql = getSql()
   const root = (baseUrl || 'https://phishsimai.com').replace(/\/$/, '')
   const tests = [
+    {
+      name: 'Homepage styled (CSS + assets)',
+      critical: true,
+      test: async () => {
+        const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000 })
+        if (!r.jsUrl) throw new Error('CRITICAL: No Vite JS module script on homepage')
+      },
+    },
     { name: 'API health', test: async () => {
       const r = await fetch(`${root}/api/health`)
       if (!r.ok) throw new Error('Status ' + r.status)
@@ -174,12 +188,45 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
   let passed = 0, failed = 0
   for (const t of tests) {
     try { await t.test(); results.push({ name: t.name, status: 'pass' }); passed++ }
-    catch(e: any) { results.push({ name: t.name, status: 'fail', error: e.message }); failed++ }
+    catch(e: any) { results.push({ name: t.name, status: 'fail', error: e.message, critical: !!(t as any).critical }); failed++ }
   }
-  const status = failed === 0 ? 'passed' : failed <= 1 ? 'warning' : 'failed'
+
+  const criticalFails = results.filter(r => r.status === 'fail' && (r.critical || isCriticalFrontendFailure(r.name, r.error)))
+  for (const f of criticalFails) {
+    const bugId = await insertSmokeBugReport(sql, {
+      product: 'phishsimai',
+      componentName: 'HomepageStyles',
+      errorMessage: f.error?.slice(0, 500) || f.name,
+      stackTrace: `QA smoke failed: ${f.name}\nURL: ${root}/\nTrigger: ${triggerRef}\nFix hint: ensure client/src/main.tsx imports "./index.css" and Vite build emits /assets/*.css`,
+      urlPath: '/',
+      severity: 'critical',
+    })
+    if (bugId) {
+      await runArchitectAgent(bugId).catch(() => {})
+    }
+  }
+
+  const hasCritical = criticalFails.length > 0
+  const status = failed === 0 ? 'passed' : hasCritical ? 'failed' : failed <= 1 ? 'warning' : 'failed'
+
   await sql`INSERT INTO qa_runs (trigger_type, trigger_ref, tests_run, tests_passed, tests_failed, test_results, duration_ms, status)
     VALUES ('bug_fix', ${triggerRef}, ${tests.length}, ${passed}, ${failed}, ${JSON.stringify(results)}, ${Date.now() - start}, ${status})`.catch(() => {})
-  if (failed > 0) await sendTelegram(`PHISHSIMAI QA: ${failed} tests failed\n${results.filter(r=>r.status==='fail').map(r=>r.name+': '+r.error).join('\n')}`)
-  else await sendTelegram(`PHISHSIMAI QA: All ${passed} tests passed`)
-  return { passed, failed, results, baseUrl: root }
+
+  const alertKey = 'qa_smoke:frontend:' + root.replace(/https?:\/\//, '')
+  if (hasCritical) {
+    await openSystemAlert(alertKey, criticalFails.map(f => f.name + ': ' + f.error).join(' | ')).catch(() => {})
+  } else if (failed === 0) {
+    await resolveSystemAlert(alertKey, `All ${passed} QA tests passed`).catch(() => {})
+  }
+
+  if (failed > 0) {
+    await sendTelegram(
+      `${hasCritical ? '🚨 CRITICAL' : '⚠️'} PHISHSIMAI QA: ${failed} failed\n` +
+      results.filter(r => r.status === 'fail').map(r => r.name + ': ' + r.error).join('\n') +
+      (criticalFails.length ? '\n\nMarcus dispatched for frontend regression.' : '')
+    )
+  } else {
+    await sendTelegram(`PHISHSIMAI QA: All ${passed} tests passed`)
+  }
+  return { passed, failed, results, baseUrl: root, status, critical: hasCritical }
 }

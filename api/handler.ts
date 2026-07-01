@@ -3,6 +3,7 @@ import express from "express";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true }));
 
 let _productMounted = false;
 let _productMounting: Promise<void> | null = null;
@@ -93,6 +94,14 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/researcher") return routes.cronResearcher(req, res);
     if (path === "/api/os/discover") return routes.cronDiscover(req, res);
     if (path === "/api/os/agent-watchdog") return routes.cronAgentWatchdog(req, res);
+    if (path === "/api/os/analytics/collect" && method === "post") return routes.analyticsCollect(req, res);
+    if (path === "/api/os/sarah-social") return routes.cronSarahSocial(req, res);
+    if (path === "/api/os/hq/social") return routes.hqSarahSocial(req, res);
+    const heroMatch = path.match(/^\/api\/os\/social\/hero\/([^/]+)\.png$/);
+    if (heroMatch && (method === "get" || method === "head")) {
+      req.params = { token: heroMatch[1] };
+      return routes.socialHeroImage(req, res);
+    }
     if (path === "/api/os/qa-smoke") return routes.qaSmokePS(req, res);
     if (path === "/api/os/webhook/reply") return routes.webhookReply(req, res);
     if (path === "/api/os/webhooks/resend" && method === "post") return routes.webhookResend(req, res);
@@ -100,6 +109,8 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/hq/chat" && method === "post") return routes.hqChat(req, res);
     if (path === "/api/os/hq/ingest" && method === "post") return routes.hqIngest(req, res);
     if (path === "/api/os/hq/tts" && method === "post") return routes.hqTTS(req, res);
+    if (path === "/api/os/janet/signed-url" && method === "get") return routes.hqJanetSignedUrl(req, res);
+    if (path === "/api/os/janet/tool" && method === "post") return routes.hqJanetTool(req, res);
     if (path === "/api/os/hq/stt" && method === "post") return routes.hqSTT(req, res);
     if (path === "/api/os/hq/task" && method === "post") return routes.hqTask(req, res);
     if (path === "/api/os/hq/directive" && method === "post") return routes.hqDirective(req, res);
@@ -129,7 +140,16 @@ async function dispatchOsRoute(req: any, res: any) {
   }
 }
 
-app.all("/api/os", dispatchOsRoute);
 app.all("/api/os/*", dispatchOsRoute);
+
+app.get("/preview/social/:token", async (req: any, res: any) => {
+  const routes = await getRoutes();
+  return routes.socialPreviewPage(req, res);
+});
+
+app.post("/preview/social/:token/review", async (req: any, res: any) => {
+  const routes = await getRoutes();
+  return routes.socialPreviewReview(req, res);
+});
 
 export = app;

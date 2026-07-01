@@ -16,7 +16,7 @@ import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
   cronSequence, cronJanet, cronWatchdog, cronHeartbeat,
-  webhookReply, hqData, hqChat, hqTTS, hqTask, hqMemoryGet, hqSeed,
+  webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk
 } from '../os/routes';
 import { miaSpeak, miaFeedbackDigest } from '../mia/routes';
@@ -57,7 +57,7 @@ async function startServer() {
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'"],
+        connectSrc: ["'self'", "https://api.elevenlabs.io", "wss://api.elevenlabs.io", "https://*.elevenlabs.io", "wss://*.elevenlabs.io"],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
         frameSrc: ["'none'"],
@@ -155,6 +155,8 @@ async function startServer() {
   app.get("/api/os/hq", hqData);
   app.post("/api/os/hq/chat", hqChat);
   app.post("/api/os/hq/tts", hqTTS);
+  app.get("/api/os/janet/signed-url", hqJanetSignedUrl);
+  app.post("/api/os/janet/tool", hqJanetTool);
   app.post("/api/os/hq/task", hqTask);
   app.get("/api/os/hq/memory", hqMemoryGet);
   app.post("/api/os/seed", hqSeed);

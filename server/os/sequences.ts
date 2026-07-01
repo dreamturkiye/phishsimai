@@ -2,6 +2,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { AB_EXPERIMENTS, getVariant, recordImpression } from './abTest'
 import { reportAgentRun } from './agentHealth'
+import { reportAgentHealth } from './agentHealth_v2'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -182,6 +183,7 @@ export async function runFullSequence() {
     await sendTelegram('PHISHSIMAI ARIA SEQUENCE: ' + totalSent + ' sent\n' + lines)
   }
   await reportAgentRun('aria', totalSent >= 0, { sent: totalSent }, undefined, 'phishsimai').catch(() => {})
+  await reportAgentHealth('aria', true, 0, undefined, 'phishsimai').catch(() => {})
   return { sent: totalSent, results, bounceRate: health.rate }
 }
 

@@ -3,6 +3,7 @@ import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
 import { reportAgentRun } from '../agentHealth'
+import { reportAgentHealth } from '../agentHealth_v2'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees  (PhishSimAi / TiDB build)
@@ -63,8 +64,6 @@ export interface AgentReport {
   improvement_notes: string
   timestamp: string
 }
-
-const getConn = () => getSql()
 
 // ── Agent profiles ──────────────────────────────────────────────────────────
 export const AGENTS: Record<AgentId, AgentProfile> = {
@@ -278,27 +277,25 @@ export async function issueTask(
   companyId = 'phishsimai'
 ): Promise<{ task_id: string; agent: string; title: string }> {
   await ensureOSTables()
-  const conn = getConn()
+  const sql = getSql()
 
-  const id = crypto.randomUUID()
-  await conn.execute(
-    `INSERT INTO agent_tasks (id, agent_id, issued_by, title, description, priority, due_in_hours, status, company_id)
-     VALUES (?, ?, 'janet', ?, ?, ?, ?, 'assigned', ?)`,
-    [id, agentId, task.title, task.description, task.priority, task.due_in_hours, companyId]
-  )
+  const [inserted] = await sql`
+    INSERT INTO agent_tasks (agent_id, issued_by, title, description, priority, due_in_hours, status, company_id)
+    VALUES (${agentId}, 'janet', ${task.title}, ${task.description}, ${task.priority}, ${task.due_in_hours}, 'assigned', ${companyId})
+    RETURNING id
+  `
 
   const agent = AGENTS[agentId]
   await sendTelegram(`📋 *Task Assigned by Janet*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
 
-  return { task_id: id, agent: agent.name, title: task.title }
+  return { task_id: inserted.id, agent: agent.name, title: task.title }
 }
 
 export async function executeTask(taskId: string, companyId = 'phishsimai'): Promise<AgentTask> {
   await ensureOSTables()
-  const conn = getConn()
+  const sql = getSql()
 
-  const taskRes = await conn.execute(`SELECT * FROM agent_tasks WHERE id=? AND company_id=?`, [taskId, companyId])
-  const task = (taskRes as any).rows?.[0]
+  const [task] = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
   if (!task) throw new Error(`Task ${taskId} not found`)
 
   const agent = AGENTS[task.agent_id as AgentId]
@@ -307,7 +304,7 @@ export async function executeTask(taskId: string, companyId = 'phishsimai'): Pro
     getCompanyContext()
   ])
 
-  await conn.execute(`UPDATE agent_tasks SET status='in_progress' WHERE id=?`, [taskId])
+  await sql`UPDATE agent_tasks SET status='in_progress' WHERE id=${taskId}`
 
   const system = buildAgentSystem(agent, memory, context)
   const user = `TASK ASSIGNED BY JANET:
@@ -326,10 +323,11 @@ Be specific. Janet will review and score your work.`
 
   const result = await llm(system, user, 1200)
 
-  await conn.execute(
-    `UPDATE agent_tasks SET status='completed', result=?, completed_at=NOW() WHERE id=?`,
-    [result, taskId]
-  )
+  await sql`
+    UPDATE agent_tasks
+    SET status='completed', result=${result}, completed_at=NOW()
+    WHERE id=${taskId}
+  `
 
   await rememberFact({
     company_id: companyId, type: 'strategic',
@@ -341,9 +339,8 @@ Be specific. Janet will review and score your work.`
 }
 
 export async function reviewTask(taskId: string, companyId = 'phishsimai'): Promise<{ feedback: string; score: number; task: any }> {
-  const conn = getConn()
-  const taskRes = await conn.execute(`SELECT * FROM agent_tasks WHERE id=? AND company_id=?`, [taskId, companyId])
-  const task = (taskRes as any).rows?.[0]
+  const sql = getSql()
+  const [task] = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
   if (!task || !task.result) throw new Error('Task not completed yet')
 
   const agent = AGENTS[task.agent_id as AgentId]
@@ -370,22 +367,22 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
   const scoreMatch = feedback.match(/SCORE:\s*(\d+)/i)
   const score = scoreMatch ? parseInt(scoreMatch[1]) : 7
 
-  await conn.execute(
-    `UPDATE agent_tasks SET status='reviewed', janet_feedback=?, performance_score=? WHERE id=?`,
-    [feedback, score, taskId]
-  )
+  await sql`
+    UPDATE agent_tasks
+    SET status='reviewed', janet_feedback=${feedback}, performance_score=${score}
+    WHERE id=${taskId}
+  `
 
   const period = isoWeek()
-  await conn.execute(
-    `INSERT INTO agent_performance (id, agent_id, period, tasks_completed, avg_score, janet_notes, company_id)
-     VALUES (?, ?, ?, 1, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       tasks_completed = tasks_completed + 1,
-       avg_score = (avg_score * tasks_completed + VALUES(avg_score)) / (tasks_completed + 1),
-       janet_notes = VALUES(janet_notes),
-       updated_at = NOW()`,
-    [crypto.randomUUID(), task.agent_id, period, score, feedback.slice(0, 300), companyId]
-  ).catch(() => {})
+  await sql`
+    INSERT INTO agent_performance (agent_id, period, tasks_completed, avg_score, janet_notes, company_id)
+    VALUES (${task.agent_id}, ${period}, 1, ${score}, ${feedback.slice(0, 300)}, ${companyId})
+    ON CONFLICT (agent_id, period, company_id) DO UPDATE SET
+      tasks_completed = agent_performance.tasks_completed + 1,
+      avg_score = (agent_performance.avg_score + ${score}) / 2,
+      janet_notes = EXCLUDED.janet_notes,
+      updated_at = NOW()
+  `.catch(() => {})
 
   await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${score}/10\n${feedback.slice(0, 200)}`).catch(() => {})
 
@@ -411,7 +408,7 @@ export async function runDailyStandup(companyId = 'phishsimai'): Promise<{
   timestamp: string
 }> {
   await ensureOSTables()
-  const conn = getConn()
+  const sql = getSql()
   const context = await getCompanyContext()
 
   const standupAgents: AgentId[] = ['marcus', 'aria', 'finn', 'vera', 'rex']
@@ -420,13 +417,12 @@ export async function runDailyStandup(companyId = 'phishsimai'): Promise<{
   for (const agentId of standupAgents) {
     const agent = AGENTS[agentId]
     const memory = await getAgentMemory(agentId, companyId)
-    const pendingRes = await conn.execute(
-      `SELECT title, description, priority FROM agent_tasks
-       WHERE agent_id=? AND status IN ('assigned','in_progress') AND company_id=?
-       ORDER BY priority, created_at LIMIT 5`,
-      [agentId, companyId]
-    ).catch(() => ({ rows: [] }))
-    const pendingTasks = (pendingRes as any).rows || []
+    const pendingTasks = await sql`
+      SELECT title, description, priority FROM agent_tasks
+      WHERE agent_id=${agentId} AND status IN ('assigned','in_progress') AND company_id=${companyId}
+      ORDER BY priority, created_at
+      LIMIT 5
+    `.catch(() => [])
 
     const system = buildAgentSystem(agent, memory, context)
     const standupPrompt = `Daily standup report to Janet (CGO).
@@ -440,7 +436,9 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
 4. One metric or insight from your domain she needs to know right now
 5. Confidence level on hitting your targets this week (0-10)`
 
+    const t0 = Date.now()
     const report_text = await llm(system, standupPrompt, 400)
+    await reportAgentHealth(agentId, true, Date.now() - t0, undefined, companyId).catch(() => {})
     const scoreMatch = report_text.match(/(\d+)\/10|confidence.*?(\d+)/i)
     const score = scoreMatch ? parseInt(scoreMatch[1] || scoreMatch[2]) : 7
 
@@ -482,17 +480,16 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
     }
   }
 
-  const meetingId = crypto.randomUUID()
-  await conn.execute(
-    `INSERT INTO agent_meetings (id, meeting_type, participants, agenda, transcript, decisions, company_id)
-     VALUES (?, 'daily_standup', ?, 'Daily standup', ?, ?, ?)`,
-    [meetingId, JSON.stringify(standupAgents), standupSummary, JSON.stringify([janetResponse]), companyId]
-  ).catch(() => {})
+  const [meeting] = await sql`
+    INSERT INTO agent_meetings (meeting_type, participants, agenda, transcript, decisions, company_id)
+    VALUES ('daily_standup', ${JSON.stringify(standupAgents)}, 'Daily standup', ${standupSummary}, ${JSON.stringify([janetResponse])}, ${companyId})
+    RETURNING id
+  `.catch(() => [{ id: 'unknown' }])
 
   const telegramMsg = `🌅 *DAILY STANDUP — PhishSim AI OS*\n\n${janetResponse.slice(0, 600)}\n\n_${reports.length} agents reported | ${newTasks.length} tasks issued_`
   await sendTelegram(telegramMsg).catch(() => {})
 
-  return { meeting_id: meetingId, reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
+  return { meeting_id: meeting?.id || '', reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
 }
 
 export async function runWeeklyReview(companyId = 'phishsimai'): Promise<{
@@ -504,18 +501,16 @@ export async function runWeeklyReview(companyId = 'phishsimai'): Promise<{
   timestamp: string
 }> {
   await ensureOSTables()
-  const conn = getConn()
+  const sql = getSql()
   const context = await getCompanyContext()
 
-  const weeklyRes = await conn.execute(
-    `SELECT agent_id, COUNT(*) as completed, ROUND(AVG(performance_score), 1) as avg_score,
-            GROUP_CONCAT(CONCAT(title, ' (score: ', COALESCE(performance_score, '?'), ')') SEPARATOR ', ') as task_list
-     FROM agent_tasks
-     WHERE status='reviewed' AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY) AND company_id=?
-     GROUP BY agent_id`,
-    [companyId]
-  ).catch(() => ({ rows: [] }))
-  const weeklyTasks = (weeklyRes as any).rows || []
+  const weeklyTasks = await sql`
+    SELECT agent_id, count(*) as completed, round(avg(performance_score)::numeric, 1) as avg_score,
+           string_agg(title || ' (score: ' || coalesce(performance_score::text, '?') || ')', ', ') as task_list
+    FROM agent_tasks
+    WHERE status='reviewed' AND created_at > NOW() - interval '7 days' AND company_id=${companyId}
+    GROUP BY agent_id
+  `.catch(() => [])
 
   const allAgents: AgentId[] = ['marcus', 'aria', 'nova', 'rex', 'scout', 'finn', 'vera', 'max']
   const performanceReviews: any[] = []
@@ -538,14 +533,17 @@ export async function runWeeklyReview(companyId = 'phishsimai'): Promise<{
     const score = scoreMatch ? parseInt(scoreMatch[1]) : 6
 
     const period = isoWeek()
-    await conn.execute(
-      `INSERT INTO agent_performance (id, agent_id, period, tasks_completed, avg_score, strengths, improvement_areas, janet_notes, company_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         tasks_completed = VALUES(tasks_completed), avg_score = VALUES(avg_score),
-         improvement_areas = VALUES(improvement_areas), janet_notes = VALUES(janet_notes), updated_at = NOW()`,
-      [crypto.randomUUID(), agentId, period, weekData?.completed || 0, score, selfReview.slice(0, 200), janetReview.slice(0, 200), janetReview.slice(0, 300), companyId]
-    ).catch(() => {})
+    await sql`
+      INSERT INTO agent_performance (agent_id, period, tasks_completed, avg_score, strengths, improvement_areas, janet_notes, company_id)
+      VALUES (${agentId}, ${period}, ${weekData?.completed || 0}, ${score},
+              ${selfReview.slice(0, 200)}, ${janetReview.slice(0, 200)}, ${janetReview.slice(0, 300)}, ${companyId})
+      ON CONFLICT (agent_id, period, company_id) DO UPDATE SET
+        tasks_completed = EXCLUDED.tasks_completed,
+        avg_score = EXCLUDED.avg_score,
+        improvement_areas = EXCLUDED.improvement_areas,
+        janet_notes = EXCLUDED.janet_notes,
+        updated_at = NOW()
+    `.catch(() => {})
 
     await rememberFact({
       company_id: companyId, type: 'strategic',
@@ -579,18 +577,17 @@ export async function runWeeklyReview(companyId = 'phishsimai'): Promise<{
     }
   }
 
-  const meetingId = crypto.randomUUID()
-  await conn.execute(
-    `INSERT INTO agent_meetings (id, meeting_type, participants, agenda, transcript, decisions, company_id)
-     VALUES (?, 'weekly_review', ?, 'Weekly performance review + planning', ?, ?, ?)`,
-    [meetingId, JSON.stringify(allAgents), reviewSummary, JSON.stringify([weeklyPlan]), companyId]
-  ).catch(() => {})
+  const [meeting] = await sql`
+    INSERT INTO agent_meetings (meeting_type, participants, agenda, transcript, decisions, company_id)
+    VALUES ('weekly_review', ${JSON.stringify(allAgents)}, 'Weekly performance review + planning', ${reviewSummary}, ${JSON.stringify([weeklyPlan])}, ${companyId})
+    RETURNING id
+  `.catch(() => [{ id: 'unknown' }])
 
   const scores = performanceReviews.map(r => `${r.name}: ${r.score}/10`).join(' | ')
   await sendTelegram(`📊 *WEEKLY REVIEW — PhishSim AI OS*\n\nScores: ${scores}\n\n${weeklyPlan.slice(0, 600)}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
 
   return {
-    meeting_id: meetingId,
+    meeting_id: meeting?.id || '',
     performance_reviews: performanceReviews,
     janet_decisions: weeklyPlan,
     adjustments: performanceReviews.filter(r => r.score < 7).map(r => `${r.name}: ${r.janet_review.slice(0, 100)}`),
@@ -660,15 +657,16 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
   timestamp: string
 }> {
   await ensureOSTables()
-  const conn = getConn()
+  const sql = getSql()
 
   const standup = await runDailyStandup(companyId)
 
-  const overdueRes = await conn.execute(
-    `SELECT id FROM agent_tasks WHERE status='assigned' AND company_id=? AND created_at < DATE_SUB(NOW(), INTERVAL 4 HOUR) LIMIT 5`,
-    [companyId]
-  ).catch(() => ({ rows: [] }))
-  const overdueTasks = (overdueRes as any).rows || []
+  const overdueTasks = await sql`
+    SELECT id FROM agent_tasks
+    WHERE status='assigned' AND company_id=${companyId}
+    AND created_at < NOW() - interval '4 hours'
+    LIMIT 5
+  `.catch(() => [])
 
   let executed = 0
   for (const t of overdueTasks) {
@@ -679,8 +677,10 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
 
   const maxMemory = await getAgentMemory('max', companyId)
   const maxSystem = buildAgentSystem(AGENTS.max, maxMemory, await getCompanyContext())
+  const maxT0 = Date.now()
   const kaanBrief = await llm(maxSystem,
     `Prepare Kaan's morning brief. Standup summary: ${standup.janet_summary.slice(0, 500)}\nTasks executed: ${executed}\n\nBrief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
+  await reportAgentHealth('max', true, Date.now() - maxT0, undefined, companyId).catch(() => {})
 
   await sendTelegram(`☀️ *KAAN'S MORNING BRIEF — PhishSim AI*\n\n${kaanBrief}\n\n_Janet OS v4 | ${new Date().toLocaleTimeString()}_`).catch(() => {})
 
@@ -692,17 +692,13 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
 // ── OS status ──────────────────────────────────────────────────────────────────
 export async function getOSStatus(companyId = 'phishsimai') {
   await ensureOSTables()
-  const conn = getConn()
+  const sql = getSql()
 
-  const [tasksRes, meetingsRes, perfRes] = await Promise.all([
-    conn.execute(`SELECT agent_id, status, COUNT(*) as count FROM agent_tasks WHERE company_id=? GROUP BY agent_id, status`, [companyId]).catch(() => ({ rows: [] })),
-    conn.execute(`SELECT meeting_type, COUNT(*) as count, MAX(held_at) as last_held FROM agent_meetings WHERE company_id=? GROUP BY meeting_type`, [companyId]).catch(() => ({ rows: [] })),
-    conn.execute(`SELECT agent_id, avg_score, tasks_completed, updated_at FROM agent_performance WHERE company_id=? ORDER BY updated_at DESC`, [companyId]).catch(() => ({ rows: [] }))
+  const [tasks, meetings, perf] = await Promise.all([
+    sql`SELECT agent_id, status, count(*) as count FROM agent_tasks WHERE company_id=${companyId} GROUP BY agent_id, status`.catch(() => []),
+    sql`SELECT meeting_type, count(*) as count, max(held_at) as last_held FROM agent_meetings WHERE company_id=${companyId} GROUP BY meeting_type`.catch(() => []),
+    sql`SELECT agent_id, avg_score, tasks_completed, updated_at FROM agent_performance WHERE company_id=${companyId} ORDER BY updated_at DESC`.catch(() => [])
   ])
-
-  const tasks = (tasksRes as any).rows || []
-  const meetings = (meetingsRes as any).rows || []
-  const perf = (perfRes as any).rows || []
 
   return {
     agents: Object.values(AGENTS).map(a => ({

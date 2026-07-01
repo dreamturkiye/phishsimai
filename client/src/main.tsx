@@ -7,6 +7,7 @@ import superjson from "superjson";
 import App from "./App";
 import { getLoginUrl } from "./const";
 import { OrgProvider } from "./contexts/OrgContext";
+import { initOsAnalytics } from "./lib/osAnalytics";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -52,6 +53,8 @@ const trpcClient = trpc.createClient({
     }),
   ],
 });
+
+initOsAnalytics();
 
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>

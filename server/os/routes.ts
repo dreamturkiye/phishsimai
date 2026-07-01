@@ -23,6 +23,10 @@ import {
 import { cronAgentWatchdog } from './agentWatchdog'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
+import { buildPipelineView, type RawPipelineLead } from './pipelineView'
+import { runSarahSocialCron, listSocialQueue, queueSocialItem } from './social/sarahSocial'
+import { buildAnalyticsView, ingestAnalyticsEvent } from './siteAnalytics'
+import { verifyRedditLogin } from './social/redditClient'
 
 const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
 const CRON = process.env.CRON_SECRET || ''
@@ -109,6 +113,182 @@ export async function cronDiscover(req: Request, res: Response) {
   try { res.json({ ok: true, ...(await runLeadDiscover(8)) }) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
 
+export async function cronSarahSocial(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    res.json({ ok: true, ...(await runSarahSocialCron()) })
+  } catch (e: any) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
+export async function analyticsCollect(req: Request, res: Response) {
+  try {
+    const body = req.body || {}
+    const companyId = body.company_id === 'scrollfuel' ? 'scrollfuel' : 'phishsimai'
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || ''
+    const result = await ingestAnalyticsEvent({
+      company_id: companyId,
+      path: String(body.path || '/'),
+      referrer: body.referrer,
+      utm_source: body.utm_source,
+      utm_medium: body.utm_medium,
+      utm_campaign: body.utm_campaign,
+      session_id: body.session_id,
+      event_type: body.event_type || 'pageview',
+      event_name: body.event_name,
+      ip,
+      user_agent: req.headers['user-agent'] as string,
+    })
+    res.json({ ok: true, ...result })
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: formatOsError(e) })
+  }
+}
+
+export async function hqSarahSocial(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const action = (req.query.action as string) || 'list'
+    if (action === 'verify') {
+      return res.json({ ok: true, ...(await verifyRedditLogin()) })
+    }
+    if (action === 'run') {
+      return res.json({ ok: true, ...(await runSarahSocialCron()) })
+    }
+    if (action === 'linkedin-preview') {
+      const { getNextSarahLinkedInPreview, generateSarahLinkedInDraft, queueSarahLinkedInDraft } = await import('./social/sarahLinkedIn')
+      const mode = (req.query.mode as string) || 'next'
+      if (mode === 'draft') {
+        const topic = (req.query.topic as string) || undefined
+        return res.json({ ok: true, preview: await generateSarahLinkedInDraft(topic) })
+      }
+      if (mode === 'revise') {
+        const token = (req.query.token as string) || ''
+        if (!token) return res.status(400).json({ error: 'token required' })
+        const { reviseSarahLinkedInDraft } = await import('./social/sarahLinkedIn')
+        return res.json({ ok: true, preview: await reviseSarahLinkedInDraft(token) })
+      }
+      if (mode === 'produce-final') {
+        const token = (req.query.token as string) || ''
+        if (!token) return res.status(400).json({ error: 'token required' })
+        const { produceSarahLinkedInForApproval } = await import('./social/sarahLinkedIn')
+        return res.json({ ok: true, preview: await produceSarahLinkedInForApproval(token) })
+      }
+      if (mode === 'publish') {
+        const token = (req.query.token as string) || ''
+        if (!token) return res.status(400).json({ error: 'token required' })
+        const { publishSarahLinkedInPost } = await import('./social/publishSarahLinkedIn')
+        return res.json({ ok: true, result: await publishSarahLinkedInPost(token) })
+      }
+      if (mode === 'queue' && req.method === 'post') {
+        const topic = req.body?.topic
+        return res.json({ ok: true, preview: await queueSarahLinkedInDraft(topic) })
+      }
+      return res.json({ ok: true, preview: await getNextSarahLinkedInPreview() })
+    }
+    if (action === 'queue' && req.method === 'post') {
+      const { action: socialAction, subreddit, body, title, target_url, thing_id } = req.body || {}
+      if (!body?.trim()) return res.status(400).json({ error: 'body required' })
+      const row = await queueSocialItem({
+        action: socialAction || 'comment',
+        subreddit,
+        body,
+        title,
+        target_url,
+        thing_id,
+      })
+      return res.json({ ok: true, queued: row })
+    }
+    const queue = await listSocialQueue(25)
+    res.json({ ok: true, queue, configured: !!(process.env.SARAH_REDDIT_USERNAME && process.env.SARAH_REDDIT_PASSWORD) })
+  } catch (e: unknown) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
+/** GET /api/os/social/hero/:token.png — public hero image for PostForMe / LinkedIn */
+export async function socialHeroImage(req: Request, res: Response) {
+  try {
+    const raw = (req.params as { token?: string }).token || ''
+    const token = raw.replace(/\.png$/i, '')
+    const { getPreviewByToken } = await import('./social/socialPreviewPage')
+    const item = await getPreviewByToken(token)
+    if (!item?.image_url) {
+      res.status(404).send('Not found')
+      return
+    }
+    const url = item.image_url
+    if (url.startsWith('data:image/')) {
+      const b64 = url.split(',', 2)[1]
+      if (!b64) {
+        res.status(404).send('Invalid image')
+        return
+      }
+      const buf = Buffer.from(b64, 'base64')
+      res.setHeader('Content-Type', 'image/png')
+      res.setHeader('Content-Length', String(buf.length))
+      res.setHeader('Cache-Control', 'public, max-age=86400')
+      if (req.method.toLowerCase() === 'head') {
+        res.status(200).end()
+        return
+      }
+      res.send(buf)
+      return
+    }
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      res.redirect(302, url)
+      return
+    }
+    res.status(404).send('Not found')
+  } catch (e: unknown) {
+    res.status(500).send(formatOsError(e))
+  }
+}
+
+/** GET /preview/social/:token — shareable Safari HTML preview */
+export async function socialPreviewPage(req: Request, res: Response) {
+  try {
+    const token = (req.params as { token?: string }).token || req.path.split('/').filter(Boolean).pop() || ''
+    const { getPreviewByToken, renderSocialPreviewPage } = await import('./social/socialPreviewPage')
+    const item = await getPreviewByToken(token)
+    if (!item) {
+      res.status(404).setHeader('Content-Type', 'text/html').send('<h1>Preview not found</h1>')
+      return
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.setHeader('Cache-Control', 'no-store')
+    const autopostBlocked = !(process.env.POSTFORME_API_KEY || process.env.POST_FOR_ME_API_KEY)
+    res.send(renderSocialPreviewPage(item, token, undefined, autopostBlocked))
+  } catch (e: unknown) {
+    res.status(500).setHeader('Content-Type', 'text/html').send(`<pre>${formatOsError(e)}</pre>`)
+  }
+}
+
+/** POST /preview/social/:token/review — founder approve / reject / request changes */
+export async function socialPreviewReview(req: Request, res: Response) {
+  try {
+    const token = (req.params as { token?: string }).token || ''
+    const decision = String(req.body?.decision || '') as 'approved' | 'changes_requested' | 'rejected'
+    const comment = String(req.body?.comment || '').trim()
+    if (!['approved', 'changes_requested', 'rejected'].includes(decision)) {
+      res.status(400).send('Invalid decision')
+      return
+    }
+    const { submitSocialReview, getPreviewByToken, renderSocialPreviewPage } = await import('./social/socialPreviewPage')
+    const result = await submitSocialReview(token, decision, comment)
+    const item = await getPreviewByToken(token)
+    if (item) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8')
+      res.send(renderSocialPreviewPage(item, token, result.message, !(process.env.POSTFORME_API_KEY || process.env.POST_FOR_ME_API_KEY)))
+      return
+    }
+    res.redirect(302, `/preview/social/${token}`)
+  } catch (e: unknown) {
+    res.status(500).setHeader('Content-Type', 'text/html').send(`<pre>${formatOsError(e)}</pre>`)
+  }
+}
+
 export async function hqData(req: Request, res: Response) {
   if (!okHQ(req, res)) return
   try {
@@ -127,6 +307,17 @@ export async function hqData(req: Request, res: Response) {
     const recentLeads = await sql`SELECT name, company, email, pipeline_stage, touch1_sent_at, touch2_sent_at, replied, bounced, created_at
       FROM ps_outreach_leads ORDER BY created_at DESC LIMIT 20`
 
+    const pipelineRows = await sql`SELECT id, name, company, email,
+      COALESCE(source, 'manual') as source,
+      COALESCE(pipeline_stage, 'prospect') as pipeline_stage,
+      created_at, stage_updated_at,
+      touch1_sent_at, touch2_sent_at, touch3_sent_at, touch4_sent_at,
+      COALESCE(replied, false) as replied,
+      COALESCE(bounced, false) as bounced,
+      COALESCE(unsubscribed, false) as unsubscribed
+      FROM ps_outreach_leads`.catch(() => [] as RawPipelineLead[])
+    const pipelineView = buildPipelineView(pipelineRows as RawPipelineLead[])
+
     const customers = await sql`SELECT name, company, email, stage_updated_at
       FROM ps_outreach_leads WHERE pipeline_stage='customer' ORDER BY stage_updated_at DESC`
 
@@ -140,8 +331,8 @@ export async function hqData(req: Request, res: Response) {
       WHERE status IN ('pending','approved','queued','running')
         AND (trim(task) IN ('**','*','***') OR length(trim(regexp_replace(task, '^[*\\s]+', ''))) < 8)`.catch(() => {})
 
-    const archTasks = await sql`SELECT id, task, status, source, created_at, notes, bug_id
-      FROM os_architect_tasks ORDER BY created_at DESC LIMIT 10`.catch(() => [] as any[])
+    const archTasks = await sql`SELECT id, task, status, source, created_at, notes, bug_id, files_changed, updated_at
+      FROM os_architect_tasks ORDER BY created_at DESC LIMIT 15`.catch(() => [] as any[])
 
     const memory = await recallMemory(COMPANY, undefined, 40)
     const bugReports = await sql`SELECT id, error_message, component_name, severity, status, occurrence_count, last_seen, url_path, diagnosis
@@ -150,6 +341,9 @@ export async function hqData(req: Request, res: Response) {
       FROM architect_memory ORDER BY times_applied DESC LIMIT 20`.catch(() => [] as any[])
     const qaRuns = await sql`SELECT trigger_type, tests_passed, tests_failed, status, created_at
       FROM qa_runs ORDER BY created_at DESC LIMIT 10`.catch(() => [] as any[])
+
+    const socialQueue = await listSocialQueue(15).catch(() => [] as any[])
+    const analyticsView = await buildAnalyticsView(COMPANY).catch(() => null)
 
     const bounceRate = Number(pipeline.apollo_sent) > 0
       ? (Number(pipeline.bounced) / Number(pipeline.apollo_sent) * 100).toFixed(1)
@@ -168,6 +362,7 @@ export async function hqData(req: Request, res: Response) {
         replyRate: Number(pipeline.touched) > 0 ? (Number(pipeline.replied) / Number(pipeline.touched) * 100).toFixed(1) : '0.0',
       },
       recentLeads,
+      pipelineView,
       customers,
       abResults,
       archTasks,
@@ -175,6 +370,9 @@ export async function hqData(req: Request, res: Response) {
       bugReports,
       architectMemory,
       qaRuns,
+      socialQueue,
+      sarahSocialConfigured: !!(process.env.SARAH_REDDIT_USERNAME && process.env.SARAH_REDDIT_PASSWORD),
+      analyticsView,
     })
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: formatOsError(e) })
@@ -265,6 +463,69 @@ export async function hqSeed(req: Request, res: Response) {
     res.json({ ok: true, seeded: n })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
+  }
+}
+
+export async function hqJanetSignedUrl(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  const { getJanetConvaiSignedUrl, JANET_AGENT_PHISHSIM } = await import('./janetConvai')
+  const { getJanetOpsSnapshot } = await import('./janetOpsSnapshot')
+  if (!JANET_AGENT_PHISHSIM) {
+    res.status(503).json({ error: 'ELEVENLABS_AGENT_JANET_PHISHSIM not configured' })
+    return
+  }
+  const signed_url = await getJanetConvaiSignedUrl(JANET_AGENT_PHISHSIM)
+  if (!signed_url) {
+    res.status(500).json({ error: 'Could not get voice session — check ELEVENLABS_API_KEY' })
+    return
+  }
+  const ops = await getJanetOpsSnapshot('phishsimai').catch(() => null)
+  const opsText = ops?.text?.slice(0, 3800) || ''
+  res.json({
+    signed_url,
+    agent_id: JANET_AGENT_PHISHSIM,
+    product: 'phishsimai',
+    ops_context: opsText,
+  })
+}
+
+export async function hqJanetTool(req: Request, res: Response) {
+  const secret = (req.query.secret as string) || (req.headers['x-janet-tool-secret'] as string)
+  if (secret !== 'ps-hq-2026' && secret !== process.env.CRON_SECRET) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  try {
+    const body = req.body || {}
+    // ElevenLabs webhook may send parameters only, or nested tool call
+    const toolName =
+      body.tool_name ||
+      body.name ||
+      (req.query.tool as string) ||
+      (body.employee || body.question ? 'ask_employee' : null) ||
+      (body.topic ? 'get_sarah_linkedin_preview' : null) ||
+      'get_live_ops'
+    const params =
+      body.parameters ||
+      body.params ||
+      body.arguments ||
+      (toolName === 'ask_employee' ? { employee: body.employee, question: body.question || body.message } : body)
+    const { handleJanetToolCall } = await import('./janetTool')
+    const result = await handleJanetToolCall(String(toolName), params, 'phishsimai')
+    res.json(result)
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: formatOsError(e) })
+  }
+}
+
+export async function hqJanetOpsContext(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const { getJanetOpsSnapshot } = await import('./janetOpsSnapshot')
+    const ops = await getJanetOpsSnapshot('phishsimai')
+    res.json({ ok: true, ...ops })
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: formatOsError(e) })
   }
 }
 

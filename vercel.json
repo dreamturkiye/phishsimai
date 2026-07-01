@@ -7,12 +7,17 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 300,
-      "memory": 1024
+      "memory": 1024,
+      "includeFiles": "server/os/social/{fonts,assets}/**"
     }
   },
   "rewrites": [
     {
       "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/preview/social/:path*",
       "destination": "/api/index.js"
     },
     {
@@ -56,6 +61,10 @@
     {
       "path": "/api/os/qa-smoke",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/os/sarah-social",
+      "schedule": "0 10,16 * * *"
     },
     {
       "path": "/api/os/v4/full",

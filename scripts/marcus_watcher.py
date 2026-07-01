@@ -152,6 +152,31 @@ load_env_file()
 
 
 def try_known_fix(task_description: str, product: Product) -> Optional[dict]:
+    desc = task_description.lower()
+    if 'homepagestyles' in desc or 'no app stylesheet' in desc or 'index.css' in desc or 'unstyled' in desc:
+        if product.name == 'phishsim':
+            main_path = os.path.join(product.repo_path, 'client/src/main.tsx')
+            if os.path.isfile(main_path):
+                with open(main_path, encoding='utf-8') as f:
+                    content = f.read()
+                if './index.css' not in content and "index.css" not in content:
+                    marker = 'import App from "./App";'
+                    if marker in content:
+                        content = content.replace(marker, marker + '\nimport "./index.css";')
+                    else:
+                        content = 'import "./index.css";\n' + content
+                    return {'ok': True, 'files': {'client/src/main.tsx': content}, 'raw': 'KNOWN_FIX: restore index.css import'}
+        if product.name == 'scrollfuel':
+            layout_path = os.path.join(product.repo_path, 'app/layout.tsx')
+            if os.path.isfile(layout_path):
+                with open(layout_path, encoding='utf-8') as f:
+                    content = f.read()
+                if "globals.css" not in content:
+                    content = content.replace(
+                        "import { Providers } from './providers'",
+                        "import './globals.css'\nimport { Providers } from './providers'",
+                    )
+                    return {'ok': True, 'files': {'app/layout.tsx': content}, 'raw': 'KNOWN_FIX: restore globals.css import'}
     if 'SelfHealTestProbe' in task_description or 'SELF_HEAL' in task_description:
         if product.name == 'scrollfuel':
             return {

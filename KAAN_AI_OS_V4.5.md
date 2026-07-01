@@ -14,15 +14,88 @@
 |---------|------|---------|
 | 4.5 | Jun 28 2026 | Initial PhishSim port — Janet HQ, 9 agents, Marcus scaffold |
 | **4.5.1** | **Jun 30 2026** | **Self-heal parity spec** — frontend telemetry, await Marcus, diagnosis fix, system alerts |
+| **4.5.2** | **Jul 2026** | **Janet HQ voice** — ElevenLabs ConvAI (Notya pattern). See ScrollFuel `docs/JANET-VOICE-CONVOAI.md` |
+| **4.5.3** | **Jul 2026** | **HQ Pipeline operational view** — activity feed, action queue, computed status. See ScrollFuel `docs/HQ-PIPELINE-VIEW.md` |
+| **4.5.4** | **Jul 2026** | **Kaan OS Analytics** — free first-party site analytics (Neon), HQ Analytics tab, no external account |
+| **4.5.5** | **Jul 2026** | **Frontend QA smoke** — cron + post-deploy checks for missing CSS/JS bundles; critical fail → Marcus + Telegram |
+| **4.5.6** | **Jul 2026** | **Sarah LinkedIn** — WYSIWYG preview, reference-template hero images, PostForMe publish |
 
 ---
 
-## Deployments (Kaan AI OS)
+## Frontend QA smoke (v4.5.5)
+
+Catches unstyled homepage regressions (missing Vite `/assets/*.css` or Next `/_next/static/css/*`).
+
+| Item | Value |
+|------|-------|
+| Checks | `server/os/qaSmokeFrontend.ts` — stylesheet link, CSS/JS byte thresholds |
+| Runner | `runQASmoke()` in `server/os/architectAgent.ts` — first test is critical |
+| Schedule | Cron `/api/os/qa-smoke` every 6h + Marcus watcher after prod deploy |
+| On critical fail | `bug_reports` → Marcus diagnosis → `openSystemAlert` → Telegram |
+
+---
+
+## Kaan OS Analytics (v4.5.4)
+
+Privacy-friendly first-party pageview tracking — no Google Analytics or Umami signup required.
+
+| Item | Value |
+|------|-------|
+| Backend | `server/os/siteAnalytics.ts` · `POST /api/os/analytics/collect` |
+| Tracker | `client/src/lib/osAnalytics.ts` (SPA route changes) |
+| HQ UI | `client/src/components/os/HQAnalyticsTab.tsx` |
+| Storage | Neon `os_site_analytics` — hashed visitors, UTM, top pages/referrers |
+
+---
+
+## HQ Pipeline view (v4.5.3)
+
+Same operational Pipeline tab as ScrollFuel: bucket counts, action queue, activity feed with filter chips. No more empty T1/T2 columns on fresh imports.
+
+| Item | Value |
+|------|-------|
+| Backend | `server/os/pipelineView.ts` · `pipelineView` on `GET /api/os/hq` |
+| UI | `client/src/components/os/HQPipelineTab.tsx` |
+| Canonical doc | `/Users/kaan/ugc-agency/docs/HQ-PIPELINE-VIEW.md` |
+
+---
+
+## Janet HQ voice (v4.5.2 — Notya pattern)
+
+Same stack as Notya `/asistan`: `@elevenlabs/client` + signed URL + tap-to-talk orb.
+
+| Item | Value |
+|------|-------|
+| HQ UI | `client/src/components/os/JanetConvaiPanel.tsx` |
+| API | `GET /api/os/janet/signed-url?secret=ps-hq-2026` |
+| Agent | `ELEVENLABS_AGENT_JANET_PHISHSIM` = `agent_8901kwf2nhxje1h9cf8wbvf5hyyj` |
+| Canonical doc | `/Users/kaan/ugc-agency/docs/JANET-VOICE-CONVOAI.md` |
+
+---
+
+## Sarah LinkedIn (v4.5.6)
+
+Founder approves copy + hero in Safari; Janet publishes via PostForMe to Sarah Mitchell's LinkedIn.
+
+| Item | Value |
+|------|-------|
+| Preview | `GET /preview/social/:token` — LinkedIn feed mock (text + image) |
+| Review | `POST /preview/social/:token/review` — approve / reject / request changes |
+| HQ API | `GET /api/os/hq/social?secret=ps-hq-2026&action=linkedin-preview&mode=draft\|revise\|produce-final\|publish&token=…` |
+| Hero image | Reference template (`sarah-linkedin-reference-v2.png`) + topic headline overlay → 1200×800 PNG |
+| Publish | `postForMeLinkedIn.ts` · `publishSarahLinkedIn.ts` — verifies PostForMe `success=true` before marking posted |
+| Static hero | `/social/soc2-linkedin-hero.png` (CDN) when DB stores base64 |
+| Env (Vercel) | `POSTFORME_PHISHSIM_API_KEY`, `POSTFORME_SARAH_LINKEDIN_ID` |
+| UI | `client/src/components/os/HQSocialTab.tsx` |
+
+First live post (Jul 2026): SOC 2 evidence — `urn:li:share:7478196146650357760`
+
+---
 
 | Product | URL | OS version | Self-heal E2E |
 |---------|-----|------------|---------------|
 | ScrollFuel | scrollfuel.io | v4.5 ✅ PROVEN | `/heal-test?arm=sf-hq-2026` |
-| PhishSimAI | phishsimai.com | v4.5.1 ✅ SHIPPED | `/heal-test?arm=ps-hq-2026` |
+| PhishSimAI | phishsimai.com | v4.5.6 ✅ SHIPPED | `/heal-test?arm=ps-hq-2026` |
 | *(future)* | — | port from SF canonical | same probe pattern |
 
 ---
@@ -117,6 +190,9 @@ Implementation: `server/os/selfHeal.ts` — `openSystemAlert` / `resolveSystemAl
 | OS DB | Neon Postgres (`janet_memory`, `bug_reports`, `os_architect_tasks`) |
 | App DB | TiDB/MySQL (orgs, campaigns) |
 | HQ secret | `ps-hq-2026` |
+| Voice | ElevenLabs **ConvAI** (`@elevenlabs/client`) — same as Notya |
+| Voice agent | `ELEVENLABS_AGENT_JANET_PHISHSIM` |
+| Voice TTS/STT | Handled by ElevenLabs agent WebSocket |
 
 ---
 
@@ -126,6 +202,7 @@ Implementation: `server/os/selfHeal.ts` — `openSystemAlert` / `resolveSystemAl
 |-------|---------|
 | `GET /api/os/hq?secret=ps-hq-2026` | Pipeline, bugs, architect tasks |
 | `POST /api/os/hq/chat` | Janet chat |
+| `GET /api/os/janet/signed-url?secret=ps-hq-2026` | **Notya-style voice** — ElevenLabs ConvAI signed URL |
 | `POST /api/os/bug-report` | Client + probe error intake |
 | `GET /api/os/architect/pending?secret=ps-hq-2026` | Watcher pickup |
 | `POST /api/os/architect/complete` | Watcher done |

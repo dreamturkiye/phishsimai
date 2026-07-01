@@ -1,5 +1,10 @@
 type OutreachLead = { name: string; company: string; country: string; sector: string; email: string }
 
+const TRIAL_CTA_URL = 'https://phishsimai.com/'
+const TRIAL_CTA_LABEL = 'Start a Free 14-Day Trial'
+const TRIAL_CTA_PARAGRAPH = `<p><a href="${TRIAL_CTA_URL}">${TRIAL_CTA_LABEL}</a> — no credit card required.</p>`
+const TRIAL_CTA_BUTTON = `<a href="${TRIAL_CTA_URL}" style="background-color: #007bff; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">${TRIAL_CTA_LABEL}</a>`
+
 export function getUsaHipaaEmail(touch: 1|2|3|4, lead: OutreachLead) {
   let subject = '';
   let html = '';
@@ -9,7 +14,7 @@ export function getUsaHipaaEmail(touch: 1|2|3|4, lead: OutreachLead) {
       html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of HIPAA compliance.</p>
-        <p>Book a demo to learn how PhishSim AI can help: <a href="https://phishsimai.com/demo">https://phishsimai.com/demo</a></p>
+        ${TRIAL_CTA_PARAGRAPH}
         <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $1.9M per violation category per year.</p>
       </div>`;
@@ -57,7 +62,7 @@ export function getUsaGlbaEmail(touch: 1|2|3|4, lead: OutreachLead) {
       html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of GLBA compliance.</p>
-        <p>Book a demo to learn how PhishSim AI can help: <a href="https://phishsimai.com/demo">https://phishsimai.com/demo</a></p>
+        ${TRIAL_CTA_PARAGRAPH}
         <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $100,000 per violation.</p>
       </div>`;
@@ -105,7 +110,7 @@ export function getUsaCmmcEmail(touch: 1|2|3|4, lead: OutreachLead) {
       html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of CMMC compliance.</p>
-        <p>Book a demo to learn how PhishSim AI can help: <a href="https://phishsimai.com/demo">https://phishsimai.com/demo</a></p>
+        ${TRIAL_CTA_PARAGRAPH}
         <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in loss of DoD contracts.</p>
       </div>`;
@@ -153,7 +158,7 @@ export function getUkEmail(touch: 1|2|3|4, lead: OutreachLead) {
       html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of ICO/GDPR compliance.</p>
-        <p>Book a demo to learn how PhishSim AI can help: <a href="https://phishsimai.com/demo">https://phishsimai.com/demo</a></p>
+        ${TRIAL_CTA_PARAGRAPH}
         <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to £17.5M or 4% global turnover.</p>
       </div>`;
@@ -201,7 +206,7 @@ export function getCanadaEmail(touch: 1|2|3|4, lead: OutreachLead) {
       html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of PIPEDA compliance.</p>
-        <p>Book a demo to learn how PhishSim AI can help: <a href="https://phishsimai.com/demo">https://phishsimai.com/demo</a></p>
+        ${TRIAL_CTA_PARAGRAPH}
         <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to CAD $100,000 per violation.</p>
       </div>`;
@@ -246,7 +251,7 @@ export function getAustraliaEmail(touch: 1|2|3|4, lead: OutreachLead): { subject
   switch (touch) {
     case 1:
       subject = 'Protect Your Australian Organization from Cyber Threats';
-      html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">Dear ${lead.name},<br><br>We wanted to remind you that as an Australian organization, you are required to comply with the Privacy Act. Our solution can help you achieve this compliance and protect your organization from cyber threats. <a href="#" style="background-color: #007bff; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Book a demo</a> to learn more.<br><br>Best regards,<br>Sarah Mitchell<br><br>P.S. Non-compliance can result in fines up to AUD $50M per violation.</div>`;
+      html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">Dear ${lead.name},<br><br>We wanted to remind you that as an Australian organization, you are required to comply with the Privacy Act. Our solution can help you achieve this compliance and protect your organization from cyber threats. ${TRIAL_CTA_BUTTON}<br><br>Best regards,<br>Sarah Mitchell<br><br>P.S. Non-compliance can result in fines up to AUD $50M per violation.</div>`;
       break;
     case 2:
       subject = "Don't Let Cyber Attacks Compromise Your Australian Data";
@@ -270,7 +275,7 @@ export function getUsaDefaultEmail(touch: 1|2|3|4, lead: OutreachLead): { subjec
   switch (touch) {
     case 1:
       subject = 'Protect Your Organization from Cyber Threats';
-      html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">Dear ${lead.name},<br><br>We wanted to remind you that as a US organization, you are required to comply with various regulations. Our solution can help you achieve this compliance and protect your organization from cyber threats. <a href="#" style="background-color: #007bff; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Book a demo</a> to learn more.<br><br>Best regards,<br>Sarah Mitchell<br><br>P.S. Non-compliance can result in fines up to $50,000 per violation.</div>`;
+      html = `<div style="background-color: #ffffff; max-width: 600px; font-family: sans-serif; padding: 20px;">Dear ${lead.name},<br><br>We wanted to remind you that as a US organization, you are required to comply with various regulations. Our solution can help you achieve this compliance and protect your organization from cyber threats. ${TRIAL_CTA_BUTTON}<br><br>Best regards,<br>Sarah Mitchell<br><br>P.S. Non-compliance can result in fines up to $50,000 per violation.</div>`;
       break;
     case 2:
       subject = "Don't Let Cyber Attacks Compromise Your Data";
