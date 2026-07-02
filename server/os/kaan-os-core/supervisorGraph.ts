@@ -70,6 +70,12 @@ export class SupervisorGraph {
     if (/sales|pipeline|outbound|mason/i.test(keywords)) {
       departments.push('mason')
     }
+    if (/research|icp|competitor|market intel|scout|trend|win.?loss/i.test(keywords)) {
+      departments.push('scout')
+    }
+    if (/mrr|arr|revenue|forecast|finn|unit economics|ltv|cac|financial/i.test(keywords)) {
+      departments.push('finn')
+    }
     if (departments.length === 0) {
       departments.push('max')
     }

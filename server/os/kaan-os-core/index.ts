@@ -13,6 +13,7 @@ export * from './agentReflection'
 export * from './outcomeLearning'
 export * from './janetProactive'
 export * from './janetStrategy'
+export * from './intelligenceFinance'
 
 export { hierarchyPromptBlock, getCeoNode, L5_HIERARCHY } from './hierarchy'
 export { SupervisorGraph, routeGoalToSupervisors } from './supervisorGraph'

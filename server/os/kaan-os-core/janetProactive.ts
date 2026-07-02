@@ -98,7 +98,35 @@ export async function detectGrowthOpportunities(
     }
   }
 
-  return opps.slice(0, 5)
+  const staleScout = await sql`
+    SELECT count(*)::int AS n FROM agent_tasks
+    WHERE company_id=${companyId} AND agent_id='scout' AND created_at > NOW() - INTERVAL '7 days'
+  `.catch(() => [{ n: 0 }])
+  if (Number((staleScout as any[])[0]?.n || 0) === 0) {
+    opps.push({
+      kind: 'growth',
+      agentId: 'scout',
+      title: 'Proactive competitive intel sweep',
+      description: 'Scout L5: No intel tasks in 7 days. Run competitor pricing/feature scan and ICP validation; feed findings to Aria and Mason.',
+      autoExecute: true,
+    })
+  }
+
+  const staleFinn = await sql`
+    SELECT count(*)::int AS n FROM agent_tasks
+    WHERE company_id=${companyId} AND agent_id='finn' AND created_at > NOW() - INTERVAL '7 days'
+  `.catch(() => [{ n: 0 }])
+  if (Number((staleFinn as any[])[0]?.n || 0) === 0) {
+    opps.push({
+      kind: 'growth',
+      agentId: 'finn',
+      title: 'Proactive MRR snapshot + forecast update',
+      description: 'Finn L4: No finance tasks in 7 days. Pull live MRR/ARR, update 30-day forecast, flag anomalies >5% to Janet.',
+      autoExecute: true,
+    })
+  }
+
+  return opps.slice(0, 7)
 }
 
 /** Execute proactive opportunities — Janet acts without being told */
