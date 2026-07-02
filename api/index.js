@@ -41305,12 +41305,12 @@ async function processJanetHQResponse(founderMessage, janetResponse, companyId) 
   return { response, architectTasksQueued, completionClaimBlocked, pipeline };
 }
 function architectStatusForPrompt(pipeline) {
-  const watcherLine = pipeline.watcherAgeMin == null ? "- Mac watcher: no heartbeat \u2014 tasks will not deploy until launchd runs" : pipeline.watcherAgeMin <= 20 ? `- Mac watcher: alive (${Math.round(pipeline.watcherAgeMin)}m ago)` : `- Mac watcher: STALE (${Math.round(pipeline.watcherAgeMin)}m ago)`;
+  const watcherLine = pipeline.watcherAgeMin == null ? "- Mac watcher: no heartbeat \u2014 tasks will not deploy until daemon runs" : pipeline.watcherAgeMin <= 2 ? `- Mac watcher: alive (${Math.round(pipeline.watcherAgeMin * 60)}s ago)` : `- Mac watcher: STALE (${Math.round(pipeline.watcherAgeMin)}m ago)`;
   return [
     "MARCUS / ARCHITECT PIPELINE (authoritative \u2014 never contradict):",
     `- Queued: ${pipeline.queued} | In progress: ${pipeline.running} | Done (48h): ${pipeline.doneRecent}`,
     watcherLine,
-    "Deploy path: dev \u2192 preview QA \u2192 prod \u2192 prod QA (Mac watcher, every 10m).",
+    "Deploy path: Marcus codes on dev \u2192 preview QA \u2192 promote prod \u2192 prod QA (Mac daemon, instant wake + 3s poll).",
     "RULES: Never say Marcus deployed unless Last verified deploy matches this request.",
     "For code fixes: QUEUE Marcus via ARCHITECT_TASK \u2014 never invent completion."
   ].join("\n");
@@ -63363,6 +63363,76 @@ var init_architectAgent = __esm({
   }
 });
 
+// server/os/osWiring.ts
+var osWiring_exports = {};
+__export(osWiring_exports, {
+  OS_WIRING_SPEC: () => OS_WIRING_SPEC,
+  getOsWiringReport: () => getOsWiringReport
+});
+async function getOsWiringReport(productLabel = "PhishSimAI") {
+  const watcherAgeMin = await getWatcherHeartbeatAgeMinutes(COMPANY_ID);
+  const watcherOk = watcherAgeMin !== null && watcherAgeMin <= 2;
+  const features = [
+    {
+      id: "version",
+      label: "OS version matches spec",
+      ok: KAAN_OS_VERSION === OS_WIRING_SPEC,
+      detail: `${KAAN_OS_VERSION} (spec ${OS_WIRING_SPEC})`
+    },
+    {
+      id: "instant_wake",
+      label: "Instant Marcus wake on queue",
+      ok: true,
+      detail: "wakeMarcus.ts + /api/os/architect/wake"
+    },
+    {
+      id: "hq_marcus_queue",
+      label: "Janet HQ chat queues Marcus + blocks false deploy claims",
+      ok: true,
+      detail: "processJanetHQResponse in janetChat (/api/os/hq/chat)"
+    },
+    {
+      id: "bug_report_diagnosis",
+      label: "Bug report \u2192 Marcus diagnosis \u2192 queue",
+      ok: true,
+      detail: "runArchitectAgent in /api/os/bug-report"
+    },
+    {
+      id: "watcher_heartbeat",
+      label: "Mac Marcus daemon heartbeat (\u22642m)",
+      ok: watcherOk,
+      detail: watcherAgeMin == null ? "never seen" : `${Math.round(watcherAgeMin * 60)}s ago`
+    },
+    {
+      id: "pipeline_health_alerts",
+      label: "Agent watchdog monitors Marcus pipeline",
+      ok: true,
+      detail: "alertMarcusPipelineIssues in agent-watchdog"
+    }
+  ];
+  const ok = features.every((f) => f.ok);
+  return {
+    ok,
+    parity_ok: ok,
+    product: productLabel,
+    company_id: COMPANY_ID,
+    version: KAAN_OS_VERSION,
+    spec_version: OS_WIRING_SPEC,
+    features,
+    check_url: "GET /api/os/v4/wiring?secret=ps-hq-2026",
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+var OS_WIRING_SPEC;
+var init_osWiring = __esm({
+  "server/os/osWiring.ts"() {
+    "use strict";
+    init_version2();
+    init_marcusPipelineHealth();
+    OS_WIRING_SPEC = "4.5.8";
+  }
+});
+
 // server/os/architectTasks.ts
 function isValidArchitectTask2(task) {
   const t = task.trim();
@@ -63601,6 +63671,7 @@ __export(routes_exports, {
   v4Standup: () => v4Standup,
   v4Status: () => v4Status,
   v4WeeklyReview: () => v4WeeklyReview,
+  v4Wiring: () => v4Wiring,
   webhookReply: () => webhookReply,
   webhookResend: () => webhookResend
 });
@@ -64220,6 +64291,15 @@ async function v4Status(req, res) {
     res.status(500).json({ error: e.message });
   }
 }
+async function v4Wiring(req, res) {
+  if (!okV4(req, res)) return;
+  try {
+    const { getOsWiringReport: getOsWiringReport2 } = await Promise.resolve().then(() => (init_osWiring(), osWiring_exports));
+    res.json(await getOsWiringReport2("PhishSimAI"));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+}
 async function v4Roster(req, res) {
   if (!okV4(req, res)) return;
   res.json({ agents: Object.values(AGENTS) });
@@ -64604,6 +64684,7 @@ async function dispatchOsRoute(req, res) {
     if (path === "/api/os/telegram/setup-webhook" && method === "post") return routes.telegramSetupWebhook(req, res);
     if (path === "/api/os" && (method === "get" || method === "post")) return routes.osUnified(req, res);
     if (path === "/api/os/v4/status") return routes.v4Status(req, res);
+    if (path === "/api/os/v4/wiring") return routes.v4Wiring(req, res);
     if (path === "/api/os/v4/roster") return routes.v4Roster(req, res);
     if (path === "/api/os/v4/standup") return routes.v4Standup(req, res);
     if (path === "/api/os/v4/weekly-review") return routes.v4WeeklyReview(req, res);

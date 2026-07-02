@@ -152,15 +152,15 @@ export async function processJanetHQResponse(
 
 export function architectStatusForPrompt(pipeline: ArchitectPipelineStatus): string {
   const watcherLine = pipeline.watcherAgeMin == null
-    ? '- Mac watcher: no heartbeat — tasks will not deploy until launchd runs'
-    : pipeline.watcherAgeMin <= 20
-      ? `- Mac watcher: alive (${Math.round(pipeline.watcherAgeMin)}m ago)`
+    ? '- Mac watcher: no heartbeat — tasks will not deploy until daemon runs'
+    : pipeline.watcherAgeMin <= 2
+      ? `- Mac watcher: alive (${Math.round(pipeline.watcherAgeMin * 60)}s ago)`
       : `- Mac watcher: STALE (${Math.round(pipeline.watcherAgeMin)}m ago)`
   return [
     'MARCUS / ARCHITECT PIPELINE (authoritative — never contradict):',
     `- Queued: ${pipeline.queued} | In progress: ${pipeline.running} | Done (48h): ${pipeline.doneRecent}`,
     watcherLine,
-    'Deploy path: dev → preview QA → prod → prod QA (Mac watcher, every 10m).',
+    'Deploy path: Marcus codes on dev → preview QA → promote prod → prod QA (Mac daemon, instant wake + 3s poll).',
     'RULES: Never say Marcus deployed unless Last verified deploy matches this request.',
     'For code fixes: QUEUE Marcus via ARCHITECT_TASK — never invent completion.',
   ].join('\n')

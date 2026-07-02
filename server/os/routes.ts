@@ -654,6 +654,14 @@ export async function v4Status(req: Request, res: Response) {
   } catch (e: any) { res.status(500).json({ error: e.message }) }
 }
 
+export async function v4Wiring(req: Request, res: Response) {
+  if (!okV4(req, res)) return
+  try {
+    const { getOsWiringReport } = await import('./osWiring')
+    res.json(await getOsWiringReport('PhishSimAI'))
+  } catch (e: any) { res.status(500).json({ error: e.message }) }
+}
+
 export async function v4Roster(req: Request, res: Response) {
   if (!okV4(req, res)) return
   res.json({ agents: Object.values(AGENTS) })

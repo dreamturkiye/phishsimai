@@ -129,6 +129,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/telegram/setup-webhook" && method === "post") return routes.telegramSetupWebhook(req, res);
     if (path === "/api/os" && (method === "get" || method === "post")) return routes.osUnified(req, res);
     if (path === "/api/os/v4/status") return routes.v4Status(req, res);
+    if (path === "/api/os/v4/wiring") return routes.v4Wiring(req, res);
     if (path === "/api/os/v4/roster") return routes.v4Roster(req, res);
     if (path === "/api/os/v4/standup") return routes.v4Standup(req, res);
     if (path === "/api/os/v4/weekly-review") return routes.v4WeeklyReview(req, res);
