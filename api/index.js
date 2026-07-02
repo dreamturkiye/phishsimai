@@ -63408,6 +63408,18 @@ async function getOsWiringReport(productLabel = "PhishSimAI") {
       label: "Agent watchdog monitors Marcus pipeline",
       ok: true,
       detail: "alertMarcusPipelineIssues in agent-watchdog"
+    },
+    {
+      id: "janet_convai_2way",
+      label: "Janet 2-way ConvAI voice (ElevenLabs)",
+      ok: true,
+      detail: "JanetConvaiPanel + /api/os/janet/signed-url"
+    },
+    {
+      id: "janet_convai_tools",
+      label: "ConvAI mid-call live ops tools",
+      ok: true,
+      detail: "/api/os/janet/tool"
     }
   ];
   const ok = features.every((f) => f.ok);
