@@ -3,6 +3,9 @@ import { rememberFact, recallMemory } from '../memory'
 import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
 import { reportAgentRun } from '../agentHealth'
+import { getAgentReflectionPrompt, recordAgentReflection, parseReviewForReflection } from '../kaan-os-core/agentReflection'
+import { getAgentLessonsForPrompt } from '../kaan-os-core/outcomeLearning'
+import { runL5JanetCycle } from '../l5Autonomy'
 import { reportAgentHealth } from '../agentHealth_v2'
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -299,14 +302,16 @@ export async function executeTask(taskId: string, companyId = 'phishsimai'): Pro
   if (!task) throw new Error(`Task ${taskId} not found`)
 
   const agent = AGENTS[task.agent_id as AgentId]
-  const [memory, context] = await Promise.all([
+  const [memory, context, reflectionBlock, lessonsBlock] = await Promise.all([
     getAgentMemory(task.agent_id as AgentId, companyId),
-    getCompanyContext()
+    getCompanyContext(),
+    getAgentReflectionPrompt(sql, companyId, task.agent_id as string),
+    getAgentLessonsForPrompt(sql, companyId, task.agent_id as string),
   ])
 
   await sql`UPDATE agent_tasks SET status='in_progress' WHERE id=${taskId}`
 
-  const system = buildAgentSystem(agent, memory, context)
+  const system = [buildAgentSystem(agent, memory, context), reflectionBlock, lessonsBlock].filter(Boolean).join('\n\n')
   const user = `TASK ASSIGNED BY JANET:
 Title: ${task.title}
 Priority: ${task.priority.toUpperCase()}
@@ -385,6 +390,17 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
   `.catch(() => {})
 
   await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${score}/10\n${feedback.slice(0, 200)}`).catch(() => {})
+
+  const { correction, lesson } = parseReviewForReflection(feedback, score)
+  await recordAgentReflection(sql, companyId, {
+    agentId: task.agent_id as string,
+    taskId,
+    success: score >= 6,
+    score,
+    outputPreview: String(task.result).slice(0, 300),
+    correction,
+    lesson,
+  }).catch(() => {})
 
   return { feedback, score, task: { ...task, janet_feedback: feedback, performance_score: score } }
 }
@@ -661,6 +677,8 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
 
   const standup = await runDailyStandup(companyId)
 
+  const l5 = await runL5JanetCycle(companyId, companyId).catch(() => null)
+
   const overdueTasks = await sql`
     SELECT id FROM agent_tasks
     WHERE status='assigned' AND company_id=${companyId}
@@ -684,9 +702,14 @@ export async function runJanetFullOrchestration(companyId = 'phishsimai'): Promi
 
   await sendTelegram(`☀️ *KAAN'S MORNING BRIEF — PhishSim AI*\n\n${kaanBrief}\n\n_Janet OS v4 | ${new Date().toLocaleTimeString()}_`).catch(() => {})
 
-  await reportAgentRun('janet', true, { tasks_executed: executed, standup_agents: standup.reports?.length ?? 0 }, undefined, companyId).catch(() => {})
+  await reportAgentRun('janet', true, {
+    tasks_executed: executed,
+    standup_agents: standup.reports?.length ?? 0,
+    l5_proactive_executed: l5?.proactive?.executed?.length ?? 0,
+    l5_strategies: l5?.strategies?.actions?.length ?? 0,
+  }, undefined, companyId).catch(() => {})
 
-  return { janet_brief: kaanBrief, standup, pending_tasks_executed: executed, timestamp: new Date().toISOString() }
+  return { janet_brief: kaanBrief, standup, pending_tasks_executed: executed, l5, timestamp: new Date().toISOString() }
 }
 
 // ── OS status ──────────────────────────────────────────────────────────────────

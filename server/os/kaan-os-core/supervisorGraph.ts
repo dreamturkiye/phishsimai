@@ -113,16 +113,21 @@ export class SupervisorGraph {
     return this.getState()
   }
 
-  /** Reflection loop — supervisors review outcomes */
+  /** Reflection loop — supervisors review outcomes; may re-delegate on failure signal */
   async reflect(notes: string): Promise<SupervisorGraphState> {
     this.state.status = 'reflecting'
     const max = this.opts.maxReflections ?? 3
-    if (this.state.reflections.length >= max) {
-      this.state.status = 'done'
-      return this.getState()
-    }
     this.state.reflections.push(notes)
     appendGovernanceAudit(this.state, 'janet', 'reflect', notes.slice(0, 200))
+
+    const failed = /\bfail(ed|ure)?|incorrect|retry|miss(ed)?|below bar\b/i.test(notes)
+    if (failed && this.state.reflections.length < max) {
+      appendGovernanceAudit(this.state, 'janet', 'self_correct', 'Re-delegating after failed reflection')
+      this.state.status = 'delegating'
+      await this.delegate()
+      return this.reflect('Self-correction pass completed.')
+    }
+
     this.state.status = 'done'
     return this.getState()
   }
