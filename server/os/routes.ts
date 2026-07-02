@@ -779,6 +779,11 @@ export async function architectPending(req: Request, res: Response) {
   return pick(req, res)
 }
 
+export async function architectWake(req: Request, res: Response) {
+  const { architectWake: wake } = await import('./architectWake')
+  return wake(req, res)
+}
+
 export async function architectComplete(req: Request, res: Response) {
   if (!okHQ(req, res)) return
   try {

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getSql } from './conn'
 import { isValidArchitectTask } from './architectTasks'
+import { recordWatcherHeartbeat } from './marcusPipelineHealth'
 
 const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
 
@@ -54,6 +55,7 @@ export async function architectPending(req: Request, res: Response) {
   try {
     await ensureTaskColumns()
     const sql = getSql()
+    await recordWatcherHeartbeat('phishsimai')
     const peek = req.query.peek === '1'
     const cleanup = req.query.cleanup === '1'
 

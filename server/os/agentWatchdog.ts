@@ -6,6 +6,7 @@ import { talkToAgent, AGENTS, AgentId } from './agents/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { getSql } from './conn'
 import { queueJanetArchitectTask } from './selfHeal'
+import { alertMarcusPipelineIssues } from './marcusPipelineHealth'
 
 const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
 const CRON = process.env.CRON_SECRET || ''
@@ -154,6 +155,8 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
     overall, healthy: healthyCount, total: finalAgents.length, remaining_unhealthy: stillUnhealthy,
   }).catch(() => {})
 
+  const marcusIssues = await alertMarcusPipelineIssues(companyId, 'PhishSimAI').catch(() => [])
+
   res.json({
     ok: true,
     overall,
@@ -169,6 +172,7 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
     },
     remaining_unhealthy: stillUnhealthy,
     agents: formatAgentList(finalAgents),
+    marcus_pipeline_issues: marcusIssues,
     timestamp: new Date().toISOString(),
   })
 }

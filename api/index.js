@@ -38728,10 +38728,74 @@ var KAAN_OS_VERSION, KAAN_OS_LABEL, COMPANY_ID, ARCHITECT_SECRET;
 var init_version2 = __esm({
   "server/os/version.ts"() {
     "use strict";
-    KAAN_OS_VERSION = "4.5.5";
+    KAAN_OS_VERSION = "4.5.8";
     KAAN_OS_LABEL = `Kaan AI OS v${KAAN_OS_VERSION}`;
     COMPANY_ID = "phishsimai";
     ARCHITECT_SECRET = process.env.ARCHITECT_SECRET || process.env.HQ_SECRET || "ps-hq-2026";
+  }
+});
+
+// server/os/wakeMarcus.ts
+async function recordMarcusWake(companyId, taskId) {
+  const sql2 = getSql();
+  const payload = JSON.stringify({
+    at: (/* @__PURE__ */ new Date()).toISOString(),
+    taskId: taskId || null
+  });
+  await sql2`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${companyId}, 'operating', ${MARCUS_WAKE_KEY}, ${payload}, 1, 'janet')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value=${payload}, updated_at=NOW()
+  `.catch(() => {
+  });
+  return payload;
+}
+async function getMarcusWakeAt(companyId) {
+  const sql2 = getSql();
+  const rows = await sql2`
+    SELECT value FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key=${MARCUS_WAKE_KEY}
+    LIMIT 1
+  `.catch(() => []);
+  const raw = rows[0]?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(String(raw));
+    return parsed.at || String(raw);
+  } catch {
+    return String(raw);
+  }
+}
+async function pingMarcusWakeUrl(product) {
+  const base = process.env.MARCUS_WAKE_URL?.trim();
+  if (!base) return false;
+  const secret = process.env.MARCUS_WAKE_SECRET || process.env.HQ_SECRET || "ps-hq-2026";
+  const url = base.includes("?") ? `${base}&secret=${secret}` : `${base}?secret=${secret}`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Marcus-Secret": secret
+      },
+      body: JSON.stringify({ product: product || "all", source: "janet_queue" }),
+      signal: AbortSignal.timeout(4e3)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+async function dispatchMarcusWake(companyId, opts) {
+  await recordMarcusWake(companyId, opts?.taskId);
+  void pingMarcusWakeUrl(opts?.product || companyId);
+}
+var MARCUS_WAKE_KEY;
+var init_wakeMarcus = __esm({
+  "server/os/wakeMarcus.ts"() {
+    "use strict";
+    init_conn();
+    MARCUS_WAKE_KEY = "marcus_wake";
   }
 });
 
@@ -38755,6 +38819,27 @@ async function isAlertOpen(key, companyId = COMPANY_ID) {
   `;
   return rows.length > 0;
 }
+async function getLastAlertNotifyMs(key, companyId) {
+  const sql2 = getSql();
+  await ensureMemoryTable();
+  const rows = await sql2`
+    SELECT value FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key=${"alert_notify:" + key}
+    LIMIT 1
+  `.catch(() => []);
+  const v2 = rows[0]?.value;
+  const ts3 = v2 ? Date.parse(String(v2)) : 0;
+  return Number.isFinite(ts3) ? ts3 : 0;
+}
+async function markAlertNotified(key, companyId) {
+  const sql2 = getSql();
+  await sql2`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${companyId}, 'operating', ${"alert_notify:" + key}, ${(/* @__PURE__ */ new Date()).toISOString()}, 1, 'janet')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value=${(/* @__PURE__ */ new Date()).toISOString()}, updated_at=NOW()
+  `.catch(() => {
+  });
+}
 async function openSystemAlert(key, detail, companyId = COMPANY_ID) {
   await ensureMemoryTable();
   const wasOpen = await isAlertOpen(key, companyId);
@@ -38765,7 +38850,10 @@ async function openSystemAlert(key, detail, companyId = COMPANY_ID) {
     ON CONFLICT (company_id, type, key) DO UPDATE SET value=${detail}, updated_at=NOW()
   `.catch(() => {
   });
-  if (!wasOpen) {
+  const lastNotify = await getLastAlertNotifyMs(key, companyId);
+  const cooldownOk = Date.now() - lastNotify > ALERT_NOTIFY_COOLDOWN_MS;
+  if (!wasOpen && cooldownOk) {
+    await markAlertNotified(key, companyId);
     await sendTelegram(
       `\u{1F6A8} <b>JANET \u2014 SYSTEM ISSUE</b>
 ${key}: ${detail}
@@ -38796,7 +38884,11 @@ async function queueJanetArchitectTask(opts) {
           AND status IN ('queued','pending','approved','running')
         ORDER BY created_at ASC LIMIT 1
       `;
-      if (existing[0]?.id) return existing[0].id;
+      if (existing[0]?.id) {
+        const existingId = existing[0].id;
+        void dispatchMarcusWake(COMPANY_ID, { taskId: existingId, product: "phishsim" });
+        return existingId;
+      }
     }
     const id = (0, import_crypto.randomUUID)();
     await sql2`
@@ -38808,8 +38900,9 @@ async function queueJanetArchitectTask(opts) {
 Marcus (Architect) queued autonomously.
 Task: ${opts.task.slice(0, 300)}
 
-Pipeline: dev \u2192 QA \u2192 prod. No approval needed.`
+Pipeline: dev \u2192 QA \u2192 prod. Instant wake \u2014 no poll delay.`
     );
+    void dispatchMarcusWake(COMPANY_ID, { taskId: id, product: "phishsim" });
     return id;
   } catch (e) {
     await sendTelegram(`ARCHITECT QUEUE FAILED: ${String(e.message).slice(0, 200)}`);
@@ -38852,7 +38945,7 @@ ${deployNotes.slice(0, 200)}`);
   }
   return { resolved: false, alreadyResolved: false };
 }
-var import_crypto;
+var import_crypto, ALERT_NOTIFY_COOLDOWN_MS;
 var init_selfHeal = __esm({
   "server/os/selfHeal.ts"() {
     "use strict";
@@ -38861,6 +38954,8 @@ var init_selfHeal = __esm({
     init_telegram();
     init_memory();
     init_version2();
+    init_wakeMarcus();
+    ALERT_NOTIFY_COOLDOWN_MS = 4 * 60 * 60 * 1e3;
   }
 });
 
@@ -39962,14 +40057,15 @@ async function dispatchOpsRestart(agentName, reason, companyId, detail) {
     return { ok: false, message: "cooldown" };
   }
   inFlight.add(key);
-  const alertKey = "ops_restart:" + agentName;
+  const alertKey = "agent_stale:" + agentName;
   const alertDetail = `${reason}${detail ? ": " + detail : ""} \u2014 Janet restarting now`;
   try {
-    await openSystemAlert(alertKey, alertDetail);
+    await openSystemAlert(alertKey, alertDetail, companyId);
     await markHealAttempt(companyId, agentName);
     const result = await healOpsAgent(agentName, companyId);
-    await resolveSystemAlert(alertKey, `restarted OK: ${result}`);
-    await resolveSystemAlert("agent_stale:" + agentName, "restarted by Janet");
+    await resolveSystemAlert(alertKey, `restarted OK: ${result}`, companyId);
+    await resolveSystemAlert("ops_restart:" + agentName, "superseded", companyId).catch(() => {
+    });
     await sendTelegram(`\u2705 Janet restarted ${agentName}
 ${result}`).catch(() => {
     });
@@ -40046,7 +40142,7 @@ var init_opsRecovery = __esm({
     init_opsAgents();
     init_selfHeal();
     init_telegram();
-    HEAL_COOLDOWN_MS = 5 * 60 * 1e3;
+    HEAL_COOLDOWN_MS = 30 * 60 * 1e3;
     inFlight = /* @__PURE__ */ new Set();
   }
 });
@@ -40109,20 +40205,19 @@ async function checkAgentStaleness(companyId = "phishsimai") {
     const lastRunAt = rowMap.get(agentName);
     const lastRun = lastRunAt ? new Date(lastRunAt).getTime() : 0;
     const stale = !lastRun || now - lastRun > threshold;
+    const healable = HEALABLE_OPS_AGENTS.includes(agentName);
     if (stale) {
       const h = lastRun ? ((now - lastRun) / 36e5).toFixed(1) : "never";
       alerts.push(`${agentName}: stale ${h}h`);
-      await openSystemAlert("agent_stale:" + agentName, `stale ${h}h`);
       await sql2`INSERT INTO agent_health (company_id, agent_name, status, updated_at)
         VALUES (${companyId}, ${agentName}, 'critical', NOW())
         ON CONFLICT (company_id, agent_name) DO UPDATE SET
           status='critical', updated_at=NOW()`;
-      if (HEALABLE_OPS_AGENTS.includes(agentName)) {
-        await dispatchOpsRestart(agentName, "stale", companyId, `${h}h`).catch(() => {
-        });
+      if (!healable) {
+        await openSystemAlert("agent_stale:" + agentName, `stale ${h}h`, companyId);
       }
     } else {
-      await resolveSystemAlert("agent_stale:" + agentName, "running within threshold");
+      await resolveSystemAlert("agent_stale:" + agentName, "running within threshold", companyId);
     }
   }
   return alerts;
@@ -41018,6 +41113,220 @@ var init_sarahSocial = __esm({
   }
 });
 
+// server/os/marcusPipelineHealth.ts
+async function recordWatcherHeartbeat(companyId) {
+  const sql2 = getSql();
+  await sql2`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${companyId}, 'operating', 'watcher_heartbeat', ${(/* @__PURE__ */ new Date()).toISOString()}, 1, 'marcus_watcher')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value=${(/* @__PURE__ */ new Date()).toISOString()}, updated_at=NOW()
+  `.catch(() => {
+  });
+}
+async function getWatcherHeartbeatAgeMinutes(companyId) {
+  const sql2 = getSql();
+  const rows = await sql2`
+    SELECT value FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key='watcher_heartbeat'
+    LIMIT 1
+  `.catch(() => []);
+  const raw = rows[0]?.value;
+  if (!raw) return null;
+  const age = (Date.now() - Date.parse(String(raw))) / 6e4;
+  return Number.isFinite(age) ? age : null;
+}
+async function checkMarcusPipelineHealth(companyId) {
+  const sql2 = getSql();
+  const issues = [];
+  const watcherAgeMin = await getWatcherHeartbeatAgeMinutes(companyId);
+  if (watcherAgeMin === null || watcherAgeMin > WATCHER_STALE_MINUTES) {
+    issues.push({
+      kind: "watcher_stale",
+      detail: watcherAgeMin === null ? "Marcus Mac watcher has never pinged \u2014 launchd com.kaanos.architect may be down" : `Marcus watcher last seen ${Math.round(watcherAgeMin)}m ago (>${WATCHER_STALE_MINUTES}m)`
+    });
+  }
+  let stuckQueued = 0;
+  try {
+    const stuck = await sql2`
+      SELECT count(*)::int as n FROM os_architect_tasks
+      WHERE status IN ('queued','pending')
+        AND created_at < NOW() - (${QUEUE_STUCK_MINUTES} || ' minutes')::interval
+    `;
+    stuckQueued = Number(stuck[0]?.n || 0);
+  } catch {
+  }
+  if (stuckQueued > 0) {
+    issues.push({
+      kind: "queue_stuck",
+      detail: `${stuckQueued} architect task(s) queued >${QUEUE_STUCK_MINUTES}m`
+    });
+  }
+  return { ok: issues.length === 0, issues, watcherAgeMin, stuckQueued };
+}
+async function alertMarcusPipelineIssues(companyId, productLabel) {
+  const sql2 = getSql();
+  const { issues } = await checkMarcusPipelineHealth(companyId);
+  if (!issues.length) return [];
+  const notifyKey = "marcus_pipeline:" + issues.map((i) => i.kind).join(",");
+  const recent = await sql2`
+    SELECT value FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key=${notifyKey}
+    LIMIT 1
+  `.catch(() => []);
+  const last = recent[0]?.value;
+  if (last && Date.now() - Date.parse(String(last)) < 4 * 60 * 60 * 1e3) return issues;
+  await sql2`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${companyId}, 'operating', ${notifyKey}, ${(/* @__PURE__ */ new Date()).toISOString()}, 1, 'marcus_health')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value=${(/* @__PURE__ */ new Date()).toISOString()}, updated_at=NOW()
+  `.catch(() => {
+  });
+  await sendTelegram(
+    `\u{1F6A8} MARCUS PIPELINE \u2014 ${productLabel}
+` + issues.map((i) => `\u2022 ${i.detail}`).join("\n") + "\n\nFix: reload Marcus daemon \u2014 bash scripts/setup-marcus-watcher.sh"
+  ).catch(() => {
+  });
+  return issues;
+}
+var WATCHER_STALE_MINUTES, QUEUE_STUCK_MINUTES;
+var init_marcusPipelineHealth = __esm({
+  "server/os/marcusPipelineHealth.ts"() {
+    "use strict";
+    init_conn();
+    init_telegram();
+    WATCHER_STALE_MINUTES = 2;
+    QUEUE_STUCK_MINUTES = 5;
+  }
+});
+
+// server/os/janetHQActions.ts
+function normalizeArchitectTask(task) {
+  return task.replace(/^\*+\s*/, "").replace(/\s*\*+$/, "").replace(/\s+/g, " ").trim();
+}
+function isValidArchitectTask(task) {
+  const t = task.trim();
+  return t.length >= 12 && !/^\*+$/.test(t) && !/^[\W_]+$/.test(t) && !/^(n\/a|none|todo|tbd)$/i.test(t);
+}
+function extractArchitectTasks(text2) {
+  const tasks = [];
+  const seen = /* @__PURE__ */ new Set();
+  const blockRe = /ARCHITECT_TASK:\s*([\s\S]*?)(?=\n\n|\n#{1,3}\s|\n[A-Z][A-Z\s]{3,}:|$)/gi;
+  for (const match of text2.matchAll(blockRe)) {
+    const lines = match[1].trim().split("\n").map((l) => l.trim()).filter(Boolean);
+    const task = normalizeArchitectTask(lines.join(" "));
+    if (isValidArchitectTask(task) && !seen.has(task.toLowerCase())) {
+      seen.add(task.toLowerCase());
+      tasks.push(task);
+    }
+  }
+  return tasks;
+}
+async function getArchitectPipelineStatus(companyId) {
+  const sql2 = getSql();
+  const rows = await sql2`
+    SELECT status, count(*)::int as n FROM os_architect_tasks
+    WHERE created_at > NOW() - INTERVAL '14 days' GROUP BY status
+  `.catch(() => []);
+  const byStatus = Object.fromEntries(rows.map((r) => [r.status, r.n]));
+  const active = ["queued", "pending", "approved", "running"];
+  const queued = active.reduce((s, k) => s + (byStatus[k] || 0), 0);
+  const running = (byStatus.running || 0) + (byStatus.approved || 0);
+  const doneRows = await sql2`
+    SELECT task, updated_at, commit_sha FROM os_architect_tasks
+    WHERE status = 'done' AND updated_at > NOW() - INTERVAL '48 hours'
+    ORDER BY updated_at DESC LIMIT 1
+  `.catch(() => []);
+  const doneRecent = await sql2`
+    SELECT count(*)::int as n FROM os_architect_tasks
+    WHERE status = 'done' AND updated_at > NOW() - INTERVAL '48 hours'
+  `.catch(() => [{ n: 0 }]);
+  const last = doneRows[0];
+  const watcherAgeMin = await getWatcherHeartbeatAgeMinutes(companyId);
+  return {
+    queued,
+    running,
+    doneRecent: Number(doneRecent[0]?.n || 0),
+    lastDone: last ? { task: String(last.task), updated_at: String(last.updated_at), commit_sha: last.commit_sha || void 0 } : null,
+    watcherAgeMin
+  };
+}
+function synthesizeArchitectTask(founderMessage) {
+  const m2 = founderMessage.trim();
+  if (!CODE_INTENT_RE.test(m2) || m2.length < 8) return null;
+  return normalizeArchitectTask(`FOUNDER REQUEST: ${m2.slice(0, 500)}`);
+}
+function claimsCompletion(response) {
+  return COMPLETION_CLAIM_RE.test(response);
+}
+function honestQueuedReply(taskPreview, pipeline) {
+  const short = taskPreview.slice(0, 120);
+  if (pipeline.running > 0) {
+    return `Kaan \u2014 Marcus is actively working on this (${pipeline.running} in progress). No verified prod deploy yet \u2014 check HQ \u2192 Architect Log. Latest: "${short}".`;
+  }
+  return `Kaan \u2014 queued Marcus now. Pipeline: dev \u2192 preview QA \u2192 prod \u2192 prod QA. Not deployed until Architect Log shows done + commit. Task: "${short}".`;
+}
+function honestNotDoneReply(pipeline) {
+  if (pipeline.lastDone) {
+    return `Kaan \u2014 I cannot confirm that deploy yet. Last verified completion: ${pipeline.lastDone.updated_at}. Check Architect Log or refresh HQ metrics. I will not claim "deployed" without proof.`;
+  }
+  return `Kaan \u2014 no verified Marcus deploy in the last 48h. I will queue Marcus for code changes \u2014 track in Architect Log until status is done.`;
+}
+async function processJanetHQResponse(founderMessage, janetResponse, companyId) {
+  const pipeline = await getArchitectPipelineStatus(companyId);
+  const architectTasksQueued = [];
+  let response = janetResponse.trim();
+  let completionClaimBlocked = false;
+  for (const task of extractArchitectTasks(response)) {
+    const id = await queueJanetArchitectTask({ task, notes: `Janet HQ chat \u2192 Marcus (${companyId})` });
+    if (id) architectTasksQueued.push(task);
+  }
+  if (architectTasksQueued.length === 0 && CODE_INTENT_RE.test(founderMessage)) {
+    const synthesized = synthesizeArchitectTask(founderMessage);
+    if (synthesized && isValidArchitectTask(synthesized)) {
+      const id = await queueJanetArchitectTask({
+        task: synthesized,
+        notes: `Janet HQ chat \u2014 auto-queued from founder directive (${companyId})`
+      });
+      if (id) architectTasksQueued.push(synthesized);
+    }
+  }
+  if (claimsCompletion(response)) {
+    const hasRecentProof = pipeline.doneRecent > 0 && architectTasksQueued.length === 0;
+    if (!hasRecentProof) {
+      completionClaimBlocked = true;
+      response = architectTasksQueued.length > 0 ? honestQueuedReply(architectTasksQueued[0], pipeline) : honestNotDoneReply(pipeline);
+    }
+  } else if (architectTasksQueued.length > 0 && !/queued|architect log|not deployed|dev → qa/i.test(response)) {
+    response = `${response}
+
+(Marcus queued \u2014 HQ \u2192 Architect Log. Not deployed until status shows done.)`;
+  }
+  response = response.replace(/ARCHITECT_TASK:\s*[\s\S]*?(?=\n\n|$)/gi, "").trim();
+  return { response, architectTasksQueued, completionClaimBlocked, pipeline };
+}
+function architectStatusForPrompt(pipeline) {
+  const watcherLine = pipeline.watcherAgeMin == null ? "- Mac watcher: no heartbeat \u2014 tasks will not deploy until launchd runs" : pipeline.watcherAgeMin <= 20 ? `- Mac watcher: alive (${Math.round(pipeline.watcherAgeMin)}m ago)` : `- Mac watcher: STALE (${Math.round(pipeline.watcherAgeMin)}m ago)`;
+  return [
+    "MARCUS / ARCHITECT PIPELINE (authoritative \u2014 never contradict):",
+    `- Queued: ${pipeline.queued} | In progress: ${pipeline.running} | Done (48h): ${pipeline.doneRecent}`,
+    watcherLine,
+    "Deploy path: dev \u2192 preview QA \u2192 prod \u2192 prod QA (Mac watcher, every 10m).",
+    "RULES: Never say Marcus deployed unless Last verified deploy matches this request.",
+    "For code fixes: QUEUE Marcus via ARCHITECT_TASK \u2014 never invent completion."
+  ].join("\n");
+}
+var COMPLETION_CLAIM_RE, CODE_INTENT_RE;
+var init_janetHQActions = __esm({
+  "server/os/janetHQActions.ts"() {
+    "use strict";
+    init_conn();
+    init_selfHeal();
+    init_marcusPipelineHealth();
+    COMPLETION_CLAIM_RE = /\b(deployed|deployment (is )?complete|it(?:'s| is) (done|live|fixed)|changes (are |have been )?live|marcus (confirmed|deployed|fixed|completed)|live and accurate|already (deployed|fixed|on vercel)|double-checked with marcus)\b/i;
+    CODE_INTENT_RE = /\b(fix|deploy|build|clear|zero(?:ed)? out|reset|dashboard|hq|code|marcus|architect|bug|implement|change the|update the|remove the fake|incorrect (mrr|metrics|numbers))\b/i;
+  }
+});
+
 // server/os/janetOpsSnapshot.ts
 var janetOpsSnapshot_exports = {};
 __export(janetOpsSnapshot_exports, {
@@ -41106,6 +41415,13 @@ async function getJanetOpsSnapshot(companyId = "phishsimai") {
     priority: t.priority
   }));
   const openAlerts = alerts.map((a2) => `${a2.key}: ${String(a2.detail || "").slice(0, 100)}`);
+  const architectPipeline = await getArchitectPipelineStatus(companyId).catch(() => ({
+    queued: 0,
+    running: 0,
+    doneRecent: 0,
+    lastDone: null,
+    watcherAgeMin: null
+  }));
   const employeeLines = employees.filter((e) => e.id !== "janet").map((e) => `- ${e.name} (${e.title}): ${e.status}, last active ${ago(e.lastSuccess)}${e.lastError ? `, err: ${e.lastError.slice(0, 60)}` : ""}`);
   const sarahLinkedIn = {
     status: linkedinStatus,
@@ -41155,6 +41471,8 @@ ${reviewLines.join("\n")}` : "PENDING REVIEW: none",
     openAlerts.length ? `ALERTS:
 ${openAlerts.join("\n")}` : "ALERTS: clear",
     "",
+    architectStatusForPrompt(architectPipeline),
+    "",
     'YOU ARE THE CGO \u2014 answer Kaan from this data. Ping employees via ask_employee tool. Show LinkedIn via get_sarah_linkedin_preview. No excuses, no "waiting on marketing".'
   ].filter(Boolean);
   return {
@@ -41177,6 +41495,7 @@ var init_janetOpsSnapshot = __esm({
     init_sarahSocial();
     init_agentHealth_v2();
     init_kaan_os_v4();
+    init_janetHQActions();
     BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://phishsimai.com";
   }
 });
@@ -61061,8 +61380,9 @@ Safari preview link for Kaan: ${preview.previewUrl}` : "\n\nTell Kaan to open HQ
   ];
   let response;
   try {
+    const pipeline = await getArchitectPipelineStatus(companyId);
     const chat = await llmComplete({
-      messages: [{ role: "system", content: JANET_SYSTEM + "\n\nLIVE OPS DATA (authoritative):\n" + (ops?.text || "unavailable") + extraContext + "\n\nMEMORY:\n" + memCtx }, ...messages],
+      messages: [{ role: "system", content: JANET_SYSTEM + "\n\nLIVE OPS DATA (authoritative):\n" + (ops?.text || "unavailable") + extraContext + "\n\n" + architectStatusForPrompt(pipeline) + "\n\nMEMORY:\n" + memCtx }, ...messages],
       max_tokens: 400,
       temperature: 0.7
     });
@@ -61076,6 +61396,8 @@ ${err}`).catch(() => {
     });
     return `Janet is temporarily unavailable (${err}). Try again shortly \u2014 Gemini/Ollama/Groq may be rate-limited.`;
   }
+  const processed = await processJanetHQResponse(message2, response, companyId);
+  response = processed.response;
   await rememberFact({
     company_id: companyId,
     type: "operating",
@@ -61112,6 +61434,7 @@ var init_janet = __esm({
     init_janetOpsSnapshot();
     init_kaan_os_v4();
     init_sarahLinkedIn();
+    init_janetHQActions();
     JANET_SYSTEM = `You are Janet, a world-class Chief Growth Officer with 15+ years scaling B2B SaaS companies from zero to multi-million ARR exits.
 
 You are the autonomous CGO of PhishSimAI \u2014 an AI-powered phishing simulation and security awareness training platform.
@@ -61134,7 +61457,14 @@ Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 
 
 When Kaan asks operational questions (posting schedule, Sarah LinkedIn, pipeline, agents): answer from LIVE OPS DATA in the prompt. If blocked, state the blocker and your immediate action \u2014 never loop on "waiting for confirmation".
 
-You have real employees (Marcus, Aria, Nova, Rex, Scout, Finn, Vera, Max) with live health pings. Reference their status. If Kaan asks you to check with someone, you can relay what they last reported \u2014 do not pretend to wait hours for marketing.`;
+You have real employees (Marcus, Aria, Nova, Rex, Scout, Finn, Vera, Max) with live health pings. Reference their status. If Kaan asks you to check with someone, you can relay what they last reported \u2014 do not pretend to wait hours for marketing.
+
+MARCUS / CODE CHANGES (CRITICAL):
+- You cannot deploy code yourself. Marcus (Architect) is the only path to production.
+- For any fix/build/dashboard/code request, include: ARCHITECT_TASK: [one sentence describing the change]
+- NEVER say Marcus deployed, confirmed deploy, or metrics are fixed unless Architect Log shows status "done" with a recent commit.
+- If work is not done yet, say "queued for Marcus" and point Kaan to HQ \u2192 Architect Log \u2014 never claim completion.
+- Do not invent verification ("I double-checked with Marcus") \u2014 only cite Architect Log facts.`;
   }
 });
 
@@ -61154,6 +61484,7 @@ async function ensureResearcherRunning(companyId, actions) {
     actions.push(
       `Researcher proactive: discovered=${heal.discovered} added=${heal.added} enriched=${heal.enriched}`
     );
+    await resolveSystemAlert("agent_stale:researcher", "researcher proactive run completed", companyId);
   } catch (e) {
     actions.push("Researcher proactive failed: " + e.message?.slice(0, 120));
   }
@@ -61202,6 +61533,7 @@ async function runWatchdog() {
     result.actions_taken.push("Bounce check error: " + e.message?.slice(0, 100));
   }
   try {
+    await ensureResearcherRunning("phishsimai", result.actions_taken);
     const recovery = await runOpsRecoveryTick("phishsimai");
     if (recovery.restarts.length > 0) {
       result.issues_found += recovery.restarts.filter((r) => !r.ok).length;
@@ -61218,7 +61550,6 @@ async function runWatchdog() {
     } else if (recovery.restarts.length === 0) {
       result.actions_taken.push("All ops + employee agents healthy");
     }
-    await ensureResearcherRunning("phishsimai", result.actions_taken);
   } catch (e) {
     result.actions_taken.push("Agent health check error: " + e.message?.slice(0, 100));
   }
@@ -61240,6 +61571,7 @@ var init_watchdog = __esm({
     init_agentHealth_v2();
     init_opsRecovery();
     init_leadResearcher();
+    init_selfHeal();
     RESEARCHER_PROACTIVE_MS = 55 * 60 * 1e3;
   }
 });
@@ -61858,6 +62190,7 @@ Error: ${healResult.error}`).catch(() => {
     remaining_unhealthy: stillUnhealthy
   }).catch(() => {
   });
+  const marcusIssues = await alertMarcusPipelineIssues(companyId, "PhishSimAI").catch(() => []);
   res.json({
     ok: true,
     overall,
@@ -61873,6 +62206,7 @@ Error: ${healResult.error}`).catch(() => {
     },
     remaining_unhealthy: stillUnhealthy,
     agents: formatAgentList(finalAgents),
+    marcus_pipeline_issues: marcusIssues,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 }
@@ -61887,6 +62221,7 @@ var init_agentWatchdog = __esm({
     init_telegram();
     init_conn();
     init_selfHeal();
+    init_marcusPipelineHealth();
     HQ = process.env.HQ_SECRET || "ps-hq-2026";
     CRON = process.env.CRON_SECRET || "";
     COMPANY = "phishsimai";
@@ -63029,7 +63364,7 @@ var init_architectAgent = __esm({
 });
 
 // server/os/architectTasks.ts
-function isValidArchitectTask(task) {
+function isValidArchitectTask2(task) {
   const t = task.trim();
   if (t.length < MIN_TASK_LEN) return false;
   if (/^\*+$/.test(t)) return false;
@@ -63102,6 +63437,7 @@ async function architectPending(req, res) {
   try {
     await ensureTaskColumns();
     const sql2 = getSql();
+    await recordWatcherHeartbeat("phishsimai");
     const peek = req.query.peek === "1";
     const cleanup = req.query.cleanup === "1";
     if (peek) {
@@ -63153,7 +63489,7 @@ async function architectPending(req, res) {
       )
       RETURNING id, task, status, source, created_at, bug_id
     `.catch(() => []);
-    const tasks = picked.filter((t) => isValidArchitectTask(t.task));
+    const tasks = picked.filter((t) => isValidArchitectTask2(t.task));
     res.json({
       tasks,
       count: tasks.length,
@@ -63171,7 +63507,48 @@ var init_architectPending = __esm({
     "use strict";
     init_conn();
     init_architectTasks();
+    init_marcusPipelineHealth();
     HQ2 = process.env.HQ_SECRET || "ps-hq-2026";
+  }
+});
+
+// server/os/architectWake.ts
+var architectWake_exports = {};
+__export(architectWake_exports, {
+  architectWake: () => architectWake
+});
+function okHQ2(req) {
+  const secret = req.headers["x-os-secret"] || req.query.secret;
+  return secret === HQ3;
+}
+async function architectWake(req, res) {
+  if (!okHQ2(req)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (req.method === "GET") {
+    const wakeAt2 = await getMarcusWakeAt(COMPANY_ID);
+    res.json({
+      ok: true,
+      product: COMPANY_ID,
+      wake_at: wakeAt2,
+      daemon_poll_seconds: 3,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    return;
+  }
+  const taskId = req.body?.taskId ? String(req.body.taskId) : void 0;
+  await dispatchMarcusWake(COMPANY_ID, { taskId, product: "phishsim" });
+  const wakeAt = await getMarcusWakeAt(COMPANY_ID);
+  res.json({ ok: true, wake_at: wakeAt, pinged: true });
+}
+var HQ3;
+var init_architectWake = __esm({
+  "server/os/architectWake.ts"() {
+    "use strict";
+    init_version2();
+    init_wakeMarcus();
+    HQ3 = process.env.HQ_SECRET || "ps-hq-2026";
   }
 });
 
@@ -63183,6 +63560,7 @@ __export(routes_exports, {
   architectComplete: () => architectComplete,
   architectPending: () => architectPending2,
   architectRun: () => architectRun,
+  architectWake: () => architectWake2,
   bugReport: () => bugReport,
   cronAgentWatchdog: () => cronAgentWatchdog,
   cronAriaDaily: () => cronAriaDaily,
@@ -63228,12 +63606,12 @@ __export(routes_exports, {
 });
 function checkHQ(req) {
   const s = req.query.secret || req.headers["x-hq-secret"];
-  return s === HQ3;
+  return s === HQ4;
 }
 function checkCron(req) {
   return req.headers.authorization === `Bearer ${CRON2}`;
 }
-function okHQ2(req, res) {
+function okHQ3(req, res) {
   if (!checkHQ(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return false;
@@ -63365,7 +63743,7 @@ async function analyticsCollect(req, res) {
   }
 }
 async function hqSarahSocial(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const action = req.query.action || "list";
     if (action === "verify") {
@@ -63501,7 +63879,7 @@ async function socialPreviewReview(req, res) {
   }
 }
 async function hqData(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     await ensureHqTables();
     const sql2 = getSql();
@@ -63578,7 +63956,7 @@ async function hqData(req, res) {
   }
 }
 async function hqChat(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const { message: message2, history = [], attachments = [] } = req.body;
     if (!message2?.trim() && !attachments?.length) {
@@ -63594,7 +63972,7 @@ ${formatAttachmentsForPrompt(attachments)}` : message2.trim();
   }
 }
 async function hqIngest(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const files = req.body?.files || [];
     if (!files.length) return res.status(400).json({ ok: false, error: "No files" });
@@ -63614,7 +63992,7 @@ async function hqIngest(req, res) {
   }
 }
 async function hqTTS(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   const { text: text2 } = req.body;
   if (!text2) {
     res.status(400).json({ error: "No text" });
@@ -63642,7 +64020,7 @@ async function hqTTS(req, res) {
   }
 }
 async function hqTask(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const { id, status, notes } = req.body;
     const sql2 = getSql();
@@ -63654,7 +64032,7 @@ async function hqTask(req, res) {
   }
 }
 async function hqMemoryGet(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     res.json({ ok: true, context: await recallContext(COMPANY2) });
   } catch (e) {
@@ -63662,7 +64040,7 @@ async function hqMemoryGet(req, res) {
   }
 }
 async function hqSeed(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const n = await seedPhishSimMemory();
     res.json({ ok: true, seeded: n });
@@ -63671,7 +64049,7 @@ async function hqSeed(req, res) {
   }
 }
 async function hqJanetSignedUrl(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   const { getJanetConvaiSignedUrl: getJanetConvaiSignedUrl2, JANET_AGENT_PHISHSIM: JANET_AGENT_PHISHSIM2 } = await Promise.resolve().then(() => (init_janetConvai(), janetConvai_exports));
   const { getJanetOpsSnapshot: getJanetOpsSnapshot2 } = await Promise.resolve().then(() => (init_janetOpsSnapshot(), janetOpsSnapshot_exports));
   if (!JANET_AGENT_PHISHSIM2) {
@@ -63710,7 +64088,7 @@ async function hqJanetTool(req, res) {
   }
 }
 async function hqJanetOpsContext(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const { getJanetOpsSnapshot: getJanetOpsSnapshot2 } = await Promise.resolve().then(() => (init_janetOpsSnapshot(), janetOpsSnapshot_exports));
     const ops = await getJanetOpsSnapshot2("phishsimai");
@@ -63720,7 +64098,7 @@ async function hqJanetOpsContext(req, res) {
   }
 }
 async function hqSTT(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const chunks = [];
     await new Promise((resolve, reject) => {
@@ -63800,7 +64178,7 @@ Error: ${String(error_message).slice(0, 200)}`
   }
 }
 async function qaSmokePS(req, res) {
-  if (!okHQ2(req, res) && !okCron(req, res)) return;
+  if (!okHQ3(req, res) && !okCron(req, res)) return;
   try {
     const { runQASmoke: runQASmoke2 } = await Promise.resolve().then(() => (init_architectAgent(), architectAgent_exports));
     const trigger = req.query.trigger || "manual";
@@ -63812,7 +64190,7 @@ async function qaSmokePS(req, res) {
 }
 function okV4(req, res) {
   const secret = req.headers["x-os-secret"] || req.query.secret;
-  if (secret !== HQ3 && !checkCron(req)) {
+  if (secret !== HQ4 && !checkCron(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return false;
   }
@@ -63909,7 +64287,7 @@ async function v4AgentTalk(req, res) {
   }
 }
 async function hqDirective(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const { message: message2 } = req.body;
     if (!message2) {
@@ -63942,7 +64320,7 @@ async function hqDirective(req, res) {
 }
 async function janetReport(req, res) {
   const secret = req.query.secret || req.headers["x-report-secret"];
-  if (secret !== HQ3 && secret !== (process.env.REPORT_SECRET || "ps-migrate-2026")) {
+  if (secret !== HQ4 && secret !== (process.env.REPORT_SECRET || "ps-migrate-2026")) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -63977,8 +64355,12 @@ async function architectPending2(req, res) {
   const { architectPending: pick } = await Promise.resolve().then(() => (init_architectPending(), architectPending_exports));
   return pick(req, res);
 }
+async function architectWake2(req, res) {
+  const { architectWake: wake } = await Promise.resolve().then(() => (init_architectWake(), architectWake_exports));
+  return wake(req, res);
+}
 async function architectComplete(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   try {
     const { id, success, qwen_output, files_changed, commit_sha, error, prod_url, qa_prod } = req.body;
     const sql2 = getSql();
@@ -64011,7 +64393,7 @@ ${notes}`).catch(() => {
   }
 }
 async function architectRun(req, res) {
-  if (!okHQ2(req, res) && !okCron(req, res)) return;
+  if (!okHQ3(req, res) && !okCron(req, res)) return;
   try {
     const bugId = req.query.bugId || req.body?.bugId;
     const mode = req.query.mode || req.body?.mode || "diagnose";
@@ -64030,7 +64412,7 @@ async function architectRun(req, res) {
   }
 }
 async function osUnified(req, res) {
-  if (!okHQ2(req, res) && !checkCron(req)) {
+  if (!okHQ3(req, res) && !checkCron(req)) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -64056,22 +64438,22 @@ async function telegramWebhook(req, res) {
   }
 }
 async function telegramTest(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   const result = await sendTelegramTest();
   res.json({ config: getTelegramConfig(), ...result });
 }
 async function telegramStatus(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   res.json({ ok: true, telegram: getTelegramConfig() });
 }
 async function telegramSetupWebhook(req, res) {
-  if (!okHQ2(req, res)) return;
+  if (!okHQ3(req, res)) return;
   const base = req.body?.base_url || req.query.base_url || "https://phishsimai.com";
   const webhookUrl = `${String(base).replace(/\/$/, "")}/api/os/webhook/telegram`;
   const result = await registerTelegramWebhook(webhookUrl);
   res.json({ webhook: webhookUrl, ...result });
 }
-var HQ3, CRON2, COMPANY2;
+var HQ4, CRON2, COMPANY2;
 var init_routes2 = __esm({
   "server/os/routes.ts"() {
     "use strict";
@@ -64099,7 +64481,7 @@ var init_routes2 = __esm({
     init_siteAnalytics();
     init_redditClient();
     init_architectCode();
-    HQ3 = process.env.HQ_SECRET || "ps-hq-2026";
+    HQ4 = process.env.HQ_SECRET || "ps-hq-2026";
     CRON2 = process.env.CRON_SECRET || "";
     COMPANY2 = "phishsimai";
   }
@@ -64212,6 +64594,7 @@ async function dispatchOsRoute(req, res) {
     if (path === "/api/os/bug-report" && method === "post") return routes.bugReport(req, res);
     if (path === "/api/os/janet/report" && method === "get") return routes.janetReport(req, res);
     if (path === "/api/os/architect/pending" && method === "get") return routes.architectPending(req, res);
+    if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);
     if (path === "/api/os/architect/complete" && method === "post") return routes.architectComplete(req, res);
     if (path === "/api/os/architect-run") return routes.architectRun(req, res);

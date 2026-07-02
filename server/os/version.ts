@@ -1,4 +1,4 @@
-export const KAAN_OS_VERSION = '4.5.6'
+export const KAAN_OS_VERSION = '4.5.8'
 
 export const KAAN_OS_LABEL = `Kaan AI OS v${KAAN_OS_VERSION}`
 

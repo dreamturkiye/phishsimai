@@ -3,6 +3,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { ensureMemoryTable } from './memory'
 import { COMPANY_ID } from './version'
+import { dispatchMarcusWake } from './wakeMarcus'
 
 async function ensureArchitectColumns() {
   const sql = getSql()
@@ -94,7 +95,11 @@ export async function queueJanetArchitectTask(opts: {
           AND status IN ('queued','pending','approved','running')
         ORDER BY created_at ASC LIMIT 1
       `
-      if ((existing as any[])[0]?.id) return (existing as any[])[0].id as string
+      if ((existing as any[])[0]?.id) {
+        const existingId = (existing as any[])[0].id as string
+        void dispatchMarcusWake(COMPANY_ID, { taskId: existingId, product: 'phishsim' })
+        return existingId
+      }
     }
 
     const id = randomUUID()
@@ -107,8 +112,9 @@ export async function queueJanetArchitectTask(opts: {
       `<b>JANET → MARCUS</b>\n` +
       `Marcus (Architect) queued autonomously.\n` +
       `Task: ${opts.task.slice(0, 300)}\n\n` +
-      `Pipeline: dev → QA → prod. No approval needed.`
+      `Pipeline: dev → QA → prod. Instant wake — no poll delay.`
     )
+    void dispatchMarcusWake(COMPANY_ID, { taskId: id, product: 'phishsim' })
     return id
   } catch (e: any) {
     await sendTelegram(`ARCHITECT QUEUE FAILED: ${String(e.message).slice(0, 200)}`)
