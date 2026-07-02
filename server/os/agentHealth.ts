@@ -13,7 +13,51 @@ const STALE_THRESHOLDS: Record<string, number> = {
   watchdog: 4*3600000, heartbeat: 3*3600000
 }
 
+const ALERT_COOLDOWN_MS = 4 * 60 * 60 * 1000
+const ALERT_META_AGENT = '_alert_meta'
+
 const getConn = () => connect({ url: process.env.DATABASE_URL! })
+
+async function getLastAlertMs(conn: ReturnType<typeof connect>, companyId: string, key: string): Promise<number> {
+  const rows = await conn.execute(
+    `SELECT metrics FROM agent_health WHERE company_id=? AND agent_name=? LIMIT 1`,
+    [companyId, ALERT_META_AGENT],
+  )
+  const metrics = (rows as any).rows?.[0]?.metrics
+  const parsed = typeof metrics === 'string' ? JSON.parse(metrics || '{}') : (metrics || {})
+  const ts = parsed[key]
+  return ts ? new Date(ts).getTime() : 0
+}
+
+async function markAlertSent(conn: ReturnType<typeof connect>, companyId: string, key: string) {
+  const rows = await conn.execute(
+    `SELECT metrics FROM agent_health WHERE company_id=? AND agent_name=? LIMIT 1`,
+    [companyId, ALERT_META_AGENT],
+  )
+  const existing = (rows as any).rows?.[0]?.metrics
+  const parsed = typeof existing === 'string' ? JSON.parse(existing || '{}') : (existing || {})
+  parsed[key] = new Date().toISOString()
+  const m = JSON.stringify(parsed)
+  await conn.execute(
+    `INSERT INTO agent_health (company_id, agent_name, metrics, status)
+     VALUES (?, ?, ?, 'healthy')
+     ON DUPLICATE KEY UPDATE metrics=VALUES(metrics), updated_at=NOW()`,
+    [companyId, ALERT_META_AGENT, m],
+  )
+}
+
+export async function notifyWithCooldown(
+  conn: ReturnType<typeof connect>,
+  companyId: string,
+  key: string,
+  message: string,
+) {
+  const last = await getLastAlertMs(conn, companyId, key)
+  if (Date.now() - last < ALERT_COOLDOWN_MS) return false
+  await markAlertSent(conn, companyId, key)
+  await sendTelegram(message)
+  return true
+}
 
 export async function ensureHealthTable() {
   const conn = getConn()
@@ -61,7 +105,7 @@ export async function getAgentHealth(companyId = 'phishsimai'): Promise<AgentHea
   await ensureHealthTable()
   const rows = await conn.execute(
     `SELECT agent_name,status,last_run_at,last_success_at,consecutive_failures,last_error,metrics
-     FROM agent_health WHERE company_id=? ORDER BY agent_name`, [companyId]
+     FROM agent_health WHERE company_id=? AND agent_name<>? ORDER BY agent_name`, [companyId, ALERT_META_AGENT]
   )
   return ((rows as any).rows || []).map((r: any) => ({
     ...r, metrics: typeof r.metrics==='string' ? JSON.parse(r.metrics||'{}') : (r.metrics||{})
@@ -71,7 +115,7 @@ export async function getAgentHealth(companyId = 'phishsimai'): Promise<AgentHea
 export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<string[]> {
   const conn = getConn()
   await ensureHealthTable()
-  const rows = await conn.execute(`SELECT agent_name,last_run_at FROM agent_health WHERE company_id=?`,[companyId])
+  const rows = await conn.execute(`SELECT agent_name,last_run_at FROM agent_health WHERE company_id=? AND agent_name<>?`,[companyId, ALERT_META_AGENT])
   const alerts: string[] = []
   const now = Date.now()
   for (const row of ((rows as any).rows||[])) {
@@ -84,6 +128,13 @@ export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<str
       await conn.execute(`UPDATE agent_health SET status='critical',updated_at=NOW() WHERE company_id=? AND agent_name=?`,[companyId,row.agent_name])
     }
   }
-  if (alerts.length>0) await sendTelegram('PHISHSIMAI AGENT HEALTH ALERT\n'+alerts.join('\n')+'\nCheck HQ /api/os/hq')
+  if (alerts.length > 0) {
+    await notifyWithCooldown(
+      conn,
+      companyId,
+      'agent_stale_digest',
+      'PHISHSIMAI AGENT HEALTH ALERT\n' + alerts.join('\n') + '\nCheck HQ /api/os/hq',
+    )
+  }
   return alerts
 }
