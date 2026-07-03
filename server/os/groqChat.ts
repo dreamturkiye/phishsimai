@@ -10,6 +10,7 @@ export async function groqComplete(opts: {
   max_tokens?: number
   temperature?: number
   models?: readonly string[]
+  response_format?: { type: 'json_object' }
 }): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY?.trim()
   if (!apiKey) throw new Error('GROQ_API_KEY not configured on server')
@@ -26,6 +27,7 @@ export async function groqComplete(opts: {
         messages: opts.messages,
         max_tokens: opts.max_tokens ?? 300,
         temperature: opts.temperature ?? 0.7,
+        ...(opts.response_format ? { response_format: opts.response_format } : {}),
       }),
       signal: AbortSignal.timeout(45_000),
     })

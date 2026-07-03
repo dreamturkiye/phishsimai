@@ -6,9 +6,10 @@ import {
   getMarcusMemoryContext,
   makeErrorSignature,
   MARCUS_SYSTEM,
+  GROQ_ARCHITECT_MODEL,
 } from './marcus'
 import { queueJanetArchitectTask } from './selfHeal'
-import { llmComplete } from './llmChat'
+import { groqComplete } from './groqChat'
 import {
   assertHomepageStyled,
   insertSmokeBugReport,
@@ -42,7 +43,80 @@ function parseDiagnosisJson(text: string): Record<string, unknown> {
   }
 }
 
+/** Extract component symbol from runtime error when GlobalErrorHandler masks the real name */
+function inferComponentFromError(errorMessage: string, componentName: string): string {
+  const cantFind = errorMessage.match(/Can't find variable:\s*(\w+)/)
+  const notDefined = errorMessage.match(/(\w+) is not defined/)
+  const reference = errorMessage.match(/ReferenceError:\s*(\w+)/)
+  const sym = cantFind?.[1] || notDefined?.[1] || reference?.[1]
+  if (sym && sym !== 'undefined' && sym !== 'null') return sym
+  if (componentName && !['GlobalErrorHandler', 'Unknown', 'ErrorBoundary'].includes(componentName)) {
+    return componentName
+  }
+  return sym || componentName || 'unknown'
+}
+
+function inferFilePath(symbol: string): string {
+  if (!symbol || symbol === 'unknown') return 'unknown'
+  const candidates = [
+    `client/src/components/os/${symbol}.tsx`,
+    `client/src/pages/${symbol}.tsx`,
+    `client/src/components/${symbol}.tsx`,
+  ]
+  return candidates[0]
+}
+
+function buildDiagnosisFallback(bug: any, errMsg: string): {
+  root_cause: string
+  file_affected: string
+  function_affected: string
+  fix_description: string
+  fix_code_hint: string
+  confidence: number
+  is_known_pattern: boolean
+} {
+  const component = inferComponentFromError(bug.error_message || '', bug.component_name || 'Unknown')
+  const fileFromStack = bug.stack_trace?.match(/at .+\((.+:\d+:\d+)\)/)?.[1]?.split(':')[0]
+  const file_affected = fileFromStack || inferFilePath(component)
+  const cantFind = (bug.error_message || '').match(/Can't find variable:\s*(\w+)/)
+  const notDefined = (bug.error_message || '').match(/(\w+) is not defined/)
+  const root_cause = cantFind
+    ? `Missing import or definition for ${cantFind[1]}`
+    : notDefined
+      ? `${notDefined[1]} is referenced but not imported or defined`
+      : `LLM diagnosis unavailable (${errMsg})`
+  return {
+    root_cause,
+    file_affected,
+    function_affected: component,
+    fix_description: cantFind || notDefined
+      ? `Add missing import for ${component} in the file that uses it (likely ${file_affected})`
+      : 'Manual investigation required — use stack trace below',
+    fix_code_hint: (bug.stack_trace || '').split('\n').slice(0, 3).join('\n'),
+    confidence: cantFind || notDefined ? 0.55 : 0.3,
+    is_known_pattern: false,
+  }
+}
+
 async function callMarcusDiagnosis(prompt: string): Promise<Record<string, unknown>> {
+  if (process.env.GROQ_API_KEY?.trim()) {
+    try {
+      const text = await groqComplete({
+        messages: [
+          { role: 'system', content: MARCUS_SYSTEM },
+          { role: 'user', content: prompt },
+        ],
+        max_tokens: 500,
+        temperature: 0.1,
+        models: [GROQ_ARCHITECT_MODEL, 'llama-3.3-70b-versatile'],
+        response_format: { type: 'json_object' },
+      })
+      return parseDiagnosisJson(text || '{}')
+    } catch {
+      // fall through to generic llm chain
+    }
+  }
+  const { llmComplete } = await import('./llmChat')
   const { text } = await llmComplete({
     messages: [
       { role: 'system', content: MARCUS_SYSTEM },
@@ -95,15 +169,7 @@ async function diagnose(bug: any, knownFix: any, memoryContext: string): Promise
     }
   } catch (e: unknown) {
     const err = e instanceof Error ? e.message : String(e)
-    const fallback = {
-      root_cause: `LLM diagnosis unavailable (${err})`,
-      file_affected: bug.stack_trace?.match(/at .+\((.+:\d+:\d+)\)/)?.[1]?.split(':')[0] || 'unknown',
-      function_affected: 'unknown',
-      fix_description: 'Manual investigation required — use stack trace below',
-      fix_code_hint: (bug.stack_trace || '').split('\n').slice(0, 3).join('\n'),
-      confidence: 0.3,
-      is_known_pattern: false,
-    }
+    const fallback = buildDiagnosisFallback(bug, err)
     return {
       ...fallback,
       qwen_task: buildMarcusTaskFromBug(bug, fallback),

@@ -15,6 +15,8 @@ import { getTelegramConfig, sendTelegramTest, registerTelegramWebhook } from './
 import { ingestFounderFile, storeFounderUpload, formatAttachmentsForPrompt } from './founderIngest'
 import { resolveLinkedBug } from './selfHeal'
 import { recordMarcusDeployOutcome } from './marcus'
+import { dispatchMarcusWake } from './wakeMarcus'
+import { queueJanetArchitectTask } from './selfHeal'
 import {
   runJanetFullOrchestration, getOSStatus, runDailyStandup, runWeeklyReview,
   talkToAgent, janetTellAgent, issueTask, executeTask, reviewTask,
@@ -779,6 +781,42 @@ export async function webhookResend(req: Request, res: Response) {
     res.json({ ok: true })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
+  }
+}
+
+export async function portfolioDispatch(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  try {
+    const body = req.body || {}
+    const task = String(body.task || '').trim()
+    if (!task || task.length < 8) {
+      return res.status(400).json({ error: 'task required (min 8 chars)' })
+    }
+
+    const source = String(body.source || 'portfolio_dispatch')
+    const priority = String(body.priority || 'normal')
+    const notes = `[${source}] ${String(body.notes || 'Super Janet Portfolio Dispatch')} · priority=${priority}`
+
+    const taskId = await queueJanetArchitectTask({
+      task,
+      notes: notes.slice(0, 500),
+    })
+
+    if (!taskId) {
+      return res.status(500).json({ ok: false, error: 'queue failed' })
+    }
+
+    await dispatchMarcusWake(COMPANY, { taskId, product: 'phishsim' })
+
+    return res.json({
+      ok: true,
+      taskId,
+      id: taskId,
+      product: 'phishsimai',
+      subsidiaryId: 'phishsim',
+    })
+  } catch (e: any) {
+    res.status(500).json({ ok: false, error: e.message })
   }
 }
 

@@ -253,12 +253,76 @@ def get_repo_context(product: Product) -> str:
     return result.stdout[:2000]
 
 
+PASCAL_SYMBOL_RE = re.compile(r'\b[A-Z][a-zA-Z0-9]{2,}\b')
+SKIP_SYMBOLS = frozenset({
+    'Error', 'TypeError', 'ReferenceError', 'SyntaxError', 'RangeError',
+    'GlobalErrorHandler', 'ErrorBoundary', 'React', 'Promise', 'Object',
+    'Array', 'String', 'Number', 'Boolean', 'JSON', 'Date', 'Map', 'Set',
+    'MARCUS', 'BUG', 'FIX', 'SELF', 'HEAL', 'TEST', 'URL', 'API', 'HQ',
+})
+
+
+def extract_pascal_symbols(text: str) -> list:
+    seen = []
+    for m in PASCAL_SYMBOL_RE.finditer(text or ''):
+        sym = m.group(0)
+        if sym in SKIP_SYMBOLS or sym in seen:
+            continue
+        seen.append(sym)
+        if len(seen) >= 5:
+            break
+    return seen
+
+
+def gather_repo_files(product: Product, task_description: str) -> dict:
+    symbols = extract_pascal_symbols(task_description)
+    if not symbols:
+        return {}
+    files = {}
+    total_chars = 0
+    cap = 8000
+    for sym in symbols:
+        if total_chars >= cap:
+            break
+        try:
+            result = subprocess.run(
+                ['grep', '-rl', '--include=*.tsx', '--include=*.ts', sym, product.repo_path],
+                capture_output=True, text=True, timeout=20,
+            )
+        except Exception:
+            continue
+        for rel_hint in result.stdout.strip().split('\n')[:2]:
+            if not rel_hint or total_chars >= cap:
+                break
+            full_path = rel_hint if rel_hint.startswith('/') else os.path.join(product.repo_path, rel_hint)
+            if not os.path.isfile(full_path):
+                continue
+            rel = os.path.relpath(full_path, product.repo_path)
+            if rel in files:
+                continue
+            try:
+                with open(full_path, encoding='utf-8', errors='replace') as f:
+                    content = f.read()
+            except Exception:
+                continue
+            budget = min(len(content), cap - total_chars, 4000)
+            if budget < 80:
+                continue
+            files[rel] = content[:budget]
+            total_chars += budget
+    return files
+
+
 def run_groq_for_diff(product: Product, task_description: str, task_id: str = None) -> dict:
     repo_tree = get_repo_context(product)
+    repo_files = gather_repo_files(product, task_description)
     try:
         payload = {'task': task_description, 'repo_tree': repo_tree, 'repo_path': product.repo_path}
         if task_id:
             payload['task_id'] = task_id
+        if repo_files:
+            payload['repo_files'] = repo_files
+            print(f'[{product.name}] Pre-injected {len(repo_files)} repo file(s): {list(repo_files.keys())}')
         url = f"{product.base_url}{product.code_path}?secret={product.secret}"
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),

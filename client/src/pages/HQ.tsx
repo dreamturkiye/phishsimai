@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { HQChatComposer, type HQAttachment } from '../components/os/HQChatComposer'
 import { JanetConvaiPanel } from '../components/os/JanetConvaiPanel'
 import { HQAnalyticsTab } from '../components/os/HQAnalyticsTab'
+import { HQPipelineTab } from '../components/os/HQPipelineTab'
 import { HQSocialTab } from '../components/os/HQSocialTab'
 
 const SECRET = 'ps-hq-2026'

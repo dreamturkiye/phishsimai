@@ -91,10 +91,46 @@ export function buildMarcusCodePrompt(opts: {
   repoPath: string
   memoryContext: string
   priorDiagnosis?: string
+  repoFiles?: Record<string, string>
+  strict?: boolean
 }): string {
-  return `${MARCUS_SYSTEM}\n${opts.memoryContext}\n${PHISHSIM_CODEBASE_CONTEXT}\n` +
-    `${opts.priorDiagnosis ? `PRIOR DIAGNOSIS:\n${opts.priorDiagnosis}\n` : ''}` +
-    `TASK:\n${opts.task}\n\nRespond FILE: path\n---\ncontent\n---END---`
+  const repoFilesBlock = opts.repoFiles && Object.keys(opts.repoFiles).length
+    ? `\nSOURCE FILES FROM REPO (read before editing — paths are relative to repo root):\n` +
+      Object.entries(opts.repoFiles).map(([p, c]) => `--- ${p} ---\n${c}`).join('\n\n')
+    : ''
+
+  const strictNote = opts.strict
+    ? '\n\nSTRICT MODE: You MUST respond with FILE:/---/---END--- blocks only. No markdown fences. No prose.'
+    : ''
+
+  return `${MARCUS_SYSTEM}
+
+${opts.memoryContext}
+
+You are Marcus implementing a fix on PhishSimAI at ${opts.repoPath}.
+Stack: Vite React, Express + tRPC, TypeScript, Neon Postgres, Vercel.
+
+Repo directories:
+${opts.repoTree}
+${PHISHSIM_CODEBASE_CONTEXT}
+${repoFilesBlock}
+
+${opts.priorDiagnosis ? `YOUR PRIOR DIAGNOSIS (follow this — you already thought this through):\n${opts.priorDiagnosis}\n` : ''}
+
+TASK FROM JANET (includes your diagnosis when this is a bug fix):
+${opts.task}
+
+Think through the fix mentally before writing code. Apply memory patterns when they match.
+
+Respond with EXACTLY this format and nothing else:
+FILE: <relative path from repo root>
+---
+<complete new file content, full file not a diff>
+---END---
+
+Repeat FILE/---/content/---END--- for each file changed.
+Multi-file tasks ARE allowed — output every file needed.
+If truly unsafe, respond: CANNOT_AUTO_APPLY: <reason>${strictNote}`
 }
 
 export function buildMarcusTaskFromBug(

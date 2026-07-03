@@ -122,6 +122,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);
     if (path === "/api/os/architect/complete" && method === "post") return routes.architectComplete(req, res);
+    if (path === "/api/os/portfolio-dispatch" && method === "post") return routes.portfolioDispatch(req, res);
     if (path === "/api/os/architect-run") return routes.architectRun(req, res);
     if (path === "/api/os/webhook/telegram" && method === "post") return routes.telegramWebhook(req, res);
     if (path === "/api/os/telegram/test") return routes.telegramTest(req, res);
