@@ -76,10 +76,83 @@ function parseMarcusOutput(output: string): Record<string, string> {
   return parseMarkdownCodeBlocks(output)
 }
 
+async function callGeminiCode(prompt: string, strict = false): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('GEMINI_API_KEY not configured')
+
+  const geminiRes = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: MARCUS_SYSTEM + '\n\n' + prompt }] }],
+      generationConfig: { maxOutputTokens: 8000, temperature: strict ? 0.05 : 0.1 }
+    }),
+  })
+  if (!geminiRes.ok) {
+    throw new Error(await geminiRes.text().catch(() => 'Gemini error'))
+  }
+  const data = await geminiRes.json()
+  return (data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim() || '').trim()
+}
+
+async function callOpenAICode(prompt: string, strict = false): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured')
+
+  const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+    body: JSON.stringify({
+      model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: MARCUS_SYSTEM },
+        { role: 'user', content: prompt + (strict ? '\n\nSTRICT: FILE blocks only. No markdown.' : '') },
+      ],
+      max_tokens: 8000,
+      temperature: strict ? 0.05 : 0.1,
+    }),
+  })
+  if (!openaiRes.ok) {
+    throw new Error(await openaiRes.text().catch(() => 'OpenAI error'))
+  }
+  const data = await openaiRes.json()
+  return (data.choices?.[0]?.message?.content || '').trim()
+}
+
+async function callWithFallback(prompt: string, strict = false): Promise<{ output: string; provider: string }> {
+  let groqReason = ''
+  let geminiReason = ''
+  let openaiReason = ''
+
+  try {
+    const output = await callGroqCode(prompt, strict)
+    return { output, provider: 'groq' }
+  } catch (e: any) {
+    groqReason = e?.message || String(e)
+    console.log('[architectCode] groq failed: ' + groqReason)
+  }
+
+  try {
+    const output = await callGeminiCode(prompt, strict)
+    return { output, provider: 'gemini' }
+  } catch (e: any) {
+    geminiReason = e?.message || String(e)
+    console.log('[architectCode] gemini failed: ' + geminiReason)
+  }
+
+  try {
+    const output = await callOpenAICode(prompt, strict)
+    return { output, provider: 'openai' }
+  } catch (e: any) {
+    openaiReason = e?.message || String(e)
+    console.log('[architectCode] openai failed: ' + openaiReason)
+  }
+
+  throw new Error(`All providers failed: groq - ${groqReason}, gemini - ${geminiReason}, openai - ${openaiReason}`)
+}
+
 export async function architectCode(req: Request, res: Response) {
   if (!okSecret(req)) return res.status(401).json({ error: 'Unauthorized' })
-  const apiKey = process.env.GROQ_API_KEY
-  if (!apiKey) return res.status(500).json({ ok: false, error: 'GROQ_API_KEY not configured' })
 
   const body = req.body || {}
   const task = String(body.task || '')
@@ -97,7 +170,7 @@ export async function architectCode(req: Request, res: Response) {
   let priorDiagnosis = ''
   if (taskId) {
     const rows = await sql`
-      SELECT t.task, b.diagnosis FROM os_architect_tasks t
+      SELECT t.task, t.bug_id, b.diagnosis FROM os_architect_tasks t
       LEFT JOIN bug_reports b ON b.id = t.bug_id WHERE t.id=${taskId}::uuid LIMIT 1
     `
     const row = (rows as any[])[0]
@@ -117,20 +190,20 @@ export async function architectCode(req: Request, res: Response) {
   })
 
   try {
-    let output = await callGroqCode(prompt)
-    if (!output) return res.status(502).json({ ok: false, error: 'Empty response' })
-    if (output.startsWith('CANNOT_AUTO_APPLY')) return res.json({ ok: false, error: output })
+    let { output, provider } = await callWithFallback(prompt)
+    if (!output) return res.status(502).json({ ok: false, error: 'Empty response', provider })
+    if (output.startsWith('CANNOT_AUTO_APPLY')) return res.json({ ok: false, error: output, provider })
 
     let files = parseMarcusOutput(output)
     if (!Object.keys(files).length) {
-      output = await callGroqCode(prompt, true)
-      if (output.startsWith('CANNOT_AUTO_APPLY')) return res.json({ ok: false, error: output })
+      ({ output, provider } = await callWithFallback(prompt, true))
+      if (output.startsWith('CANNOT_AUTO_APPLY')) return res.json({ ok: false, error: output, provider })
       files = parseMarcusOutput(output)
     }
     if (!Object.keys(files).length) {
-      return res.json({ ok: false, error: 'No FILE blocks or markdown code fences', raw: output.slice(0, 1000) })
+      return res.json({ ok: false, error: 'No FILE blocks or markdown code fences', raw: output.slice(0, 1000), provider })
     }
-    return res.json({ ok: true, files, raw: output.slice(0, 1500), agent: 'marcus' })
+    return res.json({ ok: true, files, raw: output.slice(0, 1500), agent: 'marcus', provider })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: e.message })
   }
