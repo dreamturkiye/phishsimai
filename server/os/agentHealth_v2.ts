@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless'
-import { AGENTS, AgentId } from './agents/kaan_os_v4'
+import { AGENTS, AgentId } from '../lib/kaan_os_v4'
 import { getSql } from './conn'
 import { openSystemAlert, resolveSystemAlert } from './selfHeal'
 

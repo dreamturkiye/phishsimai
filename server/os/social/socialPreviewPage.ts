@@ -9,7 +9,7 @@ import { ensureSocialTables } from './sarahSocial'
 import { sanitizeStoredPostBody } from './parseSarahDraft'
 import { renderLinkedInFeedPost } from './linkedinFeedPreview'
 import type { LinkedInPreview } from './sarahLinkedIn'
-import { issueTask } from '../agents/kaan_os_v4'
+import { issueTask } from '../../lib/kaan_os_v4'
 
 export type ReviewDecision = 'approved' | 'changes_requested' | 'rejected'
 

@@ -1,6 +1,6 @@
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
 import { runFullSequence } from './sequences'
-import { runJanetFullOrchestration } from './agents/kaan_os_v4'
+import { runJanetFullOrchestration } from '../lib/kaan_os_v4'
 
 export const HEALABLE_OPS_AGENTS = ['researcher', 'discover', 'aria', 'janet'] as const
 

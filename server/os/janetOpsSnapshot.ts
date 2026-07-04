@@ -4,7 +4,7 @@
 import { getSql } from './conn'
 import { ensureSocialTables, listSocialQueue } from './social/sarahSocial'
 import { getAllAgentHealth } from './agentHealth_v2'
-import { AGENTS } from './agents/kaan_os_v4'
+import { AGENTS } from '../lib/kaan_os_v4'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://phishsimai.com'
 

@@ -12,7 +12,7 @@ import { runCSAgent } from './agents/customerSuccess'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
-import { talkToAgent, AGENTS, type AgentId } from './agents/kaan_os_v4'
+import { talkToAgent, AGENTS, type AgentId } from '../lib/kaan_os_v4'
 import { getNextSarahLinkedInPreview } from './social/sarahLinkedIn'
 
 
