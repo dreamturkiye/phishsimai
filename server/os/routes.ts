@@ -21,7 +21,7 @@ import {
   runJanetFullOrchestration, getOSStatus, runDailyStandup, runWeeklyReview,
   talkToAgent, janetTellAgent, issueTask, executeTask, reviewTask,
   AGENTS, AgentId
-} from './agents/kaan_os_v4'
+} from '../lib/kaan_os_v4'
 import { cronAgentWatchdog } from './agentWatchdog'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'

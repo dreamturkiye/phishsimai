@@ -4,7 +4,7 @@ import { advanceLongTermStrategies } from './kaan-os-core/janetStrategy'
 import { runMarcusProactiveScan } from './kaan-os-core/marcusProactive'
 import { runIntelFinanceProactiveCycle } from './kaan-os-core/intelligenceFinance'
 import { queueJanetArchitectTask } from './selfHeal'
-import { issueTask, type AgentId } from './agents/kaan_os_v4'
+import { issueTask, type AgentId } from '../lib/kaan_os_v4'
 import { getSql } from './conn'
 
 export async function runL5JanetCycle(companyId = 'phishsimai', productId = companyId) {

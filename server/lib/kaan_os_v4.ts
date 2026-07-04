@@ -1,7 +1,7 @@
 import Groq from 'groq-sdk'
 import { neon } from '@neondatabase/serverless'
-import { rememberFact, recallMemory } from '@/lib/sf/memory'
-import { sendTelegram } from '@/lib/telegram'
+import { rememberFact, recallMemory } from '../os/memory'
+import { sendTelegram } from '../os/telegram'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees

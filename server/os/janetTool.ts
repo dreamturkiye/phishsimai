@@ -3,7 +3,7 @@
  */
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
 import { getNextSarahLinkedInPreview } from './social/sarahLinkedIn'
-import { talkToAgent, AGENTS, type AgentId } from './agents/kaan_os_v4'
+import { talkToAgent, AGENTS, type AgentId } from '../lib/kaan_os_v4'
 
 const EMPLOYEE_IDS = Object.keys(AGENTS).filter((id) => id !== 'janet') as AgentId[]
 
