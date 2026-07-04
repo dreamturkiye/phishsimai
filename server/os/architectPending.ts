@@ -62,6 +62,29 @@ export async function architectPending(req: Request, res: Response) {
     if (peek) {
       let cleanupResult: { dupCancelled: number } | undefined
       if (cleanup) cleanupResult = await runQueueCleanup()
+      if (req.query.retry) {
+        const ids = String(req.query.retry).split(',').map(s => s.trim()).filter(Boolean)
+        if (ids.length) {
+          try {
+            const retryResult = await sql`
+              UPDATE os_architect_tasks SET status='queued',
+                notes='Manually requeued — root cause confirmed resolved', updated_at=NOW()
+              WHERE id::text = ANY(${ids}::text[]) AND status IN ('failed','cancelled')
+              RETURNING id
+            `
+            console.log('retry updated:', (retryResult as any[]).length, ids)
+          } catch (e) {
+            console.log('retry error:', e)
+          }
+        }
+      }
+      if (req.query.cancel_stale_probes === '1') {
+        await sql`
+          UPDATE os_architect_tasks SET status='cancelled',
+            notes='Cancelled — stale health-probe noise task', updated_at=NOW()
+          WHERE task ILIKE '%health probe%' AND status IN ('failed','queued','pending','approved')
+        `.catch(() => {})
+      }
       if (req.query.requeue_running === '1') {
         await sql`
           UPDATE os_architect_tasks
