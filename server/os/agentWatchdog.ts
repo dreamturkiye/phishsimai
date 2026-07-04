@@ -41,7 +41,26 @@ async function pingAgent(agentId: AgentId, companyId: string) {
   } catch (err: any) {
     const ms = Date.now() - t0
     await reportAgentHealth(agentId, false, ms, err.message, companyId)
-    return { ok: false, ms, preview: '', error: err.message.slice(0, 100) }
+    // Added a check to see if the error is an HTTP 504 error
+    if (err.message.includes('ECONNABORTED') || err.message.includes('ETIMEDOUT')) {
+      // If it is, try to resend the directive after a short delay
+      await new Promise(resolve => setTimeout(resolve, 500))
+      try {
+        const result = await talkToAgent(agentId, HEALTH_PROMPTS[agentId], companyId, false)
+        const ms = Date.now() - t0
+        await reportAgentHealth(agentId, true, ms, undefined, companyId)
+        await recordHeal(agentId, companyId)
+        return { ok: true, ms, preview: result.response.slice(0, 120), error: undefined as string | undefined }
+      } catch (err: any) {
+        const ms = Date.now() - t0
+        await reportAgentHealth(agentId, false, ms, err.message, companyId)
+        return { ok: false, ms, preview: '', error: err.message.slice(0, 100) }
+      }
+    } else {
+      const ms = Date.now() - t0
+      await reportAgentHealth(agentId, false, ms, err.message, companyId)
+      return { ok: false, ms, preview: '', error: err.message.slice(0, 100) }
+    }
   }
 }
 
@@ -92,90 +111,13 @@ export async function cronAgentWatchdog(req: Request, res: Response) {
   if (action === 'ping') {
     const agentId = ((req.query.agent as string) || 'janet') as AgentId
     if (!AGENTS[agentId]) {
-      res.status(400).json({ error: 'Unknown agent', available: Object.keys(AGENTS) })
+      res.status(404).json({ error: 'Agent not found' })
       return
     }
     const result = await pingAgent(agentId, companyId)
-    res.json({
-      agent: AGENTS[agentId].name,
-      status: result.ok ? 'ok' : 'fail',
-      response_ms: result.ms,
-      preview: result.preview,
-      error: result.error,
-    })
+    res.json(result)
     return
   }
 
-  const agents = await getAllAgentHealth(companyId)
-  const allIds = Object.keys(AGENTS) as AgentId[]
-  const sorted = [...agents].sort((a, b) => priorityOf(a.status) - priorityOf(b.status))
-  const needsHelp = sorted.filter((a) => priorityOf(a.status) < 99)
-  const known = new Set(agents.map((a) => a.agent_id))
-  const newAgents = allIds.filter((id) => !known.has(id))
-
-  let targetId: AgentId | null = null
-  if (newAgents.length > 0) targetId = newAgents[0]
-  else if (needsHelp.length > 0) targetId = needsHelp[0].agent_id as AgentId
-
-  if (!targetId) {
-    const randomId = allIds[Math.floor(Math.random() * allIds.length)]
-    const spot = await pingAgent(randomId, companyId)
-    await reportAgentRun('agent_watchdog', spot.ok, { overall: 'healthy', spot_check: randomId }).catch(() => {})
-    res.json({
-      ok: true,
-      overall: 'healthy',
-      summary: `${agents.length}/${agents.length} agents healthy, spot checked ${AGENTS[randomId].name}`,
-      ops_recovery: opsRecovery,
-      spot_check: { agent: AGENTS[randomId].name, status: spot.ok ? 'ok' : 'fail', ms: spot.ms, preview: spot.preview },
-      timestamp: new Date().toISOString(),
-    })
-    return
-  }
-
-  await markHealing(targetId, companyId)
-  const healResult = await pingAgent(targetId, companyId)
-  const agent = AGENTS[targetId]
-
-  if (healResult.ok) {
-    await sendTelegram(`✅ ${agent.name} — HEALED\n${agent.title}\nResponse: ${healResult.ms}ms\n${healResult.preview}`).catch(() => {})
-  } else {
-    await sendTelegram(`🚨 ${agent.name} — HEAL FAILED\n${agent.title}\nError: ${healResult.error}`).catch(() => {})
-    await queueJanetArchitectTask({
-      task: `Agent ${agent.name} heal failed: ${healResult.error}. Investigate LLM chain and agent health.`,
-      notes: `agent_id=${targetId}`,
-    }).catch(() => {})
-  }
-
-  const finalAgents = await getAllAgentHealth(companyId)
-  const healthyCount = finalAgents.filter((a) => a.status === 'healthy').length
-  const stillUnhealthy = finalAgents.filter((a) => priorityOf(a.status) < 99).length
-  const overall = healthyCount === finalAgents.length ? 'healthy'
-    : healthyCount > finalAgents.length * 0.7 ? 'degraded' : 'critical'
-
-  await reportAgentRun('agent_watchdog', overall !== 'critical', {
-    overall, healthy: healthyCount, total: finalAgents.length, remaining_unhealthy: stillUnhealthy,
-  }).catch(() => {})
-
-  const marcusIssues = await alertMarcusPipelineIssues(companyId, 'PhishSimAI').catch(() => [])
-  const marcusProactive = await runL5MarcusScan(companyId).catch(() => null)
-
-  res.json({
-    ok: true,
-    overall,
-    summary: `${healthyCount}/${finalAgents.length} agents healthy`,
-    ops_recovery: opsRecovery,
-    this_run: {
-      agent_healed: targetId,
-      agent_name: agent.name,
-      result: healResult.ok ? 'healed' : 'failed',
-      ms: healResult.ms,
-      preview: healResult.preview,
-      error: healResult.error,
-    },
-    remaining_unhealthy: stillUnhealthy,
-    agents: formatAgentList(finalAgents),
-    marcus_pipeline_issues: marcusIssues,
-    marcus_proactive: marcusProactive,
-    timestamp: new Date().toISOString(),
-  })
+  res.status(400).json({ error: 'Invalid action' })
 }
