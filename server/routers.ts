@@ -1372,6 +1372,63 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
     }),
   }),
 
+  // ─── Mia (in-app customer success) ─────────────────────────────────────────
+  mia: router({
+    chat: protectedProcedure
+      .input(z.object({
+        orgId: z.number(),
+        message: z.string().min(1).max(2000),
+        pathname: z.string().max(255).optional(),
+        explicitFeedback: z.boolean().optional(),
+        feedbackCategory: z.enum(['bug', 'ux', 'feature', 'praise', 'other']).optional(),
+        rating: z.number().min(1).max(5).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id)
+        const { miaChat } = await import('./mia/miaChat')
+        return miaChat({
+          userId: ctx.user.id,
+          orgId: input.orgId,
+          message: input.message,
+          pathname: input.pathname,
+          explicitFeedback: input.explicitFeedback,
+          feedbackCategory: input.feedbackCategory,
+          rating: input.rating,
+        })
+      }),
+
+    submitFeedback: protectedProcedure
+      .input(z.object({
+        orgId: z.number(),
+        message: z.string().min(3).max(2000),
+        pathname: z.string().max(255).optional(),
+        category: z.enum(['bug', 'ux', 'feature', 'praise', 'other']).optional(),
+        rating: z.number().min(1).max(5).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id)
+        const { recordProductFeedback } = await import('./mia/miaChat')
+        const id = await recordProductFeedback({
+          userId: ctx.user.id,
+          orgId: input.orgId,
+          message: input.message,
+          pathname: input.pathname,
+          category: input.category,
+          rating: input.rating,
+        })
+        return { ok: true, id }
+      }),
+
+    activation: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id)
+        const { ensureMiaTables, getActivationState } = await import('./mia/miaChat')
+        await ensureMiaTables()
+        return getActivationState(input.orgId)
+      }),
+  }),
+
   // ─── Billing ──────────────────────────────────────────────────────────────────
   billing: router({
     createCheckoutSession: protectedProcedure

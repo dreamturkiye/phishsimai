@@ -7,7 +7,7 @@ import {
   Shield, Zap, BarChart3, Users, Brain, CheckCircle2,
   ChevronRight, Star, Building2, Globe, Mail, Phone,
   Lock, AlertTriangle, FileText, Award, Clock, Target,
-  ArrowRight, X, Check, Play, TrendingUp, Layers, BookOpen, Palette, Menu
+  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu
 } from "lucide-react";
 
 const MANDATORY_FRAMEWORKS = [
@@ -150,9 +150,6 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
               <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
                 Start Free 14-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-              <Button size="lg" variant="outline" className="text-base px-8 h-12" onClick={() => window.location.href = "mailto:sales@phishsimai.com?subject=Demo%20Request&body=Hi%2C%20I%27d%20love%20to%20see%20a%20live%20demo%20of%20PhishSim%20AI."}>
-                <Play className="w-4 h-4 mr-2" /> Book a Live Demo
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">

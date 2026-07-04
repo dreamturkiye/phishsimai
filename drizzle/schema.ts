@@ -9,6 +9,7 @@ import {
   json,
   float,
   index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -355,3 +356,36 @@ export const orgVerifiedDomains = mysqlTable("org_verified_domains", {
   uniqueIndex("org_verified_domains_orgId_domain_uniq").on(t.orgId, t.domain),
 ]);
 export type OrgVerifiedDomain = typeof orgVerifiedDomains.$inferSelect;
+
+// ─── Mia (in-app customer success) ───────────────────────────────────────────
+export const miaMemory = mysqlTable("mia_memory", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  orgId: int("orgId").notNull(),
+  memory: text("memory").default("").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => [
+  index("mia_memory_userId_idx").on(t.userId),
+  uniqueIndex("mia_memory_user_org_uniq").on(t.userId, t.orgId),
+]);
+
+export type MiaMemory = typeof miaMemory.$inferSelect;
+
+export const productFeedback = mysqlTable("product_feedback", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  orgId: int("orgId").notNull(),
+  page: varchar("page", { length: 255 }),
+  message: text("message").notNull(),
+  category: mysqlEnum("category", ["bug", "ux", "feature", "praise", "other"]).default("other").notNull(),
+  rating: int("rating"),
+  plan: varchar("plan", { length: 32 }),
+  trialDay: int("trialDay"),
+  source: varchar("source", { length: 32 }).default("mia").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => [
+  index("product_feedback_orgId_idx").on(t.orgId),
+  index("product_feedback_createdAt_idx").on(t.createdAt),
+]);
+
+export type ProductFeedback = typeof productFeedback.$inferSelect;

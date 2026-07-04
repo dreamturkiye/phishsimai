@@ -1,37 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { HQChatComposer, type HQAttachment } from '../components/os/HQChatComposer'
+import { JanetConvaiPanel } from '../components/os/JanetConvaiPanel'
+import { HQAnalyticsTab } from '../components/os/HQAnalyticsTab'
+import { HQPipelineTab } from '../components/os/HQPipelineTab'
+import { HQSocialTab } from '../components/os/HQSocialTab'
 
 const SECRET = 'ps-hq-2026'
+const API = '/api/os'
 
-type Msg = { role: 'janet' | 'you'; text: string; id: number }
-
-const s = {
-  page: { minHeight: '100vh', background: '#0a0a12', color: '#e4e4ec', fontFamily: '-apple-system, system-ui, sans-serif' } as React.CSSProperties,
-  nav: { display: 'flex', alignItems: 'center', gap: 4, padding: '0 20px', height: 52, borderBottom: '1px solid #1e1e2e', position: 'sticky' as const, top: 0, background: '#0a0a12', zIndex: 10, overflowX: 'auto' as const },
-  logo: { fontWeight: 700, fontSize: 15, marginRight: 16, whiteSpace: 'nowrap' as const },
-  tab: { padding: '14px 12px', background: 'none', border: 'none', color: '#8888a0', fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' as const, borderBottom: '2px solid transparent' },
-  tabActive: { color: '#fff', borderBottom: '2px solid #ef4444' },
-  main: { padding: 20, maxWidth: 1100, margin: '0 auto' },
-  card: { background: '#111119', border: '1px solid #1e1e2e', borderRadius: 10, padding: 16, marginBottom: 14 },
-  cardTitle: { fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#aaaabe' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 14 },
-  metricCard: { background: '#111119', border: '1px solid #1e1e2e', borderRadius: 10, padding: 14 },
-  metricLabel: { fontSize: 11, color: '#7878900', marginBottom: 6 },
-  metricValue: { fontSize: 22, fontWeight: 700 },
-  metricSub: { fontSize: 11, color: '#666', marginTop: 4 },
-  row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #18182400' },
-  pill: { fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, textTransform: 'uppercase' as const },
-  btn: { padding: '8px 14px', borderRadius: 7, border: '1px solid #2a2a3e', background: '#16161f', color: '#e4e4ec', fontSize: 12, cursor: 'pointer' },
-  btnAccent: { background: '#ef4444', border: 'none', color: '#fff' },
-  input: { flex: 1, padding: '10px 12px', borderRadius: 8, border: '1px solid #2a2a3e', background: '#0e0e16', color: '#e4e4ec', fontSize: 13 },
-}
+type Msg = { role: 'janet' | 'you'; text: string; id: number; attachments?: string[] }
 
 export default function HQPage() {
   const [data, setData] = useState<any>(null)
-  const [agentStatus, setAgentStatus] = useState<any>(null)
+  const [agentHealth, setAgentHealth] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
   const [msgs, setMsgs] = useState<Msg[]>([
-    { role: 'janet', id: 0, text: "Hi Kaan. PhishSim AI HQ is online. I'm coordinating Marcus, Aria, Nova, Rex, Scout, Finn, Vera, and Max. What do you want to focus on?" }
+    {
+      role: 'janet',
+      id: 0,
+      text: "Morning, Kaan. PhishSim AI HQ is live — MSP outreach pipeline running, A/B test on T1 subjects, Marcus on architect duty. Reply rate at day 3 is normal. What do you want to focus on? I can push outreach volume, refine compliance copy, target a new MSP vertical, or queue the next architect build.",
+    },
   ])
   const [input, setInput] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
@@ -41,15 +30,15 @@ export default function HQPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const r = await fetch('/api/os/hq?secret=' + SECRET)
+      const r = await fetch(`${API}/hq?secret=${SECRET}`)
       const d = await r.json()
       if (d.ok) { setData(d); setLastRefresh(new Date().toLocaleTimeString()) }
-    } catch {}
+    } catch { /* ignore */ }
     try {
-      const ar = await fetch('/api/os/v4/status?secret=' + SECRET)
-      const ad = await ar.json()
-      setAgentStatus(ad)
-    } catch {}
+      const hr = await fetch(`${API}/agent-watchdog?secret=${SECRET}&action=status`)
+      const hd = await hr.json()
+      setAgentHealth(hd)
+    } catch { /* ignore */ }
     setLoading(false)
   }, [])
 
@@ -57,183 +46,465 @@ export default function HQPage() {
   useEffect(() => { const t = setInterval(refresh, 30000); return () => clearInterval(t) }, [refresh])
   useEffect(() => { if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight }, [msgs])
 
-  async function send() {
-    if (!input.trim() || chatBusy) return
-    const text = input.trim()
-    setInput('')
-    setMsgs(m => [...m, { role: 'you', id: msgId, text }])
-    setMsgId(i => i + 1)
+  async function askJanet(text: string, attachments: HQAttachment[] = []) {
+    if ((!text.trim() && !attachments.length) || chatBusy) return
     setChatBusy(true)
+    const displayText = text.trim() || `(Uploaded ${attachments.map(a => a.filename).join(', ')})`
+    const userMsg: Msg = {
+      role: 'you',
+      text: displayText,
+      id: msgId,
+      attachments: attachments.map(a => a.filename),
+    }
+    const thinkingId = msgId + 1
+    setMsgId(id => id + 2)
+    setMsgs(m => [...m, userMsg, { role: 'janet', text: '...', id: thinkingId }])
+    setInput('')
+
+    let janetText = ''
     try {
-      const r = await fetch('/api/os/hq/chat?secret=' + SECRET, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, history: msgs.slice(-6).map(m => ({ role: m.role, text: m.text })) })
+      const r = await fetch(`${API}/hq/chat?secret=${SECRET}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: msgs.slice(-6),
+          attachments: attachments.map(a => ({
+            filename: a.filename,
+            summary: a.summary,
+            textPreview: a.textPreview,
+            kind: a.kind,
+            memoryKey: a.memoryKey,
+            imageBase64: a.imageBase64,
+            imageMime: a.imageMime,
+            leadsImported: a.leadsImported,
+          })),
+        }),
       })
       const d = await r.json()
-      setMsgs(m => [...m, { role: 'janet', id: msgId + 1, text: d.response || 'No response.' }])
-      setMsgId(i => i + 2)
+      janetText = d.response || d.error || 'No response'
     } catch {
-      setMsgs(m => [...m, { role: 'janet', id: msgId + 1, text: 'Connection error — try again.' }])
-      setMsgId(i => i + 2)
+      janetText = 'Network error — check server.'
     }
+
+    setMsgs(m => m.map(msg => msg.id === thinkingId ? { ...msg, text: janetText } : msg))
     setChatBusy(false)
+    if (attachments.some(a => a.leadsImported)) refresh()
   }
 
-  const p = data?.pipeline || {}
-  const pendingTasks = (data?.archTasks || []).filter((t: any) => t.status === 'pending' || t.status === 'approved').length
+  const appendVoiceMsg = useCallback((role: 'janet' | 'you', text: string) => {
+    setMsgId(id => {
+      const next = id + 1
+      setMsgs(m => [...m, { role, text, id: next }])
+      return next + 1
+    })
+  }, [])
 
-  const tabs: [string, string][] = [
+  const s = {
+    page: { minHeight: '100vh', background: '#0a0a0f', color: '#e8e8f0', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', fontSize: 14 },
+    nav: { background: '#0f0f1a', borderBottom: '1px solid #1e1e2e', padding: '0 20px', display: 'flex', alignItems: 'center', gap: 0, position: 'sticky' as const, top: 0, zIndex: 100 },
+    logo: { fontSize: 15, fontWeight: 700, color: '#fff', marginRight: 20, padding: '12px 0', flexShrink: 0 },
+    tab: { padding: '12px 14px', fontSize: 12, color: '#6b6b8a', cursor: 'pointer', border: 'none', background: 'none', borderBottom: '2px solid transparent', fontFamily: 'inherit', whiteSpace: 'nowrap' as const },
+    tabActive: { color: '#f5a623', borderBottomColor: '#f5a623' },
+    main: { maxWidth: 1100, margin: '0 auto', padding: '20px' },
+    grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: 8, marginBottom: 16 },
+    metricCard: { background: '#0f0f1a', border: '1px solid #1e1e2e', borderRadius: 10, padding: '12px 14px' },
+    metricLabel: { fontSize: 10, color: '#6b6b8a', marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+    metricValue: { fontSize: 24, fontWeight: 600, lineHeight: 1 },
+    metricSub: { fontSize: 10, color: '#6b6b8a', marginTop: 3 },
+    card: { background: '#0f0f1a', border: '1px solid #1e1e2e', borderRadius: 10, padding: '14px 16px', marginBottom: 10 },
+    cardTitle: { fontSize: 11, fontWeight: 700, color: '#9090aa', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 10 },
+    row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #12121e' },
+    btn: { padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid #2e2e42', background: '#1a1a2e', color: '#e8e8f0', fontFamily: 'inherit' },
+    btnAccent: { background: '#f5a623', color: '#0a0a0f', borderColor: '#f5a623' },
+    btnGreen: { background: '#0d2b1a', color: '#4ade80', borderColor: '#166534' },
+    btnRed: { background: '#2d0f0f', color: '#f87171', borderColor: '#991b1b' },
+    inp: { flex: 1, background: '#1a1a2e', border: '1px solid #2e2e42', borderRadius: 8, padding: '10px 13px', color: '#e8e8f0', fontSize: 13, fontFamily: 'inherit', outline: 'none' },
+    funnelBar: { height: 5, borderRadius: 3, background: '#1e1e2e', overflow: 'hidden', flex: 1, margin: '0 8px' },
+    funnelFill: { height: '100%', background: '#f5a623', borderRadius: 3 },
+    pill: { fontSize: 10, padding: '2px 8px', borderRadius: 99, fontWeight: 700 },
+    badge: { fontSize: 11, padding: '3px 10px', borderRadius: 99, fontWeight: 600 },
+    badgeGreen: { background: '#0d2b1a', color: '#4ade80', border: '1px solid #166534' },
+    badgeAmber: { background: '#2a1f05', color: '#f5a623', border: '1px solid #854d0e' },
+  }
+
+  if (loading) return (
+    <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+      <div style={{ width: 28, height: 28, border: '2px solid #1e1e2e', borderTopColor: '#f5a623', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+      <div style={{ color: '#6b6b8a', fontSize: 13 }}>Loading HQ...</div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  )
+
+  const p = data?.pipeline || {}
+  const tasks = data?.archTasks || []
+  const memory = data?.memory || []
+  const ab = data?.abResults || []
+  const customers = data?.customers || []
+  const mrr = customers.length * 249
+  const runningTasks = tasks.filter((t: any) => ['queued', 'pending', 'running', 'approved'].includes(t.status)).length
+  const tabs = [
     ['overview', 'Overview'],
     ['janet', 'Janet CGO'],
-    ['agents', 'Agent Health'],
     ['pipeline', 'Pipeline'],
-    ['architect', `Architect Tasks${pendingTasks > 0 ? ` (${pendingTasks})` : ''}`],
+    ['approvals', `Architect Log${runningTasks > 0 ? ` (${runningTasks} active)` : ''}`],
     ['memory', 'Memory'],
+    ['health', 'Health'],
+    ['analytics', 'Analytics'],
+    ['social', 'Social'],
+    ['issues', 'Live Issues 🔴'],
+    ['architect', 'Architect 🧠'],
   ]
-
-  if (loading) return <div style={{ ...s.page, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading HQ...</div>
 
   return (
     <div style={s.page}>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        *{box-sizing:border-box}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#0f0f1a}::-webkit-scrollbar-thumb{background:#2e2e42;border-radius:2px}
+        button:hover{opacity:0.85}
+        input:focus,textarea:focus{border-color:#f5a623!important}
+      `}</style>
+
       <nav style={s.nav}>
-        <div style={s.logo}>PhishSim<span style={{ color: '#ef4444' }}>AI</span> <span style={{ fontSize: 9, color: '#555', fontWeight: 400 }}>HQ</span></div>
+        <div style={s.logo}>PhishSim<span style={{ color: '#ef4444' }}>AI</span> <span style={{ fontSize: 9, color: '#4a4a60', fontWeight: 400 }}>HQ · Kaan AI OS v4.5.4</span></div>
         {tabs.map(([id, label]) => (
           <button key={id} style={{ ...s.tab, ...(tab === id ? s.tabActive : {}) }} onClick={() => setTab(id)}>{label}</button>
         ))}
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#555', flexShrink: 0 }}>
-          {lastRefresh && `Updated ${lastRefresh}`}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ ...s.badge, ...s.badgeGreen }}>● Live</span>
+          <span style={{ fontSize: 10, color: '#4a4a60' }}>{lastRefresh}</span>
+          <button style={{ ...s.btn, fontSize: 11, padding: '5px 10px' }} onClick={refresh}>↺</button>
         </div>
       </nav>
 
       <div style={s.main}>
+
         {tab === 'overview' && <>
           <div style={s.grid}>
-            <div style={s.metricCard}>
-              <div style={s.metricLabel}>Reply rate</div>
-              <div style={s.metricValue}>{p.replyRate || '0.0'}%</div>
-              <div style={s.metricSub}>{p.replied || 0} replies / {p.touched || 0} sent</div>
-            </div>
-            <div style={s.metricCard}>
-              <div style={s.metricLabel}>Customers</div>
-              <div style={s.metricValue}>{p.customers || 0}</div>
-              <div style={s.metricSub}>{p.engaged || 0} engaged, {p.prospects || 0} prospects</div>
-            </div>
-            <div style={s.metricCard}>
-              <div style={s.metricLabel}>Bounce rate</div>
-              <div style={{ ...s.metricValue, color: Number(p.bounceRate) < 8 ? '#4ade80' : '#f87171' }}>{p.bounceRate || '0.0'}%</div>
-              <div style={s.metricSub}>Pause threshold 8%</div>
-            </div>
-            <div style={s.metricCard}>
-              <div style={s.metricLabel}>Agents</div>
-              <div style={{ ...s.metricValue, color: agentStatus && agentStatus.healthy === agentStatus.total ? '#4ade80' : '#f5a623' }}>
-                {agentStatus ? `${agentStatus.healthy}/${agentStatus.total}` : '...'}
-              </div>
-              <div style={s.metricSub}>Self-healing every 15min</div>
-            </div>
-          </div>
-
-          <div style={s.card}>
-            <div style={s.cardTitle}>Recent leads</div>
-            {(data?.recentLeads || []).slice(0, 8).map((l: any, i: number) => (
-              <div key={i} style={s.row}>
-                <div>
-                  <div style={{ fontSize: 13 }}>{l.name} <span style={{ color: '#666' }}>· {l.company}</span></div>
-                  <div style={{ fontSize: 11, color: '#666' }}>{l.email}</div>
-                </div>
-                <span style={{ ...s.pill, background: l.pipeline_stage === 'customer' ? '#0d2b1a' : '#1a1a2e', color: l.pipeline_stage === 'customer' ? '#4ade80' : '#8888a0' }}>{l.pipeline_stage}</span>
+            {[
+              ['MRR', '$' + mrr.toLocaleString(), mrr > 0 ? '#4ade80' : '#e8e8f0', 'Next: $1K MRR'],
+              ['Touched', p.touched || 0, '#e8e8f0', (p.bounceRate || '0') + '% bounce'],
+              ['Reply rate', (p.replyRate || '0') + '%', Number(p.replyRate) >= 2 ? '#4ade80' : '#f5a623', 'Target: 2%'],
+              ['Prospects', p.prospects || 0, '#e8e8f0', 'T2 eligible soon'],
+              ['Engaged', p.engaged || 0, Number(p.engaged) > 0 ? '#f5a623' : '#e8e8f0', 'Hot leads'],
+              ['Customers', p.customers || 0, Number(p.customers) > 0 ? '#4ade80' : '#e8e8f0', 'Target: 4 wk4'],
+            ].map(([label, val, color, sub]) => (
+              <div key={label as string} style={s.metricCard}>
+                <div style={s.metricLabel}>{label as string}</div>
+                <div style={{ ...s.metricValue, color: color as string }}>{val as any}</div>
+                <div style={s.metricSub}>{sub as string}</div>
               </div>
             ))}
-            {(!data?.recentLeads || data.recentLeads.length === 0) && <div style={{ color: '#666', fontSize: 13 }}>No leads yet.</div>}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={s.card}>
+              <div style={s.cardTitle}>Pipeline funnel</div>
+              {[['Seeded', p.touched, p.touched], ['Prospects', p.prospects, p.touched], ['Engaged', p.engaged, p.touched], ['Customers', p.customers, p.touched]].map(([l, v, max]: any) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'center', fontSize: 12, marginBottom: 7 }}>
+                  <span style={{ width: 72, color: '#9090aa' }}>{l}</span>
+                  <div style={s.funnelBar}><div style={{ ...s.funnelFill, width: max > 0 ? (v / max * 100) + '%' : '0%' }} /></div>
+                  <span style={{ width: 22, textAlign: 'right', fontWeight: 600 }}>{v || 0}</span>
+                </div>
+              ))}
+            </div>
+            <div style={s.card}>
+              <div style={s.cardTitle}>A/B test — T1 subject</div>
+              {ab.length === 0
+                ? <div style={{ fontSize: 12, color: '#6b6b8a' }}>Awaiting impressions...</div>
+                : ab.map((v: any) => (
+                  <div key={v.variant} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                      <span style={{ color: '#9090aa', textTransform: 'capitalize' }}>{v.variant}</span>
+                      <span style={{ color: '#6b6b8a' }}>Sent:{v.sent} · Replied:{v.replied}</span>
+                    </div>
+                    <div style={s.funnelBar}><div style={{ ...s.funnelFill, background: v.variant === 'control' ? '#6366f1' : '#f5a623', width: v.sent > 0 ? (v.replied / v.sent * 100) + '%' : '0%' }} /></div>
+                  </div>
+                ))
+              }
+              <div style={{ fontSize: 10, color: '#4a4a60', marginTop: 8 }}>Winner declared at 5+ replies per variant</div>
+            </div>
+          </div>
+          <div style={s.card}>
+            <div style={s.cardTitle}>Self-serve journey — all steps live</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 6 }}>
+              {[['Cold email', 'ARIA 5-touch A/B'], ['Reply intent', 'Groq classifies'], ['Checkout', 'Magic link auto'], ['Stripe pay', 'No founder needed'], ['Portal', 'Janet CS monitors']].map(([t, s2]) => (
+                <div key={t} style={{ textAlign: 'center', padding: '10px 6px', background: '#0a0a14', borderRadius: 8, border: '1px solid #1e1e2e' }}>
+                  <div style={{ fontSize: 9, color: '#4ade80', marginBottom: 3 }}>●</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#e8e8f0', marginBottom: 2 }}>{t}</div>
+                  <div style={{ fontSize: 10, color: '#6b6b8a', lineHeight: 1.4 }}>{s2}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </>}
 
         {tab === 'janet' && <>
-          <div style={s.card}>
-            <div style={s.cardTitle}>Talk to Janet — CGO</div>
-            <div ref={chatRef} style={{ height: 360, overflowY: 'auto', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <JanetConvaiPanel
+            secret={SECRET}
+            signedUrlPath={`${API}/janet/signed-url`}
+            productLabel="PhishSimAI"
+            accentColor="#f5a623"
+            onUserMessage={text => appendVoiceMsg('you', text)}
+            onJanetMessage={text => appendVoiceMsg('janet', text)}
+          />
+
+          <div style={{ ...s.card, padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '12px 14px', borderBottom: '1px solid #1e1e2e', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f5a62322', border: '1px solid #f5a62344', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>J</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#e8e8f0' }}>Janet</div>
+                <div style={{ fontSize: 10, color: '#6b6b8a' }}>Chief Growth Officer · Always-on voice + text</div>
+              </div>
+            </div>
+
+            <div ref={chatRef} style={{ height: 360, overflowY: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
               {msgs.map(m => (
-                <div key={m.id} style={{ alignSelf: m.role === 'you' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+                <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'janet' ? 'flex-start' : 'flex-end' }}>
+                  <div style={{ fontSize: 9, color: '#4a4a60', marginBottom: 3, letterSpacing: 0.5, fontWeight: 600 }}>{m.role === 'janet' ? 'JANET' : 'YOU'}</div>
                   <div style={{
-                    background: m.role === 'you' ? '#ef4444' : '#16161f',
-                    color: m.role === 'you' ? '#fff' : '#e4e4ec',
-                    padding: '10px 14px', borderRadius: 12, fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap'
-                  }}>{m.text}</div>
+                    maxWidth: '84%', padding: '9px 12px', borderRadius: m.role === 'janet' ? '4px 10px 10px 10px' : '10px 4px 10px 10px',
+                    background: m.role === 'janet' ? '#0c1a2e' : '#1a1a2e',
+                    border: m.role === 'janet' ? '1px solid #1e3a5f' : '1px solid #2e2e42',
+                    fontSize: 13, lineHeight: 1.6,
+                    color: m.role === 'janet' ? '#c8d8f0' : '#e8e8f0',
+                    animation: m.text === '...' ? 'pulse 1s infinite' : '',
+                  }}>
+                    {m.text}
+                    {m.attachments?.length ? (
+                      <div style={{ fontSize: 10, color: '#9090aa', marginTop: 6 }}>
+                        📎 {m.attachments.join(', ')}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               ))}
-              {chatBusy && <div style={{ color: '#666', fontSize: 12 }}>Janet is thinking...</div>}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input style={s.input} value={input} onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && send()} placeholder="Ask Janet anything..." />
-              <button style={{ ...s.btn, ...s.btnAccent }} onClick={send} disabled={chatBusy}>Send</button>
+
+            <HQChatComposer
+              value={input}
+              onChange={setInput}
+              onSend={(text, attachments) => askJanet(text, attachments)}
+              disabled={chatBusy}
+              secret={SECRET}
+            />
+
+            <div style={{ padding: '10px 12px', borderTop: '1px solid #12121e', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                style={{ ...s.btn, padding: '11px 14px', fontSize: 12 }}
+                onClick={() => { setMsgs([{ role: 'janet', id: 0, text: 'Memory cleared. What would you like to focus on?' }]); setMsgId(1) }}
+              >Clear chat</button>
+            </div>
+          </div>
+
+          <div style={s.card}>
+            <div style={s.cardTitle}>Quick prompts</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+              {[
+                'What should we focus on this week?',
+                'Suggest 3 subject line variants to test',
+                'How close are we to first MSP customer?',
+                'What ICP vertical should we target next?',
+                'Draft a LinkedIn post for MSP owners',
+                'What is our 30-day revenue forecast?',
+                'Should we lower pricing to close faster?',
+                'What architect task should be built next?',
+              ].map(q => (
+                <button key={q} style={{ ...s.btn, fontSize: 11, padding: '6px 11px' }} onClick={() => askJanet(q)}>{q}</button>
+              ))}
             </div>
           </div>
         </>}
 
-        {tab === 'agents' && <>
+        {tab === 'pipeline' && <HQPipelineTab pipelineView={data?.pipelineView} />}
+
+        {tab === 'approvals' && <>
           <div style={s.card}>
-            <div style={s.cardTitle}>Kaan AI OS — 9 Agent Health{agentStatus ? ` (${agentStatus.healthy}/${agentStatus.total} healthy)` : ''}</div>
-            {!agentStatus && <div style={{ color: '#666', fontSize: 13 }}>Loading agent health...</div>}
-            {agentStatus?.agents?.map((a: any) => {
-              const color = a.status === 'healthy' ? '#4ade80' : a.status === 'warning' ? '#f5a623' : a.status === 'healing' ? '#60a5fa' : '#f87171'
-              const bg = a.status === 'healthy' ? '#0d2b1a' : a.status === 'warning' ? '#2a1f05' : a.status === 'healing' ? '#0c1a2e' : '#2a0d0d'
-              return (
-                <div key={a.agent_id} style={s.row}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name} <span style={{ fontWeight: 400, color: '#666', fontSize: 11 }}>— {a.title}</span></div>
-                      <div style={{ fontSize: 11, color: '#666' }}>Uptime {a.uptime} · {a.heals} heals · avg {a.avg_ms}ms</div>
+            <div style={s.cardTitle}>Architect deploy log</div>
+            <div style={{ fontSize: 12, color: '#9090aa', marginBottom: 12, lineHeight: 1.6 }}>
+              Janet queues work autonomously — no approval required. Marcus (Architect) codes on <code style={{ color: '#60a5fa' }}>dev</code>, QA runs on preview, then promotes to production. Review completed work below.
+            </div>
+            {tasks.length === 0
+              ? <div style={{ fontSize: 13, color: '#6b6b8a' }}>No tasks queued</div>
+              : tasks.map((t: any) => (
+                <div key={t.id} style={{ padding: 12, background: '#0a0a14', borderRadius: 8, border: '1px solid #1e1e2e', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>{t.task?.replace(/^\*+\s*/, '').slice(0, 140)}</div>
+                      <div style={{ display: 'flex', gap: 8, fontSize: 10, color: '#6b6b8a' }}>
+                        <span>{t.source}</span><span>{new Date(t.created_at).toLocaleDateString()}</span>
+                        <span style={{
+                          ...s.pill, background:
+                            t.status === 'done' ? '#0d2b1a' :
+                              t.status === 'running' ? '#0c1a2e' :
+                                t.status === 'queued' || t.status === 'pending' ? '#1a1a2e' :
+                                  t.status === 'cancelled' ? '#1a1a1a' : '#2a1f05',
+                          color:
+                            t.status === 'done' ? '#4ade80' :
+                              t.status === 'running' ? '#60a5fa' :
+                                t.status === 'failed' ? '#f87171' :
+                                  t.status === 'cancelled' ? '#6b6b8a' : '#f5a623',
+                        }}>{t.status}</span>
+                      </div>
+                      {t.notes && <div style={{ fontSize: 11, color: '#9090aa', marginTop: 5 }}>{t.notes}</div>}
+                      {t.files_changed?.length > 0 && <div style={{ fontSize: 10, color: '#6b6b8a', marginTop: 4 }}>Files: {t.files_changed.join(', ')}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {(t.status === 'queued' || t.status === 'pending' || t.status === 'running' || t.status === 'approved') && <span style={{ fontSize: 11, color: '#60a5fa' }}>⚙ Running autonomously…</span>}
+                      {t.status === 'done' && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Deployed — review above</span>}
+                      {t.status === 'failed' && <span style={{ fontSize: 11, color: '#f87171' }}>✗ Failed</span>}
+                      {t.status === 'cancelled' && <span style={{ fontSize: 11, color: '#6b6b8a' }}>Cancelled</span>}
                     </div>
                   </div>
-                  <span style={{ ...s.pill, background: bg, color }}>{a.status}</span>
+                </div>
+              ))
+            }
+          </div>
+          <div style={s.card}>
+            <div style={s.cardTitle}>System controls</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+              <button style={{ ...s.btn, ...s.btnAccent }} onClick={() => { askJanet('Run ARIA sequence now for all eligible MSP leads'); setTab('janet') }}>Trigger ARIA sequence</button>
+              <button style={{ ...s.btn }} onClick={() => fetch(`${API}/janet/report?secret=${SECRET}`).then(() => alert('Report triggered → kaanari@mac.com'))}>Run Janet report</button>
+              <button style={{ ...s.btn }} onClick={() => fetch(`${API}/heartbeat?secret=${SECRET}`).then(r => r.json()).then(d => alert(d.healthy ? 'All systems healthy ✓' : 'Issues: ' + (d.issues || []).join(', ')))}>Check health</button>
+            </div>
+          </div>
+        </>}
+
+        {tab === 'memory' && <>
+          <div style={s.card}>
+            <div style={s.cardTitle}>Janet memory — {memory.length} entries</div>
+            {(['company', 'operating', 'campaign', 'strategic', 'customer'] as const).map((type: string) => {
+              const items = memory.filter((m: any) => m.type === type)
+              if (!items.length) return null
+              return (
+                <div key={type} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#f5a623', textTransform: 'uppercase' as const, letterSpacing: 1, marginBottom: 8 }}>{type} ({items.length})</div>
+                  {items.map((m: any, i: number) => (
+                    <div key={i} style={{ ...s.row, flexDirection: 'column' as const, alignItems: 'flex-start', gap: 2 }}>
+                      <div style={{ fontSize: 10, color: '#6b6b8a' }}>{m.key?.replace(/_/g, ' ')}</div>
+                      <div style={{ fontSize: 12, color: '#c8c8e0', lineHeight: 1.5 }}>{m.value?.slice(0, 200)}{m.value?.length > 200 ? '...' : ''}</div>
+                    </div>
+                  ))}
                 </div>
               )
             })}
           </div>
         </>}
 
-        {tab === 'pipeline' && <>
+        {tab === 'health' && <>
           <div style={s.card}>
-            <div style={s.cardTitle}>All leads</div>
-            {(data?.recentLeads || []).map((l: any, i: number) => (
-              <div key={i} style={s.row}>
-                <div style={{ fontSize: 13 }}>{l.name} · {l.company} · {l.email}</div>
-                <span style={{ fontSize: 11, color: l.replied ? '#4ade80' : '#666' }}>{l.replied ? 'Replied' : l.bounced ? 'Bounced' : 'Sent'}</span>
+            <div style={s.cardTitle}>Kaan AI OS — 9 Agent Health{agentHealth ? ` (${agentHealth.healthy}/${agentHealth.total} healthy)` : ''}</div>
+            {!agentHealth && <div style={{ color: '#9090aa', fontSize: 13 }}>Loading agent health...</div>}
+            {agentHealth && agentHealth.agents && agentHealth.agents.map((a: any) => {
+              const statusColor = a.status === 'healthy' ? '#4ade80' : a.status === 'warning' ? '#f5a623' : a.status === 'healing' ? '#60a5fa' : '#f87171'
+              const statusBg = a.status === 'healthy' ? '#0d2b1a' : a.status === 'warning' ? '#2a1f05' : a.status === 'healing' ? '#0c1a2e' : '#2a0d0d'
+              return (
+                <div key={a.agent_id} style={s.row}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor, display: 'inline-block', flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{a.name} <span style={{ fontWeight: 400, color: '#9090aa', fontSize: 11 }}>— {a.title}</span></div>
+                      <div style={{ fontSize: 11, color: '#7070888' }}>
+                        Uptime {a.uptime} · {a.heals} heals · avg {a.avg_ms}ms
+                        {a.failures > 0 && <span style={{ color: '#f87171' }}> · {a.failures} failures</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <span style={{ ...s.pill, background: statusBg, color: statusColor }}>{a.status}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div style={s.grid}>
+            {[['Bounce rate', (p.bounceRate || '0') + '%', Number(p.bounceRate) < 8, 'Pause at 8%'], ['Sends', p.touched || 0, true, 'MSP outreach'], ['Webhooks', '2 live', true, 'Resend enabled'], ['Agents', agentHealth ? `${agentHealth.healthy}/${agentHealth.total}` : '...', agentHealth ? agentHealth.healthy === agentHealth.total : true, 'Self-healing every 15min']].map(([l, v, ok, sub]) => (
+              <div key={l as string} style={s.metricCard}>
+                <div style={s.metricLabel}>{l as string}</div>
+                <div style={{ ...s.metricValue, fontSize: 18, color: ok ? '#4ade80' : '#f87171' }}>{v as any}</div>
+                <div style={s.metricSub}>{sub as string}</div>
               </div>
             ))}
+          </div>
+          <div style={s.card}>
+            <div style={s.cardTitle}>Live endpoints</div>
+            {['/api/os/aria-daily', '/api/os/janet-cgo', '/api/os/agent-watchdog', '/api/os/heartbeat', '/api/os/watchdog', '/api/os/webhook/reply', '/api/os/webhooks/resend', '/api/os/hq/chat', '/api/os/hq/ingest', '/api/os/hq/tts', '/api/os/hq/stt', '/api/os/janet/report', '/api/os/janet/signed-url', '/api/os/architect/pending', '/api/os/qa-smoke', '/api/os', '/api/os/v4/status'].map(ep => (
+              <div key={ep} style={s.row}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80', display: 'inline-block' }} />
+                  <code style={{ fontSize: 12, color: '#60a5fa' }}>{ep}</code>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>}
+
+        {tab === 'analytics' && (
+          <HQAnalyticsTab analytics={data?.analyticsView} productLabel="PhishSimAI" accent="#f5a623" />
+        )}
+
+        {tab === 'social' && (
+          <HQSocialTab apiBase={API} secret={SECRET} />
+        )}
+
+        {tab === 'issues' && <>
+          <div style={s.card}>
+            <div style={s.cardTitle}>Live bugs — real user sessions</div>
+            {(data?.bugReports || []).length === 0
+              ? <div style={{ fontSize: 13, color: '#4ade80' }}>✅ No open bugs. System clean.</div>
+              : (data?.bugReports || []).map((b: any) => {
+                const sevColor: any = { critical: '#f87171', high: '#f5a623', medium: '#60a5fa', low: '#9090aa' }
+                const diag = typeof b.diagnosis === 'string' ? JSON.parse(b.diagnosis || '{}') : (b.diagnosis || {})
+                return (
+                  <div key={b.id} style={{ padding: 12, background: '#0a0a14', borderRadius: 8, border: `1px solid ${sevColor[b.severity] || '#2e2e42'}33`, marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ ...s.badge, background: sevColor[b.severity] + '22', color: sevColor[b.severity], border: `1px solid ${sevColor[b.severity]}44`, fontSize: 10 }}>{b.severity?.toUpperCase()}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#e8e8f0' }}>{b.component_name}</span>
+                      <span style={{ fontSize: 10, color: '#6b6b8a', marginLeft: 'auto' }}>{b.occurrence_count}x · {new Date(b.last_seen).toLocaleTimeString()}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#c8c8e0', marginBottom: 4 }}>{b.error_message?.slice(0, 120)}</div>
+                    <div style={{ fontSize: 10, color: '#6b6b8a' }}>{b.url_path}</div>
+                    {diag.root_cause && <div style={{ fontSize: 11, color: '#f5a623', marginTop: 6, padding: '4px 8px', background: '#2a1f0533', borderRadius: 4 }}>🧠 Marcus: {diag.root_cause}</div>}
+                    {diag.file_affected && <div style={{ fontSize: 10, color: '#60a5fa', marginTop: 3 }}>📁 {diag.file_affected}</div>}
+                  </div>
+                )
+              })
+            }
           </div>
         </>}
 
         {tab === 'architect' && <>
           <div style={s.card}>
-            <div style={s.cardTitle}>Architect Tasks — Autonomous Execution</div>
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 10 }}>
-              Janet assigns these directly to the Architect. No approval needed — they execute, get QA-tested in dev, then deploy to production automatically.
-            </div>
-            {(data?.archTasks || []).map((t: any) => (
-              <div key={t.id} style={{ padding: '10px 0', borderBottom: '1px solid #18182440' }}>
-                <div style={{ fontSize: 13 }}>{t.task?.slice(0, 140)}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
-                  <span style={{ fontSize: 11, color: '#666' }}>{new Date(t.created_at).toLocaleDateString()}</span>
-                  {(t.status === 'pending' || t.status === 'approved') && <span style={{ fontSize: 11, color: '#60a5fa' }}>⚙ Auto-executing...</span>}
-                  {t.status === 'done' && <span style={{ fontSize: 11, color: '#4ade80' }}>✓ Done{t.notes ? ` — ${t.notes.slice(0, 60)}` : ''}</span>}
-                  {t.status === 'failed' && <span style={{ fontSize: 11, color: '#f87171' }}>✗ Failed — {t.notes?.slice(0, 60) || 'see logs'}</span>}
+            <div style={s.cardTitle}>Marcus — Architect Memory ({(data?.architectMemory || []).length} patterns learned)</div>
+            {(data?.architectMemory || []).length === 0
+              ? <div style={{ fontSize: 13, color: '#6b6b8a' }}>No patterns yet. Memory builds as bugs are diagnosed.</div>
+              : (data?.architectMemory || []).map((m: any, i: number) => (
+                <div key={i} style={{ ...s.row, flexDirection: 'column', alignItems: 'flex-start', gap: 4, paddingBottom: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#f5a623' }}>{m.times_applied}x applied</span>
+                    <span style={{ fontSize: 10, color: '#6b6b8a' }}>{Math.round((m.confidence || 0) * 100)}% confidence</span>
+                    <span style={{ fontSize: 10, color: '#4a4a60' }}>{m.file_affected}</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#e8e8f0' }}>{m.root_cause}</div>
+                  <div style={{ fontSize: 11, color: '#9090aa' }}>{m.error_signature?.slice(0, 80)}</div>
                 </div>
-              </div>
-            ))}
-            {(!data?.archTasks || data.archTasks.length === 0) && <div style={{ color: '#666', fontSize: 13 }}>No architect tasks yet.</div>}
+              ))
+            }
           </div>
-        </>}
-
-        {tab === 'memory' && <>
           <div style={s.card}>
-            <div style={s.cardTitle}>Janet's memory</div>
-            {(data?.memory || []).slice(0, 30).map((m: any, i: number) => (
-              <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid #18182440', fontSize: 12 }}>
-                <span style={{ color: '#666' }}>[{m.type}]</span> {m.key}: {m.value?.slice(0, 100)}
-              </div>
-            ))}
+            <div style={s.cardTitle}>QA Smoke Test History</div>
+            {(data?.qaRuns || []).length === 0
+              ? <div style={{ fontSize: 12, color: '#6b6b8a' }}>No QA runs yet</div>
+              : (data?.qaRuns || []).map((q: any, i: number) => (
+                <div key={i} style={s.row}>
+                  <span style={{ fontSize: 12 }}>{q.trigger_type}</span>
+                  <span style={{ fontSize: 12, color: q.tests_failed === 0 ? '#4ade80' : '#f87171' }}>
+                    {q.tests_passed}/{q.tests_passed + q.tests_failed} passed
+                  </span>
+                  <span style={{ fontSize: 10, color: '#6b6b8a' }}>{new Date(q.created_at).toLocaleString()}</span>
+                </div>
+              ))
+            }
+            <button style={{ ...s.btn, marginTop: 10 }} onClick={() => fetch(`${API}/qa-smoke?secret=${SECRET}`).then(r => r.json()).then(d => alert('QA: ' + d.passed + ' passed, ' + d.failed + ' failed'))}>Run QA Now</button>
           </div>
         </>}
       </div>

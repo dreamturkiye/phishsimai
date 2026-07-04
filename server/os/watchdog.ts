@@ -1,45 +1,109 @@
-import { connect } from '@tidbcloud/serverless'
-import { checkAgentStaleness, notifyWithCooldown } from './agentHealth'
+import { getSql } from './conn'
+import { sendTelegram } from './telegram'
+import { checkAgentStaleness, reportAgentRun } from './agentHealth'
+import { checkEmployeeStaleness } from './agentHealth_v2'
+import { runOpsRecoveryTick } from './opsRecovery'
+import { runLeadResearcher } from './agents/leadResearcher'
+import { resolveSystemAlert } from './selfHeal'
+
+const RESEARCHER_PROACTIVE_MS = 55 * 60 * 1000
+
+async function ensureResearcherRunning(companyId: string, actions: string[]) {
+  const sql = getSql()
+  const rows = await sql`
+    SELECT last_success_at, last_run_at FROM agent_health
+    WHERE company_id=${companyId} AND agent_name='researcher'
+    LIMIT 1
+  `
+  const last = rows[0]?.last_success_at || rows[0]?.last_run_at
+  const age = last ? Date.now() - new Date(last as string).getTime() : Infinity
+  if (age < RESEARCHER_PROACTIVE_MS) return
+  try {
+    const heal = await runLeadResearcher(6)
+    actions.push(
+      `Researcher proactive: discovered=${heal.discovered} added=${heal.added} enriched=${heal.enriched}`
+    )
+    await resolveSystemAlert('agent_stale:researcher', 'researcher proactive run completed', companyId)
+  } catch (e: any) {
+    actions.push('Researcher proactive failed: ' + e.message?.slice(0, 120))
+  }
+}
 
 export async function runWatchdog() {
-  const conn = connect({ url: process.env.DATABASE_URL! })
-  const result = { checked_at: new Date().toISOString(), issues_found: 0, actions_taken: [] as string[] }
-  const companyId = 'phishsimai'
+  const sql = getSql()
+  const result: { checked_at: string; issues_found: number; actions_taken: string[] } = {
+    checked_at: new Date().toISOString(),
+    issues_found: 0,
+    actions_taken: [],
+  }
 
   try {
-    const rows = await conn.execute(`SELECT COUNT(CASE WHEN bounced=1 THEN 1 END) as b, COUNT(*) as s FROM ps_outreach_leads WHERE touch1_sent_at IS NOT NULL`)
-    const r = (rows as any).rows?.[0] || {}
-    const rate = Number(r.s) > 0 ? Number(r.b) / Number(r.s) * 100 : 0
-    if (rate > 8) {
+    const stalled = await sql`SELECT count(*) as n FROM ps_outreach_leads
+      WHERE touch1_sent_at IS NULL
+      AND created_at < NOW() - INTERVAL '2 days'
+      AND unsubscribed = false AND bounced = false
+      AND pipeline_stage NOT IN ('dead','customer')`
+    const stalledN = Number(stalled[0].n)
+    if (stalledN > 20) {
       result.issues_found++
-      const sent = await notifyWithCooldown(conn, companyId, 'bounce_rate', `PHISHSIMAI BOUNCE ALERT: ${rate.toFixed(1)}% — sequence paused`)
-      if (sent) result.actions_taken.push(`Bounce alert: ${rate.toFixed(1)}%`)
+      await sendTelegram('PHISHSIMAI WATCHDOG: ' + stalledN + ' leads stalled >2d. Check /api/os/aria-daily.')
+      result.actions_taken.push('Stall alert: ' + stalledN + ' leads')
     } else {
-      result.actions_taken.push(`Bounce OK: ${rate.toFixed(1)}%`)
+      result.actions_taken.push('Lead stall OK: ' + stalledN + ' stalled')
     }
-  } catch (e: any) { result.actions_taken.push('Bounce check error: ' + e.message?.slice(0,80)) }
+  } catch (e: any) {
+    result.actions_taken.push('Stall check error: ' + e.message?.slice(0, 100))
+  }
 
   try {
-    const stalled = await conn.execute(`SELECT COUNT(*) as n FROM ps_outreach_leads WHERE touch1_sent_at IS NULL AND created_at < DATE_SUB(NOW(), INTERVAL 2 DAY) AND bounced=0 AND unsubscribed=0 AND pipeline_stage NOT IN ('dead','customer')`)
-    const n = Number((stalled as any).rows?.[0]?.n || 0)
-    if (n > 20) {
+    const bounceStats = await sql`SELECT
+      count(*) filter(where bounced=true) as bounced,
+      count(*) as sent
+      FROM ps_outreach_leads
+      WHERE touch1_sent_at IS NOT NULL`
+    const bounced = Number(bounceStats[0].bounced)
+    const sent = Number(bounceStats[0].sent)
+    const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0
+    if (bounceRate > 8) {
       result.issues_found++
-      const sent = await notifyWithCooldown(conn, companyId, 'lead_stall', `PHISHSIMAI STALL: ${n} leads unsent >2 days.`)
-      if (sent) result.actions_taken.push(`Stall alert: ${n} leads`)
+      await sendTelegram('PHISHSIMAI BOUNCE ALERT: ' + bounceRate.toFixed(1) + '% (' + bounced + '/' + sent + ' sends). Sequence paused automatically.')
+      result.actions_taken.push('Bounce alert: ' + bounceRate.toFixed(1) + '%')
     } else {
-      result.actions_taken.push(`Lead stall OK: ${n} stalled`)
+      result.actions_taken.push('Bounce rate OK: ' + bounceRate.toFixed(1) + '% (' + bounced + '/' + sent + ' sent)')
     }
-  } catch (e: any) { result.actions_taken.push('Stall check error: ' + e.message?.slice(0,80)) }
+  } catch (e: any) {
+    result.actions_taken.push('Bounce check error: ' + e.message?.slice(0, 100))
+  }
 
   try {
-    const staleAgents = await checkAgentStaleness(companyId)
-    if (staleAgents.length > 0) {
-      result.issues_found += staleAgents.length
-      result.actions_taken.push('Stale agents: ' + staleAgents.join(', '))
-    } else {
-      result.actions_taken.push('All agents healthy')
+    await ensureResearcherRunning('phishsimai', result.actions_taken)
+
+    const recovery = await runOpsRecoveryTick('phishsimai')
+    if (recovery.restarts.length > 0) {
+      result.issues_found += recovery.restarts.filter((r) => !r.ok).length
+      result.actions_taken.push(
+        'Janet ops recovery: ' + recovery.restarts.map((r) => `${r.agent}(${r.reason})=${r.ok ? 'ok' : 'fail'}`).join(', ')
+      )
     }
-  } catch (e: any) { result.actions_taken.push('Agent health error: ' + e.message?.slice(0,80)) }
+
+    const staleAgents = await checkAgentStaleness('phishsimai')
+    const staleEmployees = await checkEmployeeStaleness('phishsimai')
+    const allStale = [...staleAgents, ...staleEmployees]
+    if (allStale.length > 0) {
+      result.issues_found += allStale.length
+      result.actions_taken.push('Still flagged: ' + allStale.join(', '))
+    } else if (recovery.restarts.length === 0) {
+      result.actions_taken.push('All ops + employee agents healthy')
+    }
+  } catch (e: any) {
+    result.actions_taken.push('Agent health check error: ' + e.message?.slice(0, 100))
+  }
+
+  try {
+    await reportAgentRun('watchdog', true, { issues: result.issues_found, actions: result.actions_taken.length })
+  } catch {
+    await reportAgentRun('watchdog', false, {}, 'failed to record watchdog run').catch(() => {})
+  }
 
   return result
 }

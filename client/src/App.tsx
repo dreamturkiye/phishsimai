@@ -22,6 +22,8 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import Login from "./pages/Login";
 import HQ from "./pages/HQ";
+import HealTest from "./pages/HealTest";
+import { GlobalErrorHandler } from "./components/GlobalErrorHandler";
 
 function Router() {
   return (
@@ -46,6 +48,7 @@ function Router() {
       <Route path="/terms" component={TermsOfService} />
       <Route path="/login" component={Login} />
       <Route path="/hq" component={HQ} />
+      <Route path="/heal-test" component={HealTest} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -55,6 +58,7 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
+      <GlobalErrorHandler />
       <ThemeProvider defaultTheme="dark">
         <TooltipProvider>
           <Toaster />

@@ -1,0 +1,18 @@
+```typescript
+import axios from 'axios';
+
+const pingApi = async () => {
+  try {
+    const response = await axios.get('/api/ping');
+    if (response.status === 200 && response.data.message === 'API is reachable') {
+      console.log('Connectivity test ping successful');
+    } else {
+      console.error('Connectivity test ping failed');
+    }
+  } catch (error) {
+    console.error('Connectivity test ping failed:', error);
+  }
+};
+
+pingApi();
+```

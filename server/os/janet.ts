@@ -1,6 +1,8 @@
-import { connect } from '@tidbcloud/serverless'
+import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
+import { openSystemAlert } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
 import { runMarketingAgent } from './agents/marketing'
 import { runProductAgent } from './agents/product'
@@ -8,6 +10,10 @@ import { runResearchAgent } from './agents/research'
 import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
 import { runEAAgent } from './agents/ea'
+import { JANET_VOICE_RULES } from './janetVoiceRules'
+import { getJanetOpsSnapshot } from './janetOpsSnapshot'
+import { talkToAgent, AGENTS, type AgentId } from './agents/kaan_os_v4'
+import { getNextSarahLinkedInPreview } from './social/sarahLinkedIn'
 
 
 // Smart Lead Researcher context added to Janet — v3.1
@@ -31,7 +37,25 @@ Control Levels: L1 Think | L2 Draft | L3 Execute with approval | L4 Autonomous (
 
 New agent under you: Smart Lead Researcher — runs hourly, discovers MSPs via AI + Hunter.io, deduplicates before adding to pipeline. Monitor via agent health. When pipeline <20 prospects, direct researcher to increase batch.
 
-Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 3-4 sentences max unless asked for more. No corporate speak.`
+Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 3-4 sentences max unless asked for more. No corporate speak.
+
+When Kaan asks operational questions (posting schedule, Sarah LinkedIn, pipeline, agents): answer from LIVE OPS DATA in the prompt. If blocked, state the blocker and your immediate action — never loop on "waiting for confirmation".
+
+You have real employees (Marcus, Aria, Nova, Rex, Scout, Finn, Vera, Max) with live health pings. Reference their status. If Kaan asks you to check with someone, you can relay what they last reported — do not pretend to wait hours for marketing.`
+
+function detectEmployeeAsk(message: string): AgentId | null {
+  const m = message.toLowerCase()
+  for (const id of Object.keys(AGENTS) as AgentId[]) {
+    if (id === 'janet') continue
+    const name = AGENTS[id].name.toLowerCase()
+    if (m.includes(name) && /ask|check|what.*(doing|up to)|status|talk to|ping/i.test(m)) return id
+  }
+  return null
+}
+
+function wantsLinkedInPreview(message: string): boolean {
+  return /linkedin/i.test(message) && /preview|show|see|look like|full post|draft/i.test(message)
+}
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
@@ -62,32 +86,19 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
 
   let summary = ''
   const archTasks: string[] = []
-  const conn = connect({ url: process.env.DATABASE_URL! })
+  const conn = getSql()
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 400
-      })
+    const brief = await llmComplete({
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 400,
     })
-    const d = await res.json()
-    summary = d.choices?.[0]?.message?.content || ''
+    summary = brief.text
     const matches = [...summary.matchAll(/ARCHITECT_TASK:\s*(.+)/gi)]
     for (const m of matches) {
       archTasks.push(m[1].trim())
       try {
-        await conn.execute(`CREATE TABLE IF NOT EXISTS os_architect_tasks (
-          id VARCHAR(36) PRIMARY KEY DEFAULT (UUID()),
-          task TEXT NOT NULL, status VARCHAR(50) DEFAULT 'pending',
-          source VARCHAR(100) DEFAULT 'janet', notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )`)
-        await conn.execute(`INSERT INTO os_architect_tasks (task, source) VALUES (?, 'janet_phishsimai')`, [m[1].trim()])
+        await conn`INSERT INTO os_architect_tasks (task, source) VALUES (${m[1].trim()}, 'janet_phishsimai')`
       } catch {}
     }
   } catch (e: any) {
@@ -110,7 +121,22 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {
-  const memCtx = await recallContext(companyId)
+  const memCtx = await recallContext(companyId, 25)
+  const ops = await getJanetOpsSnapshot(companyId).catch(() => null)
+
+  let extraContext = ''
+  const employeeId = detectEmployeeAsk(message)
+  if (employeeId) {
+    const reply = await talkToAgent(employeeId, message, companyId, true).catch(() => null)
+    if (reply) extraContext += `\n\nLIVE EMPLOYEE REPLY (${reply.agent}):\n${reply.response}`
+  }
+  if (wantsLinkedInPreview(message)) {
+    const preview = await getNextSarahLinkedInPreview().catch(() => null)
+    if (preview) {
+      extraContext += `\n\nSARAH LINKEDIN PREVIEW (${preview.status}):\nHook: ${preview.hook}\n\n${preview.body.slice(0, 400)}${preview.previewUrl ? `\n\nSafari preview link for Kaan: ${preview.previewUrl}` : '\n\nTell Kaan to open HQ → Social tab for the Safari preview link.'}`
+    }
+  }
+
   const messages = [
     ...history.slice(-6).map(m => ({
       role: m.role === 'janet' ? 'assistant' : 'user',
@@ -118,21 +144,48 @@ export async function janetChat(message: string, history: {role:string,text:stri
     })),
     { role: 'user', content: message }
   ]
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: JANET_SYSTEM + '\n\nMEMORY:\n' + memCtx }, ...messages],
-      max_tokens: 300, temperature: 0.7
+  let response: string
+  try {
+    const chat = await llmComplete({
+      messages: [{ role: 'system', content: JANET_SYSTEM + '\n\nLIVE OPS DATA (authoritative):\n' + (ops?.text || 'unavailable') + extraContext + '\n\nMEMORY:\n' + memCtx }, ...messages],
+      max_tokens: 400,
+      temperature: 0.7,
     })
-  })
-  const d = await res.json()
-  const response = d.choices?.[0]?.message?.content?.trim() || 'No response'
+    response = chat.text
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e)
+    await openSystemAlert('janet_hq_chat', err).catch(() => {})
+    await sendTelegram(`🚨 <b>JANET HQ CHAT DOWN</b>\n${err}`).catch(() => {})
+    return `Janet is temporarily unavailable (${err}). Try again shortly — Gemini/Ollama/Groq may be rate-limited.`
+  }
   await rememberFact({ company_id:companyId, type:'operating', key:`directive_${Date.now()}`,
     value:`${message} -> ${response.slice(0,150)}`, confidence:0.8, source:'founder_hq' })
   if (/focus|priorit|change|stop|start|add|approve|target|try|test|pivot/i.test(message)) {
     await sendTelegram(`FOUNDER->JANET (PhishSim):\n"${message}"\n\nJanet: ${response}`)
   }
   return response
+}
+
+/** Shorter voice-mode replies for always-on bidirectional calls. */
+export async function janetVoiceChat(message: string, history: { role: string; text: string }[] = [], companyId = 'phishsimai') {
+  const memCtx = await recallContext(companyId, 20)
+  const ops = await getJanetOpsSnapshot(companyId).catch(() => null)
+  const messages = [
+    ...history.slice(-6).map(m => ({
+      role: m.role === 'janet' ? 'assistant' as const : 'user' as const,
+      content: m.text,
+    })),
+    { role: 'user' as const, content: message },
+  ]
+  try {
+    const chat = await llmComplete({
+      messages: [{ role: 'system', content: JANET_SYSTEM + JANET_VOICE_RULES + '\n\nLIVE OPS DATA (authoritative):\n' + (ops?.text || 'unavailable') + '\n\nMEMORY:\n' + memCtx }, ...messages],
+      max_tokens: 220,
+      temperature: 0.7,
+    })
+    return chat.text
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e)
+    return `Janet is temporarily unavailable (${err}).`
+  }
 }
