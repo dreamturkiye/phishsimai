@@ -444,7 +444,7 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         return {
           name: parsed.name as string,
           subject: parsed.subject as string,
-          htmlBody: await sanitizeEmailHtml(parsed.htmlBody as string),
+          htmlBody: sanitizeEmailHtml(parsed.htmlBody as string),
           tags: (parsed.tags as string[]).map(t => String(t).slice(0, 50)),
         };
       }),
@@ -465,7 +465,7 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
         // SECURITY: Sanitize HTML before storing
-        return createTemplate({ ...input, htmlBody: await sanitizeEmailHtml(input.htmlBody), industry: input.industry ?? null, createdByUserId: ctx.user.id, isBuiltIn: false, isMspTemplate: false, mspTenantId: null });
+        return createTemplate({ ...input, htmlBody: sanitizeEmailHtml(input.htmlBody), industry: input.industry ?? null, createdByUserId: ctx.user.id, isBuiltIn: false, isMspTemplate: false, mspTenantId: null });
       }),
 
     update: protectedProcedure
@@ -486,7 +486,7 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         await requireOrgMember(input.orgId, ctx.user.id);
         const { orgId, templateId, ...data } = input;
         // SECURITY: Sanitize htmlBody if provided
-        const sanitizedData = { ...data, ...(data.htmlBody ? { htmlBody: await sanitizeEmailHtml(data.htmlBody) } : {}) };
+        const sanitizedData = { ...data, ...(data.htmlBody ? { htmlBody: sanitizeEmailHtml(data.htmlBody) } : {}) };
         await updateTemplate(templateId, orgId, sanitizedData);
         return { success: true };
       }),

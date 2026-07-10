@@ -1,17 +1,7 @@
-// NOTE: `isomorphic-dompurify` pulls in `jsdom`, whose transitive dep
-// `html-encoding-sniffer@6` require()s `@exodus/bytes` (ESM-only). In the Vercel
-// serverless (CJS) runtime that require throws ERR_REQUIRE_ESM. Importing DOMPurify
-// at module top made every route on the function crash at cold-start. It is therefore
-// loaded lazily (dynamic import, cached) so it stays OFF the cold-start path; jsdom /
-// isomorphic-dompurify remain esbuild `--external`.
-let _purifyPromise: Promise<typeof import("isomorphic-dompurify").default> | null = null;
+import sanitizeHtml from "sanitize-html";
 
-function getDOMPurify() {
-  if (!_purifyPromise) {
-    _purifyPromise = import("isomorphic-dompurify").then((m) => m.default);
-  }
-  return _purifyPromise;
-}
+// Email-safe HTML allowlist. Uses sanitize-html (pure JS, htmlparser2 — no jsdom,
+// no ESM require at runtime, bundles cleanly into the Vercel serverless function).
 
 const EMAIL_ALLOWED_TAGS = [
   "a","abbr","b","blockquote","br","center","cite","code","col","colgroup",
@@ -21,22 +11,64 @@ const EMAIL_ALLOWED_TAGS = [
   "td","tfoot","th","thead","time","tr","u","ul",
 ];
 
-const EMAIL_ALLOWED_ATTR = [
-  "href","src","alt","title","class","id","style","width","height","border",
-  "cellpadding","cellspacing","align","valign","colspan","rowspan","color",
-  "bgcolor","target","rel",
-];
+// Common, non-url() CSS properties only. Because no property here accepts a url(),
+// `url(javascript:...)` and IE `expression()` cannot pass — they match no value regex.
+const SAFE_STYLE_VALUE = [/^[#a-z0-9\s.,%()\-/'"]+$/i];
+const EMAIL_ALLOWED_STYLES = {
+  "*": {
+    color: SAFE_STYLE_VALUE,
+    "background-color": SAFE_STYLE_VALUE,
+    "font-family": SAFE_STYLE_VALUE,
+    "font-size": SAFE_STYLE_VALUE,
+    "font-weight": SAFE_STYLE_VALUE,
+    "font-style": SAFE_STYLE_VALUE,
+    "text-align": [/^(left|right|center|justify)$/i],
+    "text-decoration": SAFE_STYLE_VALUE,
+    "line-height": SAFE_STYLE_VALUE,
+    "vertical-align": SAFE_STYLE_VALUE,
+    display: SAFE_STYLE_VALUE,
+    width: SAFE_STYLE_VALUE,
+    height: SAFE_STYLE_VALUE,
+    "max-width": SAFE_STYLE_VALUE,
+    "min-width": SAFE_STYLE_VALUE,
+    padding: SAFE_STYLE_VALUE,
+    "padding-top": SAFE_STYLE_VALUE,
+    "padding-right": SAFE_STYLE_VALUE,
+    "padding-bottom": SAFE_STYLE_VALUE,
+    "padding-left": SAFE_STYLE_VALUE,
+    margin: SAFE_STYLE_VALUE,
+    "margin-top": SAFE_STYLE_VALUE,
+    "margin-right": SAFE_STYLE_VALUE,
+    "margin-bottom": SAFE_STYLE_VALUE,
+    "margin-left": SAFE_STYLE_VALUE,
+    border: SAFE_STYLE_VALUE,
+    "border-top": SAFE_STYLE_VALUE,
+    "border-bottom": SAFE_STYLE_VALUE,
+    "border-color": SAFE_STYLE_VALUE,
+    "border-radius": SAFE_STYLE_VALUE,
+  },
+};
 
-export async function sanitizeEmailHtml(html: string): Promise<string> {
+export function sanitizeEmailHtml(html: string): string {
   if (!html || typeof html !== "string") return "";
-  const DOMPurify = await getDOMPurify();
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: EMAIL_ALLOWED_TAGS,
-    ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
-    ALLOW_DATA_ATTR: false,
-    FORBID_TAGS: ["script","iframe","object","embed","form","input","button","textarea","select"],
-    FORBID_ATTR: ["onerror","onload","onclick","onmouseover","onmouseout","onkeyup","onkeydown","onfocus","onblur","onchange","onsubmit"],
-    FORCE_BODY: true,
+  return sanitizeHtml(html, {
+    allowedTags: EMAIL_ALLOWED_TAGS,
+    allowedAttributes: {
+      "*": [
+        "class","id","style","title","align","valign","width","height",
+        "border","cellpadding","cellspacing","colspan","rowspan","color","bgcolor",
+      ],
+      a: ["href","name","target","rel"],
+      img: ["src","alt","width","height","border"],
+    },
+    // http/https/mailto only — strips javascript:, data:, vbscript: in href/src.
+    allowedSchemes: ["http", "https", "mailto"],
+    allowedSchemesByTag: { a: ["http", "https", "mailto"], img: ["http", "https"] },
+    allowProtocolRelative: false,
+    // Disallowed tags are dropped; script/style/iframe/object/embed dropped WITH content.
+    disallowedTagsMode: "discard",
+    nonTextTags: ["script", "style", "textarea", "noscript", "iframe", "object", "embed"],
+    allowedStyles: EMAIL_ALLOWED_STYLES,
   });
 }
 
