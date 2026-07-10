@@ -12,7 +12,9 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import {
   acceptInvite,
-  addVerifiedDomain,
+  addPendingDomain,
+  getPendingDomain,
+  markDomainVerified,
   bulkCreateTargets,
   getVerifiedDomains,
   removeVerifiedDomain,
@@ -212,17 +214,17 @@ export const appRouter = router({
           rows.push({ orgId: input.orgId, firstName: fi>=0?(c[fi]??''):'', lastName: li>=0?(c[li]??''):'', email: em, title: ti>=0?(c[ti]??null):null, departmentId: input.departmentId??null, isActive: true });
         }
         if (!rows.length) throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid emails in CSV' });
-        // SECURITY (A2): enforce recipient-domain allowlist if org has configured domains
+        // COMPLIANCE FLOOR (mandatory): every imported target's domain must be VERIFIED
+        // (DNS-proven) for this org — no opt-in bypass, even if the org configured none.
         const verifiedDomains = await getVerifiedDomains(input.orgId);
-        if (verifiedDomains.length > 0) {
-          const blocked = rows.filter((r: any) => {
-            const domain = r.email.split("@")[1]?.toLowerCase();
-            return !domain || !verifiedDomains.includes(domain);
-          });
-          if (blocked.length > 0) {
-            const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Email domains not verified: ${badDomains}. Add them under Settings → Verified Domains.` });
-          }
+        const { domainEnrolled } = await import("./lib/complianceGuard");
+        const blocked = rows.filter((r: any) => {
+          const domain = r.email.split("@")[1]?.toLowerCase();
+          return !domain || !domainEnrolled(domain, verifiedDomains);
+        });
+        if (blocked.length > 0) {
+          const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot import: ${blocked.length} target(s) on unverified domains: ${badDomains}. Verify domain ownership (Settings → Verified Domains) first.` });
         }
         const count = await bulkCreateTargets(rows);
         return { count, message: 'Imported '+count+' targets' };
@@ -235,12 +237,40 @@ export const appRouter = router({
         await requireOrgMember(input.orgId, ctx.user.id);
         return getVerifiedDomains(input.orgId);
       }),
-    addVerifiedDomain: protectedProcedure
+    // Step 1: register a domain as PENDING and return the DNS TXT record to publish.
+    addPending: protectedProcedure
       .input(z.object({ orgId: z.number(), domain: z.string().min(3).max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, "Invalid domain format") }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
-        await addVerifiedDomain(input.orgId, input.domain);
-        return { success: true };
+        const clean = input.domain.toLowerCase().replace(/^@/, "").trim();
+        const { buildVerificationToken } = await import("./lib/domainVerify");
+        const token = buildVerificationToken();
+        await addPendingDomain(input.orgId, clean, token);
+        return {
+          success: true,
+          domain: clean,
+          verified: false,
+          txtRecordName: clean,
+          txtRecordValue: token,
+          instructions: `Add a DNS TXT record on "${clean}" with value: ${token}  — then run checkVerification.`,
+        };
+      }),
+    // Step 2: look up the domain's TXT records; flip verified=true only on an exact match.
+    checkVerification: protectedProcedure
+      .input(z.object({ orgId: z.number(), domain: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        const row = await getPendingDomain(input.orgId, input.domain);
+        if (!row || !row.verificationToken) {
+          return { verified: false as const, reason: "not_pending" as const };
+        }
+        const { verifyDomainTxt } = await import("./lib/domainVerify");
+        const result = await verifyDomainTxt(row.domain, row.verificationToken);
+        if (result === "verified") {
+          await markDomainVerified(input.orgId, input.domain);
+          return { verified: true as const };
+        }
+        return { verified: false as const, reason: result };
       }),
     removeVerifiedDomain: protectedProcedure
       .input(z.object({ orgId: z.number(), domain: z.string() }))

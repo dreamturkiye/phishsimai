@@ -13,7 +13,14 @@
       "idx": 1,
       "version": "7",
       "when": 1783725017108,
-      "tag": "0001_compliance_domain_trigger",
+      "tag": "0002_compliance_domain_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783726891266,
+      "tag": "0003_domain_ownership_verify",
       "breakpoints": true
     }
   ]

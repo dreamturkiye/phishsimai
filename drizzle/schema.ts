@@ -365,6 +365,11 @@ export const orgVerifiedDomains = pgTable("org_verified_domains", {
   id: serial("id").primaryKey(),
   orgId: integer("orgId").notNull(),
   domain: varchar("domain", { length: 253 }).notNull(),
+  // Domain-ownership proof. Existing rows default to UNVERIFIED — "we never checked"
+  // is not proof (Genesis §2.6). Only verified=true is trusted by the compliance floor.
+  verified: boolean("verified").default(false).notNull(),
+  verificationToken: varchar("verification_token", { length: 128 }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("org_verified_domains_orgId_idx").on(t.orgId),
