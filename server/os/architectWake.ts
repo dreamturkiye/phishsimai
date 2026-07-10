@@ -2,11 +2,11 @@ import { Request, Response } from 'express'
 import { COMPANY_ID } from './version'
 import { dispatchMarcusWake, getMarcusWakeAt } from './wakeMarcus'
 
-const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
+const HQ = process.env.HQ_SECRET
 
 function okHQ(req: Request): boolean {
   const secret = (req.headers['x-os-secret'] as string) || (req.query.secret as string)
-  return secret === HQ
+  return !!HQ && secret === HQ
 }
 
 /** GET/POST /api/os/architect/wake — instant Marcus daemon pickup signal */

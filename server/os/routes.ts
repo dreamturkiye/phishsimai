@@ -30,13 +30,13 @@ import { runSarahSocialCron, listSocialQueue, queueSocialItem } from './social/s
 import { buildAnalyticsView, ingestAnalyticsEvent } from './siteAnalytics'
 import { verifyRedditLogin } from './social/redditClient'
 
-const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
+const HQ = process.env.HQ_SECRET
 const CRON = process.env.CRON_SECRET || ''
 const COMPANY = 'phishsimai'
 
 function checkHQ(req: Request): boolean {
   const s = (req.query.secret || req.headers['x-hq-secret']) as string
-  return s === HQ
+  return !!HQ && s === HQ
 }
 function checkCron(req: Request): boolean {
   return req.headers.authorization === `Bearer ${CRON}`
@@ -493,7 +493,7 @@ export async function hqJanetSignedUrl(req: Request, res: Response) {
 
 export async function hqJanetTool(req: Request, res: Response) {
   const secret = (req.query.secret as string) || (req.headers['x-janet-tool-secret'] as string)
-  if (secret !== 'ps-hq-2026' && secret !== process.env.CRON_SECRET) {
+  if (!secret || (secret !== process.env.HQ_SECRET && secret !== process.env.CRON_SECRET)) {
     res.status(401).json({ error: 'Unauthorized' })
     return
   }

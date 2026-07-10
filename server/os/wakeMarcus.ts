@@ -41,8 +41,7 @@ export async function pingMarcusWakeUrl(product?: string): Promise<boolean> {
   if (!base) return false
   const secret =
     process.env.MARCUS_WAKE_SECRET ||
-    process.env.HQ_SECRET ||
-    'ps-hq-2026'
+    process.env.HQ_SECRET
   const url = base.includes('?') ? `${base}&secret=${secret}` : `${base}?secret=${secret}`
   try {
     const res = await fetch(url, {

@@ -3,11 +3,11 @@ import { getSql } from './conn'
 import { isValidArchitectTask } from './architectTasks'
 import { recordWatcherHeartbeat } from './marcusPipelineHealth'
 
-const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
+const HQ = process.env.HQ_SECRET
 
 function okHQ(req: Request): boolean {
   const secret = (req.headers['x-os-secret'] as string) || (req.query.secret as string)
-  return secret === HQ
+  return !!HQ && secret === HQ
 }
 
 async function ensureTaskColumns() {

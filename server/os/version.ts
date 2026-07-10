@@ -13,4 +13,4 @@ export const COMPANY_ID = 'phishsimai'
 
 export const KAAN_OS_SYSTEM = `${KAAN_OS_LABEL} — Janet CEO Supervisor + Hierarchical L5 Autonomy`
 
-export const ARCHITECT_SECRET = process.env.ARCHITECT_SECRET || process.env.HQ_SECRET || 'ps-hq-2026'
+export const ARCHITECT_SECRET = process.env.ARCHITECT_SECRET || process.env.HQ_SECRET

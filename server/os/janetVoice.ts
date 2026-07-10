@@ -6,7 +6,7 @@ import type { Application, Request, Response } from 'express'
 import WebSocket from 'ws'
 import { janetVoiceChat } from './janet'
 
-const HQ_SECRET = 'ps-hq-2026'
+const HQ_SECRET = process.env.HQ_SECRET
 
 const DEEPGRAM_WS_URL =
   'wss://api.deepgram.com/v1/listen?' +
@@ -42,7 +42,7 @@ type Session = {
 const sessions = new Map<string, Session>()
 
 function okSecret(req: Request): boolean {
-  return req.query.secret === HQ_SECRET || req.headers['x-hq-secret'] === HQ_SECRET
+  return !!HQ_SECRET && (req.query.secret === HQ_SECRET || req.headers['x-hq-secret'] === HQ_SECRET)
 }
 
 function sseEvent(res: Response, event: string, data: unknown) {

@@ -9,7 +9,7 @@ import { queueJanetArchitectTask } from './selfHeal'
 import { alertMarcusPipelineIssues } from './marcusPipelineHealth'
 import { runL5MarcusScan } from './l5Autonomy'
 
-const HQ = process.env.HQ_SECRET || 'ps-hq-2026'
+const HQ = process.env.HQ_SECRET
 const CRON = process.env.CRON_SECRET || ''
 const COMPANY = 'phishsimai'
 
@@ -27,7 +27,7 @@ const HEALTH_PROMPTS: Record<AgentId, string> = {
 
 function auth(req: Request): boolean {
   return req.headers.authorization === `Bearer ${CRON}` ||
-    (req.query.secret as string) === HQ
+    (!!HQ && (req.query.secret as string) === HQ)
 }
 
 async function pingAgent(agentId: AgentId, companyId: string) {

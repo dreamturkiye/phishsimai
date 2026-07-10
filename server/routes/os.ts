@@ -2,12 +2,12 @@ import { Router } from 'express'
 import { runJanetFullOrchestration, getOSStatus, runDailyStandup, runWeeklyReview, talkToAgent, janetTellAgent, issueTask, executeTask, reviewTask, AGENTS } from '../lib/kaan_os_v4'
 
 const router = Router()
-const SECRET = process.env.OS_SECRET || 'ps-hq-2026'
+const SECRET = process.env.OS_SECRET
 const COMPANY = 'phishsimai'
 
 function auth(req: any, res: any, next: any) {
   const secret = req.headers['x-os-secret'] || req.query.secret
-  if (secret !== SECRET) return res.status(401).json({ error: 'Unauthorized' })
+  if (!SECRET || secret !== SECRET) return res.status(401).json({ error: 'Unauthorized' })
   next()
 }
 

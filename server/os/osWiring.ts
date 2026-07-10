@@ -43,6 +43,6 @@ export async function getOsWiringReport(productLabel = 'PhishSimAI') {
 
   return {
     ...report,
-    check_url: 'GET /api/os/v4/wiring?secret=ps-hq-2026',
+    check_url: 'GET /api/os/v4/wiring?secret=$HQ_SECRET',
   }
 }

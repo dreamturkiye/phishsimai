@@ -67,7 +67,7 @@ app.get("/api/os/diag", async (_req: any, res: any) => {
     ollama_model: process.env.OLLAMA_CHAT_MODEL || "glm-5.2:cloud",
     llm_chain: process.env.LLM_PROVIDER_CHAIN || "gemini,ollama,groq",
     llm_health: llmHealth,
-    hq_secret: process.env.HQ_SECRET || "ps-hq-2026",
+    hq_secret: process.env.HQ_SECRET ? "SET" : "MISSING",
     mia: "enabled",
   });
 });

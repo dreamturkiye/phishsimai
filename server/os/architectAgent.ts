@@ -240,12 +240,12 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
       if (!r.ok) throw new Error('Status ' + r.status)
     }},
     { name: 'HQ data responds', test: async () => {
-      const r = await fetch(`${root}/api/os/hq?secret=ps-hq-2026`)
+      const r = await fetch(`${root}/api/os/hq?secret=${process.env.HQ_SECRET}`)
       const d = await r.json()
       if (!d.ok) throw new Error('HQ not ok: ' + (d.error || r.status))
     }},
     { name: 'Agent watchdog status', test: async () => {
-      const r = await fetch(`${root}/api/os/agent-watchdog?secret=ps-hq-2026&action=status`)
+      const r = await fetch(`${root}/api/os/agent-watchdog?secret=${process.env.HQ_SECRET}&action=status`)
       const d = await r.json()
       if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},

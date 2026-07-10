@@ -12,7 +12,7 @@ const FILE_BLOCK_RE = /FILE:\s*(.+?)\n---\n([\s\S]*?)\n---END---/g
 
 function okSecret(req: Request): boolean {
   const s = (req.query.secret as string) || req.body?.secret
-  return s === ARCHITECT_SECRET
+  return !!ARCHITECT_SECRET && s === ARCHITECT_SECRET
 }
 
 export function parseFileBlocks(output: string): Record<string, string> {
