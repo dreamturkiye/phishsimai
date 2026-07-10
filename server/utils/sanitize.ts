@@ -1,4 +1,17 @@
-import DOMPurify from "isomorphic-dompurify";
+// NOTE: `isomorphic-dompurify` pulls in `jsdom`, whose transitive dep
+// `html-encoding-sniffer@6` require()s `@exodus/bytes` (ESM-only). In the Vercel
+// serverless (CJS) runtime that require throws ERR_REQUIRE_ESM. Importing DOMPurify
+// at module top made every route on the function crash at cold-start. It is therefore
+// loaded lazily (dynamic import, cached) so it stays OFF the cold-start path; jsdom /
+// isomorphic-dompurify remain esbuild `--external`.
+let _purifyPromise: Promise<typeof import("isomorphic-dompurify").default> | null = null;
+
+function getDOMPurify() {
+  if (!_purifyPromise) {
+    _purifyPromise = import("isomorphic-dompurify").then((m) => m.default);
+  }
+  return _purifyPromise;
+}
 
 const EMAIL_ALLOWED_TAGS = [
   "a","abbr","b","blockquote","br","center","cite","code","col","colgroup",
@@ -14,8 +27,9 @@ const EMAIL_ALLOWED_ATTR = [
   "bgcolor","target","rel",
 ];
 
-export function sanitizeEmailHtml(html: string): string {
+export async function sanitizeEmailHtml(html: string): Promise<string> {
   if (!html || typeof html !== "string") return "";
+  const DOMPurify = await getDOMPurify();
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: EMAIL_ALLOWED_TAGS,
     ALLOWED_ATTR: EMAIL_ALLOWED_ATTR,
