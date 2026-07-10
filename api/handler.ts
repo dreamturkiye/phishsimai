@@ -1,43 +1,22 @@
-// Vercel serverless Express app — OS routes + lazy product API (tRPC, auth, Mia)
+// Vercel serverless Express app — product API (tRPC, auth, tracking, Mia) + OS routes
 import express from "express";
+import { mountProductApi } from "../server/productApiMount";
+import { scheduledCampaignHandler } from "../server/scheduledHandlers";
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-let _productMounted = false;
-let _productMounting: Promise<void> | null = null;
+// Product API: tRPC (/api/trpc), auth/OAuth, email open/click tracking, the
+// campaign scheduler, and Mia. Mounted once, eagerly, before the OS routes and
+// preview routes below (registration order matters). mountProductApi owns Mia,
+// so there is no separate lazy Mia mount. registerTrackingRoutes stays public —
+// phishing-simulation targets are unauthenticated.
+mountProductApi(app);
 
-function isMiaApiPath(path: string): boolean {
-  return (
-    path.startsWith("/api/mia") ||
-    path.startsWith("/api/scheduled/mia-feedback-digest")
-  );
-}
-
-async function ensureMiaApi(): Promise<void> {
-  if (_productMounted) return;
-  if (!_productMounting) {
-    _productMounting = (async () => {
-      const { mountMiaApi } = await import("../server/mia/vercelMount");
-      mountMiaApi(app);
-      _productMounted = true;
-    })();
-  }
-  await _productMounting;
-}
-
-app.use(async (req, res, next) => {
-  if (!isMiaApiPath(req.path)) return next();
-  if ((req as any)._miaRouted) return next();
-  try {
-    await ensureMiaApi();
-    (req as any)._miaRouted = true;
-    app.handle(req, res, next);
-  } catch (e: any) {
-    res.status(503).json({ error: "Mia API init failed", detail: e?.message });
-  }
-});
+// Vercel Cron issues GET, but mountProductApi registers the campaign handler as
+// POST. Register the same handler for GET so the hourly cron actually fires.
+app.get("/api/scheduled/campaign", scheduledCampaignHandler);
 
 app.get("/api/health", (_req: any, res: any) => {
   res.status(200).json({
