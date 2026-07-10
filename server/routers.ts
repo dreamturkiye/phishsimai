@@ -17,7 +17,6 @@ import {
   getVerifiedDomains,
   removeVerifiedDomain,
   createCampaign,
-  createCampaignResult,
   createDepartment,
   createInvite,
   createOrganization,
@@ -688,30 +687,31 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         const allTargets = await getTargets(input.orgId);
         const targets = allTargets.filter(t => (campaign.targetIds ?? []).includes(t.id));
         if (targets.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No targets assigned. Add employees before launching." });
-        // SECURITY (A2): enforce recipient-domain allowlist if org has configured domains
-        const verifiedDomains = await getVerifiedDomains(input.orgId);
-        if (verifiedDomains.length > 0) {
-          const blocked = targets.filter(t => {
-            const domain = t.email.split("@")[1]?.toLowerCase();
-            return !domain || !verifiedDomains.includes(domain);
-          });
-          if (blocked.length > 0) {
-            const badDomains = Array.from(new Set(blocked.map(t => t.email.split("@")[1]))).join(", ");
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: ${blocked.length} target(s) have unverified domains: ${badDomains}` });
-          }
-        }
+        // COMPLIANCE FLOOR (mandatory; replaces the old opt-in allowlist). Every send is
+        // routed through the single choke point enqueueCampaignSend, which runs the pure
+        // compliance check, audits the verdict, and creates the campaign_results row ONLY
+        // when the recipient's domain is enrolled for this org. Sends happen only on allow.
         const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
         const { sendCampaignEmail } = await import("./email/sender");
+        const { enqueueCampaignSend } = await import("./lib/campaignSend");
         const { nanoid } = await import("nanoid");
         let sent = 0;
+        const rejected: string[] = [];
         for (const target of targets) {
           const trackingToken = nanoid(32);
-          await createCampaignResult({ campaignId: campaign.id, targetId: target.id, orgId: input.orgId, trackingToken, emailSentAt: new Date(), emailOpenedAt: null, linkClickedAt: null, credentialSubmittedAt: null, reportedAt: null, trainingCompletedAt: null, ipAddress: null, userAgent: null });
+          const verdict = await enqueueCampaignSend(campaign.id, target, trackingToken);
+          if (!verdict.allowed) {
+            rejected.push(`${target.email} (${verdict.reason})`);
+            continue;
+          }
           await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
           sent++;
         }
+        if (sent === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: no targets passed the compliance floor (recipient domain must be enrolled). ${rejected.length} blocked${rejected.length ? ": " + rejected.slice(0, 5).join("; ") : ""}` });
+        }
         await updateCampaign(input.campaignId, input.orgId, { status: "active" });
-        return { success: true, sent, message: `Campaign launched! ${sent} phishing emails sent.` };
+        return { success: true, sent, rejected: rejected.length, message: `Campaign launched — ${sent} sent, ${rejected.length} blocked by the compliance floor.` };
       }),
 
     reportPhishing: publicProcedure
