@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import VerifiedDomainsSection from "@/components/VerifiedDomainsSection";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Settings, Users, Mail, Shield, Plus, Trash2, Crown, UserCheck, Copy, CheckCheck, Clock, CreditCard, Check } from "lucide-react";
+import { Settings, Users, Mail, Shield, Plus, Trash2, Crown, UserCheck, Copy, CheckCheck, Clock, CreditCard, Check, Globe } from "lucide-react";
 
 
 const PS_PLANS = [
@@ -169,6 +170,9 @@ export default function OrgSettings() {
             </TabsTrigger>
             <TabsTrigger value="features" className="text-xs h-6 px-3">
               <Shield className="w-3 h-3 mr-1.5" />Features
+            </TabsTrigger>
+            <TabsTrigger value="domains" className="text-xs h-6 px-3">
+              <Globe className="w-3 h-3 mr-1.5" />Domains
             </TabsTrigger>
             <TabsTrigger value="billing" className="text-xs h-6 px-3">
               <CreditCard className="w-3 h-3 mr-1.5" />Billing
@@ -340,6 +344,13 @@ export default function OrgSettings() {
                 ))}
               </CardContent>
             </Card>
+          </TabsContent>
+          <TabsContent value="domains" className="mt-4 space-y-4">
+            {orgId ? (
+              <VerifiedDomainsSection orgId={orgId} isAdmin={myRole === "admin"} />
+            ) : (
+              <div className="text-xs text-muted-foreground">Loading…</div>
+            )}
           </TabsContent>
           <TabsContent value="billing" className="mt-4"><BillingTabContent orgId={org?.id} /></TabsContent>
         </Tabs>

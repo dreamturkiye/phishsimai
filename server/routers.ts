@@ -15,6 +15,7 @@ import {
   addPendingDomain,
   getPendingDomain,
   markDomainVerified,
+  listOrgDomains,
   bulkCreateTargets,
   getVerifiedDomains,
   removeVerifiedDomain,
@@ -236,6 +237,13 @@ export const appRouter = router({
       .query(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
         return getVerifiedDomains(input.orgId);
+      }),
+    // Read-only: every domain with its verification state (for the Settings UI).
+    listDomains: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        return listOrgDomains(input.orgId);
       }),
     // Step 1: register a domain as PENDING and return the DNS TXT record to publish.
     addPending: protectedProcedure

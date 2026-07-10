@@ -295,6 +295,26 @@ export async function getVerifiedDomains(orgId: number): Promise<string[]> {
   } catch { return []; }
 }
 
+// Read-only: all domains for an org with their verification state. verificationToken is
+// the value the org must publish in DNS (a public record, not a secret), returned so the
+// UI can show the TXT record for pending domains.
+export async function listOrgDomains(orgId: number): Promise<
+  { domain: string; verified: boolean; verifiedAt: Date | null; verificationToken: string | null }[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  return db.select({
+    domain: orgVerifiedDomains.domain,
+    verified: orgVerifiedDomains.verified,
+    verifiedAt: orgVerifiedDomains.verifiedAt,
+    verificationToken: orgVerifiedDomains.verificationToken,
+  })
+    .from(orgVerifiedDomains)
+    .where(eq(orgVerifiedDomains.orgId, orgId))
+    .orderBy(desc(orgVerifiedDomains.createdAt));
+}
+
 // Step 1 of enrollment: insert an UNVERIFIED row with the ownership-proof token.
 export async function addPendingDomain(orgId: number, domain: string, verificationToken: string): Promise<void> {
   const db = await getDb();
