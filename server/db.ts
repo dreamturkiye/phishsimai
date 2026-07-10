@@ -1,9 +1,8 @@
-import { connect } from "@tidbcloud/serverless";
+import { neon } from "@neondatabase/serverless";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
-import { drizzle as drizzleMysql } from "drizzle-orm/mysql2";
-import { drizzle as drizzleTidb } from "drizzle-orm/tidb-serverless";
-import mysql from "mysql2/promise";
+import { drizzle } from "drizzle-orm/neon-http";
+import * as schema from "../drizzle/schema";
 import {
   Campaign,
   CampaignResult,
@@ -32,15 +31,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
-let _db: ReturnType<typeof drizzleMysql> | null = null;
-let _pool: ReturnType<typeof mysql.createPool> | null = null;
-let _tidbClient: ReturnType<typeof connect> | null = null;
-
-function normalizeDatabaseUrl(rawUrl: string): string {
-  const url = new URL(rawUrl);
-  const port = url.port ? `:${url.port}` : "";
-  return `mysql://${url.username}:${url.password}@${url.hostname}${port}${url.pathname}`;
-}
+let _db: ReturnType<typeof drizzle> | null = null;
 
 function formatDbError(error: unknown): string {
   if (error instanceof DrizzleQueryError && error.cause) {
@@ -58,49 +49,14 @@ function formatDbError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function buildPoolOptions(): mysql.PoolOptions {
-  const rawUrl = process.env.DATABASE_URL;
-  if (!rawUrl) throw new Error("DATABASE_URL is not set");
-
-  const url = new URL(normalizeDatabaseUrl(rawUrl));
-  const isServerless = Boolean(process.env.VERCEL);
-
-  return {
-    host: url.hostname,
-    port: Number(url.port || 4000),
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: url.pathname.replace(/^\//, ""),
-    waitForConnections: true,
-    connectionLimit: isServerless ? 1 : 5,
-    maxIdle: 0,
-    idleTimeout: 10_000,
-    enableKeepAlive: true,
-    connectTimeout: 10_000,
-    // TiDB Cloud requires TLS; explicit config avoids mysql2 URI/ssl param conflicts.
-    ssl: {
-      minVersion: "TLSv1.2",
-      rejectUnauthorized: true,
-    },
-  };
-}
-
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      if (process.env.VERCEL) {
-        // HTTP driver — works from Vercel without TiDB IP allowlist.
-        _tidbClient = connect({ url: normalizeDatabaseUrl(process.env.DATABASE_URL) });
-        _db = drizzleTidb({ client: _tidbClient }) as ReturnType<typeof drizzleMysql>;
-      } else {
-        _pool = mysql.createPool(buildPoolOptions());
-        _db = drizzleMysql(_pool as any); // eslint-disable-line @typescript-eslint/no-explicit-any
-      }
+      // Neon HTTP driver — one coherent Postgres DATABASE_URL shared with the OS layer.
+      _db = drizzle(neon(process.env.DATABASE_URL), { schema });
     } catch (error) {
       console.warn("[Database] Failed to create connection:", error);
       _db = null;
-      _pool = null;
-      _tidbClient = null;
     }
   }
   return _db;
@@ -148,7 +104,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!values.lastSignedIn) values.lastSignedIn = new Date();
   if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
 
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -162,8 +118,8 @@ export async function getUserByOpenId(openId: string) {
 export async function createOrganization(data: { name: string; slug: string; userId: number }): Promise<Organization> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(organizations).values({ name: data.name, slug: data.slug });
-  const orgId = (result as any).insertId as number;
+  const [row] = await db.insert(organizations).values({ name: data.name, slug: data.slug }).returning({ id: organizations.id });
+  const orgId = row.id;
   await db.insert(orgMembers).values({ orgId, userId: data.userId, role: "admin" });
   // Seed default departments
   const defaultDepts = ["Finance", "Sales", "Management", "Operations", "Warehouse"];
@@ -273,8 +229,8 @@ export async function getDepartments(orgId: number): Promise<Department[]> {
 export async function createDepartment(orgId: number, name: string): Promise<Department> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(departments).values({ orgId, name, isDefault: false });
-  const id = (result as any).insertId as number;
+  const [row] = await db.insert(departments).values({ orgId, name, isDefault: false }).returning({ id: departments.id });
+  const id = row.id;
   const [dept] = await db.select().from(departments).where(eq(departments.id, id));
   return dept;
 }
@@ -297,8 +253,8 @@ export async function getTargets(orgId: number, departmentId?: number): Promise<
 export async function createTarget(data: Omit<Target, "id" | "createdAt" | "updatedAt">): Promise<Target> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(targets).values(data);
-  const id = (result as any).insertId as number;
+  const [row] = await db.insert(targets).values(data).returning({ id: targets.id });
+  const id = row.id;
   const [target] = await db.select().from(targets).where(eq(targets.id, id));
   return target;
 }
@@ -385,8 +341,8 @@ export async function getTemplateById(id: number, requestingOrgId?: number): Pro
 export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount">): Promise<Template> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(templates).values({ ...data, usageCount: 0 });
-  const id = (result as any).insertId as number;
+  const [row] = await db.insert(templates).values({ ...data, usageCount: 0 }).returning({ id: templates.id });
+  const id = row.id;
   const [t] = await db.select().from(templates).where(eq(templates.id, id));
   return t;
 }
@@ -426,8 +382,8 @@ export async function getCampaignById(id: number, orgId: number): Promise<Campai
 export async function createCampaign(data: Omit<Campaign, "id" | "createdAt" | "updatedAt">): Promise<Campaign> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(campaigns).values(data);
-  const id = (result as any).insertId as number;
+  const [row] = await db.insert(campaigns).values(data).returning({ id: campaigns.id });
+  const id = row.id;
   const [c] = await db.select().from(campaigns).where(eq(campaigns.id, id));
   return c;
 }
@@ -467,8 +423,8 @@ export async function getCampaignResults(campaignId: number, orgId?: number): Pr
 export async function createCampaignResult(data: Omit<CampaignResult, "id" | "createdAt">): Promise<CampaignResult> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [result] = await db.insert(campaignResults).values(data);
-  const id = (result as any).insertId as number;
+  const [row] = await db.insert(campaignResults).values(data).returning({ id: campaignResults.id });
+  const id = row.id;
   const [r] = await db.select().from(campaignResults).where(eq(campaignResults.id, id));
   return r;
 }
