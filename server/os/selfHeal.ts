@@ -5,6 +5,7 @@ import { ensureMemoryTable } from './memory'
 import { COMPANY_ID } from './version'
 import { dispatchMarcusWake } from './wakeMarcus'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
+import { guardMarcusAllowed, makeMarcusBreakerDeps } from './marcusBreaker'
 
 async function ensureArchitectColumns() {
   const sql = getSql()
@@ -99,6 +100,13 @@ export async function queueJanetArchitectTask(opts: {
       return null
     }
     throw e
+  }
+
+  // MARCUS CIRCUIT BREAKER — do not ISSUE an architect task while the breaker is
+  // OPEN (3 consecutive failures, or a destructive diff). Parked + escalated. This
+  // runs after the autonomy gate, so at 'manual' it's never reached.
+  if (!(await guardMarcusAllowed(makeMarcusBreakerDeps(), `issue architect task: ${opts.task.slice(0, 60)}`))) {
+    return null
   }
 
   try {

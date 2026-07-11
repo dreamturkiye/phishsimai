@@ -15,6 +15,7 @@ import { getTelegramConfig, sendTelegramTest, registerTelegramWebhook } from './
 import { ingestFounderFile, storeFounderUpload, formatAttachmentsForPrompt } from './founderIngest'
 import { resolveLinkedBug } from './selfHeal'
 import { recordMarcusDeployOutcome } from './marcus'
+import { recordMarcusOutcome, makeMarcusBreakerDeps } from './marcusBreaker'
 import { dispatchMarcusWake } from './wakeMarcus'
 import { queueJanetArchitectTask } from './selfHeal'
 import {
@@ -944,6 +945,9 @@ export async function architectComplete(req: Request, res: Response) {
       files_changed=${filesArr}::text[], updated_at=NOW() WHERE id=${id}::uuid`
 
     await recordMarcusDeployOutcome({ bugId: row.bug_id, success: !!success, filesChanged: filesArr, notes }).catch(() => {})
+    // MARCUS CIRCUIT BREAKER — record the deploy outcome. 3 consecutive failures
+    // → breaker OPEN → Marcus halts issuing/executing until cooldown + a clean probe.
+    await recordMarcusOutcome(makeMarcusBreakerDeps(), !!success, success ? undefined : (error || 'deploy failed')).catch(() => {})
     const bugResult = await resolveLinkedBug(id, !!success, notes, commit_sha, { notify: false }).catch(() => ({ resolved: false }))
 
     const taskRow = await sql`SELECT task FROM os_architect_tasks WHERE id=${id}::uuid`

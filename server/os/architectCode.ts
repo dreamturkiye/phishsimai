@@ -7,6 +7,7 @@ import {
   buildMarcusCodePrompt,
   getMarcusMemoryContext,
 } from './marcus'
+import { guardMarcusAllowed, guardMarcusDiff, recordMarcusOutcome, fileSetToDiff, makeMarcusBreakerDeps } from './marcusBreaker'
 
 const FILE_BLOCK_RE = /FILE:\s*(.+?)\n---\n([\s\S]*?)\n---END---/g
 
@@ -159,6 +160,13 @@ export async function architectCode(req: Request, res: Response) {
   const taskId = body.task_id ? String(body.task_id) : null
   if (task.length < 12) return res.status(400).json({ ok: false, error: 'Task too short' })
 
+  // MARCUS CIRCUIT BREAKER — do not EXECUTE (generate/apply a change) while the
+  // breaker is OPEN. Parked + escalated.
+  const breaker = makeMarcusBreakerDeps()
+  if (!(await guardMarcusAllowed(breaker, `code: ${task.slice(0, 40)}`))) {
+    return res.status(423).json({ ok: false, error: 'Marcus circuit breaker OPEN — task parked', parked: true })
+  }
+
   const repoFiles: Record<string, string> = {}
   if (body.repo_files && typeof body.repo_files === 'object') {
     for (const [p, c] of Object.entries(body.repo_files as Record<string, unknown>)) {
@@ -203,6 +211,16 @@ export async function architectCode(req: Request, res: Response) {
     if (!Object.keys(files).length) {
       return res.json({ ok: false, error: 'No FILE blocks or markdown code fences', raw: output.slice(0, 1000), provider })
     }
+
+    // DESTRUCTIVE-DIFF TRIPWIRE — before the change is handed off for apply. An
+    // unsafe change set (>10 files or >500 net lines outside generated/) trips the
+    // breaker OPEN and is DISCARDED — never returned for application.
+    const verdict = await guardMarcusDiff(breaker, fileSetToDiff(files))
+    if (verdict.verdict === 'reject') {
+      await recordMarcusOutcome(breaker, false, `destructive_diff: ${verdict.reason}`)
+      return res.json({ ok: false, error: 'Destructive diff refused — change discarded', discarded: true, analysis: verdict.analysis })
+    }
+
     return res.json({ ok: true, files, raw: output.slice(0, 1500), agent: 'marcus', provider })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: e.message })
