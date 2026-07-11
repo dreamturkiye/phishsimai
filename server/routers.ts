@@ -195,7 +195,7 @@ export const appRouter = router({
         await acceptInvite(input.token, ctx.user.id);
         return { success: true, orgId: invite.orgId };
       }),
-  }),    bulkImportCSV: protectedProcedure
+    bulkImportCSV: protectedProcedure
       .input(z.object({ orgId: z.number(), csvContent: z.string(), departmentId: z.number().optional() }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
@@ -287,6 +287,7 @@ export const appRouter = router({
         await removeVerifiedDomain(input.orgId, input.domain);
         return { success: true };
       }),
+  }),
   // ─── Departments ────────────────────────────────────────────────────────────
   departments: router({
     list: protectedProcedure
