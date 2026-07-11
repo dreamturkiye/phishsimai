@@ -1,4 +1,4 @@
-import { groqComplete, type GroqMessage } from './groqChat'
+import { groqComplete, GROQ_MODEL, type GroqMessage } from './groqChat'
 
 export type LlmMessage = GroqMessage
 
@@ -174,7 +174,7 @@ export async function llmComplete(opts: {
       if (provider === 'groq') {
         if (!process.env.GROQ_API_KEY?.trim()) continue
         const text = await groqComplete(opts)
-        return { text, provider: 'groq', model: 'llama-3.1-8b-instant' }
+        return { text, provider: 'groq', model: GROQ_MODEL }
       }
       if (provider === 'ollama') {
         if (!ollamaApiKey()) continue

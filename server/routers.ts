@@ -451,39 +451,45 @@ export const appRouter = router({
 - Difficulty: ${input.difficulty}${safeContext ? `
 - Context (thematic only): ${safeContext}` : ""}
 
-Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK}}), tags(string[])`;
-        const response = await invokeLLM({
+Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EXACTLY this shape:
+{"name": "string", "subject": "string", "htmlBody": "string — HTML email body, MUST include the literal token {{TRACKING_LINK}}", "tags": ["string"]}`;
+        // Durable structured output: json_object is broadly supported on Groq. We do NOT
+        // use json_schema — llama-3.3-70b-versatile rejects it (400 "does not support
+        // response format json_schema"). If json_object is rejected too, fall back to no
+        // response_format and extract the JSON from the text.
+        const callGen = (useJsonObject: boolean) => invokeLLM({
           messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "phishing_template",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  subject: { type: "string" },
-                  htmlBody: { type: "string" },
-                  tags: { type: "array", items: { type: "string" } },
-                },
-                required: ["name", "subject", "htmlBody", "tags"],
-                additionalProperties: false,
-              },
-            },
-          },
+          ...(useJsonObject ? { response_format: { type: "json_object" as const } } : {}),
         });
+        let response;
+        try {
+          response = await callGen(true);
+        } catch {
+          response = await callGen(false);
+        }
 
         const rawContent = response.choices[0]?.message?.content;
         const content = typeof rawContent === 'string' ? rawContent : null;
         if (!content) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI generation failed" });
-        const parsed = JSON.parse(content);
+        // Robust parse: strip markdown fences, then fall back to first {...} block.
+        const parseLoose = (s: string): any => {
+          const t = s.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+          try { return JSON.parse(t); } catch { /* fall through */ }
+          const a = t.indexOf("{"), b = t.lastIndexOf("}");
+          if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch { /* fall through */ } }
+          return null;
+        };
+        const parsed = parseLoose(content);
+        if (!parsed || typeof parsed.name !== "string" || typeof parsed.subject !== "string" ||
+            typeof parsed.htmlBody !== "string" || !Array.isArray(parsed.tags)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI returned malformed template JSON" });
+        }
         // SECURITY: Sanitize LLM-generated HTML before returning
         return {
-          name: parsed.name as string,
-          subject: parsed.subject as string,
-          htmlBody: sanitizeEmailHtml(parsed.htmlBody as string),
-          tags: (parsed.tags as string[]).map(t => String(t).slice(0, 50)),
+          name: String(parsed.name),
+          subject: String(parsed.subject),
+          htmlBody: sanitizeEmailHtml(String(parsed.htmlBody)),
+          tags: (parsed.tags as unknown[]).map(t => String(t).slice(0, 50)),
         };
       }),
 
