@@ -11,11 +11,15 @@ function makeSql(opts: {
   queue?: number | "throw";
   subs?: Array<{ plan: string; n: number }> | "throw";
   newSubs?: number | "throw";
+  reviewedScores?: Array<{ agent_id: string; n: number; avg: number }>;
   onInsert?: (q: string) => void;
 }) {
   return ((strings: TemplateStringsArray, ..._vals: any[]) => {
     const q = strings.join(" ? ");
     if (/INSERT INTO\s+metrics_daily/i.test(q)) { opts.onInsert?.(q); return Promise.resolve([]); }
+    if (/FROM agent_tasks/i.test(q) && /GROUP BY agent_id/i.test(q)) {
+      return Promise.resolve(opts.reviewedScores ?? []); // O.17 reviewed-score aggregate
+    }
     if (/FROM agent_tasks/i.test(q)) {
       if (opts.tasks === "throw") return Promise.reject(new Error("agent_tasks unqueryable"));
       return Promise.resolve([{ completed: opts.tasks?.completed ?? 0, failed: opts.tasks?.failed ?? 0 }]);
@@ -82,16 +86,30 @@ describe("computeMetricsRow — REAL-vs-NULL discipline", () => {
     expect(row.tasks_failed).toBeNull();
   });
 
-  it("agent_score_avg is ALWAYS null; churned_subs is null; real fields populate", async () => {
+  it("agent_score_avg is NULL with no reviewed tasks (never fabricated 0); churned null; real fields populate", async () => {
     const row = await computeMetricsRow(
       makeSql({ tasks: { completed: 5, failed: 0 }, subs: [{ plan: "pro", n: 1 }], newSubs: 2, queue: 4 }),
       "phishsimai", DATE,
     );
-    expect(row.agent_score_avg).toBeNull(); // never computed / fabricated
-    expect(row.churned_subs).toBeNull();    // no churn timestamp in schema
+    expect(row.agent_score_avg).toBeNull();               // O.17 Part A: uncomputable → null, not 0
+    expect(Object.keys(row.per_agent_scores)).toHaveLength(0);
+    expect(row.churned_subs).toBeNull();                  // no churn timestamp in schema
     expect(row.new_subs).toBe(2);
     expect(row.queue_depth).toBe(4);
     expect(row.mrr_cents).toBe(74900);
+  });
+
+  it("agent_score_avg is the REAL reviewed-task avg — weighted overall + per-agent (O.17 Part A)", async () => {
+    const row = await computeMetricsRow(
+      makeSql({
+        tasks: { completed: 5, failed: 0 },
+        reviewedScores: [{ agent_id: "nova", n: 2, avg: 8 }, { agent_id: "aria", n: 2, avg: 6 }],
+      }),
+      "phishsimai", DATE,
+    );
+    expect(row.agent_score_avg).toBe(7);                  // weighted (8·2 + 6·2)/4 = 7
+    expect(row.per_agent_scores.nova).toEqual({ count: 2, avg: 8 });
+    expect(row.per_agent_scores.aria).toEqual({ count: 2, avg: 6 });
   });
 });
 

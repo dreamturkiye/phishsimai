@@ -12,6 +12,7 @@ const base = (over: Partial<ProductBrief> = {}): ProductBrief => ({
   autonomyLevel: "manual",
   openBreakers: [],
   pendingEscalations: [],
+  agentsBelowL5: [],
   ...over,
 });
 

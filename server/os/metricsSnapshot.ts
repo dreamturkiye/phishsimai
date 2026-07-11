@@ -35,8 +35,11 @@ export interface MetricsRow {
   churned_subs: number | null
   tasks_completed: number | null
   tasks_failed: number | null
-  agent_score_avg: number | null   // ALWAYS null (see below)
+  agent_score_avg: number | null   // REAL: overall avg of Janet-reviewed scores; null if none
   queue_depth: number | null
+  // O.17 — per-agent reviewed-score aggregates for the window (exposed, not a
+  // metrics_daily column). Empty {} when there are no reviewed tasks.
+  per_agent_scores: Record<string, { count: number; avg: number }>
 }
 
 export interface WriteResult {
@@ -136,11 +139,35 @@ export async function computeMetricsRow(sql: Sql, companyId: string, snapshotDat
   // given day is not honestly computable. NULL, not 0.
   const churnedSubs: number | null = null
 
-  // ── agent_score_avg — ALWAYS NULL ──────────────────────────────────────────
-  // Stays null until agent_performance has >= 20 graded rows (it currently has
-  // 0). Do NOT compute or fabricate this — a made-up average is exactly the
-  // v6 fake-8.5 bug this batch exists to prevent.
-  const agentScoreAvg: number | null = null
+  // ── agent_score_avg — REAL, from Janet's reviewed-task scores (O.17) ────────
+  // Overall + per-agent avg of performance_score over reviewed tasks in the
+  // window (status='reviewed', non-null score, completed that day). HONESTY:
+  // genuinely zero reviewed tasks → NULL (uncomputable), never 0 — a fabricated
+  // average is exactly the v6 fake-8.5 bug this exists to prevent.
+  let agentScoreAvg: number | null = null
+  let perAgentScores: Record<string, { count: number; avg: number }> = {}
+  try {
+    const rows = await sql`
+      SELECT agent_id, count(*)::int AS n, avg(performance_score)::float AS avg
+      FROM agent_tasks
+      WHERE company_id = ${companyId} AND status = 'reviewed'
+        AND performance_score IS NOT NULL AND completed_at::date = ${snapshotDate}
+      GROUP BY agent_id
+    `
+    let total = 0
+    let weighted = 0
+    for (const r of rows) {
+      const c = Number(r.n)
+      const a = Number(r.avg)
+      perAgentScores[r.agent_id] = { count: c, avg: Math.round(a * 10) / 10 }
+      total += c
+      weighted += a * c
+    }
+    agentScoreAvg = total > 0 ? Math.round((weighted / total) * 10) / 10 : null
+  } catch {
+    agentScoreAvg = null
+    perAgentScores = {}
+  }
 
   return {
     product_id: companyId,
@@ -153,6 +180,7 @@ export async function computeMetricsRow(sql: Sql, companyId: string, snapshotDat
     tasks_failed: tasksFailed,
     agent_score_avg: agentScoreAvg,
     queue_depth: queueDepth,
+    per_agent_scores: perAgentScores,
   }
 }
 
