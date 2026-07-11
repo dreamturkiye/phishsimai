@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createHeartbeatJob, deleteHeartbeatJob, listHeartbeatJobs, updateHeartbeatJob } from "./_core/heartbeat";
-import { invokeLLM } from "./_core/llm";
+import { llmComplete } from "./os/llmChat";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
@@ -457,19 +457,24 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         // use json_schema — llama-3.3-70b-versatile rejects it (400 "does not support
         // response format json_schema"). If json_object is rejected too, fall back to no
         // response_format and extract the JSON from the text.
-        const callGen = (useJsonObject: boolean) => invokeLLM({
+        // Route through the shared fallback chain (llmComplete: Groq → Gemini → Ollama
+        // per LLM_PROVIDER_CHAIN) so a single provider/model outage can't break template
+        // generation. response_format json_object is forwarded to providers that support
+        // it (Groq); the strict prompt + robust parse below carry the rest.
+        const callGen = (useJsonObject: boolean) => llmComplete({
           messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+          max_tokens: 1200,
+          temperature: 0.7,
           ...(useJsonObject ? { response_format: { type: "json_object" as const } } : {}),
         });
-        let response;
+        let result;
         try {
-          response = await callGen(true);
+          result = await callGen(true);
         } catch {
-          response = await callGen(false);
+          result = await callGen(false); // last resort: no response_format on any provider
         }
-
-        const rawContent = response.choices[0]?.message?.content;
-        const content = typeof rawContent === 'string' ? rawContent : null;
+        console.log(`[templates.generate] provider=${result.provider} model=${result.model}`);
+        const content = typeof result.text === 'string' ? result.text : null;
         if (!content) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI generation failed" });
         // Robust parse: strip markdown fences, then fall back to first {...} block.
         const parseLoose = (s: string): any => {

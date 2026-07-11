@@ -1,4 +1,4 @@
-import { groqComplete, GROQ_MODEL, type GroqMessage } from './groqChat'
+import { groqComplete, GROQ_DEFAULT_MODEL, type GroqMessage } from './groqChat'
 
 export type LlmMessage = GroqMessage
 
@@ -159,6 +159,9 @@ export async function llmComplete(opts: {
   temperature?: number
   /** Override provider order, e.g. ['ollama','gemini'] for live demos */
   providers?: string[]
+  /** Best-effort structured output. Forwarded to Groq (which supports json_object);
+   *  Gemini/Ollama ignore it and rely on the prompt. Callers must still parse/validate. */
+  response_format?: { type: 'json_object' }
 }): Promise<LlmCompleteResult> {
   const chain = opts.providers ?? providerChain()
   let lastError = 'No LLM provider succeeded'
@@ -174,7 +177,7 @@ export async function llmComplete(opts: {
       if (provider === 'groq') {
         if (!process.env.GROQ_API_KEY?.trim()) continue
         const text = await groqComplete(opts)
-        return { text, provider: 'groq', model: GROQ_MODEL }
+        return { text, provider: 'groq', model: GROQ_DEFAULT_MODEL }
       }
       if (provider === 'ollama') {
         if (!ollamaApiKey()) continue
