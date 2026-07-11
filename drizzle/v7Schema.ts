@@ -73,6 +73,7 @@ export const escalations = pgTable("escalations", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   resolvedVia: text("resolved_via"),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }), // set when delivered to Telegram; NULL = not yet delivered
 }, (t) => [
   check(
     "escalations_category_check",
@@ -80,6 +81,15 @@ export const escalations = pgTable("escalations", {
   ),
   check("escalations_status_check", sql`${t.status} IN ('pending','approved','rejected','deferred')`),
 ]);
+
+// [HQ] Section K — one stored founder daily brief per date, composed from real
+// tables. Idempotent per brief_date.
+export const founderBriefs = pgTable("founder_briefs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  briefDate: date("brief_date").notNull().unique(),
+  contentMd: text("content_md").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // [HQ] deploy-target verification history
 export const deployVerifications = pgTable("deploy_verifications", {

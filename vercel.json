@@ -43,6 +43,14 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/os/escalation-notify",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/os/founder-brief",
+      "schedule": "0 21 * * *"
+    },
+    {
       "path": "/api/os/watchdog",
       "schedule": "0 * * * *"
     },
