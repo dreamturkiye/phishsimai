@@ -28,6 +28,8 @@ import { writeMetricsSnapshot } from './metricsSnapshot'
 import {
   makeSqlBreakerDeps, getBreakerState, recordTaskOutcome, checkDiffSafety, primaryFingerprint,
 } from './circuitBreaker'
+import { deliverPendingEscalations, makeSqlNotifyDeps } from './escalationNotify'
+import { composeFounderBrief, makeSqlBriefDeps } from './founderBrief'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
@@ -107,6 +109,33 @@ export async function cronMetricsSnapshot(req: Request, res: Response) {
     res.json({ ok: result.written, ...result })
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
+// Deliver un-notified escalations to Telegram (every 15m). Secret-gated. Always
+// returns 200 with a delivery summary; idempotent (marks notified_at on success)
+// and fail-safe (Telegram env unset → skipped, never crashes). Returns a summary
+// even if the source query fails (e.g. notified_at not yet migrated).
+export async function cronEscalationNotify(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const result = await deliverPendingEscalations(makeSqlNotifyDeps())
+    res.json({ ok: true, ...result })
+  } catch (e: any) {
+    res.json({ ok: false, total: 0, sent: 0, skipped: 0, failed: 0, error: formatOsError(e) })
+  }
+}
+
+// Compose + send + store the founder daily brief (daily ~21:00 UTC). Secret-gated.
+// Real tables only; any null metric renders 'no data', never a fabricated value.
+export async function cronFounderBrief(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+    const result = await composeFounderBrief(makeSqlBriefDeps(COMPANY), date)
+    res.json({ ok: true, ...result })
+  } catch (e: any) {
+    res.json({ ok: false, error: formatOsError(e) })
   }
 }
 
