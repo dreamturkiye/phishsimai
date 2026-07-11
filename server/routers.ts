@@ -117,6 +117,14 @@ export const appRouter = router({
     create: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(100) }))
       .mutation(async ({ ctx, input }) => {
+        // Duplicate guard: if the user already owns an org with the same name
+        // (case-insensitive), return it instead of creating a second one. Fixes
+        // re-submitting setup creating org id 2 AND 3 for the same "QA Test Org".
+        const existing = await getUserOrgs(ctx.user.id);
+        const wanted = input.name.trim().toLowerCase();
+        const dupe = existing.find((o) => o.org?.name?.trim().toLowerCase() === wanted);
+        if (dupe?.org) return dupe.org;
+
         const slug = input.name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 50) + "-" + nanoid(6);
         const org = await createOrganization({ name: input.name, slug, userId: ctx.user.id });
         import('./email/janet').then(({ sendWelcomeEmail }) =>
