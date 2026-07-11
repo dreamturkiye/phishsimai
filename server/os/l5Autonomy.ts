@@ -6,11 +6,23 @@ import { runIntelFinanceProactiveCycle } from './kaan-os-core/intelligenceFinanc
 import { queueJanetArchitectTask } from './selfHeal'
 import { issueTask, type AgentId } from '../lib/kaan_os_v4'
 import { getSql } from './conn'
+import { isAutonomyDenied } from './autonomyGate'
 
 export async function runL5JanetCycle(companyId = 'phishsimai', productId = companyId) {
   const sql = getSql()
   const issueAgentTask = async (agentId: AgentId, title: string, description: string) => {
-    await issueTask(agentId, { agent_id: agentId, title, description, priority: 'high', due_in_hours: 48 }, companyId)
+    // Loop no-op under the autonomy gate: at 'manual', issueTask throws
+    // AutonomyDenied (audited). Swallow it so the cycle continues instead of
+    // crashing the cron; anything else propagates.
+    try {
+      await issueTask(agentId, { agent_id: agentId, title, description, priority: 'high', due_in_hours: 48 }, companyId)
+    } catch (e) {
+      if (isAutonomyDenied(e)) {
+        console.warn(`[autonomy] issueAgentTask(${agentId}) denied — logged no-op (${e.reason})`)
+        return
+      }
+      throw e
+    }
   }
   const [proactive, strategies, intelFinance] = await Promise.all([
     runJanetProactiveCycle(sql as any, companyId, productId, {

@@ -4,6 +4,7 @@ import { sendTelegram } from './telegram'
 import { ensureMemoryTable } from './memory'
 import { COMPANY_ID } from './version'
 import { dispatchMarcusWake } from './wakeMarcus'
+import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 
 async function ensureArchitectColumns() {
   const sql = getSql()
@@ -83,7 +84,23 @@ export async function queueJanetArchitectTask(opts: {
   task: string
   bugId?: string
   notes?: string
+  source?: string
+  notify?: boolean
 }): Promise<string | null> {
+  // AUTONOMY GATE — architect tasks are an autonomous write. At 'manual' this
+  // denies (audited) and the queue becomes a logged no-op. AutonomyDenied is
+  // caught here so every caller (proactive loops included) sees a null, never a
+  // throw; genuine failures still surface below.
+  try {
+    await assertAutonomyAllows('queue_architect_task', COMPANY_ID)
+  } catch (e) {
+    if (isAutonomyDenied(e)) {
+      console.warn(`[autonomy] queueJanetArchitectTask denied — logged no-op (${e.reason})`)
+      return null
+    }
+    throw e
+  }
+
   try {
     await ensureArchitectColumns()
     const sql = getSql()
@@ -105,15 +122,17 @@ export async function queueJanetArchitectTask(opts: {
     const id = randomUUID()
     await sql`
       INSERT INTO os_architect_tasks (id, task, source, status, notes, bug_id)
-      VALUES (${id}, ${opts.task.slice(0, 4000)}, 'janet', 'queued', ${opts.notes || 'Janet → Marcus: autonomous self-heal'}, ${opts.bugId || null})
+      VALUES (${id}, ${opts.task.slice(0, 4000)}, ${opts.source || 'janet'}, 'queued', ${opts.notes || 'Janet → Marcus: autonomous self-heal'}, ${opts.bugId || null})
     `
 
-    await sendTelegram(
-      `<b>JANET → MARCUS</b>\n` +
-      `Marcus (Architect) queued autonomously.\n` +
-      `Task: ${opts.task.slice(0, 300)}\n\n` +
-      `Pipeline: dev → QA → prod. Instant wake — no poll delay.`
-    )
+    if (opts.notify !== false) {
+      await sendTelegram(
+        `<b>JANET → MARCUS</b>\n` +
+        `Marcus (Architect) queued autonomously.\n` +
+        `Task: ${opts.task.slice(0, 300)}\n\n` +
+        `Pipeline: dev → QA → prod. Instant wake — no poll delay.`
+      )
+    }
     void dispatchMarcusWake(COMPANY_ID, { taskId: id, product: 'phishsim' })
     return id
   } catch (e: any) {

@@ -29,6 +29,13 @@
       "when": 1783729357364,
       "tag": "0003_domain_ownership_verify",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783735127135,
+      "tag": "0004_tan_carlie_cooper",
+      "breakpoints": true
     }
   ]
 }

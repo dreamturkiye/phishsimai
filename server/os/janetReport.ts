@@ -1,4 +1,3 @@
-import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome } from './memory'
@@ -9,12 +8,12 @@ import { runMarketingAgent } from './agents/marketing'
 import { runProductAgent } from './agents/product'
 import { runCSAgent } from './agents/customerSuccess'
 import { runEAAgent } from './agents/ea'
+import { queueJanetArchitectTask } from './selfHeal'
 
 const REPORT_EMAIL = process.env.FOUNDER_EMAIL || 'kaanari@mac.com'
 const FROM = 'Janet CGO <sarah@phishsimai.com>'
 
 export async function runJanetReport(companyId = 'phishsimai') {
-  const sql = getSql()
   await seedPhishSimMemory().catch(() => {})
 
   const [sales, finance, marketing, product, cs, research] = await Promise.all([
@@ -55,9 +54,9 @@ If architect task needed: ARCHITECT_TASK: [what to build and why]`
     for (const match of executiveSummary.matchAll(/ARCHITECT_TASK:\s*(.+)/gi)) {
       const task = match[1].trim()
       architectTasksQueued.push(task)
-      try {
-        await sql`INSERT INTO os_architect_tasks (task, source) VALUES (${task}, 'janet_report')`
-      } catch {}
+      // Route through the gated writer — no direct insert bypasses the autonomy
+      // gate. At 'manual' this is a logged no-op (returns null).
+      await queueJanetArchitectTask({ task, source: 'janet_report', notify: false })
     }
   } catch (e: any) {
     executiveSummary = `Janet report error: ${e?.message}`

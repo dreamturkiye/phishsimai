@@ -1,8 +1,7 @@
-import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
-import { openSystemAlert } from './selfHeal'
+import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
 import { runMarketingAgent } from './agents/marketing'
 import { runProductAgent } from './agents/product'
@@ -86,7 +85,6 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
 
   let summary = ''
   const archTasks: string[] = []
-  const conn = getSql()
 
   try {
     const brief = await llmComplete({
@@ -97,9 +95,9 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
     const matches = [...summary.matchAll(/ARCHITECT_TASK:\s*(.+)/gi)]
     for (const m of matches) {
       archTasks.push(m[1].trim())
-      try {
-        await conn`INSERT INTO os_architect_tasks (task, source) VALUES (${m[1].trim()}, 'janet_phishsimai')`
-      } catch {}
+      // Route through the gated writer — no direct insert bypasses the autonomy
+      // gate. At 'manual' this is a logged no-op (returns null).
+      await queueJanetArchitectTask({ task: m[1].trim(), source: 'janet_phishsimai', notify: false })
     }
   } catch (e: any) {
     summary = `Janet brief error: ${e?.message}. Agents ran OK.`

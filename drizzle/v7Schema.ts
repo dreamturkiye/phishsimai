@@ -128,3 +128,16 @@ export const auditLog = pgTable("audit_log", {
   detail: jsonb("detail"),                                 // includes proof refs: commit SHA, deploy URL, message id
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// [S + HQ] the earned autonomy tier, per company. One row per company.
+// Seed is ALWAYS 'manual' — tiers are earned (trust + clean-day streak), never
+// granted. autonomyGate.ts reads .level here before every autonomous write.
+export const osAutonomyState = pgTable("os_autonomy_state", {
+  companyId: text("company_id").primaryKey(),
+  level: text("level").notNull().default("manual"),
+  trust: numeric("trust").notNull().default("0"),
+  cleanDayStreak: integer("clean_day_streak").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  check("os_autonomy_state_level_ck", sql`${t.level} IN ('manual','l2','l3','l4','l5')`),
+]);
