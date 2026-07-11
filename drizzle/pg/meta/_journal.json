@@ -5,21 +5,28 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1783701470634,
+      "when": 1,
       "tag": "0000_true_mojo",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1783725017108,
-      "tag": "0002_compliance_domain_trigger",
+      "when": 2,
+      "tag": "0001_careless_human_robot",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1783726891266,
+      "when": 3,
+      "tag": "0002_compliance_domain_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783729357364,
       "tag": "0003_domain_ownership_verify",
       "breakpoints": true
     }

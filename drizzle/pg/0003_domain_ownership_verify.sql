@@ -1,9 +1,6 @@
 ALTER TABLE "org_verified_domains" ADD COLUMN "verified" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "org_verified_domains" ADD COLUMN "verification_token" varchar(128);--> statement-breakpoint
 ALTER TABLE "org_verified_domains" ADD COLUMN "verified_at" timestamp with time zone;--> statement-breakpoint
--- Tighten the compliance-floor trigger: a campaign_results INSERT now requires a
--- VERIFIED (DNS-proven) enrolled domain, not merely a matching row. Genesis §2.6:
--- "we never checked" is not proof. Replaces the function body from the prior migration.
 CREATE OR REPLACE FUNCTION assert_target_domain_enrolled() RETURNS trigger AS $$
 DECLARE v_domain text;
 BEGIN

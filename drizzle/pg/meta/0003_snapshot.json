@@ -1,6 +1,6 @@
 {
-  "id": "98d39535-2d67-480c-adb4-78cd0540b7e5",
-  "prevId": "e114bab1-3e24-4595-a6ca-aa4f381f7151",
+  "id": "98b0c051-5b36-456c-a9f0-65ddc003fe3c",
+  "prevId": "b362f2ac-6498-41a9-a430-224b5ddff1a4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1294,6 +1294,25 @@
           "type": "varchar(253)",
           "primaryKey": false,
           "notNull": true
+        },
+        "verified": {
+          "name": "verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "verification_token": {
+          "name": "verification_token",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "createdAt": {
           "name": "createdAt",
