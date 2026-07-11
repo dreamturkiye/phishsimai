@@ -12,12 +12,14 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import {
   acceptInvite,
-  addVerifiedDomain,
+  addPendingDomain,
+  getPendingDomain,
+  markDomainVerified,
+  listOrgDomains,
   bulkCreateTargets,
   getVerifiedDomains,
   removeVerifiedDomain,
   createCampaign,
-  createCampaignResult,
   createDepartment,
   createInvite,
   createOrganization,
@@ -213,17 +215,17 @@ export const appRouter = router({
           rows.push({ orgId: input.orgId, firstName: fi>=0?(c[fi]??''):'', lastName: li>=0?(c[li]??''):'', email: em, title: ti>=0?(c[ti]??null):null, departmentId: input.departmentId??null, isActive: true });
         }
         if (!rows.length) throw new TRPCError({ code: 'BAD_REQUEST', message: 'No valid emails in CSV' });
-        // SECURITY (A2): enforce recipient-domain allowlist if org has configured domains
+        // COMPLIANCE FLOOR (mandatory): every imported target's domain must be VERIFIED
+        // (DNS-proven) for this org — no opt-in bypass, even if the org configured none.
         const verifiedDomains = await getVerifiedDomains(input.orgId);
-        if (verifiedDomains.length > 0) {
-          const blocked = rows.filter((r: any) => {
-            const domain = r.email.split("@")[1]?.toLowerCase();
-            return !domain || !verifiedDomains.includes(domain);
-          });
-          if (blocked.length > 0) {
-            const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Email domains not verified: ${badDomains}. Add them under Settings → Verified Domains.` });
-          }
+        const { domainEnrolled } = await import("./lib/complianceGuard");
+        const blocked = rows.filter((r: any) => {
+          const domain = r.email.split("@")[1]?.toLowerCase();
+          return !domain || !domainEnrolled(domain, verifiedDomains);
+        });
+        if (blocked.length > 0) {
+          const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot import: ${blocked.length} target(s) on unverified domains: ${badDomains}. Verify domain ownership (Settings → Verified Domains) first.` });
         }
         const count = await bulkCreateTargets(rows);
         return { count, message: 'Imported '+count+' targets' };
@@ -236,12 +238,47 @@ export const appRouter = router({
         await requireOrgMember(input.orgId, ctx.user.id);
         return getVerifiedDomains(input.orgId);
       }),
-    addVerifiedDomain: protectedProcedure
+    // Read-only: every domain with its verification state (for the Settings UI).
+    listDomains: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        return listOrgDomains(input.orgId);
+      }),
+    // Step 1: register a domain as PENDING and return the DNS TXT record to publish.
+    addPending: protectedProcedure
       .input(z.object({ orgId: z.number(), domain: z.string().min(3).max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, "Invalid domain format") }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
-        await addVerifiedDomain(input.orgId, input.domain);
-        return { success: true };
+        const clean = input.domain.toLowerCase().replace(/^@/, "").trim();
+        const { buildVerificationToken } = await import("./lib/domainVerify");
+        const token = buildVerificationToken();
+        await addPendingDomain(input.orgId, clean, token);
+        return {
+          success: true,
+          domain: clean,
+          verified: false,
+          txtRecordName: clean,
+          txtRecordValue: token,
+          instructions: `Add a DNS TXT record on "${clean}" with value: ${token}  — then run checkVerification.`,
+        };
+      }),
+    // Step 2: look up the domain's TXT records; flip verified=true only on an exact match.
+    checkVerification: protectedProcedure
+      .input(z.object({ orgId: z.number(), domain: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true);
+        const row = await getPendingDomain(input.orgId, input.domain);
+        if (!row || !row.verificationToken) {
+          return { verified: false as const, reason: "not_pending" as const };
+        }
+        const { verifyDomainTxt } = await import("./lib/domainVerify");
+        const result = await verifyDomainTxt(row.domain, row.verificationToken);
+        if (result === "verified") {
+          await markDomainVerified(input.orgId, input.domain);
+          return { verified: true as const };
+        }
+        return { verified: false as const, reason: result };
       }),
     removeVerifiedDomain: protectedProcedure
       .input(z.object({ orgId: z.number(), domain: z.string() }))
@@ -688,30 +725,31 @@ Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK
         const allTargets = await getTargets(input.orgId);
         const targets = allTargets.filter(t => (campaign.targetIds ?? []).includes(t.id));
         if (targets.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "No targets assigned. Add employees before launching." });
-        // SECURITY (A2): enforce recipient-domain allowlist if org has configured domains
-        const verifiedDomains = await getVerifiedDomains(input.orgId);
-        if (verifiedDomains.length > 0) {
-          const blocked = targets.filter(t => {
-            const domain = t.email.split("@")[1]?.toLowerCase();
-            return !domain || !verifiedDomains.includes(domain);
-          });
-          if (blocked.length > 0) {
-            const badDomains = Array.from(new Set(blocked.map(t => t.email.split("@")[1]))).join(", ");
-            throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: ${blocked.length} target(s) have unverified domains: ${badDomains}` });
-          }
-        }
+        // COMPLIANCE FLOOR (mandatory; replaces the old opt-in allowlist). Every send is
+        // routed through the single choke point enqueueCampaignSend, which runs the pure
+        // compliance check, audits the verdict, and creates the campaign_results row ONLY
+        // when the recipient's domain is enrolled for this org. Sends happen only on allow.
         const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
         const { sendCampaignEmail } = await import("./email/sender");
+        const { enqueueCampaignSend } = await import("./lib/campaignSend");
         const { nanoid } = await import("nanoid");
         let sent = 0;
+        const rejected: string[] = [];
         for (const target of targets) {
           const trackingToken = nanoid(32);
-          await createCampaignResult({ campaignId: campaign.id, targetId: target.id, orgId: input.orgId, trackingToken, emailSentAt: new Date(), emailOpenedAt: null, linkClickedAt: null, credentialSubmittedAt: null, reportedAt: null, trainingCompletedAt: null, ipAddress: null, userAgent: null });
+          const verdict = await enqueueCampaignSend(campaign.id, target, trackingToken);
+          if (!verdict.allowed) {
+            rejected.push(`${target.email} (${verdict.reason})`);
+            continue;
+          }
           await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
           sent++;
         }
+        if (sent === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: no targets passed the compliance floor (recipient domain must be enrolled). ${rejected.length} blocked${rejected.length ? ": " + rejected.slice(0, 5).join("; ") : ""}` });
+        }
         await updateCampaign(input.campaignId, input.orgId, { status: "active" });
-        return { success: true, sent, message: `Campaign launched! ${sent} phishing emails sent.` };
+        return { success: true, sent, rejected: rejected.length, message: `Campaign launched — ${sent} sent, ${rejected.length} blocked by the compliance floor.` };
       }),
 
     reportPhishing: publicProcedure

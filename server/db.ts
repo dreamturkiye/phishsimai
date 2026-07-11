@@ -280,18 +280,78 @@ export async function bulkCreateTargets(rows: Omit<Target, "id" | "createdAt" | 
 }
 
 // ─── Templates ────────────────────────────────────────────────────────────────
+// The compliance floor trusts ONLY verified=true domains. Filtered in SQL AND defended
+// in-memory by onlyVerifiedDomains, so an unverified row can never reach the guard.
 export async function getVerifiedDomains(orgId: number): Promise<string[]> {
   try {
     const db = await getDb();
     if (!db) return [];
     const { orgVerifiedDomains } = await import("../drizzle/schema");
-    const rows = await db.select({ domain: orgVerifiedDomains.domain })
+    const { onlyVerifiedDomains } = await import("./lib/domainVerify");
+    const rows = await db.select({ domain: orgVerifiedDomains.domain, verified: orgVerifiedDomains.verified })
       .from(orgVerifiedDomains)
-      .where(eq(orgVerifiedDomains.orgId, orgId));
-    return rows.map(r => r.domain.toLowerCase());
+      .where(and(eq(orgVerifiedDomains.orgId, orgId), eq(orgVerifiedDomains.verified, true)));
+    return onlyVerifiedDomains(rows);
   } catch { return []; }
 }
 
+// Read-only: all domains for an org with their verification state. verificationToken is
+// the value the org must publish in DNS (a public record, not a secret), returned so the
+// UI can show the TXT record for pending domains.
+export async function listOrgDomains(orgId: number): Promise<
+  { domain: string; verified: boolean; verifiedAt: Date | null; verificationToken: string | null }[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  return db.select({
+    domain: orgVerifiedDomains.domain,
+    verified: orgVerifiedDomains.verified,
+    verifiedAt: orgVerifiedDomains.verifiedAt,
+    verificationToken: orgVerifiedDomains.verificationToken,
+  })
+    .from(orgVerifiedDomains)
+    .where(eq(orgVerifiedDomains.orgId, orgId))
+    .orderBy(desc(orgVerifiedDomains.createdAt));
+}
+
+// Step 1 of enrollment: insert an UNVERIFIED row with the ownership-proof token.
+export async function addPendingDomain(orgId: number, domain: string, verificationToken: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  const clean = domain.toLowerCase().replace(/^@/, "").trim();
+  await db.insert(orgVerifiedDomains)
+    .values({ orgId, domain: clean, verified: false, verificationToken })
+    .onConflictDoUpdate({
+      target: [orgVerifiedDomains.orgId, orgVerifiedDomains.domain],
+      set: { verified: false, verificationToken, verifiedAt: null },
+    });
+}
+
+export async function getPendingDomain(orgId: number, domain: string): Promise<{ domain: string; verified: boolean; verificationToken: string | null } | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  const clean = domain.toLowerCase().trim();
+  const [row] = await db.select({ domain: orgVerifiedDomains.domain, verified: orgVerifiedDomains.verified, verificationToken: orgVerifiedDomains.verificationToken })
+    .from(orgVerifiedDomains)
+    .where(and(eq(orgVerifiedDomains.orgId, orgId), eq(orgVerifiedDomains.domain, clean)));
+  return row;
+}
+
+// Step 2: mark verified after a successful DNS TXT proof.
+export async function markDomainVerified(orgId: number, domain: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { orgVerifiedDomains } = await import("../drizzle/schema");
+  const clean = domain.toLowerCase().trim();
+  await db.update(orgVerifiedDomains)
+    .set({ verified: true, verifiedAt: new Date() })
+    .where(and(eq(orgVerifiedDomains.orgId, orgId), eq(orgVerifiedDomains.domain, clean)));
+}
+
+/** @deprecated pre-ownership-verification enroll. Kept for back-compat; not used by the router. */
 export async function addVerifiedDomain(orgId: number, domain: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
