@@ -23,6 +23,7 @@ import {
   AGENTS, AgentId
 } from '../lib/kaan_os_v4'
 import { cronAgentWatchdog } from './agentWatchdog'
+import { buildJanetCgoSummary, type JanetCgoDeps } from './l5Autonomy'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
@@ -75,8 +76,20 @@ export async function cronJanet(req: Request, res: Response) {
   } catch(e:any) { res.status(500).json({error:e.message}) }
 }
 
-export async function cronJanetCgo(req: Request, res: Response) {
-  return cronJanet(req, res)
+// The daily CGO cron. Runs BOTH the existing standup orchestration AND the
+// (previously dormant) L5 CGO cycle (runL5JanetCycle). The L5 cycle is now LIVE
+// but gated: at level 'manual' every task-issue / architect-queue it attempts is
+// DENIED by the autonomy gate and logged as a no-op — zero autonomous writes.
+// buildJanetCgoSummary (in l5Autonomy.ts) wraps both halves so no failure can
+// crash the cron; it always returns 200 with a summary of what ran and what was
+// gate-denied. The optional `deps` param is for tests only (Express passes none).
+export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoDeps) {
+  if (!okCronOrHq(req, res)) return
+  const summary = await buildJanetCgoSummary(COMPANY, deps).catch((e: any) => ({
+    ok: false, ran: [] as string[], orchestration: null, l5: null, gateDeniedCount: 0,
+    errors: [`fatal: ${String(e?.message).slice(0, 200)}`],
+  }))
+  res.json(summary)
 }
 
 export async function cronWatchdog(req: Request, res: Response) {
