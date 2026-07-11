@@ -39,6 +39,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/os/metrics-snapshot",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/os/watchdog",
       "schedule": "0 * * * *"
     },
