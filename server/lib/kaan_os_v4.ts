@@ -2,6 +2,7 @@ import Groq from 'groq-sdk'
 import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram } from '../os/telegram'
+import { assertAutonomyAllows } from '../os/autonomyGate'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees
@@ -266,6 +267,10 @@ export async function issueTask(
   task: Omit<AgentTask, 'id' | 'status' | 'issued_by' | 'created_at'>,
   companyId = 'scrollfuel'
 ): Promise<{ task_id: string; agent: string; title: string }> {
+  // AUTONOMY GATE — no agent task is written unless this company's earned level
+  // permits it. At 'manual' this throws AutonomyDenied (audited) before any write.
+  await assertAutonomyAllows('issue_agent_task', companyId)
+
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
 
