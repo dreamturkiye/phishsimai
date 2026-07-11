@@ -34,7 +34,16 @@ const OrgContext = createContext<OrgContextValue>({
 
 export function OrgProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
-  const [activeOrgIdx, setActiveOrgIdx] = useState(0);
+  // Default to the persisted selection (shared key with AppLayout's switcher) so a
+  // refresh restores the active org instead of snapping back to [0].
+  const [activeOrgIdx, setActiveOrgIdxState] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("active_org_idx"));
+    return Number.isInteger(saved) && saved >= 0 ? saved : 0;
+  });
+  const setActiveOrgIdx = (idx: number) => {
+    setActiveOrgIdxState(idx);
+    try { localStorage.setItem("active_org_idx", String(idx)); } catch { /* ignore */ }
+  };
   const [mspManagedOrg, setMspManagedOrg] = useState<{ orgId: number; orgName: string } | null>(null);
 
   const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });

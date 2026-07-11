@@ -114,12 +114,24 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
   const { user, isAuthenticated, loading, logout } = useAuth();
   const [, navigate] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  // BUG-06 FIX: multi-org switcher
-  const [activeOrgIdx, setActiveOrgIdx] = useState(0);
+  // BUG-06 FIX: multi-org switcher. Persist the selected index so a refresh restores
+  // the org instead of bouncing back to the first one.
+  const [activeOrgIdx, setActiveOrgIdxState] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("active_org_idx"));
+    return Number.isInteger(saved) && saved >= 0 ? saved : 0;
+  });
+  const setActiveOrgIdx = (idx: number) => {
+    setActiveOrgIdxState(idx);
+    try { localStorage.setItem("active_org_idx", String(idx)); } catch { /* ignore */ }
+  };
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
 
-  const { data: orgsData } = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
+  const orgsQuery = trpc.orgs.myOrgs.useQuery(undefined, { enabled: isAuthenticated });
+  const orgsData = orgsQuery.data;
   const orgs = Array.isArray(orgsData) ? orgsData : [];
+  // myOrgs has produced a definitive answer only once data is present. Until then we
+  // must NOT treat "no org" as real (that was the /setup redirect race on refresh).
+  const orgsResolved = orgsData !== undefined;
   const currentOrg = orgs[activeOrgIdx]?.org ?? orgs[0]?.org;
 
   // BUG-18 FIX: MSP impersonation mode via localStorage
@@ -142,7 +154,18 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
     return null;
   }
 
-  if (!loading && isAuthenticated && orgs.length === 0) {
+  // Wait for myOrgs to RESOLVE before deciding "no org". While it's still loading,
+  // show a spinner — never redirect. This is the fix for the /setup bounce loop.
+  if (!orgsResolved) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // Only now — the query resolved and the user genuinely has no org — go to setup.
+  if (orgs.length === 0) {
     navigate("/setup");
     return null;
   }
