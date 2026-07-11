@@ -13,6 +13,7 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { getAutonomyLevel } from './autonomyGate'
+import { agentsBelowL5TwoWeeks } from './agentLevels'
 
 export interface ProductBrief {
   productId: string
@@ -24,6 +25,7 @@ export interface ProductBrief {
   autonomyLevel: string | null
   openBreakers: Array<{ fingerprint: string; state: string; tripReason: string | null }>
   pendingEscalations: Array<{ id: number; category: string; ageMs: number }>
+  agentsBelowL5: string[] // O.17: agents below L5 for 2 consecutive weeks
 }
 
 export interface BriefData {
@@ -84,6 +86,9 @@ export function renderFounderBrief(data: BriefData): string {
       for (const e of p.pendingEscalations) {
         out.push(`  - #${e.id} ${e.category} · ${agePretty(e.ageMs)}`)
       }
+    }
+    if (p.agentsBelowL5.length > 0) {
+      out.push(`- ⚠️ **Agents below L5 for 2 consecutive weeks:** ${p.agentsBelowL5.join(', ')}`)
     }
     out.push('')
   }
@@ -174,6 +179,7 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
               category: e.category,
               ageMs: e.created_at ? nowMs - new Date(e.created_at).getTime() : 0,
             })),
+            agentsBelowL5: await agentsBelowL5TwoWeeks(sql, companyId).catch(() => []),
           },
         ],
       }

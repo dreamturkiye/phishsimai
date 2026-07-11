@@ -51,6 +51,10 @@
       "schedule": "0 21 * * *"
     },
     {
+      "path": "/api/os/agent-levels",
+      "schedule": "0 5 * * 1"
+    },
+    {
       "path": "/api/os/watchdog",
       "schedule": "0 * * * *"
     },

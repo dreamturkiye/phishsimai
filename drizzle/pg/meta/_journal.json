@@ -43,6 +43,13 @@
       "when": 1783743136522,
       "tag": "0005_gigantic_spirit",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783797723303,
+      "tag": "0006_tidy_rockslide",
+      "breakpoints": true
     }
   ]
 }

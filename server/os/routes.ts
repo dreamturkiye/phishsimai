@@ -31,6 +31,7 @@ import {
 } from './circuitBreaker'
 import { deliverPendingEscalations, makeSqlNotifyDeps } from './escalationNotify'
 import { composeFounderBrief, makeSqlBriefDeps } from './founderBrief'
+import { runAgentLevels } from './agentLevels'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
@@ -134,6 +135,20 @@ export async function cronFounderBrief(req: Request, res: Response) {
   try {
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
     const result = await composeFounderBrief(makeSqlBriefDeps(COMPANY), date)
+    res.json({ ok: true, ...result })
+  } catch (e: any) {
+    res.json({ ok: false, error: formatOsError(e) })
+  }
+}
+
+// O.17 weekly agent L-level computation. Secret-gated. Scores every agent from
+// Janet's REAL reviewed-task data and appends agent_levels rows. Always returns
+// 200 with the computed levels even if the agent_levels table isn't migrated yet
+// (stored:false + the levels are still returned). Enables no agent.
+export async function cronAgentLevels(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const result = await runAgentLevels(COMPANY)
     res.json({ ok: true, ...result })
   } catch (e: any) {
     res.json({ ok: false, error: formatOsError(e) })

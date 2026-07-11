@@ -14,6 +14,7 @@ import {
   timestamp,
   check,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -150,4 +151,19 @@ export const osAutonomyState = pgTable("os_autonomy_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => [
   check("os_autonomy_state_level_ck", sql`${t.level} IN ('manual','l2','l3','l4','l5')`),
+]);
+
+// [S] O.17 measurable agent L-levels. Append-only weekly history (one row per
+// agent per run) so "below L5 for 2 consecutive weeks" is detectable. level is
+// computed from Janet's real reviewed-task scores; window_stats records the
+// actual counts/avgs/self-originated %/breaker-fingerprint count justifying it.
+export const agentLevels = pgTable("agent_levels", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  agentId: text("agent_id").notNull(),
+  level: text("level").notNull(),                          // 'L4' | 'L5' | 'below'
+  windowStats: jsonb("window_stats").notNull(),            // auditable numbers behind the level
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  check("agent_levels_level_ck", sql`${t.level} IN ('L4','L5','below')`),
+  index("agent_levels_agent_computed_idx").on(t.agentId, t.computedAt),
 ]);
