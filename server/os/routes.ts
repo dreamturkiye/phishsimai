@@ -25,6 +25,9 @@ import {
 import { cronAgentWatchdog } from './agentWatchdog'
 import { buildJanetCgoSummary, type JanetCgoDeps } from './l5Autonomy'
 import { writeMetricsSnapshot } from './metricsSnapshot'
+import {
+  makeSqlBreakerDeps, getBreakerState, recordTaskOutcome, checkDiffSafety, primaryFingerprint,
+} from './circuitBreaker'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
@@ -102,6 +105,37 @@ export async function cronMetricsSnapshot(req: Request, res: Response) {
     const date = (req.query.date as string) || undefined // optional backfill override
     const result = await writeMetricsSnapshot(COMPANY, date)
     res.json({ ok: result.written, ...result })
+  } catch (e: any) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
+// Circuit-breaker endpoint (M.1). Secret-gated. For a FUTURE Marcus client:
+//   GET  ?fp=<fingerprint>  → the breaker state (check before touching a task)
+//   POST { product_id?, task_id, outcome:'success'|'failure', error? }
+//                           → records an outcome and runs the state machine
+//   POST { product_id?, task_id, diff }  → destructive-diff safety check
+// Marcus is NOT wired to call this yet — this is the guardrail, not the re-enable.
+export async function breakerEndpoint(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const deps = makeSqlBreakerDeps()
+    if ((req.method || 'GET').toLowerCase() === 'get') {
+      const fp = String(req.query.fp || '')
+      if (!fp) { res.status(400).json({ error: 'fp query param required' }); return }
+      res.json(await getBreakerState(deps, fp))
+      return
+    }
+    const body = req.body || {}
+    const productId = body.product_id || COMPANY
+    if (body.diff) {
+      const fp = body.fingerprint || primaryFingerprint(productId, String(body.task_id || ''))
+      res.json(await checkDiffSafety(deps, fp, productId, body.diff))
+      return
+    }
+    if (!body.task_id) { res.status(400).json({ error: 'task_id required' }); return }
+    const result = await recordTaskOutcome(deps, productId, String(body.task_id), body.outcome === 'success', body.error)
+    res.json(result)
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })
   }
