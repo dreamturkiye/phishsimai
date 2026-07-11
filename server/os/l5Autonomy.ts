@@ -4,9 +4,17 @@ import { advanceLongTermStrategies } from './kaan-os-core/janetStrategy'
 import { runMarcusProactiveScan } from './kaan-os-core/marcusProactive'
 import { runIntelFinanceProactiveCycle } from './kaan-os-core/intelligenceFinance'
 import { queueJanetArchitectTask } from './selfHeal'
-import { issueTask, runJanetFullOrchestration, type AgentId } from '../lib/kaan_os_v4'
+import { issueTask, runJanetFullOrchestration, AGENTS, type AgentId } from '../lib/kaan_os_v4'
+import type { AgentId as CoreAgentId } from './kaan-os-core/types'
 import { getSql } from './conn'
 import { isAutonomyDenied } from './autonomyGate'
+
+// True only for an agent kaan_os_v4 has a real profile for. Narrows the core roster
+// (which includes 'mason') down to the one issueTask can actually serve — it does
+// `AGENTS[agentId].name` after inserting, so an agent with no profile throws.
+function isKnownAgent(agentId: CoreAgentId): agentId is AgentId & CoreAgentId {
+  return Object.prototype.hasOwnProperty.call(AGENTS, agentId)
+}
 
 // A single autonomous write the cycle attempted that the gate refused.
 export interface GateDenial { action: 'issue_agent_task' | 'queue_architect_task'; target: string; reason: string }
@@ -40,7 +48,27 @@ export async function runL5JanetCycle(
   const sql = getSql()
   const gateDenials: GateDenial[] = []
 
-  const issueAgentTask = async (agentId: AgentId, title: string, description: string) => {
+  // The param is the CORE roster's AgentId, because that is what the core proactive
+  // cycle actually passes us — declaring the (narrower) kaan_os_v4 roster here was a
+  // lie the compiler caught. The two rosters have diverged: kaan-os-core knows
+  // 'mason' (hierarchy.ts, and janetProactive.ts:69 really does dispatch to it) while
+  // lib/kaan_os_v4's AGENTS has no such profile.
+  //
+  // That divergence is a live bug, not a typing nit. issueTask INSERTs the row and
+  // only THEN does `const agent = AGENTS[agentId]; ...agent.name` — so a 'mason'
+  // dispatch writes an agent_tasks row and immediately throws on undefined.name,
+  // leaving an orphan task and killing the cycle. Refuse before the insert instead.
+  // Recorded as a denial so it is visible rather than silent.
+  //
+  // FIX PROPERLY: either give lib/kaan_os_v4 a 'mason' profile, or drop 'mason' from
+  // kaan-os-core. Which of those is right is a product call, not a typecheck call.
+  const issueAgentTask = async (agentId: CoreAgentId, title: string, description: string) => {
+    if (!isKnownAgent(agentId)) {
+      gateDenials.push({ action: 'issue_agent_task', target: agentId, reason: 'unknown_agent_no_profile' })
+      console.warn(`[l5] issueAgentTask(${agentId}) skipped — no AGENTS profile in kaan_os_v4`)
+      return
+    }
+
     // Loop no-op under the autonomy gate: at 'manual', issueTask throws
     // AutonomyDenied (audited) BEFORE any insert. Swallow it and record the
     // denial so the cycle continues instead of crashing the cron; a non-gate

@@ -1,8 +1,11 @@
 import type { SkillRecord } from './types'
 
-export type SqlLike = {
-  (strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>
-}
+// SqlLike was declared identically here and in governance.ts. Two separate
+// declarations of the same name collided through index.ts's `export *` (TS2308).
+// governance.ts is the single source; re-exported so existing importers of
+// './selfLearning' keep working.
+import type { SqlLike } from './governance'
+export type { SqlLike }
 
 /** Ensure L5 self-learning tables (extends architect_memory) */
 export async function ensureSelfLearningTables(sql: SqlLike): Promise<void> {

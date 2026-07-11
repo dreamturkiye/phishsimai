@@ -71,11 +71,12 @@ export async function runLeadDiscovery(): Promise<{ added: number }> {
         if (!person.email) continue;
         if (person.email_status !== "verified" && person.email_status !== "likely_to_engage") continue;
 
-        // Check if email already exists
-        const [existing] = await db.execute<{ id: number }[]>(sql`
+        // Check if email already exists. db.execute() resolves to a FullQueryResults
+        // OBJECT, not an array — the previous array-destructure threw at runtime.
+        const existing = await db.execute(sql`
           SELECT id FROM outreach_leads WHERE email = ${person.email} LIMIT 1
         `);
-        if ((existing as unknown as unknown[]).length > 0) continue;
+        if (existing.rows.length > 0) continue;
 
         const name = `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim();
         const company = person.organization?.name ?? "";

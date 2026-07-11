@@ -1,4 +1,3 @@
-import osRouter from './os/routes'
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { parse as parseCookie } from "cookie";
@@ -820,6 +819,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         if (!org) throw new TRPCError({ code: "NOT_FOUND" });
         const campaigns = await getCampaigns(input.orgId);
         const analytics = await getOrgAnalytics(input.orgId);
+        if (!analytics) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
         const campaignStats = await Promise.all(campaigns.slice(0, 20).map(async (c) => {
           const results = await getCampaignResults(c.id, input.orgId);
           const sent = results.length;
@@ -840,7 +840,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const pdfBuffer = await generateInsurancePack({
           orgName: org.name,
           campaigns: campaignStats,
-          totalEmployeesTrained: analytics.totalTargets ?? 0,
+          totalEmployeesTrained: analytics.total,
           baselineClickRate,
           currentClickRate,
           trainingModulesCount: 20,
@@ -1360,7 +1360,10 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const { eq } = await import("drizzle-orm");
         const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
         if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
-        const source = await getTemplateById(input.templateId, input.orgId); // SECURITY: access-controlled
+        // SECURITY: this input carries no orgId, so getTemplateById's optional requestingOrgId
+        // stays unset (as it already did at runtime); MSP ownership is enforced by the
+        // source.mspTenantId check on the next line.
+        const source = await getTemplateById(input.templateId);
         if (!source || source.mspTenantId !== tenantRows[0].id) throw new TRPCError({ code: "NOT_FOUND" });
         // Determine target orgs
         let targetOrgIds = input.targetOrgIds ?? [];

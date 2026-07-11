@@ -39,9 +39,12 @@ export async function getMarcusWakeAt(companyId: string): Promise<string | null>
 export async function pingMarcusWakeUrl(product?: string): Promise<boolean> {
   const base = process.env.MARCUS_WAKE_URL?.trim()
   if (!base) return false
-  const secret =
+  // Both env vars are optional; String() keeps the exact value the template literal
+  // below and the fetch Headers init would have produced (including "undefined").
+  const secret = String(
     process.env.MARCUS_WAKE_SECRET ||
     process.env.HQ_SECRET
+  )
   const url = base.includes('?') ? `${base}&secret=${secret}` : `${base}?secret=${secret}`
   try {
     const res = await fetch(url, {

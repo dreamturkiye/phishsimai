@@ -32,9 +32,15 @@ export function registerStripeWebhook(app: Express): void {
       try {
         const sig = req.headers["stripe-signature"];
         const { default: Stripe } = await import("stripe");
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "", {
-          apiVersion: "2025-05-28.basil" as Stripe.LatestApiVersion,
-        });
+        // apiVersion was pinned to "2025-05-28.basil" and cast to a type
+        // (Stripe.LatestApiVersion) that stripe@22 does not export — the cast never
+        // typechecked. The pin was also inert: this client is used ONLY for
+        // webhooks.constructEvent, which verifies an HMAC over the raw body and
+        // issues no API request, so apiVersion cannot affect it. (The payload shape
+        // is set by the webhook's version in the Stripe dashboard, not here.)
+        // Dropped rather than bumped — bumping a Stripe API version is a real
+        // behaviour change and is not this commit's business.
+        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "");
         const event = stripe.webhooks.constructEvent(
           req.body,
           sig as string,

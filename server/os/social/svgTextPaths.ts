@@ -1,4 +1,10 @@
+// opentype.js ships no types (v2.0.0 has no `types` field and no .d.ts), so the
+// ambient declaration in server/types/opentype-js.d.ts describes the surface we use.
+// It exposes Path/parse on the default export but not Font, so `opentype.Font` in a
+// TYPE position cannot resolve (TS2503). Import the types by name; the default
+// import stays for the VALUES (opentype.parse, new opentype.Path()) — no runtime change.
 import opentype from 'opentype.js'
+import type { Font as OTFont, Path as OTPath } from 'opentype.js'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -22,9 +28,9 @@ function fontDir(): string {
   throw new Error('Inter fonts missing (server/os/social/fonts)')
 }
 
-const fontCache: Partial<Record<FontWeight, opentype.Font>> = {}
+const fontCache: Partial<Record<FontWeight, OTFont>> = {}
 
-function loadFont(weight: FontWeight): opentype.Font {
+function loadFont(weight: FontWeight): OTFont {
   if (fontCache[weight]) return fontCache[weight]!
   const file = join(fontDir(), FONT_FILES[weight])
   fontCache[weight] = opentype.parse(readFileSync(file))
@@ -40,7 +46,7 @@ export type SvgTextOpts = {
   strokeWidth?: number
 }
 
-function textPath(font: opentype.Font, text: string, x: number, y: number, size: number): opentype.Path {
+function textPath(font: OTFont, text: string, x: number, y: number, size: number): OTPath {
   const path = new opentype.Path()
   let cursor = x
   for (const ch of text) {
@@ -51,7 +57,7 @@ function textPath(font: opentype.Font, text: string, x: number, y: number, size:
   return path
 }
 
-function anchorX(font: opentype.Font, text: string, x: number, size: number, anchor: SvgTextOpts['anchor']): number {
+function anchorX(font: OTFont, text: string, x: number, size: number, anchor: SvgTextOpts['anchor']): number {
   if (anchor === 'start' || !anchor) return x
   const bb = textPath(font, text, 0, 0, size).getBoundingBox()
   const w = bb.x2 - bb.x1

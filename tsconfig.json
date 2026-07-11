@@ -15,7 +15,21 @@
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
     "noEmit": true,
-    "module": "ESNext",
+    // No target was set, so TypeScript defaulted to ES5 — which is not how any of
+    // this code actually runs (Vite and esbuild both emit modern output, and the
+    // server is Node 20+). That default was the sole cause of every TS2802
+    // "can only be iterated with --downlevelIteration" error on plain Set/RegExp
+    // iteration. Stating the real target fixes those without loosening anything.
+    "target": "ES2022",
+    // "preserve" (not "ESNext") because this codebase is bundler-compiled and mixes
+    // module formats on purpose: the client is ESM, while api/handler.ts — the Vercel
+    // serverless entry — ends in `export = app` so that esbuild's --format=cjs output
+    // sets `module.exports = app`, which is what Vercel invokes. Under `module: ESNext`
+    // that is illegal (TS1203), and `export default` would emit
+    // `module.exports = { default: app }`, handing Vercel an object instead of a
+    // request handler. "preserve" permits `export =`, keeps bundler resolution, and
+    // emits nothing (noEmit) — so it describes reality instead of fighting it.
+    "module": "preserve",
     "strict": true,
     "lib": [
       "esnext",

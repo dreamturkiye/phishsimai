@@ -32,7 +32,11 @@ export const PRODUCT_REGISTRY: Record<string, ProductOsConfig> = {
     companyId: 'phishsimai',
     label: 'PhishSimAI',
     baseUrl: 'https://phishsimai.com',
-    hqSecret: process.env.HQ_SECRET,
+    // ProductOsConfig.hqSecret is `string`; HQ_SECRET may be unset in a given environment.
+    // Empty string keeps the same falsy semantics undefined had (nothing reads these fields
+    // today) without asserting a value that isn't there. See note in types.ts if this ever
+    // needs to be genuinely optional.
+    hqSecret: process.env.HQ_SECRET ?? '',
     devBranch: 'dev',
     prodBranch: 'main',
     vercelProject: 'phishsimai',
@@ -47,7 +51,7 @@ export const PRODUCT_REGISTRY: Record<string, ProductOsConfig> = {
       janetSignedUrl: '/api/os/janet/signed-url',
       janetTool: '/api/os/janet/tool',
       wiring: '/api/os/v4/wiring',
-      healTestArm: process.env.HQ_SECRET,
+      healTestArm: process.env.HQ_SECRET ?? '',
     },
     janetAgentEnvKey: 'ELEVENLABS_AGENT_JANET_PHISHSIM',
     repoPath: '/Users/kaan/phishsimai',

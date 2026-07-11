@@ -190,7 +190,12 @@ export async function recordProductFeedback(opts: {
 
   const category = opts.category ?? inferFeedbackCategory(opts.message)
 
-  const [insertResult] = await db.insert(productFeedback).values({
+  // Was: `const [insertResult] = await db.insert(...).values(...)` then read
+  // `insertResult.insertId`. Two bugs: the insert resolves to a result OBJECT (not an
+  // array, so the destructure threw "is not iterable"), and `insertId` is MySQL
+  // semantics — Postgres returns nothing unless you ask. .returning() is the Postgres
+  // way to get the new id back, and it is what the code below actually wants.
+  const inserted = await db.insert(productFeedback).values({
     userId: opts.userId,
     orgId: opts.orgId,
     page: opts.pathname?.slice(0, 255) ?? null,
@@ -200,9 +205,9 @@ export async function recordProductFeedback(opts: {
     plan,
     trialDay: trialDay ?? null,
     source: opts.source ?? 'mia',
-  })
+  }).returning({ id: productFeedback.id })
 
-  const feedbackId = Number((insertResult as { insertId?: number })?.insertId ?? 0) || null
+  const feedbackId = inserted[0]?.id ?? null
   const orgName = org[0]?.name ?? `Org #${opts.orgId}`
 
   await sendTelegram(
