@@ -81,6 +81,58 @@ export async function resolveSystemAlert(key: string, detail: string, companyId 
   await sendTelegram(`✅ <b>JANET — RESOLVED</b>\n${key}: ${detail}`)
 }
 
+// PARK FOR FOUNDER APPROVAL — the 'manual'-level landing spot for a diagnosed bug.
+//
+// Marcus has already diagnosed the bug and prepared a fix (architectAgent writes
+// bug_reports.diagnosis, and passes the proposed fix in as `task`) BEFORE the gate
+// is consulted. When the gate denies, that work is not thrown away: the bug is
+// parked at 'awaiting_approval' and the diagnosis + proposed fix are escalated to
+// the founder on Telegram.
+//
+// Deliberately parks on bug_reports and creates NO os_architect_tasks row. Marcus
+// only ever reads os_architect_tasks, so with no row there is literally nothing for
+// him to claim — the fix cannot reach prod, structurally, rather than depending on
+// a status filter staying tight. Idempotent: re-parking an already-parked bug does
+// not re-notify.
+async function parkBugForApproval(
+  bugId: string,
+  proposedFix: string,
+  denyReason: string,
+  denyLevel: string,
+  notes?: string,
+): Promise<void> {
+  try {
+    const sql = getSql()
+    // Only park a bug that is still live. A resolved bug is left alone.
+    const rows = await sql`
+      UPDATE bug_reports
+      SET status='awaiting_approval', last_seen=NOW()
+      WHERE id=${bugId} AND status IS DISTINCT FROM 'resolved' AND status IS DISTINCT FROM 'awaiting_approval'
+      RETURNING id, error_message, url_path, diagnosis
+    `
+    const bug = (rows as any[])[0]
+    if (!bug) return // already parked (or resolved) — do not re-notify
+
+    const d = bug.diagnosis && typeof bug.diagnosis === 'object' ? bug.diagnosis : {}
+    await sendTelegram(
+      `⏸️ <b>FIX PARKED — AWAITING YOUR APPROVAL</b>\n` +
+      `Autonomy level <b>${denyLevel}</b> — Marcus diagnosed this but may NOT apply it.\n\n` +
+      `<b>Bug:</b> ${String(bug.error_message ?? '').slice(0, 160)}\n` +
+      `<b>Route:</b> ${bug.url_path ?? 'unknown'}\n` +
+      (d.root_cause ? `<b>Root cause:</b> ${String(d.root_cause).slice(0, 200)}\n` : '') +
+      (d.file_affected ? `<b>File:</b> ${String(d.file_affected).slice(0, 120)}\n` : '') +
+      `\n<b>Proposed fix:</b>\n${proposedFix.slice(0, 400)}\n` +
+      (notes ? `\n${notes}\n` : '') +
+      `\n<b>Status:</b> parked at awaiting_approval. NOT applied, NOT deployed.\n` +
+      `Gate: ${denyReason}. Raise the autonomy level to let Marcus act.`,
+    ).catch(() => {})
+  } catch (e: any) {
+    // Parking is best-effort telemetry around a DENIAL. It must never convert a
+    // denial into a throw (callers would see an error where the gate correctly said no).
+    console.warn(`[autonomy] parkBugForApproval failed for ${bugId}: ${e?.message}`)
+  }
+}
+
 export async function queueJanetArchitectTask(opts: {
   task: string
   bugId?: string
@@ -97,6 +149,11 @@ export async function queueJanetArchitectTask(opts: {
   } catch (e) {
     if (isAutonomyDenied(e)) {
       console.warn(`[autonomy] queueJanetArchitectTask denied — logged no-op (${e.reason})`)
+      // A bug-linked task carries a real diagnosis + proposed fix. Park it for the
+      // founder instead of dropping it silently. No architect task row is created.
+      if (opts.bugId) {
+        await parkBugForApproval(opts.bugId, opts.task, e.reason, e.level, opts.notes)
+      }
       return null
     }
     throw e

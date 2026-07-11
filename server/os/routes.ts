@@ -445,7 +445,7 @@ export async function hqData(req: Request, res: Response) {
 
     const memory = await recallMemory(COMPANY, undefined, 40)
     const bugReports = await sql`SELECT id, error_message, component_name, severity, status, occurrence_count, last_seen, url_path, diagnosis
-      FROM bug_reports WHERE status IN ('open','diagnosed') OR status IS NULL ORDER BY last_seen DESC LIMIT 20`.catch(() => [] as any[])
+      FROM bug_reports WHERE status IN ('open','diagnosed','awaiting_approval') OR status IS NULL ORDER BY last_seen DESC LIMIT 20`.catch(() => [] as any[])
     const architectMemory = await sql`SELECT error_signature, root_cause, file_affected, times_applied, confidence
       FROM architect_memory ORDER BY times_applied DESC LIMIT 20`.catch(() => [] as any[])
     const qaRuns = await sql`SELECT trigger_type, tests_passed, tests_failed, status, created_at

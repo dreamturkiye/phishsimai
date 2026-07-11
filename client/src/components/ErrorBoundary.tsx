@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Component, ErrorInfo, ReactNode } from "react";
 import { reportBug } from "@/lib/errorTelemetry";
+import { captureClientError } from "@/lib/sentry";
 
 interface Props {
   children: ReactNode;
@@ -23,7 +24,11 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    // Two independent sinks. reportBug feeds the self-heal pipeline (bug_reports →
+    // architectAgent → gate); Sentry adds grouping/release context. Sentry is a
+    // no-op when VITE_SENTRY_DSN is unset, and neither call can throw.
     reportBug(error, 'ErrorBoundary', info.componentStack?.slice(0, 200) || 'render')
+    captureClientError(error, { boundary: 'ErrorBoundary' })
   }
 
   render() {

@@ -21,6 +21,7 @@ import { COMPANY_ID } from './version'
 // The classes of autonomous action the OS can attempt.
 export type ActionClass =
   | 'queue_architect_task'
+  | 'execute_architect_task'
   | 'issue_agent_task'
   | 'send_simulation'
   | 'crm_write'
@@ -47,6 +48,12 @@ export const HARD_STOPS = [
 // e.g. 'spend' is never auto-approved here; real money stays manual.
 export const MIN_LEVEL: Partial<Record<ActionClass, AutonomyLevel>> = {
   queue_architect_task: 'l3',
+  // EXECUTING a queued architect task (handing it to the daemon, generating and
+  // applying code) is gated at the same tier that permits queueing one. The gate
+  // previously guarded only CREATION, so a pre-existing 'queued' row was still
+  // executable at 'manual' — closed here. Same threshold as queueing, so raising
+  // the level to l3 turns both paths on together.
+  execute_architect_task: 'l3',
   issue_agent_task: 'l3',
   send_simulation: 'l4',
   crm_write: 'l4',
@@ -145,6 +152,20 @@ export const auditDeniedToDb: AuditSink = async ({ action, level, reason, compan
   } catch {
     /* swallow — the deny still stands */
   }
+}
+
+// ── Non-throwing check, for hot paths that must DENY QUIETLY. ────────────────
+// Same fail-closed decision as assertAutonomyAllows, but returns the decision
+// instead of throwing and writes NO audit row. Intended for the architect-task
+// poll (hit on a loop by the Marcus daemon) where auditing every denial would
+// flood audit_log. A read failure resolves to null → 'manual' → denied.
+export async function checkAutonomyAllows(
+  action: ActionClass | string,
+  companyId: string = COMPANY_ID,
+  getLevel: GetLevel = getAutonomyLevel,
+): Promise<AutonomyDecision> {
+  const raw = await getLevel(companyId).catch(() => null)
+  return decideAutonomy(action, raw)
 }
 
 // ── The choke point. Call BEFORE any autonomous write. ───────────────────────

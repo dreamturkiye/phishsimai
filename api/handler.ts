@@ -2,6 +2,12 @@
 import express from "express";
 import { mountProductApi } from "../server/productApiMount";
 import { scheduledCampaignHandler } from "../server/scheduledHandlers";
+import { initSentry } from "../server/os/sentryServer";
+import { sentryErrorMiddleware } from "../server/os/sentryExpress";
+
+// Error capture. MUST run before any route is registered so an error thrown during
+// mounting is still captured. No-op (and never throws) when SENTRY_DSN is unset.
+initSentry();
 
 const app = express();
 app.use(express.json({ limit: "50mb" }));
@@ -138,5 +144,12 @@ app.post("/preview/social/:token/review", async (req: any, res: any) => {
   const routes = await getRoutes();
   return routes.socialPreviewReview(req, res);
 });
+
+// LAST. Catches anything thrown by the routes above (tRPC, auth, tracking, preview
+// — none of which had any top-level error handling), captures it to Sentry, and
+// bridges it into bug_reports → architectAgent → the autonomy gate. Inert when
+// SENTRY_DSN is unset; the bug_reports bridge still runs, since that path predates
+// Sentry and does not depend on it.
+app.use(sentryErrorMiddleware);
 
 export = app;
