@@ -24,6 +24,7 @@ import {
 } from '../lib/kaan_os_v4'
 import { cronAgentWatchdog } from './agentWatchdog'
 import { buildJanetCgoSummary, type JanetCgoDeps } from './l5Autonomy'
+import { writeMetricsSnapshot } from './metricsSnapshot'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
@@ -90,6 +91,20 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
     errors: [`fatal: ${String(e?.message).slice(0, 200)}`],
   }))
   res.json(summary)
+}
+
+// Daily metrics_daily snapshot (passive infra). Secret-gated like the other os
+// crons. Writes one REAL-OR-NULL row for the given day (default: yesterday) and
+// returns it. Only WRITES metrics_daily — reads nothing to make decisions.
+export async function cronMetricsSnapshot(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const date = (req.query.date as string) || undefined // optional backfill override
+    const result = await writeMetricsSnapshot(COMPANY, date)
+    res.json({ ok: result.written, ...result })
+  } catch (e: any) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
 }
 
 export async function cronWatchdog(req: Request, res: Response) {
