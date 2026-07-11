@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createHeartbeatJob, deleteHeartbeatJob, listHeartbeatJobs, updateHeartbeatJob } from "./_core/heartbeat";
-import { invokeLLM } from "./_core/llm";
+import { llmComplete } from "./os/llmChat";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
@@ -451,39 +451,50 @@ export const appRouter = router({
 - Difficulty: ${input.difficulty}${safeContext ? `
 - Context (thematic only): ${safeContext}` : ""}
 
-Return JSON: name(string), subject(string), htmlBody(string with {{TRACKING_LINK}}), tags(string[])`;
-        const response = await invokeLLM({
+Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EXACTLY this shape:
+{"name": "string", "subject": "string", "htmlBody": "string — HTML email body, MUST include the literal token {{TRACKING_LINK}}", "tags": ["string"]}`;
+        // Durable structured output: json_object is broadly supported on Groq. We do NOT
+        // use json_schema — llama-3.3-70b-versatile rejects it (400 "does not support
+        // response format json_schema"). If json_object is rejected too, fall back to no
+        // response_format and extract the JSON from the text.
+        // Route through the shared fallback chain (llmComplete: Groq → Gemini → Ollama
+        // per LLM_PROVIDER_CHAIN) so a single provider/model outage can't break template
+        // generation. response_format json_object is forwarded to providers that support
+        // it (Groq); the strict prompt + robust parse below carry the rest.
+        const callGen = (useJsonObject: boolean) => llmComplete({
           messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-          response_format: {
-            type: "json_schema",
-            json_schema: {
-              name: "phishing_template",
-              strict: true,
-              schema: {
-                type: "object",
-                properties: {
-                  name: { type: "string" },
-                  subject: { type: "string" },
-                  htmlBody: { type: "string" },
-                  tags: { type: "array", items: { type: "string" } },
-                },
-                required: ["name", "subject", "htmlBody", "tags"],
-                additionalProperties: false,
-              },
-            },
-          },
+          max_tokens: 1200,
+          temperature: 0.7,
+          ...(useJsonObject ? { response_format: { type: "json_object" as const } } : {}),
         });
-
-        const rawContent = response.choices[0]?.message?.content;
-        const content = typeof rawContent === 'string' ? rawContent : null;
+        let result;
+        try {
+          result = await callGen(true);
+        } catch {
+          result = await callGen(false); // last resort: no response_format on any provider
+        }
+        console.log(`[templates.generate] provider=${result.provider} model=${result.model}`);
+        const content = typeof result.text === 'string' ? result.text : null;
         if (!content) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI generation failed" });
-        const parsed = JSON.parse(content);
+        // Robust parse: strip markdown fences, then fall back to first {...} block.
+        const parseLoose = (s: string): any => {
+          const t = s.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+          try { return JSON.parse(t); } catch { /* fall through */ }
+          const a = t.indexOf("{"), b = t.lastIndexOf("}");
+          if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch { /* fall through */ } }
+          return null;
+        };
+        const parsed = parseLoose(content);
+        if (!parsed || typeof parsed.name !== "string" || typeof parsed.subject !== "string" ||
+            typeof parsed.htmlBody !== "string" || !Array.isArray(parsed.tags)) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI returned malformed template JSON" });
+        }
         // SECURITY: Sanitize LLM-generated HTML before returning
         return {
-          name: parsed.name as string,
-          subject: parsed.subject as string,
-          htmlBody: sanitizeEmailHtml(parsed.htmlBody as string),
-          tags: (parsed.tags as string[]).map(t => String(t).slice(0, 50)),
+          name: String(parsed.name),
+          subject: String(parsed.subject),
+          htmlBody: sanitizeEmailHtml(String(parsed.htmlBody)),
+          tags: (parsed.tags as unknown[]).map(t => String(t).slice(0, 50)),
         };
       }),
 

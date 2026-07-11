@@ -1,7 +1,8 @@
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
-/** 8B first — 70B hits org daily token cap quickly; 8B still available under same key. */
-export const GROQ_CHAT_MODELS = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile'] as const
+/** Current Groq chat model — single source of truth. (llama-3.1-8b-instant was DISCONTINUED.) */
+export const GROQ_DEFAULT_MODEL = 'llama-3.3-70b-versatile'
+export const GROQ_CHAT_MODELS = [GROQ_DEFAULT_MODEL] as const
 
 export type GroqMessage = { role: string; content: string | unknown }
 
@@ -53,9 +54,9 @@ export async function groqPing(): Promise<{ ok: boolean; model?: string; error?:
       messages: [{ role: 'user', content: 'Reply with exactly: ok' }],
       max_tokens: 8,
       temperature: 0,
-      models: ['llama-3.1-8b-instant'],
+      models: [GROQ_DEFAULT_MODEL],
     })
-    return { ok: text.toLowerCase().includes('ok'), model: 'llama-3.1-8b-instant' }
+    return { ok: text.toLowerCase().includes('ok'), model: GROQ_DEFAULT_MODEL }
   } catch (e: unknown) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
