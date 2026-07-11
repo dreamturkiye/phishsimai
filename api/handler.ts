@@ -98,6 +98,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/seed" && method === "post") return routes.hqSeed(req, res);
     if (path === "/api/os/bug-report" && method === "post") return routes.bugReport(req, res);
     if (path === "/api/os/janet/report" && method === "get") return routes.janetReport(req, res);
+    if (path === "/api/os/architect/breaker") return routes.breakerEndpoint(req, res);
     if (path === "/api/os/architect/pending" && method === "get") return routes.architectPending(req, res);
     if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);
