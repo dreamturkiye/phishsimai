@@ -48,20 +48,19 @@ export async function runL5JanetCycle(
   const sql = getSql()
   const gateDenials: GateDenial[] = []
 
-  // The param is the CORE roster's AgentId, because that is what the core proactive
-  // cycle actually passes us — declaring the (narrower) kaan_os_v4 roster here was a
-  // lie the compiler caught. The two rosters have diverged: kaan-os-core knows
-  // 'mason' (hierarchy.ts, and janetProactive.ts:69 really does dispatch to it) while
-  // lib/kaan_os_v4's AGENTS has no such profile.
+  // The param is the CORE roster's AgentId — that is what the core proactive cycle
+  // actually passes us.
   //
-  // That divergence is a live bug, not a typing nit. issueTask INSERTs the row and
-  // only THEN does `const agent = AGENTS[agentId]; ...agent.name` — so a 'mason'
-  // dispatch writes an agent_tasks row and immediately throws on undefined.name,
-  // leaving an orphan task and killing the cycle. Refuse before the insert instead.
-  // Recorded as a denial so it is visible rather than silent.
+  // The rosters USED to diverge: kaan-os-core knew 'mason' (and janetProactive.ts:69
+  // really dispatches to it) while lib/kaan_os_v4's AGENTS had no such profile. Since
+  // issueTask INSERTs the row and only THEN reads `AGENTS[agentId].name`, a 'mason'
+  // dispatch wrote an orphan agent_tasks row and threw on undefined.name. That is now
+  // fixed at the source — kaan_os_v4 has a real 'mason' profile and the two rosters are
+  // identical (10 agents).
   //
-  // FIX PROPERLY: either give lib/kaan_os_v4 a 'mason' profile, or drop 'mason' from
-  // kaan-os-core. Which of those is right is a product call, not a typecheck call.
+  // The guard below is kept deliberately, as defence in depth: it is the thing that
+  // stops a future roster divergence from silently reintroducing the orphan-row crash.
+  // With the rosters aligned it never fires.
   const issueAgentTask = async (agentId: CoreAgentId, title: string, description: string) => {
     if (!isKnownAgent(agentId)) {
       gateDenials.push({ action: 'issue_agent_task', target: agentId, reason: 'unknown_agent_no_profile' })

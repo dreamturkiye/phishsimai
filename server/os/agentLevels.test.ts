@@ -90,9 +90,12 @@ describe("gatherAgentStats + computeAllAgentLevels — from data", () => {
     expect(computeAgentLevel(s).level).toBe("below");
   });
 
-  it("computeAllAgentLevels covers all 9 agents; all 'below' with no data", async () => {
+  // 10 = Janet + her 9 direct reports. Deliberately a literal, so that a change to the
+  // roster has to be made on purpose: this is the assertion that caught the missing
+  // 'mason' profile. Keep it in sync with AGENTS in server/lib/kaan_os_v4.ts.
+  it("computeAllAgentLevels covers all 10 agents; all 'below' with no data", async () => {
     const all = await computeAllAgentLevels(makeSql({ tasks: [] }), "phishsimai");
-    expect(all.length).toBe(9);
+    expect(all.length).toBe(10);
     expect(all.every((a) => a.level === "below")).toBe(true);
   });
 });
@@ -100,10 +103,10 @@ describe("gatherAgentStats + computeAllAgentLevels — from data", () => {
 describe("runAgentLevels + founder-brief flag", () => {
   it("runAgentLevels computes for every agent and appends rows (stored)", async () => {
     const r = await runAgentLevels("phishsimai", makeSql({ tasks: [] }));
-    expect(r.computed).toBe(9);
+    expect(r.computed).toBe(10);
     expect(r.stored).toBe(true);
-    expect(r.written).toBe(9);
-    expect(r.levels).toHaveLength(9);
+    expect(r.written).toBe(10);
+    expect(r.levels).toHaveLength(10);
   });
 
   it("agentsBelowL5TwoWeeks flags an agent whose last 2 weekly levels are both below L5", async () => {

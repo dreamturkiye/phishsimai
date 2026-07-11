@@ -20,7 +20,8 @@ import { assertAutonomyAllows } from '../os/autonomyGate'
 
 export type AgentId =
   | 'janet'
-  | 'marcus'    // Sales
+  | 'marcus'    // Principal Software Architect
+  | 'mason'     // Sales
   | 'aria'      // Marketing
   | 'nova'      // Product Growth
   | 'rex'       // CRM & Pipeline
@@ -78,8 +79,26 @@ export const AGENTS: Record<AgentId, AgentProfile> = {
     personality: 'Decisive, data-driven, holds team accountable, pushes for measurable outcomes. Runs meetings efficiently. Gives direct feedback.',
     expertise: ['B2B SaaS growth', 'team management', 'revenue strategy', 'go-to-market', 'CEO communication']
   },
+  // Marcus is the ARCHITECT. This entry previously held ScrollFuel's *Mason* profile
+  // verbatim (title 'Senior Sales Director', a cold-email/pipeline domain), even
+  // though every code path treats Marcus as the architect: marcusBreaker, architectCode,
+  // "JANET → MARCUS — Architect queued". The result was that a self-heal code-fix prompt
+  // described the agent as a quota-obsessed sales director — degrading the diagnosis it
+  // was being asked to produce. Restored to the real architect profile, with the stack
+  // LOCALISED to PhishSim (React + Vite + Express on Vercel) rather than ScrollFuel's
+  // Next.js — copying that verbatim would hand Marcus the wrong stack.
   marcus: {
-    id: 'marcus', name: 'Marcus', title: 'Senior Sales Director',
+    id: 'marcus', name: 'Marcus', title: 'Principal Software Architect',
+    domain: 'Production code quality, bug diagnosis, self-healing pipeline, system architecture',
+    personality: 'Decisive, root-cause obsessed, writes production code on the first attempt. Thinks like a startup CTO who has shipped under pressure. Learns from every bug pattern in architect_memory.',
+    expertise: ['TypeScript', 'React + Vite', 'Express on Vercel', 'Neon Postgres', 'bug diagnosis', 'self-healing systems', 'SaaS architecture', 'security-first fixes']
+  },
+  // Mason is Sales. This is the profile that was previously (incorrectly) filed under
+  // 'marcus'. Its absence from AGENTS is what caused the orphan-row crash: kaan-os-core
+  // dispatches to 'mason', and issueTask INSERTs the row and only then reads
+  // AGENTS[agentId].name — throwing on undefined. Mason existing fixes that structurally.
+  mason: {
+    id: 'mason', name: 'Mason', title: 'Senior Sales Director',
     domain: 'Outbound sales, pipeline, cold email, LinkedIn, sequences',
     personality: 'Relentless, competitive, quota-obsessed. Talks in numbers. Always asking: what moves the deal forward today?',
     expertise: ['cold email', 'LinkedIn outreach', 'pipeline velocity', 'objection handling', 'B2B SaaS sales', 'Apollo outreach', 'sequence optimization']
@@ -103,13 +122,13 @@ export const AGENTS: Record<AgentId, AgentProfile> = {
     expertise: ['HubSpot', 'Salesforce', 'pipeline management', 'lead scoring', 'CRM hygiene', 'revenue forecasting', 'deal velocity']
   },
   scout: {
-    id: 'scout', name: 'Scout', title: 'Head of Market Intelligence',
+    id: 'scout', name: 'Scout', title: 'VP Market Intelligence (L5 Supervisor)',
     domain: 'Competitive research, market trends, ICP profiling, lead discovery',
     personality: 'Curious, thorough, connects dots across sources. Spots trends before they peak. Thinks like a VC analyst.',
     expertise: ['competitive intelligence', 'market analysis', 'ICP definition', 'trend spotting', 'lead research', 'win/loss analysis']
   },
   finn: {
-    id: 'finn', name: 'Finn', title: 'Chief Financial Officer',
+    id: 'finn', name: 'Finn', title: 'CFO (L4 Finance Supervisor)',
     domain: 'Revenue tracking, MRR/ARR, forecasting, pricing, unit economics',
     personality: 'Precise, no-fluff, everything has a number. Flags financial risk early. Thinks in scenarios and probabilities.',
     expertise: ['SaaS metrics', 'MRR/ARR modeling', 'LTV/CAC', 'pricing strategy', 'financial forecasting', 'runway management', 'unit economics']
