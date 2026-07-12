@@ -2,6 +2,7 @@ import { Request, Response } from 'express'
 import { getSql } from './conn'
 import { isValidArchitectTask } from './architectTasks'
 import { recordWatcherHeartbeat } from './marcusPipelineHealth'
+import { checkAutonomyAllows } from './autonomyGate'
 
 const HQ = process.env.HQ_SECRET
 
@@ -105,6 +106,34 @@ export async function architectPending(req: Request, res: Response) {
         queued_count: (queued as any[])[0]?.n ?? 0,
         tasks,
         cleanup: cleanupResult,
+        timestamp: new Date().toISOString(),
+      })
+      return
+    }
+
+    // ── AUTONOMY GATE ON THE EXECUTE PATH ────────────────────────────────────
+    // The gate used to guard only task CREATION (selfHeal.queueJanetArchitectTask).
+    // This endpoint is what the Marcus daemon polls, and it would hand out ANY
+    // pre-existing 'queued' row — so at 'manual' a row queued before the gate
+    // landed (or inserted by hand) was still executable. That made "Marcus can't
+    // act at manual" an operational fact (daemon off) rather than a structural one.
+    //
+    // Denied → hand out an EMPTY queue. Deliberately placed before runQueueCleanup
+    // and the malformed-task sweep so a denied poll mutates NOTHING: queued rows
+    // are not cancelled, not lost, not flipped to 'running'. They simply wait, and
+    // become available the moment the level is raised. This only ever DENIES.
+    const decision = await checkAutonomyAllows('execute_architect_task')
+    if (!decision.allowed) {
+      console.warn(
+        `[autonomy] architect task dispatch denied — empty queue handed to daemon ` +
+        `(level=${decision.effectiveLevel}, reason=${decision.reason})`,
+      )
+      res.json({
+        tasks: [],
+        count: 0,
+        autonomy: 'denied',
+        level: decision.effectiveLevel,
+        reason: decision.reason,
         timestamp: new Date().toISOString(),
       })
       return

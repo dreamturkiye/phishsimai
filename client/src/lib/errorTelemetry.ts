@@ -1,3 +1,5 @@
+import { captureClientError } from './sentry'
+
 export interface BugReport {
   error_message: string
   stack_trace: string
@@ -71,6 +73,7 @@ export function installGlobalErrorHandlers(): void {
       'GlobalErrorHandler',
       `unhandled_error at ${event.filename}:${event.lineno}`
     )
+    captureClientError(event.error, { handler: 'window.error' })
   })
 
   window.addEventListener('unhandledrejection', (event) => {
@@ -78,5 +81,6 @@ export function installGlobalErrorHandlers(): void {
       ? event.reason
       : new Error(String(event.reason))
     reportBug(error, 'UnhandledPromise', 'unhandled_promise_rejection')
+    captureClientError(error, { handler: 'unhandledrejection' })
   })
 }

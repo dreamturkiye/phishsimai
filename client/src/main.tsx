@@ -8,7 +8,12 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import { OrgProvider } from "./contexts/OrgContext";
 import { initOsAnalytics } from "./lib/osAnalytics";
+import { initClientSentry } from "./lib/sentry";
 import "./index.css";
+
+// Before anything else renders, so a crash during boot is still captured.
+// No-op when VITE_SENTRY_DSN is unset.
+initClientSentry();
 
 const queryClient = new QueryClient();
 

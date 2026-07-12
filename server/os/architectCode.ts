@@ -8,6 +8,7 @@ import {
   getMarcusMemoryContext,
 } from './marcus'
 import { guardMarcusAllowed, guardMarcusDiff, recordMarcusOutcome, fileSetToDiff, makeMarcusBreakerDeps } from './marcusBreaker'
+import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 
 const FILE_BLOCK_RE = /FILE:\s*(.+?)\n---\n([\s\S]*?)\n---END---/g
 
@@ -159,6 +160,31 @@ export async function architectCode(req: Request, res: Response) {
   const task = String(body.task || '')
   const taskId = body.task_id ? String(body.task_id) : null
   if (task.length < 12) return res.status(400).json({ ok: false, error: 'Task too short' })
+
+  // AUTONOMY GATE — must pass BEFORE the breaker. The breaker is necessary but
+  // NOT sufficient: it only knows about Marcus's failure history, not about
+  // whether the OS is permitted to act autonomously at all. Without this, a POST
+  // holding a valid ARCHITECT_SECRET would generate and return applyable files at
+  // level='manual' whenever the breaker happened to be closed.
+  //
+  // Execution therefore requires BOTH: level allows AND breaker closed.
+  // Denied → 423 parked, audited. This only ever DENIES; it enables nothing.
+  try {
+    await assertAutonomyAllows('execute_architect_task')
+  } catch (e) {
+    if (isAutonomyDenied(e)) {
+      console.warn(`[autonomy] architectCode execution denied — parked (${e.reason} @ ${e.level})`)
+      return res.status(423).json({
+        ok: false,
+        error: `Autonomy gate: execution denied at level '${e.level}' — task parked for founder approval`,
+        parked: true,
+        autonomy: 'denied',
+        level: e.level,
+        reason: e.reason,
+      })
+    }
+    throw e
+  }
 
   // MARCUS CIRCUIT BREAKER — do not EXECUTE (generate/apply a change) while the
   // breaker is OPEN. Parked + escalated.
