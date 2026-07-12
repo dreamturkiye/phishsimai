@@ -15,7 +15,11 @@ const COMPANY = 'phishsimai'
 
 const HEALTH_PROMPTS: Record<AgentId, string> = {
   janet: 'Health ping. Respond with: ONLINE plus one sentence on current company priority.',
-  marcus: 'Health ping. Respond with: ONLINE plus pipeline status in one sentence.',
+  // Marcus is the architect, so he is asked about the codebase — not "pipeline status",
+  // which was the sales question left over from the mis-filed Mason profile. Mason,
+  // who is actually Sales, gets the pipeline question.
+  marcus: 'Health ping. Respond with: ONLINE plus current codebase/architecture risk in one sentence.',
+  mason: 'Health ping. Respond with: ONLINE plus pipeline status in one sentence.',
   aria: 'Health ping. Respond with: ONLINE plus current marketing priority in one sentence.',
   nova: 'Health ping. Respond with: ONLINE plus top product issue in one sentence.',
   rex: 'Health ping. Respond with: ONLINE plus pipeline data quality in one sentence.',
