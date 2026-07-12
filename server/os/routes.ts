@@ -900,6 +900,23 @@ export async function webhookResend(req: Request, res: Response) {
   }
 }
 
+/** GET — KaanHQ portfolio-health liveness only. No DB, no queue, no wake. */
+export async function portfolioDispatchLiveness(req: Request, res: Response) {
+  if (!okHQ(req, res)) return
+  return res.status(200).json({
+    ok: true,
+    route: 'ready',
+    status: 'ok',
+    healthy: true,
+    product: 'phishsimai',
+    subsidiaryId: 'phishsimai',
+    authenticated: true,
+    dispatch: { method: 'POST', path: '/api/os/portfolio-dispatch' },
+    note: 'liveness only — this probe queues no task and wakes no agent',
+    timestamp: new Date().toISOString(),
+  })
+}
+
 export async function portfolioDispatch(req: Request, res: Response) {
   if (!okHQ(req, res)) return
   try {
