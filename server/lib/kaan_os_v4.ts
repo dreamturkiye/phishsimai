@@ -3,9 +3,20 @@ import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram } from '../os/telegram'
 import { assertAutonomyAllows } from '../os/autonomyGate'
+// This file was copied from ScrollFuel and never localised: every function signature
+// defaulted companyId to 'scrollfuel', and the DDL below defaulted the COLUMN to it too.
+// No caller ever relied on those defaults — all 8 routes.ts call sites and
+// socialPreviewPage pass 'phishsimai' explicitly — which is why a read-only audit of
+// PhishSim's DB found 583 rows all correctly tagged 'phishsimai' and ZERO 'scrollfuel'.
+// But it was a loaded gun: one new caller omitting the argument would have written
+// ScrollFuel's label into PhishSim's database.
+//
+// IMPORTED, not re-declared. A second local COMPANY_ID constant is precisely the
+// duplicate-that-drifts pattern this fix exists to eliminate.
+import { COMPANY_ID } from '../os/version'
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  KAAN AI OS  v4  —  Janet + 8 Full-Time AI Employees
+//  KAAN AI OS  v4  —  Janet + 9 Full-Time AI Employees
 //
 //  Philosophy: These are not bots. They are professionals with:
 //  - Persistent memory (they remember everything they've learned)
@@ -148,6 +159,16 @@ export const AGENTS: Record<AgentId, AgentProfile> = {
 }
 
 // ── Database: ensure all OS tables exist ──────────────────────────────────────
+//
+// The company_id DEFAULT below is a STRING LITERAL, not ${COMPANY_ID}: Postgres does
+// not accept a bind parameter in a DDL DEFAULT clause, and the neon tagged template
+// would turn an interpolation into one.
+//
+// IMPORTANT — this only fixes NEW databases. These are CREATE TABLE IF NOT EXISTS, so
+// tables that ALREADY exist keep the default they were created with ('scrollfuel').
+// Correcting the live columns needs an explicit
+//   ALTER TABLE <t> ALTER COLUMN company_id SET DEFAULT 'phishsimai'
+// which is a supervised DB change, not something this function should do implicitly.
 async function ensureOSTables(sql: any) {
   await sql`
     CREATE TABLE IF NOT EXISTS agent_tasks (
@@ -164,7 +185,7 @@ async function ensureOSTables(sql: any) {
       performance_score INTEGER,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       completed_at TIMESTAMPTZ,
-      company_id TEXT NOT NULL DEFAULT 'scrollfuel'
+      company_id TEXT NOT NULL DEFAULT 'phishsimai'
     )
   `.catch(() => {})
 
@@ -178,7 +199,7 @@ async function ensureOSTables(sql: any) {
       decisions TEXT[],
       next_steps TEXT[],
       held_at TIMESTAMPTZ DEFAULT NOW(),
-      company_id TEXT NOT NULL DEFAULT 'scrollfuel'
+      company_id TEXT NOT NULL DEFAULT 'phishsimai'
     )
   `.catch(() => {})
 
@@ -193,7 +214,7 @@ async function ensureOSTables(sql: any) {
       improvement_areas TEXT,
       janet_notes TEXT,
       updated_at TIMESTAMPTZ DEFAULT NOW(),
-      company_id TEXT NOT NULL DEFAULT 'scrollfuel'
+      company_id TEXT NOT NULL DEFAULT 'phishsimai'
     )
   `.catch(() => {})
 }
@@ -211,7 +232,7 @@ async function llm(system: string, user: string, maxTokens = 1000): Promise<stri
 }
 
 // ── Agent memory: what this agent knows and has learned ───────────────────────
-async function getAgentMemory(agentId: AgentId, sql: any, companyId = 'scrollfuel'): Promise<string> {
+async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID): Promise<string> {
   const [tasks, perf, memories] = await Promise.all([
     sql`SELECT title, result, janet_feedback, performance_score, completed_at
         FROM agent_tasks WHERE agent_id=${agentId} AND status IN ('reviewed','completed') AND company_id=${companyId}
@@ -292,7 +313,7 @@ export type NewAgentTask =
 export async function issueTask(
   agentId: AgentId,
   task: NewAgentTask,
-  companyId = 'scrollfuel'
+  companyId = COMPANY_ID
 ): Promise<{ task_id: string; agent: string; title: string }> {
   // AUTONOMY GATE — no agent task is written unless this company's earned level
   // permits it. At 'manual' this throws AutonomyDenied (audited) before any write.
@@ -313,7 +334,7 @@ export async function issueTask(
   return { task_id: inserted.id, agent: agent.name, title: task.title }
 }
 
-export async function executeTask(taskId: string, companyId = 'scrollfuel'): Promise<AgentTask> {
+export async function executeTask(taskId: string, companyId = COMPANY_ID): Promise<AgentTask> {
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
 
@@ -364,7 +385,7 @@ Be specific. Janet will review and score your work.`
   return { ...task, status: 'completed', result }
 }
 
-export async function reviewTask(taskId: string, companyId = 'scrollfuel'): Promise<{ feedback: string; score: number; task: any }> {
+export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number; task: any }> {
   const sql = neon(process.env.DATABASE_URL!)
   const [task] = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
   if (!task || !task.result) throw new Error('Task not completed yet')
@@ -415,7 +436,7 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
 //  MEETINGS — Janet runs structured team meetings
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function runDailyStandup(companyId = 'scrollfuel'): Promise<{
+export async function runDailyStandup(companyId = COMPANY_ID): Promise<{
   meeting_id: string
   reports: AgentReport[]
   janet_summary: string
@@ -510,7 +531,7 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
   return { meeting_id: meeting?.id || '', reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
 }
 
-export async function runWeeklyReview(companyId = 'scrollfuel'): Promise<{
+export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   meeting_id: string
   performance_reviews: any[]
   janet_decisions: string
@@ -623,7 +644,7 @@ export async function runWeeklyReview(companyId = 'scrollfuel'): Promise<{
 export async function talkToAgent(
   agentId: AgentId,
   message: string,
-  companyId = 'scrollfuel',
+  companyId = COMPANY_ID,
   fromJanet = false
 ): Promise<{ agent: string; response: string; timestamp: string }> {
   const sql = neon(process.env.DATABASE_URL!)
@@ -653,7 +674,7 @@ export async function talkToAgent(
 export async function janetTellAgent(
   agentId: AgentId,
   instruction: string,
-  companyId = 'scrollfuel'
+  companyId = COMPANY_ID
 ): Promise<{ task_issued: any; agent_response: string }> {
   const sql = neon(process.env.DATABASE_URL!)
 
@@ -675,7 +696,7 @@ export async function janetTellAgent(
 //  JANET FULL ORCHESTRATION — daily autonomous operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export async function runJanetFullOrchestration(companyId = 'scrollfuel'): Promise<{
+export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise<{
   janet_brief: string
   standup: any
   pending_tasks_executed: number
@@ -714,7 +735,7 @@ export async function runJanetFullOrchestration(companyId = 'scrollfuel'): Promi
 }
 
 // ── OS status — what's running, who's doing what ─────────────────────────────
-export async function getOSStatus(companyId = 'scrollfuel') {
+export async function getOSStatus(companyId = COMPANY_ID) {
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
 
