@@ -26,6 +26,12 @@ export type SocialPreviewRecord = {
   status: string
   scheduled_at: string | null
   created_at: string
+  // A real os_social_queue column (publishSarahLinkedIn both writes it and filters on
+  // it), but it was missing from this type AND from the SELECT below — so it read as
+  // undefined everywhere. That silently disabled the duplicate-post guard in
+  // publishSarahLinkedIn.ts, which is `status === 'posted' && result_url`. Declared
+  // and selected so the guard can actually fire.
+  result_url: string | null
 }
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://phishsimai.com'
@@ -49,7 +55,7 @@ export async function getPreviewByToken(token: string): Promise<SocialPreviewRec
   await ensureSocialPreviewColumns()
   const sql = getSql()
   const [row] = await sql`
-    SELECT id, preview_token, platform, title, body, image_url, hashtags, review_status, founder_comment, status, scheduled_at, created_at
+    SELECT id, preview_token, platform, title, body, image_url, hashtags, review_status, founder_comment, status, scheduled_at, created_at, result_url
     FROM os_social_queue WHERE preview_token=${token} LIMIT 1
   `.catch(() => [] as SocialPreviewRecord[])
   return (row as SocialPreviewRecord) || null

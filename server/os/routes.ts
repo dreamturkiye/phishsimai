@@ -249,7 +249,10 @@ export async function analyticsCollect(req: Request, res: Response) {
       ip,
       user_agent: req.headers['user-agent'] as string,
     })
-    res.json({ ok: true, ...result })
+    // ingestAnalyticsEvent already returns { ok, skipped? }. The old
+    // `{ ok: true, ...result }` put a literal ok:true that the spread immediately
+    // overwrote (TS2783) — dead code. Same response, minus the misleading default.
+    res.json(result)
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: formatOsError(e) })
   }
@@ -260,7 +263,9 @@ export async function hqSarahSocial(req: Request, res: Response) {
   try {
     const action = (req.query.action as string) || 'list'
     if (action === 'verify') {
-      return res.json({ ok: true, ...(await verifyRedditLogin()) })
+      // verifyRedditLogin returns { ok, ... } — the literal ok:true was overwritten
+      // by the spread (TS2783). Identical response.
+      return res.json(await verifyRedditLogin())
     }
     if (action === 'run') {
       return res.json({ ok: true, ...(await runSarahSocialCron()) })
@@ -674,7 +679,11 @@ export async function hqSTT(req: Request, res: Response) {
     }
 
     const groqForm = new FormData()
-    groqForm.append('file', new Blob([audioBuf], { type: 'audio/webm' }), 'audio.webm')
+    // Node's Buffer is typed Buffer<ArrayBufferLike> — not a valid BlobPart, which
+    // needs a view over a plain ArrayBuffer (ArrayBufferLike also admits
+    // SharedArrayBuffer). Copy into a fresh Uint8Array: same bytes, correct type.
+    const audioBytes = new Uint8Array(audioBuf)
+    groqForm.append('file', new Blob([audioBytes], { type: 'audio/webm' }), 'audio.webm')
     groqForm.append('model', 'whisper-large-v3-turbo')
     groqForm.append('language', 'en')
 
@@ -963,7 +972,12 @@ export async function architectComplete(req: Request, res: Response) {
     // MARCUS CIRCUIT BREAKER — record the deploy outcome. 3 consecutive failures
     // → breaker OPEN → Marcus halts issuing/executing until cooldown + a clean probe.
     await recordMarcusOutcome(makeMarcusBreakerDeps(), !!success, success ? undefined : (error || 'deploy failed')).catch(() => {})
-    const bugResult = await resolveLinkedBug(id, !!success, notes, commit_sha, { notify: false }).catch(() => ({ resolved: false }))
+    // The catch fallback omitted `alreadyResolved`, so the union of the two branches
+    // had no such property and `bugResult?.alreadyResolved` below failed to compile.
+    // Spelling it out collapses the union; `false` is what the old `undefined` already
+    // evaluated to at the only use site (`!!bugResult?.alreadyResolved`).
+    const bugResult = await resolveLinkedBug(id, !!success, notes, commit_sha, { notify: false })
+      .catch(() => ({ resolved: false, alreadyResolved: false }))
 
     const taskRow = await sql`SELECT task FROM os_architect_tasks WHERE id=${id}::uuid`
     const task = (taskRow as any[])[0]?.task || id

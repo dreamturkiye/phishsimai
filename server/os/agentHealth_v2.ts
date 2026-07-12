@@ -1,7 +1,9 @@
-import { neon } from '@neondatabase/serverless'
 import { AGENTS, AgentId } from '../lib/kaan_os_v4'
 import { getSql } from './conn'
 import { openSystemAlert, resolveSystemAlert } from './selfHeal'
+
+/** The concrete neon client type returned by getSql() (NeonQueryFunction<false, false>). */
+type Sql = ReturnType<typeof getSql>
 
 export type HealthStatus = 'healthy' | 'warning' | 'critical' | 'unknown' | 'healing'
 
@@ -21,7 +23,7 @@ export interface AgentHealthRecord {
   company_id: string
 }
 
-export async function ensureAgentHealthTable(sql: ReturnType<typeof neon>) {
+export async function ensureAgentHealthTable(sql: Sql) {
   await sql`
     CREATE TABLE IF NOT EXISTS agent_health_v2 (
       id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

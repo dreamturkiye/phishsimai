@@ -91,7 +91,9 @@ export async function runOutreachSequence(): Promise<{ sent: number; errors: num
     return { sent: 0, errors: 1 };
   }
 
-  const [rows] = await db.execute<OutreachLead[]>(sql`
+  // db.execute() resolves to a FullQueryResults OBJECT, not an array — destructuring
+  // it as `const [rows] = ...` throws "is not iterable" at runtime. Read .rows.
+  const result = await db.execute(sql`
     SELECT id, name, company, country, sector, email,
            touch1_sent_at, touch2_sent_at, touch3_sent_at, touch4_sent_at
     FROM outreach_leads
@@ -99,7 +101,7 @@ export async function runOutreachSequence(): Promise<{ sent: number; errors: num
     LIMIT ${MAX_PER_RUN}
   `);
 
-  const leads = rows as unknown as OutreachLead[];
+  const leads = result.rows as unknown as OutreachLead[];
   let sent = 0;
   let errors = 0;
 

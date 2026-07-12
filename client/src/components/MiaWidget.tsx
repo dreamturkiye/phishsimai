@@ -157,7 +157,7 @@ export default function MiaWidget({ orgId, orgName, hidden }: MiaWidgetProps) {
     rec.continuous = true
     rec.interimResults = true
     rec.lang = 'en-US'
-    rec.onresult = (e: { results: { [index: number]: { [index: number]: { transcript: string } } } }) => {
+    rec.onresult = (e: { results: SpeechRecognitionResultList }) => {
       let t = ''
       for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript
       transcriptR.current = t

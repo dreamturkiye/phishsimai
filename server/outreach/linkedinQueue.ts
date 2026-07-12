@@ -34,7 +34,11 @@ export async function runLinkedInQueue(): Promise<{ queued: number }> {
     return { queued: 0 };
   }
 
-  const [rows] = await db.execute<Lead[]>(sql`
+  // db.execute() resolves to a FullQueryResults OBJECT ({ rows, fields, rowCount, … }),
+  // not an array. The previous `const [rows] = await db.execute(...)` destructured it
+  // as an array, which throws "is not iterable" at runtime — this path could never
+  // have worked. Read .rows instead.
+  const result = await db.execute(sql`
     SELECT id, name, company, sector, job_title, linkedin_url
     FROM outreach_leads
     WHERE touch1_sent_at IS NOT NULL
@@ -42,7 +46,7 @@ export async function runLinkedInQueue(): Promise<{ queued: number }> {
     LIMIT 30
   `);
 
-  const leads = rows as unknown as Lead[];
+  const leads = result.rows as unknown as Lead[];
   let queued = 0;
 
   for (const lead of leads) {

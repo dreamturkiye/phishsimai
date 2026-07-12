@@ -262,9 +262,17 @@ Campaigns: ${c.total} total | ${c.this_week} created this week`
 //  TASK SYSTEM — Janet assigns work, agents execute, Janet reviews
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// What a caller actually supplies when issuing a task: the assignee comes from the
+// `agentId` argument, `issued_by` is always Janet, and id/status/created_at are set by
+// the DB. `agent_id` is still accepted (several call sites pass it for readability) but
+// it is not read — the row is written with `agentId`.
+export type NewAgentTask =
+  Omit<AgentTask, 'id' | 'agent_id' | 'status' | 'issued_by' | 'created_at'>
+  & { agent_id?: AgentId }
+
 export async function issueTask(
   agentId: AgentId,
-  task: Omit<AgentTask, 'id' | 'status' | 'issued_by' | 'created_at'>,
+  task: NewAgentTask,
   companyId = 'scrollfuel'
 ): Promise<{ task_id: string; agent: string; title: string }> {
   // AUTONOMY GATE — no agent task is written unless this company's earned level
@@ -290,7 +298,10 @@ export async function executeTask(taskId: string, companyId = 'scrollfuel'): Pro
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
 
-  const [task] = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
+  // agent_tasks rows carry exactly the AgentTask columns (see ensureOSTables); neon
+  // types every row as Record<string, any>, so name the row shape here.
+  const rows = (await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`) as AgentTask[]
+  const [task] = rows
   if (!task) throw new Error(`Task ${taskId} not found`)
 
   const agent = AGENTS[task.agent_id as AgentId]

@@ -93,7 +93,7 @@ async function callGeminiCode(prompt: string, strict = false): Promise<string> {
     throw new Error(await geminiRes.text().catch(() => 'Gemini error'))
   }
   const data = await geminiRes.json()
-  return (data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim() || '').trim()
+  return (data.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text || '').join('').trim() || '').trim()
 }
 
 async function callOpenAICode(prompt: string, strict = false): Promise<string> {
