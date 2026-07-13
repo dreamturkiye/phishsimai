@@ -575,7 +575,7 @@ export default function Home() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">to happen.</span>
           </h2>
           <p className="text-xl text-muted-foreground mb-8">Every day without a phishing training program is a day your clients are exposed. Launch PhishSim AI in 10 minutes — free trial, no credit card.</p>
-          <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getLoginUrl()}>
+          <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
             Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
           <p className="text-xs text-muted-foreground mt-4">No credit card required · 14-day free trial · Cancel anytime</p>
