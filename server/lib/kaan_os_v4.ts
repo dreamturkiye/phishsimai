@@ -1,7 +1,7 @@
 import { llmComplete } from '../os/llmChat'
 import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
-import { sendTelegram } from '../os/telegram'
+import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows } from '../os/autonomyGate'
 // This file was copied from ScrollFuel and never localised: every function signature
 // defaulted companyId to 'scrollfuel', and the DDL below defaulted the COLUMN to it too.
@@ -282,7 +282,13 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
 
 // ── Build agent system prompt — who they are, what they know ─────────────────
 function buildAgentSystem(agent: AgentProfile, memory: string, companyContext: string): string {
-  return `You are ${agent.name}, ${agent.title} at Scroll Fuel (AI-generated UGC ads SaaS, $19-99/mo, targeting DTC beauty/skincare/supplement brands).
+  // NOT cosmetic. This is the system prompt behind every agent's standup report, task
+  // execution, self-review, Janet's reviews, and Kaan's brief. It used to say the company
+  // was "Scroll Fuel (AI-generated UGC ads SaaS ... targeting DTC beauty/skincare/supplement
+  // brands)" — a copy-paste leftover — so every agent reasoned as an employee of a beauty-ads
+  // company instead of a phishing-simulation company, and produced output accordingly.
+  // Description matches the canonical one in server/os/janet.ts.
+  return `You are ${agent.name}, ${agent.title} at ${TELEGRAM_PRODUCT} (an AI-powered phishing simulation and security awareness training platform; B2B SaaS. Automated phishing simulations + staff training, white-label for MSPs, 10-minute setup).
 You report to Janet (CGO). Kaan Arioglu is the CEO and founder.
 
 Your personality: ${agent.personality}
@@ -545,7 +551,10 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
   `.catch(() => [{ id: 'unknown' }])
 
   // Telegram brief
-  const telegramMsg = `🌅 *DAILY STANDUP — Scroll Fuel OS*\n\n${janetResponse.slice(0, 600)}\n\n_${reports.length} agents reported | ${newTasks.length} tasks issued_`
+  // Product name must be correct IN the string: telegram.ts's prefixMessage() skips adding
+  // the product prefix to any message that already leads with a known emoji (🌅 is one), so
+  // a wrong label here is never corrected downstream — it ships as-is.
+  const telegramMsg = `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse.slice(0, 600)}\n\n_${reports.length} agents reported | ${newTasks.length} tasks issued_`
   await sendTelegram(telegramMsg).catch(() => {})
 
   return { meeting_id: meeting?.id || '', reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
@@ -645,7 +654,7 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   `.catch(() => [{ id: 'unknown' }])
 
   const scores = performanceReviews.map(r => `${r.name}: ${r.score}/10`).join(' | ')
-  await sendTelegram(`📊 *WEEKLY REVIEW — Scroll Fuel OS*\n\nScores: ${scores}\n\n${weeklyPlan.slice(0,600)}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
+  await sendTelegram(`📊 *WEEKLY REVIEW — ${TELEGRAM_PRODUCT}*\n\nScores: ${scores}\n\n${weeklyPlan.slice(0,600)}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
 
   return {
     meeting_id: meeting?.id || '',
@@ -749,7 +758,10 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   const kaanBrief = await llm(maxSystem,
     `Prepare Kaan's morning brief. Standup summary: ${standup.janet_summary.slice(0,500)}\nTasks executed: ${executed}\n\nBrief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
 
-  await sendTelegram(`☀️ *KAAN'S MORNING BRIEF*\n\n${kaanBrief}\n\n_Janet OS v4 | ${new Date().toLocaleTimeString()}_`).catch(() => {})
+  // ☀️ is also in prefixMessage()'s skip list, so this one arrived with NO product name at
+  // all. Kaan receives briefs from more than one product; labelling it matches the standup
+  // and weekly review rather than leaving him to infer which company the brief is about.
+  await sendTelegram(`☀️ *KAAN'S MORNING BRIEF — ${TELEGRAM_PRODUCT}*\n\n${kaanBrief}\n\n_Janet OS v4 | ${new Date().toLocaleTimeString()}_`).catch(() => {})
 
   return { janet_brief: kaanBrief, standup, pending_tasks_executed: executed, timestamp: new Date().toISOString() }
 }
