@@ -11,7 +11,7 @@ import { recallContext, recallMemory, rememberFact, seedPhishSimMemory } from '.
 import { sendTelegram } from './telegram'
 import { ensureHqTables, formatOsError, getSql } from './conn'
 import { handleIncomingTelegram } from './telegramCommands'
-import { getTelegramConfig, sendTelegramTest, registerTelegramWebhook } from './telegram'
+import { getTelegramConfig, sendTelegramTest, registerTelegramWebhook, verifyTelegram } from './telegram'
 import { ingestFounderFile, storeFounderUpload, formatAttachmentsForPrompt } from './founderIngest'
 import { resolveLinkedBug } from './selfHeal'
 import { recordMarcusDeployOutcome } from './marcus'
@@ -1050,14 +1050,16 @@ export async function telegramWebhook(req: Request, res: Response) {
 }
 
 export async function telegramTest(req: Request, res: Response) {
-  if (!okHQ(req, res)) return
+  if (!okCronOrHq(req, res)) return
+  const verification = await verifyTelegram(true)
   const result = await sendTelegramTest()
-  res.json({ config: getTelegramConfig(), ...result })
+  res.json({ config: getTelegramConfig(), verification, ...result })
 }
 
 export async function telegramStatus(req: Request, res: Response) {
-  if (!okHQ(req, res)) return
-  res.json({ ok: true, telegram: getTelegramConfig() })
+  if (!okCronOrHq(req, res)) return
+  // force=true so this reports LIVE bot identity + destination, not a cached verdict.
+  res.json({ ok: true, telegram: getTelegramConfig(), verification: await verifyTelegram(true) })
 }
 
 export async function telegramSetupWebhook(req: Request, res: Response) {
