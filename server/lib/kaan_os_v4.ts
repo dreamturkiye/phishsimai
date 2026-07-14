@@ -1,4 +1,4 @@
-import Groq from 'groq-sdk'
+import { llmComplete } from '../os/llmChat'
 import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram } from '../os/telegram'
@@ -220,15 +220,35 @@ async function ensureOSTables(sql: any) {
 }
 
 // ── LLM call ──────────────────────────────────────────────────────────────────
+/**
+ * Every LLM call in this file (standup, task issuance, self-review, Janet's review
+ * and scoring, weekly plan, agent chat, Kaan's brief) funnels through here.
+ *
+ * This used to instantiate groq-sdk directly against a hardcoded llama-3.3-70b-versatile
+ * with no fallback of any kind, which meant the entire Janet orchestration went dark
+ * whenever Groq's daily token quota (TPD 100k) was exhausted — a 429 that is not rare.
+ * It now goes through llmComplete, so this path gets the same Cerebras -> DeepInfra ->
+ * Ollama chain that janet.ts, miaChat, routers.ts and the social agents already had.
+ *
+ * Groq is still reachable: put it back in LLM_PROVIDER_CHAIN and it serves this path
+ * again with no code change. That is also the rollback if the chain ever misbehaves.
+ *
+ * All nine call sites consume free-form prose — none parse JSON — so no response_format
+ * is requested here.
+ */
 async function llm(system: string, user: string, maxTokens = 1000): Promise<string> {
-  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
-  const res = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+  const res = await llmComplete({
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
     max_tokens: maxTokens,
     temperature: 0.7,
-    messages: [{ role: 'system', content: system }, { role: 'user', content: user }]
   })
-  return res.choices[0]?.message?.content || ''
+  // Which provider actually served the cycle is the only way to tell, after the fact,
+  // whether the chain absorbed a Groq/Cerebras outage or the work silently degraded.
+  console.log(
+    `[kaan_os_v4] llm via ${res.provider}/${res.model} ` +
+    `tokens=${res.usage?.prompt_tokens ?? '?'}/${res.usage?.completion_tokens ?? '?'}`,
+  )
+  return res.text
 }
 
 // ── Agent memory: what this agent knows and has learned ───────────────────────
