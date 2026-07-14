@@ -45,7 +45,7 @@ const DEEPINFRA_TIMEOUT_MS = 60_000
 const DEFAULT_TIMEOUT_MS = 60_000
 
 /** Default order. Groq is retained below but off the default chain — re-add via LLM_PROVIDER_CHAIN. */
-const DEFAULT_CHAIN = 'cerebras,deepinfra,ollama'
+export const DEFAULT_CHAIN = 'cerebras,deepinfra,ollama'
 
 export type LlmUsage = { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 

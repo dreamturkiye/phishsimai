@@ -35,8 +35,10 @@ app.get("/api/health", (_req: any, res: any) => {
 
 app.get("/api/os/diag", async (_req: any, res: any) => {
   let llmHealth: { ok: boolean; provider?: string; model?: string; chain?: string[]; error?: string } = { ok: false, error: "not tested" };
+  let defaultChain = "unknown";
   try {
-    const { llmPing } = await import("../server/os/llmChat");
+    const { llmPing, DEFAULT_CHAIN } = await import("../server/os/llmChat");
+    defaultChain = DEFAULT_CHAIN;
     llmHealth = await llmPing();
   } catch (e: any) {
     llmHealth = { ok: false, error: e?.message || "llm ping failed" };
@@ -46,11 +48,17 @@ app.get("/api/os/diag", async (_req: any, res: any) => {
     node: process.version,
     env: process.env.NODE_ENV,
     db: process.env.DATABASE_URL ? "SET" : "MISSING",
+    cerebras: process.env.CEREBRAS_API_KEY ? "SET" : "MISSING",
+    deepinfra: process.env.DEEPINFRA_API_KEY ? "SET" : "MISSING",
     gemini: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "SET" : "MISSING",
     groq: process.env.GROQ_API_KEY ? "SET" : "MISSING",
     ollama: process.env.OLLAMA_API_KEY ? "SET" : "MISSING",
     ollama_model: process.env.OLLAMA_CHAT_MODEL || "glm-5.2:cloud",
-    llm_chain: process.env.LLM_PROVIDER_CHAIN || "gemini,ollama,groq",
+    // The code default, and whether an env override is currently beating it. An override that
+    // has drifted stale is how new providers silently never run — surface it, don't hide it.
+    llm_chain_default: defaultChain,
+    llm_chain_override: process.env.LLM_PROVIDER_CHAIN || null,
+    llm_chain: process.env.LLM_PROVIDER_CHAIN || defaultChain,
     llm_health: llmHealth,
     hq_secret: process.env.HQ_SECRET ? "SET" : "MISSING",
     mia: "enabled",
