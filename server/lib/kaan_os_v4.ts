@@ -306,22 +306,84 @@ When reporting to Janet, be precise: what you did, what the numbers say, what yo
 You improve based on feedback. Your goal is to be indispensable.`
 }
 
+/**
+ * Plan pricing, verified directly against the live Stripe account (2026-07-14):
+ *   Starter $149/mo ($1,490/yr) · Growth $299 ($2,990) · Pro $749 ($7,490) · Enterprise $1,499 ($14,990)
+ *
+ * The previous version of getCompanyContext() used $19/$49/$99 over tiers
+ * starter/pro/agency — those are SCROLL FUEL's products, which still live in the same
+ * Stripe account. It was not merely stale pricing; it applied another product's revenue
+ * model to PhishSim.
+ *
+ * 'unlimited' exists in the org_plan enum but has NO Stripe product. It is legacy, priced
+ * at $0, and reported separately so it can never silently inflate or vanish from MRR.
+ */
+const PLAN_PRICING: Record<string, { monthly: number; annual: number }> = {
+  starter:    { monthly: 149,  annual: 1490 },
+  growth:     { monthly: 299,  annual: 2990 },
+  pro:        { monthly: 749,  annual: 7490 },
+  enterprise: { monthly: 1499, annual: 14990 },
+}
+
+/** Annual price ids come from env (already configured) rather than being duplicated here. */
+function annualPriceIds(): Set<string> {
+  const ids = ['PS_STARTER_ANNUAL', 'PS_GROWTH_ANNUAL', 'PS_PRO_ANNUAL', 'PS_ENTERPRISE_ANNUAL']
+    .map(k => process.env[k]?.trim())
+    .filter((v): v is string => !!v)
+  return new Set(ids)
+}
+
 // ── Get live company context for any agent ────────────────────────────────────
+/**
+ * Every query here previously failed SILENTLY and fell through to its .catch() default,
+ * so Janet's whole company context was a wall of zeros and she reported a flatlined
+ * business every cycle:
+ *   - outreach_leads  — table does not exist in PhishSim (it is ScrollFuel's)
+ *   - subscriptions   — table does not exist in PhishSim; billing lives on organizations
+ *   - campaigns       — table exists, but the column is "createdAt", not created_at
+ * Reads PhishSim's real schema now. Identifiers are quoted because this schema is camelCase.
+ */
 async function getCompanyContext(sql: any): Promise<string> {
-  const [leads, subs, camps] = await Promise.all([
-    sql`SELECT count(*) as total, count(*) filter(where replied=true) as replied, count(*) filter(where pipeline_stage='customer') as customers, count(*) filter(where pipeline_stage='engaged') as engaged FROM outreach_leads`.catch(() => [{ total:0,replied:0,customers:0,engaged:0 }]),
-    sql`SELECT count(*) filter(where tier='starter') as starter, count(*) filter(where tier='pro') as pro, count(*) filter(where tier='agency') as agency, count(*) filter(where status='active') as active FROM subscriptions`.catch(() => [{ starter:0,pro:0,agency:0,active:0 }]),
-    sql`SELECT count(*) as total, count(*) filter(where created_at > now()-interval '7 days') as this_week FROM campaigns`.catch(() => [{ total:0,this_week:0 }])
+  const [orgRows, camps, results] = await Promise.all([
+    sql`SELECT plan::text AS plan, "stripePriceId" AS price_id, count(*)::int AS n
+        FROM organizations GROUP BY plan, "stripePriceId"`.catch(() => [] as any[]),
+    sql`SELECT count(*)::int AS total,
+               count(*) FILTER (WHERE "createdAt" > now() - interval '7 days')::int AS this_week
+        FROM campaigns`.catch(() => [{ total: 0, this_week: 0 }]),
+    sql`SELECT count(*) FILTER (WHERE "emailSentAt" IS NOT NULL)::int AS sent,
+               count(*) FILTER (WHERE "emailOpenedAt" IS NOT NULL)::int AS opened,
+               count(*) FILTER (WHERE "linkClickedAt" IS NOT NULL)::int AS clicked,
+               count(*) FILTER (WHERE "credentialSubmittedAt" IS NOT NULL)::int AS submitted,
+               count(*) FILTER (WHERE "reportedAt" IS NOT NULL)::int AS reported
+        FROM campaign_results`.catch(() => [{ sent: 0, opened: 0, clicked: 0, submitted: 0, reported: 0 }]),
   ])
 
-  const l = leads[0] || { total:0,replied:0,customers:0,engaged:0 }
-  const s = subs[0] || { starter:0,pro:0,agency:0,active:0 }
-  const c = camps[0] || { total:0,this_week:0 }
-  const mrr = (Number(s.starter)||0)*19 + (Number(s.pro)||0)*49 + (Number(s.agency)||0)*99
+  const annual = annualPriceIds()
+  const byPlan: Record<string, number> = {}
+  let mrr = 0, paying = 0, free = 0, legacyUnlimited = 0
 
-  return `Leads: ${l.total} total | Reply rate: ${l.total>0?((l.replied/l.total)*100).toFixed(1):0}% | Customers: ${l.customers} | Engaged: ${l.engaged}
-MRR: $${mrr} | Subs: ${s.starter} Starter / ${s.pro} Pro / ${s.agency} Agency | Active: ${s.active}
-Campaigns: ${c.total} total | ${c.this_week} created this week`
+  for (const r of (orgRows as any[])) {
+    const plan = String(r.plan || 'free')
+    const n = Number(r.n) || 0
+    if (plan === 'free') { free += n; continue }
+    byPlan[plan] = (byPlan[plan] || 0) + n
+    paying += n
+    if (plan === 'unlimited') { legacyUnlimited += n; continue } // no Stripe product → $0
+    const price = PLAN_PRICING[plan]
+    if (!price) continue
+    // Annual subscribers are normalised to a monthly figure so MRR stays comparable.
+    mrr += n * (r.price_id && annual.has(String(r.price_id)) ? price.annual / 12 : price.monthly)
+  }
+
+  const c = (camps as any[])[0] || { total: 0, this_week: 0 }
+  const s = (results as any[])[0] || { sent: 0, opened: 0, clicked: 0, submitted: 0, reported: 0 }
+  const rate = (x: any, d: any) => (Number(d) > 0 ? ((Number(x) / Number(d)) * 100).toFixed(1) : '0.0')
+  const mix = Object.entries(byPlan).map(([k, v]) => `${v} ${k}`).join(' / ') || 'none'
+
+  return `Orgs: ${free + paying} total | Paying: ${paying} (${mix}) | Free: ${free}
+MRR: $${Math.round(mrr).toLocaleString('en-US')}${legacyUnlimited ? ` (excludes ${legacyUnlimited} legacy 'unlimited' org(s) — no Stripe product)` : ''}
+Campaigns: ${c.total} total | ${c.this_week} created this week
+Simulations: ${s.sent} sent | Open ${rate(s.opened, s.sent)}% | Click ${rate(s.clicked, s.sent)}% | Credentials submitted ${s.submitted} | Reported ${rate(s.reported, s.sent)}%`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
