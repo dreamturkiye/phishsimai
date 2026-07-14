@@ -344,18 +344,30 @@ function annualPriceIds(): Set<string> {
  * Reads PhishSim's real schema now. Identifiers are quoted because this schema is camelCase.
  */
 async function getCompanyContext(sql: any): Promise<string> {
+  // A swallowed query error is what caused the original bug: it is indistinguishable from a
+  // genuine zero, so Janet confidently reported a flatlined business that was really just a
+  // broken query. Keep the fallback (context must never take the cycle down) but make the
+  // failure LOUD, and mark the value unknown rather than letting it masquerade as real data.
+  const failed: string[] = []
+  const q = <T>(label: string, p: Promise<T>, fallback: T): Promise<T> =>
+    (p as any).catch((e: any) => {
+      failed.push(label)
+      console.error(`[kaan_os_v4] getCompanyContext: ${label} query FAILED — reporting as unknown, not zero: ${e?.message || e}`)
+      return fallback
+    })
+
   const [orgRows, camps, results] = await Promise.all([
-    sql`SELECT plan::text AS plan, "stripePriceId" AS price_id, count(*)::int AS n
-        FROM organizations GROUP BY plan, "stripePriceId"`.catch(() => [] as any[]),
-    sql`SELECT count(*)::int AS total,
+    q('organizations', sql`SELECT plan::text AS plan, "stripePriceId" AS price_id, count(*)::int AS n
+        FROM organizations GROUP BY plan, "stripePriceId"`, [] as any[]),
+    q('campaigns', sql`SELECT count(*)::int AS total,
                count(*) FILTER (WHERE "createdAt" > now() - interval '7 days')::int AS this_week
-        FROM campaigns`.catch(() => [{ total: 0, this_week: 0 }]),
-    sql`SELECT count(*) FILTER (WHERE "emailSentAt" IS NOT NULL)::int AS sent,
+        FROM campaigns`, [{ total: 0, this_week: 0 }]),
+    q('campaign_results', sql`SELECT count(*) FILTER (WHERE "emailSentAt" IS NOT NULL)::int AS sent,
                count(*) FILTER (WHERE "emailOpenedAt" IS NOT NULL)::int AS opened,
                count(*) FILTER (WHERE "linkClickedAt" IS NOT NULL)::int AS clicked,
                count(*) FILTER (WHERE "credentialSubmittedAt" IS NOT NULL)::int AS submitted,
                count(*) FILTER (WHERE "reportedAt" IS NOT NULL)::int AS reported
-        FROM campaign_results`.catch(() => [{ sent: 0, opened: 0, clicked: 0, submitted: 0, reported: 0 }]),
+        FROM campaign_results`, [{ sent: 0, opened: 0, clicked: 0, submitted: 0, reported: 0 }]),
   ])
 
   const annual = annualPriceIds()
@@ -380,10 +392,16 @@ async function getCompanyContext(sql: any): Promise<string> {
   const rate = (x: any, d: any) => (Number(d) > 0 ? ((Number(x) / Number(d)) * 100).toFixed(1) : '0.0')
   const mix = Object.entries(byPlan).map(([k, v]) => `${v} ${k}`).join(' / ') || 'none'
 
+  // Honesty over false precision: if a query failed, say so in the context the agents read,
+  // so they cannot mistake "we could not measure this" for "this is genuinely zero".
+  const warn = failed.length
+    ? `\n⚠️ DATA UNAVAILABLE for: ${failed.join(', ')} — the figures above are NOT reliable for these. Do not report them as real zeros.`
+    : ''
+
   return `Orgs: ${free + paying} total | Paying: ${paying} (${mix}) | Free: ${free}
 MRR: $${Math.round(mrr).toLocaleString('en-US')}${legacyUnlimited ? ` (excludes ${legacyUnlimited} legacy 'unlimited' org(s) — no Stripe product)` : ''}
 Campaigns: ${c.total} total | ${c.this_week} created this week
-Simulations: ${s.sent} sent | Open ${rate(s.opened, s.sent)}% | Click ${rate(s.clicked, s.sent)}% | Credentials submitted ${s.submitted} | Reported ${rate(s.reported, s.sent)}%`
+Simulations: ${s.sent} sent | Open ${rate(s.opened, s.sent)}% | Click ${rate(s.clicked, s.sent)}% | Credentials submitted ${s.submitted} | Reported ${rate(s.reported, s.sent)}%${warn}`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
