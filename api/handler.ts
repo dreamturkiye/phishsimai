@@ -33,7 +33,15 @@ app.get("/api/health", (_req: any, res: any) => {
   });
 });
 
-app.get("/api/os/diag", async (_req: any, res: any) => {
+// Diagnostics — AUTHENTICATED. This enumerates which secrets are set, the resolved
+// provider chain, and the live model ids; that is an inventory of the OS's attack
+// surface, so it goes behind the same Bearer CRON_SECRET / HQ_SECRET guard every
+// other /api/os/* route uses. It also burns a real LLM call per hit, so leaving it
+// open let anyone drain the Cerebras free tier.
+app.get("/api/os/diag", async (req: any, res: any) => {
+  const { okCronOrHq } = await import("../server/os/routes");
+  if (!okCronOrHq(req, res)) return;
+
   let llmHealth: { ok: boolean; provider?: string; model?: string; chain?: string[]; error?: string } = { ok: false, error: "not tested" };
   let defaultChain = "unknown";
   try {

@@ -58,7 +58,7 @@ function okCron(req: Request, res: Response) {
   if (!checkCron(req)) { res.status(401).json({ error:'Unauthorized' }); return false }
   return true
 }
-function okCronOrHq(req: Request, res: Response) {
+export function okCronOrHq(req: Request, res: Response) {
   if (!checkCron(req) && !checkHQ(req)) { res.status(401).json({ error:'Unauthorized' }); return false }
   return true
 }
