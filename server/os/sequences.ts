@@ -73,8 +73,19 @@ export async function getSequenceHealth(sql = getSql()) {
   return { rate, paused: rate >= PAUSE_ON_BOUNCE_RATE, bounced: Number(bounced), sent: Number(sent) }
 }
 
+// PS-INCIDENT-01 (2026-07-15): HARD PAUSE. Aria sequenced leads that appear LLM-fabricated
+// (same names across multiple cities -- researcher was watchdog-restarted every 15min against
+// an empty agent_health table all night and filled the queue with invented personas). Real
+// Resend sends went out. Paused in CODE, not env, per the 2026-07-12 ScrollFuel lesson:
+// an env flag that nobody verifies is an instrument reporting state that does not exist.
+// Unpause requires: lead-source audit + fabricated-lead purge + founder sign-off, then delete this block.
+const OUTBOUND_HARD_PAUSED = true
+
 export async function runFullSequence() {
   const sql = getSql()
+  if (OUTBOUND_HARD_PAUSED) {
+    return { paused: true, hard: true, reason: 'PS-INCIDENT-01: outbound halted pending fabricated-lead audit', sent: 0 }
+  }
   const health = await getSequenceHealth(sql)
   if (health.paused) {
     await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (PAUSE_ON_BOUNCE_RATE * 100) + '%. Sequence halted.')
