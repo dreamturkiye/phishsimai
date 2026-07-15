@@ -61,6 +61,7 @@ import {
 } from "./db";
 import templateData from "./seed_templates.json";
 import { sanitizeEmailHtml, sanitizeContext } from "./utils/sanitize";
+import { markLeadTrial } from "./os/crmLink";
 
 // SECURITY: Per-org LLM generation rate limiter (10 calls/hour/org)
 const _llmRateLimitMap = new Map<number, { count: number; resetAt: number }>();
@@ -1097,6 +1098,14 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           status: "trial",
           maxCustomers: 10,
         });
+
+        // PS-CRM-02: an MSP registering as a tenant IS the trial start -- the exact moment a
+        // cold lead stops being a prospect. markLeadTrial() existed with no caller until now,
+        // so the 'trial' stage could never be reached and the funnel jumped prospect->customer
+        // or nowhere at all. Best-effort: a CRM bookkeeping miss must never fail a signup.
+        markLeadTrial(input.contactEmail).catch((e) =>
+          console.error("[CRM] markLeadTrial failed (signup unaffected):", e),
+        );
         const rows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
         return rows[0];
       }),
