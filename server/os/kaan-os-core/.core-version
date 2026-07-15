@@ -1,0 +1,24 @@
+{
+  "tag": "phishsim-pinned-2026-07-14 (pre-v7 vintage; diverges from v7.0.0-rc3; core adoption scheduled Phase 2)",
+  "combined_sha256": "89143f736481e4f92048c89f4bdc6951f6662c19bb79c5a7032c96c341e9dfa3",
+  "files": {
+    "abExperiment.ts": "9768a799b95397853f1daa7fd6d7036abebb451cea36ae8c0de07953c3fb04ad",
+    "agentReflection.ts": "fa43f91bd5995541820b18c5296eb657c9a77170c56027d03b6236ba312ddbd1",
+    "crossCompany.ts": "92208f2ba343ebc231303e8b5e2f7e0ad8d80c254002868ef7cb356c09d86581",
+    "governance.ts": "87a4ac420aef78e56ae72096f10d961fda883fa5a84e1924c152d3c1f83518cd",
+    "hierarchy.ts": "144ae1dd5d4b991db314e3f496c0b8c51caf3a14c97a03b2f9f82a14b5dfeefc",
+    "index.ts": "c5955fd4ac5ee18ac81027a178bd4a2b3205b30c425fbca6a50b3d2715b340c9",
+    "intelligenceFinance.ts": "2cb57c2a37644cdb24056e81a8f704cd8f66c4d5f6282f784ff8ba8e228fd2ce",
+    "janetProactive.ts": "99a1d2596c0afd63716f29bc6fa490243fd61412d5c2d8a19966107998a8cbf3",
+    "janetStrategy.ts": "463ea928c868cc2c78eb1bd966433bc014cfa82ead9c7c4edb60f77092594906",
+    "marcusProactive.ts": "6aafbd99e625a1793d421949df3ed29d6645b1e1694674500eee2f4786197156",
+    "outcomeLearning.ts": "eede25ce14a86316793d4e6c988d6649b7e95713ae23b6e1b1bc37e8dd615ee2",
+    "productRegistry.ts": "6cf05766e690a912c1de1aaaf92fdab09153fd706144e8203e8da3b23cef2160",
+    "selfLearning.ts": "20c2926ee0fd089766461d7b365237dbe9721af1607096dadcd6694e3303b322",
+    "supervisorGraph.ts": "d2b87e624e078fee6fe32860dfaf7912d3f87a8d9550497784d3fa62cd658f58",
+    "telegramWiring.ts": "1bfec23c825b99058e17a18ec4aebcfbb8bd77aa82749ccd86053388d261eae5",
+    "types.ts": "23962f19d5afd9526fcec49601327710f8bfa951d198ae9bb89e6f1e24abb56d",
+    "version.ts": "4a477afe481ed925cc278837a7802365e8a1aa8c1f1d551b566a29bb894f1775",
+    "wiringL5.ts": "2830a359cfa91a4d018c67a57983b1979470888c1e17bb4176f6d2b19efccd6f"
+  }
+}
