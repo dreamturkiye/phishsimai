@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import express from "express";
 import { updateOrgStripeSubscription } from "../db";
+import { linkStripeCustomerToLead } from "../os/crmLink";
 
 type StripePlan = "free" | "starter" | "growth" | "pro" | "unlimited" | "enterprise";
 
@@ -59,6 +60,8 @@ export function registerStripeWebhook(app: Express): void {
             metadata?: { org_id?: string; price_id?: string };
             subscription?: string | null;
             customer?: string | null;
+            customer_details?: { email?: string | null } | null;
+            customer_email?: string | null;
           };
           const orgId = session.metadata?.org_id;
           const priceId = session.metadata?.price_id ?? "";
@@ -75,6 +78,38 @@ export function registerStripeWebhook(app: Express): void {
               planActivatedAt: new Date(),
             });
             console.log(`[Webhook] Activated plan '${plan}' for org ${orgId}`);
+          }
+
+          // PS-CRM-01: close the attribution loop.
+          //
+          // Billing knew org_id. The CRM (ps_outreach_leads) knows email. NOTHING translated
+          // between them, so a lead we cold-emailed could sign up and pay and their row would
+          // still read 'prospect' forever. routes.ts queried pipeline_stage='customer' -- a
+          // value no code path has ever written. That is a dashboard reporting a state that
+          // cannot exist.
+          //
+          // Best-effort by design: a failure here must NEVER fail the webhook. Stripe retries
+          // on non-2xx, and a retry would re-run the org activation. Billing is the source of
+          // truth; the CRM link is bookkeeping. Idempotent via customer_at IS NULL.
+          const paidEmail = session.customer_details?.email ?? session.customer_email ?? null;
+          if (paidEmail) {
+            try {
+              const linked = await linkStripeCustomerToLead(paidEmail, {
+                stripeCustomerId,
+                stripeSubscriptionId,
+                tier: plan,
+              });
+              if (linked) {
+                console.log(`[Webhook] CRM: ${paidEmail} lead -> customer (attributed to outreach)`);
+              } else {
+                // Not an error: organic signup, never cold-emailed. Worth seeing, not fixing.
+                console.log(`[Webhook] CRM: ${paidEmail} paid but matches no lead (organic)`);
+              }
+            } catch (e) {
+              console.error("[Webhook] CRM link failed (billing unaffected):", e);
+            }
+          } else {
+            console.error("[Webhook] CRM: no payer email on session -- cannot attribute this customer");
           }
         } else if (event.type === "customer.subscription.deleted") {
           const sub = event.data.object as { metadata?: { org_id?: string } };
