@@ -1,7 +1,6 @@
 import { getSql } from '../conn'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
-import { llmComplete } from '../llmChat'
 
 const COMPANY_ID = 'phishsimai'
 const MSP_TITLES = ['Owner', 'CEO', 'Founder', 'President', 'Managing Director', 'IT Director', 'CISO', 'Head of Security', 'CTO']
@@ -24,25 +23,6 @@ async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
   )`
 }
 
-async function discoverMSPsViaGroq(existingDomains: Set<string>, batchSize: number) {
-  try {
-    const { text } = await llmComplete({
-      messages: [{ role: 'user', content: `You are a B2B lead researcher for the MSP/MSSP market.
-Generate ${batchSize} real MSP or MSSP company domains for cold outreach (phishing simulation and security awareness training).
-Target: US, Canada, UK, or Australia-based MSPs with 5-200 employees, serving SMBs with compliance pressure (SOC2, HIPAA, PCI, ISO27001).
-Return ONLY valid JSON array with no markdown: [{"domain":"example.com","company_name":"Example MSP","source":"ai_discovery"}]
-Real companies only. Avoid Accenture, IBM, Deloitte, or companies with >500 employees.
-Already found: ${[...existingDomains].slice(0, 20).join(', ')}` }],
-      max_tokens: 600,
-      temperature: 0.7,
-    })
-    const match = (text || '[]').match(/\[[\s\S]*?\]/)
-    if (!match) return []
-    const candidates = JSON.parse(match[0])
-    return candidates.filter((c: any) => c.domain && !existingDomains.has(c.domain))
-  } catch { return [] }
-}
-
 async function enrichViaHunter(domain: string) {
   const key = process.env.HUNTER_API_KEY
   if (!key) return null
@@ -58,30 +38,32 @@ async function enrichViaHunter(domain: string) {
   } catch { return null }
 }
 
-export async function runLeadDiscover(batchSize = 8) {
-  const sql = getSql()
-  await ensureResearchQueue(sql)
+export async function runLeadDiscover(_batchSize = 8) {
+  // PS-LEADGEN-V2 Phase 0 -- LLM "discovery" DELETED.
+  //
+  // This called discoverMSPsViaGroq(), which asked an LLM at temperature 0.7 to
+  // "Generate N real MSP or MSSP company domains". A language model holds no registry of
+  // MSPs; it pattern-matches plausible ones. It emitted the same person ("James Thompson")
+  // in Cardiff, Manchester and New York at once and filled lead_research_queue with ~2,996
+  // invented rows, which Aria then sequenced. That is why outbound is hard-paused
+  // (PS-INCIDENT-01).
+  //
+  // No prompt repairs this. Fabrication was not a bug in the mechanism -- it WAS the
+  // mechanism. Phase 1 replaces it with sources a human can go and verify: the UK Cyber
+  // Essentials register, CompTIA / MSPAlliance directories, Clutch, and Google Maps via
+  // Outscraper. Every lead will carry a `source` naming a real place and a `country`
+  // derived from a real address signal -- never guessed, never generated.
+  //
+  // Until then this returns ZERO and says why. An empty queue is honest; a queue full of
+  // fiction is what got us here.
   const start = Date.now()
-  try {
-    const existing = await sql`SELECT domain FROM lead_research_queue WHERE company_id = ${COMPANY_ID} LIMIT 200`
-    const existingDomains = new Set(existing.map((r: any) => r.domain))
-    const candidates = await discoverMSPsViaGroq(existingDomains, batchSize)
-    let discovered = 0
-    for (const c of candidates) {
-      try {
-        await sql`INSERT INTO lead_research_queue (company_id, domain, company_name, source, status)
-          VALUES (${COMPANY_ID}, ${c.domain}, ${c.company_name}, ${c.source || 'ai_discovery'}, 'pending')
-          ON CONFLICT (company_id, domain) DO NOTHING`
-        discovered++
-      } catch {}
-    }
-    const result = { discovered, candidates: candidates.length }
-    await reportAgentRun('discover', true, { ...result, duration_ms: Date.now() - start })
-    return result
-  } catch (e: any) {
-    await reportAgentRun('discover', false, {}, e.message)
-    throw e
+  const result = {
+    discovered: 0,
+    candidates: 0,
+    disabled: 'PS-LEADGEN-V2 Phase 0: LLM discovery deleted. Real sources land in Phase 1.',
   }
+  await reportAgentRun('discover', true, { ...result, duration_ms: Date.now() - start })
+  return result
 }
 
 export async function runLeadResearcher(batchSize = 6) {
