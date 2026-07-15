@@ -4,11 +4,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: node ci/check-imports.mjs
       - run: node ci/check-core-drift.mjs server/os/kaan-os-core
-      - run: npm run check
-      - run: npm run build
+      - run: pnpm run check
+      - run: pnpm run build
