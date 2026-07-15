@@ -2,7 +2,11 @@ import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
 import { runFullSequence } from './sequences'
 import { runJanetFullOrchestration } from '../lib/kaan_os_v4'
 
-export const HEALABLE_OPS_AGENTS = ['researcher', 'discover', 'aria', 'janet'] as const
+// PS-WATCHDOG-01: janet and aria REMOVED from auto-heal. Restarting janet = re-sending founder
+// briefs (spammed every ~30min when agent_health was empty after DB separation); restarting aria
+// = re-triggering outbound sequences. Watchdog may auto-heal idempotent pipeline agents only;
+// comms/outbound agents run on their crons and escalate on failure, never auto-rerun.
+export const HEALABLE_OPS_AGENTS = ['researcher', 'discover'] as const
 
 export const EXPECTED_OPS_AGENTS: Record<string, Record<string, number>> = {
   phishsimai: {
