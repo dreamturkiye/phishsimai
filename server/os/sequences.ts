@@ -79,6 +79,31 @@ export async function getSequenceHealth(sql = getSql()) {
 // Resend sends went out. Paused in CODE, not env, per the 2026-07-12 ScrollFuel lesson:
 // an env flag that nobody verifies is an instrument reporting state that does not exist.
 // Unpause requires: lead-source audit + fabricated-lead purge + founder sign-off, then delete this block.
+// PS-GEO-01 -- per-country send allowlist. FOUNDER DECISION 2026-07-15.
+//
+// Nothing in this codebase has ever known what country a lead is in. The four-country
+// target ("US, Canada, UK, or Australia") lived only inside an LLM prompt -- a suggestion
+// to a model, not a rule in code. That is not compliance; that is a hope.
+//
+//   US  CAN-SPAM      -- opt-out regime. Honest headers + physical address required.
+//   UK  PECR/UK GDPR  -- legitimate interest works for corporate subscribers.
+//   AU  Spam Act 2003 -- inferred consent for a published business address in-role.
+//   CA  CASL          -- EXCLUDED BY FOUNDER DECISION. Strictest of the four: express or
+//                        time-limited implied consent, no broad B2B carve-out, real
+//                        penalties. Not sent to until deliberately re-enabled.
+//
+// FAIL-CLOSED BY CONSTRUCTION: this is an allowlist, and `country IS NULL` can never
+// match a SQL IN (...) list. A lead whose geography we never established is unsendable
+// without a single extra branch. Unknown is not permission.
+const SEND_ALLOWED_COUNTRIES = ['US', 'GB', 'AU'] as const
+
+// Applied to EVERY touch query, not just touch 1. ScrollFuel's 2026-07-12 incident sent
+// ~20 garbage emails precisely because touch-2+ paths bypassed a gate that touch 1
+// honoured. One list, every path, no exceptions -- passed as a parameter (= ANY) so the
+// allowlist above is the ONLY place a country is named. Five inline literals would drift;
+// this cannot.
+const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
+
 const OUTBOUND_HARD_PAUSED = true
 
 export async function runFullSequence() {
@@ -99,7 +124,7 @@ export async function runFullSequence() {
   if (totalSent < DAILY_SEND_LIMIT) {
     const exp = AB_EXPERIMENTS.touch1_subject
     const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-      WHERE touch1_sent_at IS NULL AND bounced=false AND unsubscribed=false
+      WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND unsubscribed=false
       AND pipeline_stage NOT IN ('dead','customer')
       ORDER BY created_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
 
@@ -144,22 +169,22 @@ export async function runFullSequence() {
     let leads: any[] = []
     if (def.touch === 2) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch2_sent_at IS NULL AND touch1_sent_at < ${cutoff}
+        WHERE country = ANY(${GEO}) AND touch2_sent_at IS NULL AND touch1_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
         ORDER BY touch1_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else if (def.touch === 3) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
+        WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
         ORDER BY touch2_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else if (def.touch === 4) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
+        WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
         ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
+        WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
         ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     }
