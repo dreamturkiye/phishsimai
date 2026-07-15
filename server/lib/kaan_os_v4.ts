@@ -841,8 +841,28 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   // 3. Janet writes CEO brief for Kaan
   const maxMemory = await getAgentMemory('max', sql, companyId)
   const maxSystem = buildAgentSystem(AGENTS.max, maxMemory, await getCompanyContext(sql))
+  // MEMORY CONTRACT (PS-BRIEF-01): live facts probed at generation time. Recall (standup
+  // summaries, agent memories) is UNVERIFIED and may be stale or false -- the 2026-07-15
+  // "empty repository" fossil (Marcus's revoked-access blank probe stored as fact, recited
+  // in every brief for days) is exactly the failure this block exists to prevent.
+  const liveTaskCounts = (await sql`
+    SELECT status, count(*)::int AS n FROM agent_tasks WHERE company_id=${companyId} GROUP BY status
+  `.catch(() => [])) as { status: string; n: number }[]
+  const liveFacts = [
+    `generated_at: ${new Date().toISOString()}`,
+    `database: reachable (this probe succeeded)`,
+    `agent_tasks by status: ${liveTaskCounts.map(r => `${r.status}=${r.n}`).join(', ') || 'none'}`,
+    `tasks executed this run: ${executed}`,
+  ].join('\n')
+  const memoryContract = [
+    'MEMORY CONTRACT -- hard rules for this brief:',
+    '- The standup summary and all agent memories are UNVERIFIED RECALL. They may be stale or false.',
+    '- NEVER assert infrastructure state (repository contents, deployments, pipelines, code, environments) as current fact from recall. If recall claims such a blocker, either omit it or write exactly: "unverified agent memory claims: <claim>".',
+    '- Only the LIVE FACTS block may be stated as current fact.',
+    '- If something is not in LIVE FACTS and Kaan would need it, write "not probed" rather than guessing.',
+  ].join('\n')
   const kaanBrief = await llm(maxSystem,
-    `Prepare Kaan's morning brief. Standup summary: ${standup.janet_summary.slice(0,500)}\nTasks executed: ${executed}\n\nBrief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
+    `${memoryContract}\n\nLIVE FACTS (probed now, safe to state):\n${liveFacts}\n\nUNVERIFIED RECALL -- standup summary: ${standup.janet_summary.slice(0,500)}\n\nPrepare Kaan's morning brief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
 
   // ☀️ is also in prefixMessage()'s skip list, so this one arrived with NO product name at
   // all. Kaan receives briefs from more than one product; labelling it matches the standup
