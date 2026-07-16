@@ -104,7 +104,29 @@ const SEND_ALLOWED_COUNTRIES = ['US', 'GB', 'AU'] as const
 // this cannot.
 const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 
-const OUTBOUND_HARD_PAUSED = true
+// PS-INCIDENT-01 CLOSED 2026-07-16 — founder sign-off. All four conditions met and MEASURED:
+//
+//   1. Fabricator deleted at source. discoverMSPsViaGroq() asked an LLM at temperature 0.7 to
+//      "generate real MSP domains" and produced "James Thompson" in Cardiff, Manchester and
+//      New York simultaneously. Deleted, not disabled. 3,049 invented rows purged.
+//   2. Real discovery live. Google Maps via Outscraper: every lead traces to a listing a human
+//      can open, with a real address. 66 real MSPs queued, ~90% ICP hit rate.
+//   3. Enrichment MEASURED, not assumed: 23 of 25 = 92% named contacts via AnyMailFinder.
+//      My hypothesis was "better than ScrollFuel's 5.4%". The answer was 17x better. MSPs
+//      publish their people -- the founder said so days before the data did.
+//   4. Geo gate closed end-to-end. country populates from the Maps address (AU 13 / US 8 /
+//      null 2). The 2 nulls are unsendable BY CONSTRUCTION: an allowlist cannot match NULL.
+//      Canada excluded at DISCOVERY, not just at send (CASL, founder decision).
+//
+// Zero emails were sent while paused (outreach_sends = 0 for phishsimai across the incident).
+// The pause held, and it caught real mistakes twice -- it is why nobody emailed Dr Dennis
+// Gross about phishing simulation when ScrollFuel's fabricated leads surfaced in a shared table.
+//
+// Rails that remain live: DAILY_SEND_LIMIT = 20, the bounce-rate breaker (auto-pause), the
+// geo allowlist (fail-closed), and every finder failing LOUD rather than returning a silent
+// null. If this needs pausing again, set this back to true -- in CODE, not an env var. The
+// July-12 lesson on the other product was an env flag everyone believed was set and never was.
+const OUTBOUND_HARD_PAUSED = false
 
 export async function runFullSequence() {
   const sql = getSql()

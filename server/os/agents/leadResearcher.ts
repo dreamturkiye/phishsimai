@@ -24,9 +24,81 @@ async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
   )`
 }
 
+/**
+ * PS-ENRICH-02 — AnyMailFinder, promoted ahead of Hunter.
+ *
+ * Measured on ScrollFuel 2026-07-15 against 20 real qualified domains: AMF returned 11
+ * named, QEV-valid contacts (55%) versus 5.4% for free contact-page scraping. Hunter
+ * benchmarks ~37.6% AND requires a NAME we do not have -- Google Maps gives us a domain
+ * and nothing else (names on ~1 store in 56 measured). AMF's company-search takes a bare
+ * DOMAIN, which is the only input this pipeline reliably owns.
+ *
+ * Billing model matters here: AMF charges 1 credit for up to 20 emails on a domain, and
+ * ONLY when verified emails are found. Risky/unverified results are free. So a miss costs
+ * nothing and 66 MSPs costs ~66 credits of the 400 available.
+ *
+ * Missing key is LOUD, never a silent null (SF-ENRICH-03): a null from an unconfigured
+ * finder is byte-identical to an honest "this MSP has no discoverable contact", so a dead
+ * step reports as a healthy one that never finds anything. That exact bug cost a day.
+ */
+let amfKeyWarned = false
+
+async function enrichViaAnyMailFinder(domain: string): Promise<{ email: string; name: string | null; title: string | null } | null> {
+  const key = process.env.ANYMAILFINDER_API_KEY?.trim()
+  if (!key) {
+    if (!amfKeyWarned) {
+      amfKeyWarned = true
+      console.error('[amf] ANYMAILFINDER_API_KEY is NOT SET — enrichment is DISABLED, not empty. Every lookup returns null and that null means "not checked".')
+    }
+    return null
+  }
+  try {
+    // PS-ENRICH-02 FIX: endpoint + body + response shape copied VERBATIM from ScrollFuel's
+    // lib/leadgen/enrich.ts anyMailFinder(), which is measured at 55% on real domains.
+    // My first port guessed /v5.0/search/company.json and j.results[0].email from memory --
+    // every call 404'd, and a 404 is treated as "no verified email", so 25 real MSPs came
+    // back as 0 enriched and it looked like an honest miss. That is the exact defect this
+    // codebase has spent two days removing: a vendor failure wearing the costume of a real
+    // answer. Copy proven code; do not recall it.
+    const res = await fetch('https://api.anymailfinder.com/v5.1/find-email/company', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain, email_type: 'personal' }),
+      cache: 'no-store',
+    })
+    const body = await res.text().catch(() => '')
+    // 404 here genuinely means "no verified email for this domain" -- AMF only charges when
+    // it finds one, so a miss is free. 401 (bad key) / 402 (out of credits) are NOT misses.
+    if (res.status === 404) return null
+    if (!res.ok) {
+      console.error(`[amf] ${domain} FAILED status=${res.status} — VENDOR FAILURE, not "no email found". body=${body.slice(0, 200)}`)
+      return null
+    }
+    const d = JSON.parse(body || '{}') as { emails?: string[]; valid_emails?: string[]; email_status?: string }
+    const email = d.valid_emails?.[0] || d.emails?.[0]
+    if (!email) return null
+    return { email: String(email), name: null, title: null }
+  } catch (e: any) {
+    console.error(`[amf] ${domain} threw: ${String(e?.message || e).slice(0, 160)}`)
+    return null
+  }
+}
+
+let hunterKeyWarned = false
+
 async function enrichViaHunter(domain: string) {
   const key = process.env.HUNTER_API_KEY
-  if (!key) return null
+  if (!key) {
+    // PS-ENRICH-01: a MISSING KEY IS NOT "no contact found". null here is byte-identical to
+    // the honest "this MSP has no discoverable contact", so an unconfigured enricher reports
+    // as a working one that never finds anything. Same bug found and fixed on ScrollFuel
+    // (SF-ENRICH-03) where the key was EMPTY in prod and step 3 was silently dead.
+    if (!hunterKeyWarned) {
+      hunterKeyWarned = true
+      console.error('[hunter] HUNTER_API_KEY is NOT SET — enrichment is DISABLED, not empty. Every lookup returns null and that null means "not checked".')
+    }
+    return null
+  }
   try {
     const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${key}&limit=5`)
     const d = await res.json()
@@ -119,14 +191,17 @@ export async function runLeadResearcher(batchSize = 6) {
     stats.discovered = discover.discovered
 
     const pending = await sql`
-      SELECT id, domain, company_name FROM lead_research_queue
+      SELECT id, domain, company_name, research_data FROM lead_research_queue
       WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < 3
       ORDER BY created_at ASC LIMIT ${batchSize}`
 
     for (const item of pending) {
       try {
         await sql`UPDATE lead_research_queue SET status='researching', attempts=attempts+1, last_attempt_at=NOW() WHERE id=${item.id}`
-        const hunter = await enrichViaHunter(String(item.domain))
+        // AMF first: it takes a bare domain, which is all Google Maps gives us. Hunter needs
+        // a name and would return nothing for ~55 of every 56 leads here.
+        let hunter = await enrichViaAnyMailFinder(String(item.domain))
+        if (!hunter) hunter = await enrichViaHunter(String(item.domain))
 
         if (hunter?.email) {
           stats.enriched++
@@ -135,8 +210,14 @@ export async function runLeadResearcher(batchSize = 6) {
             stats.skipped++
             await sql`UPDATE lead_research_queue SET status='duplicate', updated_at=NOW() WHERE id=${item.id}`
           } else {
-            await sql`INSERT INTO ps_outreach_leads (email, name, company, title, source, pipeline_stage)
-              VALUES (${hunter.email}, ${hunter.name || item.company_name}, ${item.company_name || String(item.domain).split('.')[0]}, ${hunter.title || 'Owner'}, 'lead_researcher', 'prospect')
+            // PS-GEO-02: carry country_code from discovery into the column the send gate
+            // actually reads. Without this every lead lands country=NULL and PS-GEO-01
+            // blocks 100% of them -- correctly, but permanently. This is the last link.
+            // Google Maps gives 'GB', not 'United Kingdom of Great Britain and Northern
+            // Ireland'; the allowlist is ['US','GB','AU'] and only the short code matches.
+            const cc = (item.research_data as any)?.country_code ?? null
+            await sql`INSERT INTO ps_outreach_leads (email, name, company, title, source, pipeline_stage, country)
+              VALUES (${hunter.email}, ${hunter.name || item.company_name}, ${item.company_name || String(item.domain).split('.')[0]}, ${hunter.title || 'Owner'}, 'google_maps', 'prospect', ${cc})
               ON CONFLICT (email) DO NOTHING`
             stats.added++
             await sql`UPDATE lead_research_queue SET status='enriched', icp_score=72, updated_at=NOW() WHERE id=${item.id}`
