@@ -1,4 +1,5 @@
 import { Request, Response } from 'express'
+import { computeCleanDay, getAutonomyLevel, getCleanStreak, recordIncident } from './cleanDays'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
@@ -1071,3 +1072,62 @@ export async function telegramSetupWebhook(req: Request, res: Response) {
 }
 
 export { architectCode } from './architectCode'
+
+
+// PS-LADDER-01 (2026-07-16) -- clean-day ladder for PhishSim.
+//
+// cleanDays.ts copied VERBATIM from ScrollFuel's measured implementation. Copied, not
+// recalled: guessing AnyMailFinder's API from memory this same morning made 25 real MSPs
+// look like an honest 0% yield.
+//
+// The founder was right and my objection was hollow. I argued against building this while
+// PS-INCIDENT-01 was open because "the clock would read 0". A clock reading 0 during an open
+// incident is the clock TELLING THE TRUTH. Withholding an instrument because it would report
+// badly is the exact disease this OS keeps catching -- fourteen instruments reported health
+// they had not earned. The gate does the gating; it does not need help.
+//
+// SCOPING: computeCleanDay reads architect_tasks, which was UNSCOPED while
+// deploy_verifications and autonomy_incidents both filter by product. PhishSim and ScrollFuel
+// share one Neon database, so unscoped, ScrollFuel's 31 failed tasks would have voided
+// PhishSim's clean day forever -- a ladder unclimbable for another product's reasons.
+// architect_tasks.product_id added and backfilled to 'scrollfuel' the same day.
+//
+// This composes with, and does not replace, PhishSim's autonomyGate (manual->l2->l3->l4->l5,
+// HARD_STOPS, marcusBreaker). That gates WHAT an agent may do. This gates WHETHER the product
+// has earned more autonomy at all, measured in clean days.
+export async function architectAutonomy(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const sql = getSql()
+    const action = String(req.query.action || 'status')
+    if (action === 'compute') {
+      // Default YESTERDAY: a day is only judgeable once it is over. Computing "today" at
+      // 10am would call every day clean until something breaks after lunch.
+      const day = String(req.query.day || new Date(Date.now() - 86400000).toISOString().split('T')[0])
+      const result = await computeCleanDay(sql, 'phishsimai', day)
+      return res.json({ product: 'phishsimai', day, ...result })
+    }
+    const level = await getAutonomyLevel(sql, 'phishsimai')
+    const streak = await getCleanStreak(sql, 'phishsimai')
+    return res.json({ product: 'phishsimai', ...level, lastComputedDay: streak.lastComputedDay })
+  } catch (e: any) {
+    // Fail LOUD. An autonomy endpoint that 200s on error is an instrument reporting health it
+    // cannot verify -- precisely what this ladder exists to prevent.
+    return res.status(500).json({ ok: false, error: String(e?.message || e) })
+  }
+}
+
+/** File an incident. Any agent or human may file one; it voids the day, by design. */
+export async function architectIncident(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const { description, recordedBy } = (req.body || {}) as { description?: string; recordedBy?: string }
+    if (!description || !recordedBy) {
+      return res.status(400).json({ error: 'description and recordedBy required' })
+    }
+    await recordIncident(getSql(), 'phishsimai', String(description), String(recordedBy))
+    return res.json({ ok: true, recorded: description })
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) })
+  }
+}

@@ -17,7 +17,8 @@ import { registerTrackingRoutes } from "../email/tracker";
 import {
   cronSequence, cronJanet, cronWatchdog, cronHeartbeat,
   webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
-  v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk
+  v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk,
+  architectAutonomy, architectIncident
 } from '../os/routes';
 import { miaSpeak, miaFeedbackDigest } from '../mia/routes';
 import { mountMiaApi } from '../mia/vercelMount';
@@ -147,6 +148,10 @@ async function startServer() {
   });
 
   // ── Kaan AI OS v3.0 ─────────────────────────────────────────────────────
+  // PS-LADDER-01: clean-day ladder. GET ?action=status | ?action=compute&day=YYYY-MM-DD
+  // POST an incident to void a day. Both gated by okCronOrHq (CRON_SECRET or HQ_SECRET).
+  app.get("/api/architect/autonomy", architectAutonomy);
+  app.post("/api/architect/incident", architectIncident);
   app.get("/api/os/sequence", cronSequence);
   app.get("/api/os/janet", cronJanet);
   app.get("/api/os/watchdog", cronWatchdog);
