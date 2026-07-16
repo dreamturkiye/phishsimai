@@ -36,7 +36,7 @@ const FEATURES = [
 ];
 
 const COMPARISON = [
-  { feature: "Starting price per user/mo", phishsim: "$2", knowbe4: "$6", proofpoint: "$8", cofense: "$7" },
+  { feature: "Cost per user/mo (100 users)", phishsim: "$2.99", knowbe4: "$6", proofpoint: "$8", cofense: "$7" },
   { feature: "AI template generation", phishsim: true, knowbe4: false, proofpoint: false, cofense: false },
   { feature: "Multi-language (EN, ES, TR)", phishsim: true, knowbe4: false, proofpoint: false, cofense: false },
   { feature: "Compliance certificates", phishsim: true, knowbe4: false, proofpoint: true, cofense: false },
@@ -50,13 +50,24 @@ const COMPARISON = [
 const TESTIMONIALS = [
   { quote: "We had to demonstrate HIPAA compliance to our auditors. PhishSim AI gave us the simulation data, training records, and a signed certificate in one afternoon. Passed our audit with zero findings.", name: "Director of IT", company: "Regional Healthcare Network", employees: "340 employees", rating: 5 },
   { quote: "As an MSP we manage 47 clients. The white-label portal lets us run phishing programs for all of them from one place, under our own brand. Our clients think we built it ourselves.", name: "VP of Managed Services", company: "Mid-Atlantic MSP", employees: "47 client organizations", rating: 5 },
-  { quote: "KnowBe4 was $6/user/month and took three weeks to set up. PhishSim AI was running in 20 minutes at a third of the cost. The AI templates are actually better.", name: "IT Manager", company: "Manufacturing Company", employees: "210 employees", rating: 5 },
+  { quote: "KnowBe4 quoted us $6/user/month and took three weeks to set up. PhishSim AI was running in 20 minutes at half the per-user cost. The AI templates are actually better.", name: "IT Manager", company: "Manufacturing Company", employees: "210 employees", rating: 5 },
 ];
 
 const PLANS = [
-  { name: "Starter", price: "$2", period: "/user/mo", description: "Perfect for small teams getting started.", features: ["Up to 50 employees", "Unlimited campaigns", "AI template generator", "5 training modules", "Basic analytics", "Email support"], cta: "Start Free Trial", highlight: false },
-  { name: "Professional", price: "$4", period: "/user/mo", description: "The MSP-ready platform. White-label, multi-client, compliance-mapped.", features: ["Up to 500 employees", "Everything in Starter", "All 15+ training modules", "Compliance certificates (10 frameworks)", "Department analytics", "Gamification & leaderboards", "Multi-language campaigns", "Priority support"], cta: "Start Free Trial", highlight: true, badge: "Best for MSPs" },
-  { name: "Enterprise", price: "$6", period: "/user/mo", description: "Unlimited scale with MSP white-label.", features: ["Unlimited employees", "Everything in Professional", "MSP white-label portal", "Custom branding & domain", "Automated scheduling", "API access", "Dedicated account manager", "SLA guarantee"], cta: "Contact Sales", highlight: false },
+  // PS-PRICE-02: the real Stripe tiers. Mirrors client/src/pages/OrgSettings.tsx, which carries
+  // the live price_1Tner... IDs and is the founder-confirmed source of truth (2026-07-16).
+  //
+  // This page previously sold $2/$4/$6 PER USER -- the original 2024 end-user model, never
+  // migrated when pricing moved to flat MSP tiers. Every number below is per-MSP per month.
+  // If Stripe changes, this array and OrgSettings.tsx change in the SAME commit. Section-5
+  // hard stop: pricing is founder-only.
+  //
+  // perUser is DERIVED, not asserted: $299 / 100 seats = $2.99. It is the honest version of
+  // the "best in the industry" claim -- true from Growth up, level with KnowBe4 at Starter.
+  { name: "Starter", price: "$149", period: "/mo", perUser: "$5.96/user", description: "For the MSP taking on their first managed client.", features: ["1 client organization", "25 users", "5 phishing templates/mo", "AI template generator", "Basic analytics", "Email support"], cta: "Start Free Trial", highlight: false },
+  { name: "Growth", price: "$299", period: "/mo", perUser: "$2.99/user", description: "MSP-ready. Half the per-user cost of KnowBe4.", features: ["5 client organizations", "100 users", "15 templates/mo", "ConnectWise CSV import", "Click + open tracking", "Outlook phish-report add-in", "Priority support"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
+  { name: "Pro", price: "$749", period: "/mo", perUser: "$1.50/user", description: "Scale economics. A quarter of KnowBe4 per user.", features: ["20 client organizations", "500 users", "Unlimited templates", "HIPAA / SOC 2 / PCI reporting", "CRM integration", "Dedicated CSM"], cta: "Start Free Trial", highlight: false },
+  { name: "Enterprise", price: "$1,499", period: "/mo", perUser: "Unlimited seats", description: "Unlimited everything, under your own brand.", features: ["Unlimited client organizations", "Unlimited users", "White-label portal", "Custom domain", "API access", "SLA guarantee"], cta: "Contact Sales", highlight: false },
 ];
 
 const FAQS = [
@@ -281,6 +292,51 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Pricing */}
+      <section id="pricing" className="py-20 border-t border-border/40 bg-secondary/10">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">$1.50 per user</span>.</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — not per seat. KnowBe4 charges $6/user, Proofpoint $8, Cofense $7. At 100 users you pay <strong className="text-foreground">$2.99</strong>. At 500, <strong className="text-foreground">$1.50</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
+            {PLANS.map((plan) => (
+              <div key={plan.name} className={"rounded-2xl border p-7 flex flex-col relative " + (plan.highlight ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10" : "border-border/60 bg-card")}>
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-violet-600 text-white text-xs px-3">{plan.badge}</Badge>
+                  </div>
+                )}
+                <div className="mb-6">
+                  <div className="font-bold text-lg mb-1">{plan.name}</div>
+                  <div className="flex items-baseline gap-1 mb-2">
+                    <span className="text-4xl font-black">{plan.price}</span>
+                    <span className="text-muted-foreground text-sm">{plan.period}</span>
+                  <div className="text-xs text-violet-400 font-semibold mt-1">{plan.perUser}</div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{plan.description}</p>
+                </div>
+                <ul className="space-y-2.5 mb-8 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-muted-foreground">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
+                  {plan.cta}
+                </Button>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-xs text-muted-foreground mt-6">
+            Managing more than 20 client organizations?{" "}
+            <a href="mailto:sales@phishsimai.com" className="text-violet-400 hover:underline">Contact our sales team</a>
+          </p>
+        </div>
+      </section>
+
       {/* Features */}
       <section id="features" className="py-20 border-t border-border/40 bg-secondary/10">
         <div className="container">
@@ -498,50 +554,6 @@ export default function Home() {
               </Card>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-20 border-t border-border/40 bg-secondary/10">
-        <div className="container">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-black mb-4">Start free. Scale as you grow.</h2>
-            <p className="text-muted-foreground text-lg max-w-xl mx-auto">All plans include a 14-day free trial. No credit card required. Cancel anytime.</p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-            {PLANS.map((plan) => (
-              <div key={plan.name} className={"rounded-2xl border p-7 flex flex-col relative " + (plan.highlight ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10" : "border-border/60 bg-card")}>
-                {plan.badge && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-violet-600 text-white text-xs px-3">{plan.badge}</Badge>
-                  </div>
-                )}
-                <div className="mb-6">
-                  <div className="font-bold text-lg mb-1">{plan.name}</div>
-                  <div className="flex items-baseline gap-1 mb-2">
-                    <span className="text-4xl font-black">{plan.price}</span>
-                    <span className="text-muted-foreground text-sm">{plan.period}</span>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{plan.description}</p>
-                </div>
-                <ul className="space-y-2.5 mb-8 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-muted-foreground">{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
-                  {plan.cta}
-                </Button>
-              </div>
-            ))}
-          </div>
-          <p className="text-center text-xs text-muted-foreground mt-6">
-            Need MSP pricing for 10+ organizations?{" "}
-            <a href="mailto:sales@phishsimai.com" className="text-violet-400 hover:underline">Contact our sales team</a>
-          </p>
         </div>
       </section>
 
