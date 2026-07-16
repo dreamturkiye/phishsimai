@@ -125,6 +125,13 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/janet/report" && method === "get") return routes.janetReport(req, res);
     if (path === "/api/os/architect/breaker") return routes.breakerEndpoint(req, res);
     if (path === "/api/os/architect/pending" && method === "get") return routes.architectPending(req, res);
+    // PS-LADDER-01: clean-day ladder. Mounted HERE, not in server/_core/index.ts -- that
+    // Express app is the LOCAL dev server and never runs on Vercel. Production enters via
+    // api/index.js -> api/handler.ts, which routes by explicit path match. A route mounted
+    // in _core is a route that 404s in prod, which is how "mountProductApi defined but never
+    // called" happened: code that exists, looks wired, and is unreachable.
+    if (path === "/api/os/architect/autonomy" && method === "get") return routes.architectAutonomy(req, res);
+    if (path === "/api/os/architect/incident" && method === "post") return routes.architectIncident(req, res);
     if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);
     if (path === "/api/os/architect/complete" && method === "post") return routes.architectComplete(req, res);
