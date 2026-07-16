@@ -62,7 +62,14 @@ export async function learnFromOutcome(companyId: string, action: string, outcom
 export async function seedPhishSimMemory() {
   const entries: MemoryEntry[] = [
     { company_id:'phishsimai', type:'company', key:'product', value:'AI-powered phishing simulation + security awareness training for MSPs and IT teams. Automated campaigns, real-time reporting, staff training post-click.', confidence:1, source:'founder' },
-    { company_id:'phishsimai', type:'company', key:'pricing', value:'Starter $99/mo (100 users), Growth $249/mo (500 users), Pro $499/mo (2000 users), Unlimited $999/mo. 20% annual discount.', confidence:1, source:'founder' },
+    // PS-PRICE-01: this seed carried Starter $99/Growth $249/Pro $499/Unlimited $999 with
+    // 100/500/2000 seats at confidence:1, source:'founder' -- numbers that never existed in
+    // Stripe. Janet quoted them to prospects and to Super Janet for weeks, and Finn built a
+    // 30-day revenue forecast on a FOURTH set ($149/$399/$799/$1499). A seeded belief marked
+    // 'founder' at confidence 1 is indistinguishable from fact to every agent downstream, so
+    // it is never checked. Pricing is a §5 founder hard stop: if Stripe changes, THIS LINE
+    // changes in the same commit, or the OS starts selling a product that does not exist.
+    { company_id:'phishsimai', type:'company', key:'pricing', value:'Starter $149/mo or $1490/yr (1 client org, 25 users, 5 templates/mo). Growth $299/mo or $2990/yr (5 client orgs, 100 users, 15 templates/mo) - Most Popular. Pro $749/mo or $7490/yr (20 client orgs, 500 users, unlimited templates). Enterprise $1499/mo or $14990/yr (unlimited client orgs, unlimited users). Annual billing saves 17%. No free tier is sold; \"free\" is only the post-cancellation state. SOURCE OF TRUTH: Stripe, mirrored in client/src/pages/OrgSettings.tsx (live price_1Tner... IDs). Never quote other numbers.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'company', key:'icp', value:'MSP owners and IT Directors at SMBs 50-500 employees. Compliance-driven buyers: SOC2, HIPAA, PCI, ISO27001.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'company', key:'differentiator', value:'AI-generated phishing templates that evolve weekly. 10-minute setup. White-label for MSPs. Automated training post-click.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'company', key:'domain', value:'phishsimai.com — Resend verified, sarah@phishsimai.com outbound sender', confidence:1, source:'system' },
