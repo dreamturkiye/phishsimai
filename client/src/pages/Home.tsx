@@ -223,6 +223,89 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Pricing */}
+      <section id="pricing" className="py-20 border-t border-border/40 bg-secondary/10">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">$1.50 per user</span>.</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — not per seat. KnowBe4 charges $6/user, Proofpoint $8, Cofense $7. At 100 users you pay <strong className="text-foreground">$2.99</strong>. At 500, <strong className="text-foreground">$1.50</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
+            {PLANS.map((plan) => (
+              <div key={plan.name} className={"rounded-2xl border p-7 flex flex-col relative " + (plan.highlight ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10" : "border-border/60 bg-card")}>
+                {plan.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                    <Badge className="bg-violet-600 text-white text-xs px-3">{plan.badge}</Badge>
+                  </div>
+                )}
+                <div className="mb-6">
+                  <div className="font-bold text-lg mb-1">{plan.name}</div>
+                  <div className="flex items-baseline gap-1 mb-2">
+                    <span className="text-4xl font-black">{plan.price}</span>
+                    <span className="text-muted-foreground text-sm">{plan.period}</span>
+                  <div className="text-xs text-violet-400 font-semibold mt-1">{plan.perUser}</div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{plan.description}</p>
+                </div>
+                <ul className="space-y-2.5 mb-8 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-muted-foreground">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
+                  {plan.cta}
+                </Button>
+              </div>
+            ))}
+          </div>
+          {/* PS-PRICE-04: full capability matrix. The cards carry the 6-8 differentiators a
+              buyer scans; this is the row-by-row for the buyer who is comparing seriously.
+              Same data source either way -- a card and this table can never disagree. */}
+          <div className="max-w-6xl mx-auto mt-14">
+            <h3 className="text-center text-lg font-bold mb-6">Compare every feature</h3>
+            <div className="overflow-x-auto rounded-2xl border border-border/60">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead>
+                  <tr className="border-b border-border/60 bg-secondary/30">
+                    <th className="text-left p-4 font-semibold">Feature</th>
+                    <th className="p-4 font-semibold">Starter</th>
+                    <th className="p-4 font-semibold text-violet-400">Growth</th>
+                    <th className="p-4 font-semibold">Pro</th>
+                    <th className="p-4 font-semibold">Enterprise</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {FEATURE_MATRIX.map((row, i) => (
+                    <tr key={row.feature} className={"border-b border-border/40 last:border-0 " + (i % 2 ? "bg-secondary/10" : "")}>
+                      <td className="p-4 text-muted-foreground">{row.feature}</td>
+                      {([row.starter, row.growth, row.pro, row.enterprise] as (string | boolean)[]).map((cell, j) => (
+                        <td key={j} className={"p-4 text-center " + (j === 1 ? "bg-violet-500/5" : "")}>
+                          {cell === false ? (
+                            <span className="text-muted-foreground/40">—</span>
+                          ) : cell === true ? (
+                            <Check className="w-4 h-4 text-violet-400 mx-auto" />
+                          ) : (
+                            <span className="font-medium">{cell}</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p className="text-center text-xs text-muted-foreground mt-6">
+            Managing more than 20 client organizations?{" "}
+            <a href="mailto:sales@phishsimai.com" className="text-violet-400 hover:underline">Contact our sales team</a>
+          </p>
+        </div>
+      </section>
+
       {/* Mandatory Compliance */}
       <section id="compliance" className="py-20 bg-red-950/10">
         <div className="container">
@@ -308,89 +391,6 @@ export default function Home() {
               </div>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Pricing */}
-      <section id="pricing" className="py-20 border-t border-border/40 bg-secondary/10">
-        <div className="container">
-          <div className="text-center mb-12">
-            <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">$1.50 per user</span>.</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — not per seat. KnowBe4 charges $6/user, Proofpoint $8, Cofense $7. At 100 users you pay <strong className="text-foreground">$2.99</strong>. At 500, <strong className="text-foreground">$1.50</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
-            {PLANS.map((plan) => (
-              <div key={plan.name} className={"rounded-2xl border p-7 flex flex-col relative " + (plan.highlight ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10" : "border-border/60 bg-card")}>
-                {plan.badge && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-violet-600 text-white text-xs px-3">{plan.badge}</Badge>
-                  </div>
-                )}
-                <div className="mb-6">
-                  <div className="font-bold text-lg mb-1">{plan.name}</div>
-                  <div className="flex items-baseline gap-1 mb-2">
-                    <span className="text-4xl font-black">{plan.price}</span>
-                    <span className="text-muted-foreground text-sm">{plan.period}</span>
-                  <div className="text-xs text-violet-400 font-semibold mt-1">{plan.perUser}</div>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{plan.description}</p>
-                </div>
-                <ul className="space-y-2.5 mb-8 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                      <span className="text-muted-foreground">{f}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
-                  {plan.cta}
-                </Button>
-              </div>
-            ))}
-          </div>
-          {/* PS-PRICE-04: full capability matrix. The cards carry the 6-8 differentiators a
-              buyer scans; this is the row-by-row for the buyer who is comparing seriously.
-              Same data source either way -- a card and this table can never disagree. */}
-          <div className="max-w-6xl mx-auto mt-14">
-            <h3 className="text-center text-lg font-bold mb-6">Compare every feature</h3>
-            <div className="overflow-x-auto rounded-2xl border border-border/60">
-              <table className="w-full text-sm min-w-[640px]">
-                <thead>
-                  <tr className="border-b border-border/60 bg-secondary/30">
-                    <th className="text-left p-4 font-semibold">Feature</th>
-                    <th className="p-4 font-semibold">Starter</th>
-                    <th className="p-4 font-semibold text-violet-400">Growth</th>
-                    <th className="p-4 font-semibold">Pro</th>
-                    <th className="p-4 font-semibold">Enterprise</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {FEATURE_MATRIX.map((row, i) => (
-                    <tr key={row.feature} className={"border-b border-border/40 last:border-0 " + (i % 2 ? "bg-secondary/10" : "")}>
-                      <td className="p-4 text-muted-foreground">{row.feature}</td>
-                      {([row.starter, row.growth, row.pro, row.enterprise] as (string | boolean)[]).map((cell, j) => (
-                        <td key={j} className={"p-4 text-center " + (j === 1 ? "bg-violet-500/5" : "")}>
-                          {cell === false ? (
-                            <span className="text-muted-foreground/40">—</span>
-                          ) : cell === true ? (
-                            <Check className="w-4 h-4 text-violet-400 mx-auto" />
-                          ) : (
-                            <span className="font-medium">{cell}</span>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <p className="text-center text-xs text-muted-foreground mt-6">
-            Managing more than 20 client organizations?{" "}
-            <a href="mailto:sales@phishsimai.com" className="text-violet-400 hover:underline">Contact our sales team</a>
-          </p>
         </div>
       </section>
 
