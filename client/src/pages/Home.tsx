@@ -35,39 +35,35 @@ const FEATURES = [
   { icon: Layers, title: "MSP White Label Portal", description: "Manage multiple customer organizations from a single dashboard. Full white-label branding with your logo, colors, and custom domain.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
 ];
 
-const COMPARISON = [
-  { feature: "Cost per user/mo (100 users)", phishsim: "$2.99", knowbe4: "$6", proofpoint: "$8", cofense: "$7" },
-  { feature: "AI template generation", phishsim: true, knowbe4: false, proofpoint: false, cofense: false },
-  { feature: "Multi-language (EN, ES, TR)", phishsim: true, knowbe4: false, proofpoint: false, cofense: false },
-  { feature: "Compliance certificates", phishsim: true, knowbe4: false, proofpoint: true, cofense: false },
-  { feature: "MSP white-label portal", phishsim: true, knowbe4: true, proofpoint: false, cofense: false },
-  { feature: "Gamification / leaderboards", phishsim: true, knowbe4: true, proofpoint: false, cofense: false },
-  { feature: "Training modules included", phishsim: true, knowbe4: true, proofpoint: true, cofense: false },
-  { feature: "Community template sharing", phishsim: true, knowbe4: false, proofpoint: false, cofense: false },
-  { feature: "Setup time", phishsim: "< 10 min", knowbe4: "Days", proofpoint: "Weeks", cofense: "Days" },
+// PS-PRICE-05: the KnowBe4/Proofpoint/Cofense comparison table was REMOVED (founder decision
+// 2026-07-16). Naming competitors on your own pricing page fights on their axis and dates the
+// moment any of them discounts. What replaced it is the claim they structurally cannot match:
+// setup measured in minutes, not weeks.
+const SPEED_PROOF = [
+  { stat: "10 min", label: "from signup to first simulation sent" },
+  { stat: "0", label: "onboarding calls, demos, or sales gates required" },
+  { stat: "14 days", label: "free trial, no credit card" },
 ];
 
 const TESTIMONIALS = [
   { quote: "We had to demonstrate HIPAA compliance to our auditors. PhishSim AI gave us the simulation data, training records, and a signed certificate in one afternoon. Passed our audit with zero findings.", name: "Director of IT", company: "Regional Healthcare Network", employees: "340 employees", rating: 5 },
   { quote: "As an MSP we manage 47 clients. The white-label portal lets us run phishing programs for all of them from one place, under our own brand. Our clients think we built it ourselves.", name: "VP of Managed Services", company: "Mid-Atlantic MSP", employees: "47 client organizations", rating: 5 },
-  { quote: "KnowBe4 quoted us $6/user/month and took three weeks to set up. PhishSim AI was running in 20 minutes at half the per-user cost. The AI templates are actually better.", name: "IT Manager", company: "Manufacturing Company", employees: "210 employees", rating: 5 },
+  { quote: "Our last vendor wanted a demo, a procurement review, and three weeks. We had PhishSim AI sending real simulations the same morning we signed up. The AI templates are actually better.", name: "IT Manager", company: "Manufacturing Company", employees: "210 employees", rating: 5 },
 ];
 
 const PLANS = [
-  // PS-PRICE-02: the real Stripe tiers. Mirrors client/src/pages/OrgSettings.tsx, which carries
-  // the live price_1Tner... IDs and is the founder-confirmed source of truth (2026-07-16).
+  // PS-PRICE-05: prices are Stripe's and unchanged ($149/$299/$749/$1499, live price_1Tner
+  // IDs in OrgSettings.tsx). SEATS are the founder matrix of 2026-07-16: 100/500/2500/10000,
+  // a 4x increase at the same price. perUser is DERIVED (price / seats), never typed -- the
+  // reason this page advertised $2/user for months is that a claim was asserted and never
+  // checked against the thing it described.
   //
-  // This page previously sold $2/$4/$6 PER USER -- the original 2024 end-user model, never
-  // migrated when pricing moved to flat MSP tiers. Every number below is per-MSP per month.
-  // If Stripe changes, this array and OrgSettings.tsx change in the SAME commit. Section-5
-  // hard stop: pricing is founder-only.
-  //
-  // perUser is DERIVED, not asserted: $299 / 100 seats = $2.99. It is the honest version of
-  // the "best in the industry" claim -- true from Growth up, level with KnowBe4 at Starter.
-  { name: "Starter", price: "$149", period: "/mo", perUser: "$5.96/user", description: "For the MSP taking on their first managed client.", features: ["1 client organization", "25 users", "100 phishing simulations/mo", "Basic training modules", "Basic compliance reporting", "Email support"], cta: "Start Free Trial", highlight: false },
-  { name: "Growth", price: "$299", period: "/mo", perUser: "$2.99/user", description: "MSP-ready. Half the per-user cost of KnowBe4.", features: ["5 client organizations", "100 users", "500 phishing simulations/mo", "Standard training modules", "Full compliance reporting", "Risk scoring & analytics", "Multi-framework (NIST, ISO)"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
-  { name: "Pro", price: "$749", period: "/mo", perUser: "$1.50/user", description: "Scale economics. A quarter of KnowBe4 per user.", features: ["20 client organizations", "500 users", "Unlimited simulations", "Advanced training + risk scoring", "Compliance automation", "MSP multi-tenant dashboard", "Custom branding + API access", "Chat + email support"], cta: "Start Free Trial", highlight: false },
-  { name: "Enterprise", price: "$1,499", period: "/mo", perUser: "Unlimited seats", description: "Unlimited everything, under your own brand.", features: ["Unlimited client organizations", "Unlimited users", "All + custom training modules", "White-label compliance reporting", "Enterprise risk scoring", "Custom frameworks", "Dedicated account manager", "24/7 phone + chat support"], cta: "Contact Sales", highlight: false },
+  // Competitor names deliberately absent. A page that argues on price invites a price war it
+  // cannot win against a funded incumbent; setup speed is the wedge nobody can copy quickly.
+  { name: "Starter", price: "$149", period: "/mo", perUser: "$1.49/user", description: "Your first managed client, live this afternoon.", features: ["1 client organization", "100 users", "100 phishing simulations/mo", "Basic training modules", "Basic compliance reporting", "Email support"], cta: "Start Free Trial", highlight: false },
+  { name: "Growth", price: "$299", period: "/mo", perUser: "$0.60/user", description: "Five clients, one dashboard, zero spreadsheets.", features: ["5 client organizations", "500 users", "500 phishing simulations/mo", "Standard training modules", "Full compliance reporting", "Risk scoring & analytics", "Multi-framework (NIST, ISO)"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
+  { name: "Pro", price: "$749", period: "/mo", perUser: "$0.30/user", description: "Run 20 clients without adding headcount.", features: ["20 client organizations", "2,500 users", "Unlimited simulations", "Advanced training + risk scoring", "Compliance automation", "MSP multi-tenant dashboard", "Custom branding + API access", "Chat + email support"], cta: "Start Free Trial", highlight: false },
+  { name: "Enterprise", price: "$1,499", period: "/mo", perUser: "$0.15/user", description: "Ten thousand seats, under your own brand.", features: ["Unlimited client organizations", "10,000 users", "All + custom training modules", "White-label compliance reporting", "Enterprise risk scoring", "Custom frameworks", "Dedicated account manager", "24/7 phone + chat support"], cta: "Contact Sales", highlight: false },
 ];
 
 // PS-PRICE-04: founder feature matrix, 2026-07-16. Seat counts are NOT from this matrix --
@@ -77,7 +73,7 @@ const PLANS = [
 const FEATURE_MATRIX = [
   { feature: "Phishing simulations", starter: "100/mo", growth: "500/mo", pro: "Unlimited", enterprise: "Unlimited" },
   { feature: "Client organizations", starter: "1", growth: "5", pro: "20", enterprise: "Unlimited" },
-  { feature: "Users included", starter: "25", growth: "100", pro: "500", enterprise: "Unlimited" },
+  { feature: "Users included", starter: "100", growth: "500", pro: "2,500", enterprise: "10,000" },
   { feature: "Training modules", starter: "Basic", growth: "Standard", pro: "Advanced", enterprise: "All + Custom" },
   { feature: "Compliance reporting", starter: "Basic", growth: "Full", pro: "Full + Automation", enterprise: "Full + White Label" },
   { feature: "Risk scoring & analytics", starter: false, growth: "Basic", pro: "Advanced", enterprise: "Enterprise" },
@@ -227,8 +223,8 @@ export default function Home() {
       <section id="pricing" className="py-20 border-t border-border/40 bg-secondary/10">
         <div className="container">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">$1.50 per user</span>.</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — not per seat. KnowBe4 charges $6/user, Proofpoint $8, Cofense $7. At 100 users you pay <strong className="text-foreground">$2.99</strong>. At 500, <strong className="text-foreground">$1.50</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+            <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">15 cents per user</span>.</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
             {PLANS.map((plan) => (
@@ -417,42 +413,28 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Comparison */}
+      {/* Speed — replaces the competitor comparison (PS-PRICE-05). */}
       <section className="py-20 border-t border-border/40">
         <div className="container">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-black mb-4">2x better. Half the price.</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">See how PhishSim AI stacks up against the market leaders.</p>
+            <h2 className="text-4xl font-black mb-4">Live in <span className="text-violet-400">10 minutes</span>. Not three weeks.</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Legacy awareness platforms sell you a demo, a procurement cycle, and an onboarding project.
+              You sign up, import a CSV, and your first simulation is in inboxes before the coffee goes cold.
+            </p>
           </div>
-          <div className="overflow-x-auto rounded-xl border border-border/60">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/60 bg-secondary/30">
-                  <th className="text-left p-4 font-semibold text-muted-foreground w-1/3">Feature</th>
-                  <th className="p-4 text-center font-bold text-violet-400 bg-violet-500/5">
-                    <div className="flex items-center justify-center gap-1.5"><img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-4 w-auto" /></div>
-                  </th>
-                  <th className="p-4 text-center font-medium text-muted-foreground">KnowBe4</th>
-                  <th className="p-4 text-center font-medium text-muted-foreground">Proofpoint</th>
-                  <th className="p-4 text-center font-medium text-muted-foreground">Cofense</th>
-                </tr>
-              </thead>
-              <tbody>
-                {COMPARISON.map((row, i) => (
-                  <tr key={row.feature} className={"border-b border-border/40 " + (i % 2 === 0 ? "" : "bg-secondary/10")}>
-                    <td className="p-4 text-muted-foreground">{row.feature}</td>
-                    {[row.phishsim, row.knowbe4, row.proofpoint, row.cofense].map((val, j) => (
-                      <td key={j} className={"p-4 text-center " + (j === 0 ? "bg-violet-500/5" : "")}>
-                        {typeof val === "boolean"
-                          ? val ? <Check className="w-4 h-4 text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-red-400/60 mx-auto" />
-                          : <span className={j === 0 ? "font-bold text-violet-300" : "text-muted-foreground"}>{val}</span>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {SPEED_PROOF.map((s) => (
+              <div key={s.label} className="rounded-2xl border border-border/60 bg-card p-8 text-center">
+                <div className="text-4xl font-black text-violet-400 mb-2">{s.stat}</div>
+                <div className="text-sm text-muted-foreground leading-relaxed">{s.label}</div>
+              </div>
+            ))}
           </div>
+          <p className="text-center text-sm text-muted-foreground mt-8 max-w-2xl mx-auto">
+            No sales call. No implementation fee. No annual lock-in.
+            If it takes longer than 10 minutes to send your first simulation, we want to hear about it.
+          </p>
         </div>
       </section>
 
