@@ -1,4 +1,5 @@
 import { getSql } from '../conn'
+import { discoverMspsForCity } from './mapsDiscovery'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
 
@@ -38,32 +39,73 @@ async function enrichViaHunter(domain: string) {
   } catch { return null }
 }
 
-export async function runLeadDiscover(_batchSize = 8) {
-  // PS-LEADGEN-V2 Phase 0 -- LLM "discovery" DELETED.
-  //
-  // This called discoverMSPsViaGroq(), which asked an LLM at temperature 0.7 to
-  // "Generate N real MSP or MSSP company domains". A language model holds no registry of
-  // MSPs; it pattern-matches plausible ones. It emitted the same person ("James Thompson")
-  // in Cardiff, Manchester and New York at once and filled lead_research_queue with ~2,996
-  // invented rows, which Aria then sequenced. That is why outbound is hard-paused
-  // (PS-INCIDENT-01).
-  //
-  // No prompt repairs this. Fabrication was not a bug in the mechanism -- it WAS the
-  // mechanism. Phase 1 replaces it with sources a human can go and verify: the UK Cyber
-  // Essentials register, CompTIA / MSPAlliance directories, Clutch, and Google Maps via
-  // Outscraper. Every lead will carry a `source` naming a real place and a `country`
-  // derived from a real address signal -- never guessed, never generated.
-  //
-  // Until then this returns ZERO and says why. An empty queue is honest; a queue full of
-  // fiction is what got us here.
+/**
+ * PS-LEADGEN-V2 Phase 1 — the ICP walk. US / UK / AU only.
+ *
+ * CANADA IS ABSENT BY FOUNDER DECISION (2026-07-15), and absent at DISCOVERY, not just at
+ * send. CASL is the strictest of the four regimes -- express or time-limited implied
+ * consent, no broad B2B carve-out, real penalties. A Canadian MSP is never queried, never
+ * queued, never enriched. The geo gate (PS-GEO-01) is the second line, not the first.
+ */
+const ICP_CITIES: Array<[string, string, string]> = [
+  // United Kingdom
+  ['London', 'England', 'United Kingdom'],
+  ['Manchester', 'England', 'United Kingdom'],
+  ['Birmingham', 'England', 'United Kingdom'],
+  ['Leeds', 'England', 'United Kingdom'],
+  ['Bristol', 'England', 'United Kingdom'],
+  ['Glasgow', 'Scotland', 'United Kingdom'],
+  ['Edinburgh', 'Scotland', 'United Kingdom'],
+  ['Cardiff', 'Wales', 'United Kingdom'],
+  ['Liverpool', 'England', 'United Kingdom'],
+  ['Nottingham', 'England', 'United Kingdom'],
+  // United States
+  ['New York', 'New York', 'United States'],
+  ['Los Angeles', 'California', 'United States'],
+  ['Chicago', 'Illinois', 'United States'],
+  ['Houston', 'Texas', 'United States'],
+  ['Dallas', 'Texas', 'United States'],
+  ['Austin', 'Texas', 'United States'],
+  ['Atlanta', 'Georgia', 'United States'],
+  ['Miami', 'Florida', 'United States'],
+  ['Phoenix', 'Arizona', 'United States'],
+  ['Denver', 'Colorado', 'United States'],
+  ['Seattle', 'Washington', 'United States'],
+  ['Boston', 'Massachusetts', 'United States'],
+  ['Philadelphia', 'Pennsylvania', 'United States'],
+  ['Charlotte', 'North Carolina', 'United States'],
+  ['Minneapolis', 'Minnesota', 'United States'],
+  // Australia
+  ['Sydney', 'New South Wales', 'Australia'],
+  ['Melbourne', 'Victoria', 'Australia'],
+  ['Brisbane', 'Queensland', 'Australia'],
+  ['Perth', 'Western Australia', 'Australia'],
+  ['Adelaide', 'South Australia', 'Australia'],
+]
+
+/**
+ * ONE city per run, chosen by day-of-year. Deterministic, stateless, and self-pacing:
+ * 30 cities x ~20 places = ~600 places/month, which is roughly the Outscraper free tier.
+ * The pace is a property of the design, not a limit someone has to remember to enforce.
+ *
+ * Re-running the same day is free: UNIQUE(company_id, domain) makes the insert idempotent,
+ * and measured overlap is real (Seriun and AAG appeared under two different queries).
+ */
+export async function runLeadDiscover(limit = 20) {
   const start = Date.now()
-  const result = {
-    discovered: 0,
-    candidates: 0,
-    disabled: 'PS-LEADGEN-V2 Phase 0: LLM discovery deleted. Real sources land in Phase 1.',
+  const dayOfYear = Math.floor((Date.now() - Date.UTC(new Date().getUTCFullYear(), 0, 0)) / 86400000)
+  const [city, region, country] = ICP_CITIES[dayOfYear % ICP_CITIES.length]
+  try {
+    const r = await discoverMspsForCity('managed service provider', city, region, country, limit)
+    const result = { discovered: r.queued, candidates: r.found, icp: r.icp, city, country, noGeo: r.skippedNoGeo }
+    await reportAgentRun('discover', true, { ...result, duration_ms: Date.now() - start })
+    return result
+  } catch (e: any) {
+    // LOUD. A dead vendor must never read as "no MSPs in this city" -- that mistake is what
+    // let 3,000 fabricated leads look like a working pipeline.
+    await reportAgentRun('discover', false, { city, country }, e?.message)
+    return { discovered: 0, candidates: 0, error: e?.message, city, country }
   }
-  await reportAgentRun('discover', true, { ...result, duration_ms: Date.now() - start })
-  return result
 }
 
 export async function runLeadResearcher(batchSize = 6) {
