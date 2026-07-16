@@ -5,23 +5,50 @@ import { linkStripeCustomerToLead } from "../os/crmLink";
 
 type StripePlan = "free" | "starter" | "growth" | "pro" | "unlimited" | "enterprise";
 
+/**
+ * PS-BILL-01: build the price->plan map from ONLY the env vars that are actually set.
+ *
+ * This used to write `[process.env.X ?? "starter_id"]: "starter"` -- so an unset var did not
+ * vanish, it inserted a junk key literally named "starter_id". The map looked populated while
+ * being blind, which is how a lookup miss became invisible.
+ *
+ * ENTERPRISE WAS MISSING ENTIRELY. The map knew starter/growth/pro/unlimited; the UI sells
+ * "Enterprise" ($1,499, price_1Tnerh...). An Enterprise purchase therefore fell through to the
+ * `?? "starter"` default and the customer paid $1,499 for 1 client org and 25 users. Both
+ * names are now accepted: Stripe's product is called Enterprise, the code's StripePlan type
+ * has carried 'unlimited' since before the rename.
+ */
 function buildPriceMap(): Record<string, StripePlan> {
-  return {
-    [process.env.STRIPE_STARTER_PRICE_ID ?? "starter_id"]: "starter",
-    [process.env.STRIPE_GROWTH_PRICE_ID ?? "growth_id"]: "growth",
-    [process.env.STRIPE_PRO_PRICE_ID ?? "pro_id"]: "pro",
-    [process.env.STRIPE_UNLIMITED_PRICE_ID ?? "unlimited_id"]: "unlimited",
-    [process.env.STRIPE_STARTER_MONTHLY_PRICE_ID ?? "starter_monthly"]: "starter",
-    [process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID ?? "growth_monthly"]: "growth",
-    [process.env.STRIPE_PRO_MONTHLY_PRICE_ID ?? "pro_monthly"]: "pro",
-    [process.env.STRIPE_UNLIMITED_MONTHLY_PRICE_ID ?? "unlimited_monthly"]: "unlimited",
-    [process.env.STRIPE_STARTER_ANNUAL_PRICE_ID ?? "starter_annual"]: "starter",
-    [process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID ?? "growth_annual"]: "growth",
-    [process.env.STRIPE_PRO_ANNUAL_PRICE_ID ?? "pro_annual"]: "pro",
-    [process.env.STRIPE_UNLIMITED_ANNUAL_PRICE_ID ?? "unlimited_annual"]: "unlimited",
-    [process.env.STRIPE_PRICE_BASIC ?? "basic_id"]: "starter",
-    [process.env.STRIPE_PRICE_PRO ?? "legacy_pro_id"]: "pro",
-  };
+  const pairs: Array<[string | undefined, StripePlan]> = [
+    [process.env.STRIPE_STARTER_PRICE_ID, "starter"],
+    [process.env.STRIPE_STARTER_MONTHLY_PRICE_ID, "starter"],
+    [process.env.STRIPE_STARTER_ANNUAL_PRICE_ID, "starter"],
+    [process.env.STRIPE_GROWTH_PRICE_ID, "growth"],
+    [process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID, "growth"],
+    [process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID, "growth"],
+    [process.env.STRIPE_PRO_PRICE_ID, "pro"],
+    [process.env.STRIPE_PRO_MONTHLY_PRICE_ID, "pro"],
+    [process.env.STRIPE_PRO_ANNUAL_PRICE_ID, "pro"],
+    // Enterprise == Unlimited. Stripe names it Enterprise; the type predates the rename.
+    [process.env.STRIPE_ENTERPRISE_PRICE_ID, "enterprise"],
+    [process.env.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID, "enterprise"],
+    [process.env.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID, "enterprise"],
+    [process.env.STRIPE_UNLIMITED_PRICE_ID, "enterprise"],
+    [process.env.STRIPE_UNLIMITED_MONTHLY_PRICE_ID, "enterprise"],
+    [process.env.STRIPE_UNLIMITED_ANNUAL_PRICE_ID, "enterprise"],
+    // legacy
+    [process.env.STRIPE_PRICE_BASIC, "starter"],
+    [process.env.STRIPE_PRICE_PRO, "pro"],
+  ];
+  const map: Record<string, StripePlan> = {};
+  for (const [id, plan] of pairs) {
+    const key = id?.trim();
+    if (key) map[key] = plan;
+  }
+  if (Object.keys(map).length === 0) {
+    console.error("[Webhook] PS-BILL-01: price map is EMPTY — no STRIPE_*_PRICE_ID env vars are set. Every purchase will be rejected until they are.");
+  }
+  return map;
 }
 
 /** Stripe webhook — must be registered before express.json(). */
@@ -67,7 +94,24 @@ export function registerStripeWebhook(app: Express): void {
           const priceId = session.metadata?.price_id ?? "";
           const stripeSubscriptionId = session.subscription ?? "";
           const stripeCustomerId = session.customer ?? "";
-          const plan = priceMap[priceId] ?? "starter";
+          // PS-BILL-01: FAIL LOUD, NEVER GUESS. This read `?? "starter"` -- an unknown price
+          // silently granted the CHEAPEST plan, so a $1,499 Enterprise customer received 25
+          // seats and nobody found out. A billing path that guesses is worse than one that
+          // stops: a customer with no access emails you within minutes, a customer with the
+          // wrong access never does.
+          //
+          // Returning 400 makes Stripe retry and surfaces the failure in their dashboard.
+          // The charge already succeeded, so this is deliberately noisy: we would rather owe
+          // a customer an apology and an activation than quietly under-provision them.
+          const plan = priceMap[priceId];
+          if (!plan) {
+            console.error(
+              `[Webhook] PS-BILL-01: UNKNOWN PRICE ID "${priceId}" for org ${orgId ?? "?"} — REFUSING to guess a plan. ` +
+                `Known price IDs: ${Object.keys(priceMap).join(", ") || "NONE"}. ` +
+                `The customer HAS been charged and is NOT activated. Add the price ID to the STRIPE_*_PRICE_ID env and replay this event from the Stripe dashboard.`,
+            );
+            return res.status(400).json({ error: "unknown_price_id", priceId });
+          }
 
           if (orgId) {
             await updateOrgStripeSubscription(parseInt(orgId, 10), {
