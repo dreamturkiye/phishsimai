@@ -64,11 +64,30 @@ const PLANS = [
   //
   // perUser is DERIVED, not asserted: $299 / 100 seats = $2.99. It is the honest version of
   // the "best in the industry" claim -- true from Growth up, level with KnowBe4 at Starter.
-  { name: "Starter", price: "$149", period: "/mo", perUser: "$5.96/user", description: "For the MSP taking on their first managed client.", features: ["1 client organization", "25 users", "5 phishing templates/mo", "AI template generator", "Basic analytics", "Email support"], cta: "Start Free Trial", highlight: false },
-  { name: "Growth", price: "$299", period: "/mo", perUser: "$2.99/user", description: "MSP-ready. Half the per-user cost of KnowBe4.", features: ["5 client organizations", "100 users", "15 templates/mo", "ConnectWise CSV import", "Click + open tracking", "Outlook phish-report add-in", "Priority support"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
-  { name: "Pro", price: "$749", period: "/mo", perUser: "$1.50/user", description: "Scale economics. A quarter of KnowBe4 per user.", features: ["20 client organizations", "500 users", "Unlimited templates", "HIPAA / SOC 2 / PCI reporting", "CRM integration", "Dedicated CSM"], cta: "Start Free Trial", highlight: false },
-  { name: "Enterprise", price: "$1,499", period: "/mo", perUser: "Unlimited seats", description: "Unlimited everything, under your own brand.", features: ["Unlimited client organizations", "Unlimited users", "White-label portal", "Custom domain", "API access", "SLA guarantee"], cta: "Contact Sales", highlight: false },
+  { name: "Starter", price: "$149", period: "/mo", perUser: "$5.96/user", description: "For the MSP taking on their first managed client.", features: ["1 client organization", "25 users", "100 phishing simulations/mo", "Basic training modules", "Basic compliance reporting", "Email support"], cta: "Start Free Trial", highlight: false },
+  { name: "Growth", price: "$299", period: "/mo", perUser: "$2.99/user", description: "MSP-ready. Half the per-user cost of KnowBe4.", features: ["5 client organizations", "100 users", "500 phishing simulations/mo", "Standard training modules", "Full compliance reporting", "Risk scoring & analytics", "Multi-framework (NIST, ISO)"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
+  { name: "Pro", price: "$749", period: "/mo", perUser: "$1.50/user", description: "Scale economics. A quarter of KnowBe4 per user.", features: ["20 client organizations", "500 users", "Unlimited simulations", "Advanced training + risk scoring", "Compliance automation", "MSP multi-tenant dashboard", "Custom branding + API access", "Chat + email support"], cta: "Start Free Trial", highlight: false },
+  { name: "Enterprise", price: "$1,499", period: "/mo", perUser: "Unlimited seats", description: "Unlimited everything, under your own brand.", features: ["Unlimited client organizations", "Unlimited users", "All + custom training modules", "White-label compliance reporting", "Enterprise risk scoring", "Custom frameworks", "Dedicated account manager", "24/7 phone + chat support"], cta: "Contact Sales", highlight: false },
 ];
+
+// PS-PRICE-04: founder feature matrix, 2026-07-16. Seat counts are NOT from this matrix --
+// they stay as Stripe sells them (25/100/500/unlimited), because pricing is a section-5
+// hard stop and Stripe is the source of truth. Everything below is capability, not quantity
+// of seats, so the two do not collide.
+const FEATURE_MATRIX = [
+  { feature: "Phishing simulations", starter: "100/mo", growth: "500/mo", pro: "Unlimited", enterprise: "Unlimited" },
+  { feature: "Client organizations", starter: "1", growth: "5", pro: "20", enterprise: "Unlimited" },
+  { feature: "Users included", starter: "25", growth: "100", pro: "500", enterprise: "Unlimited" },
+  { feature: "Training modules", starter: "Basic", growth: "Standard", pro: "Advanced", enterprise: "All + Custom" },
+  { feature: "Compliance reporting", starter: "Basic", growth: "Full", pro: "Full + Automation", enterprise: "Full + White Label" },
+  { feature: "Risk scoring & analytics", starter: false, growth: "Basic", pro: "Advanced", enterprise: "Enterprise" },
+  { feature: "Multi-framework (NIST, ISO, etc.)", starter: false, growth: true, pro: true, enterprise: "Yes + Custom" },
+  { feature: "MSP / multi-tenant dashboard", starter: false, growth: false, pro: true, enterprise: true },
+  { feature: "Custom branding", starter: false, growth: false, pro: true, enterprise: true },
+  { feature: "API access", starter: false, growth: false, pro: true, enterprise: true },
+  { feature: "Dedicated account manager", starter: false, growth: false, pro: false, enterprise: true },
+  { feature: "Priority support", starter: "Email", growth: "Email", pro: "Chat + Email", enterprise: "24/7 Phone + Chat" },
+]
 
 const FAQS = [
   { q: "How quickly can we get started?", a: "Most organizations are running their first phishing campaign within 10 minutes of signing up. Create your org, import your employee list (CSV or manual), pick an AI-generated template, and launch." },
@@ -330,6 +349,44 @@ export default function Home() {
               </div>
             ))}
           </div>
+          {/* PS-PRICE-04: full capability matrix. The cards carry the 6-8 differentiators a
+              buyer scans; this is the row-by-row for the buyer who is comparing seriously.
+              Same data source either way -- a card and this table can never disagree. */}
+          <div className="max-w-6xl mx-auto mt-14">
+            <h3 className="text-center text-lg font-bold mb-6">Compare every feature</h3>
+            <div className="overflow-x-auto rounded-2xl border border-border/60">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead>
+                  <tr className="border-b border-border/60 bg-secondary/30">
+                    <th className="text-left p-4 font-semibold">Feature</th>
+                    <th className="p-4 font-semibold">Starter</th>
+                    <th className="p-4 font-semibold text-violet-400">Growth</th>
+                    <th className="p-4 font-semibold">Pro</th>
+                    <th className="p-4 font-semibold">Enterprise</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {FEATURE_MATRIX.map((row, i) => (
+                    <tr key={row.feature} className={"border-b border-border/40 last:border-0 " + (i % 2 ? "bg-secondary/10" : "")}>
+                      <td className="p-4 text-muted-foreground">{row.feature}</td>
+                      {([row.starter, row.growth, row.pro, row.enterprise] as (string | boolean)[]).map((cell, j) => (
+                        <td key={j} className={"p-4 text-center " + (j === 1 ? "bg-violet-500/5" : "")}>
+                          {cell === false ? (
+                            <span className="text-muted-foreground/40">—</span>
+                          ) : cell === true ? (
+                            <Check className="w-4 h-4 text-violet-400 mx-auto" />
+                          ) : (
+                            <span className="font-medium">{cell}</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <p className="text-center text-xs text-muted-foreground mt-6">
             Managing more than 20 client organizations?{" "}
             <a href="mailto:sales@phishsimai.com" className="text-violet-400 hover:underline">Contact our sales team</a>
