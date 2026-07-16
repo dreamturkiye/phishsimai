@@ -153,11 +153,19 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
       const prevMrr = yday?.mrr_cents != null ? Number(yday.mrr_cents) : null
       const mrrDeltaCents = mrrCents != null && prevMrr != null ? mrrCents - prevMrr : null
 
+      // PS-SCOPE-01 (2026-07-16): SCOPED. This read was unscoped on a database shared with
+      // ScrollFuel, so PhishSim's founder brief reported ScrollFuel's open breakers as its
+      // own. Measured today: 2 open breakers, both product_id='scrollfuel'. Every PhishSim
+      // health report citing them was describing another product's failures to the founder.
       const breakers = await sql`
-        SELECT fingerprint, state, trip_reason FROM circuit_breaker_state WHERE state = 'open'
+        SELECT fingerprint, state, trip_reason FROM circuit_breaker_state
+        WHERE state = 'open' AND product_id = ${companyId}
       `.catch(() => [] as any[])
+      // PS-SCOPE-01: same defect, same table family. escalations carries product_id (the
+      // breaker writes it on trip); this read ignored it.
       const pending = await sql`
-        SELECT id, category, created_at FROM escalations WHERE status = 'pending' ORDER BY created_at ASC
+        SELECT id, category, created_at FROM escalations
+        WHERE status = 'pending' AND product_id = ${companyId} ORDER BY created_at ASC
       `.catch(() => [] as any[])
       const level = await getAutonomyLevel(companyId).catch(() => null)
       const nowMs = Date.now()
