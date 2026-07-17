@@ -35,6 +35,10 @@
   ],
   "crons": [
     {
+      "path": "/api/os/truth-report",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/scheduled/campaign",
       "schedule": "0 * * * *"
     },

@@ -207,11 +207,18 @@ export async function sendTruthReport(): Promise<{ ok: boolean; report?: string;
     await sendTelegram(msg)
     return { ok: false, error: e?.message ?? String(e) }
   }
+  // sendTelegram returns { ok, skipped?, error? } — an OBJECT, so it is ALWAYS truthy. Checking
+  // `if (!sent)` (as the 7 existing callers effectively do via .catch(()=>{})) would never fire:
+  // that is precisely the silent-send failure this report exists to expose. Check `.ok`.
   const sent = await sendTelegram(report)
-  if (!sent) {
-    // A report nobody receives is the disease this exists to cure.
-    console.error('[truthReport] BUILT BUT NOT DELIVERED — telegram credentials unresolved')
-    return { ok: false, report, error: 'telegram send returned falsy — credentials unresolved' }
+  if (!sent.ok) {
+    // A report nobody receives is the disease this exists to cure. We cannot use Telegram to
+    // announce that Telegram failed, so the loud channel is the caller: sendTruthReport returns
+    // ok:false and the cron route MUST turn that into a non-200 so Vercel Cron records a failure.
+    console.error(
+      `[truthReport] BUILT BUT NOT DELIVERED — ${sent.skipped ? 'send skipped' : 'send failed'}: ${sent.error ?? 'unknown'}`,
+    )
+    return { ok: false, report, error: sent.error ?? 'telegram send failed' }
   }
   return { ok: true, report }
 }

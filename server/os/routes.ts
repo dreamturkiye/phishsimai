@@ -142,6 +142,21 @@ export async function cronFounderBrief(req: Request, res: Response) {
   }
 }
 
+// PS-TRUTH-REPORT-01 nightly cron. Unlike the crons above, this one returns a NON-200 when the
+// report fails to send. A health report that 200s on failure is the "curl exiting 0 on a 401"
+// defect this report was built to expose — so its own delivery must be measured the same way:
+// if Telegram did not receive it, Vercel Cron must record a failure, not a green run.
+export async function cronTruthReport(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  const { sendTruthReport } = await import('./truthReport')
+  const result = await sendTruthReport()
+  if (!result.ok) {
+    res.status(500).json({ ok: false, error: result.error ?? 'truth report not delivered' })
+    return
+  }
+  res.json({ ok: true })
+}
+
 // O.17 weekly agent L-level computation. Secret-gated. Scores every agent from
 // Janet's REAL reviewed-task data and appends agent_levels rows. Always returns
 // 200 with the computed levels even if the agent_levels table isn't migrated yet

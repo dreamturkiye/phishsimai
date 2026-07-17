@@ -104,6 +104,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/metrics-snapshot") return routes.cronMetricsSnapshot(req, res);
     if (path === "/api/os/escalation-notify") return routes.cronEscalationNotify(req, res);
     if (path === "/api/os/founder-brief") return routes.cronFounderBrief(req, res);
+    if (path === "/api/os/truth-report") return routes.cronTruthReport(req, res);
     if (path === "/api/os/agent-levels") return routes.cronAgentLevels(req, res);
     if (path === "/api/os/watchdog") return routes.cronWatchdog(req, res);
     if (path === "/api/os/researcher") return routes.cronResearcher(req, res);
