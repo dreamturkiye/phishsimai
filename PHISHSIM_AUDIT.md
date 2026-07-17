@@ -215,6 +215,7 @@ prod."_
 | PS-SEND-LEDGER-01 | 713 leads / 280 sends live in ScrollFuel's DB | FOUND; migration pending founder ruling |
 | PS-POSITIONING-01 | copy sells end-user service to MSP resellers; 0 replies on 245 delivered | copy rewrite = founder's |
 | PS-LEARN-GATE-01 | `sales.ts:46` gates learning on `replied>0` — cold-start trap | LOGGED (deepest finding) |
+| PS-PORT-01 | V7.3 ports: executor + reflection loop + MX pre-check | DEPLOYED + VERIFIED. Executor (`drainAgentTasks` + manual `/api/os/task-runner`, non-destructive, gate-respecting) drained a seeded task end-to-end on prod: executeTask→real deliverable, reviewTask→score 7, reflection recorded. MX gate blocks the 6 dead mailboxes. Reflection loop records every outcome (kills PS-LEARN-GATE-01). No v7 bump. Executor is manual-trigger only — NOT a cron. |
 | PS-TRUTH-REPORT-01 | daily output-not-status report | DEPLOYED — nightly Vercel cron `/api/os/truth-report` @06:00 UTC; delivered one real RED report. Fail-loud fix: `sendTelegram` returns `{ok}` (always-truthy object) so the prior `if (!sent)` never fired — now checks `.ok`, and the cron returns HTTP 500 on send failure so Vercel Cron records it. |
 | PS-UNSUBSCRIBE-404 | dead CAN-SPAM opt-out link | FIXED + tested (row flips) |
 | PS-CHECKOUT-404 | funnel entry 404s; 0 sessions ever | FIXED + tested (real `cs_live` session) |
