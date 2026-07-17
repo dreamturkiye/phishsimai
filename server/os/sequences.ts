@@ -3,6 +3,7 @@ import { sendTelegram } from './telegram'
 import { AB_EXPERIMENTS, getVariant, recordImpression } from './abTest'
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
+import { hasMx, domainOf } from './mxGate'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -137,6 +138,17 @@ export async function runFullSequence() {
     for (const lead of t1Leads) {
       if (totalSent >= DAILY_SEND_LIMIT) break
       try {
+        // PS-PORT-01 / SF-DELIV-01: pre-send MX gate. A domain with no MX (or an RFC 7505 null MX)
+        // cannot receive mail and bounces 100% — free to check, and the rail that would have caught
+        // PhishSim's 6 dead mailboxes (csgnetworks.com, mtd.us…) before they were emailed. No MX ->
+        // do not send, mark the lead dead so it never re-enters any touch query, log it.
+        const dom = domainOf(String(lead.email))
+        if (!dom || !(await hasMx(dom))) {
+          const ts = now.toISOString()
+          await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts} WHERE id=${lead.id}`
+          console.warn('[sequence] MX gate: no deliverable MX for', lead.email, '- marked dead, not sent')
+          continue
+        }
         const variant = getVariant(String(lead.id), 'touch1_subject')
         const v = exp.active ? (variant === 'control' ? exp.control : exp.test) : exp.control
         const token = Buffer.from(String(lead.email)).toString('base64url')

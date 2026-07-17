@@ -3,6 +3,14 @@ import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows } from '../os/autonomyGate'
+// PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
+// 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
+// PhishSim's task loop — that is why agentReflection had "no callers". Wiring it here injects an
+// agent's past misses into its next prompt (executeTask) and records EVERY outcome, pass or fail,
+// into the failure-aware store (reviewTask → recordAgentReflection → learnFromOutcome, -0.08 on
+// failure). This is the root kill of PS-LEARN-GATE-01: no `if (replied > 0)` success precondition.
+import { getAgentReflectionPrompt, recordAgentReflection, parseReviewForReflection } from '../os/kaan-os-core/agentReflection'
+import { getAgentLessonsForPrompt } from '../os/kaan-os-core/outcomeLearning'
 // This file was copied from ScrollFuel and never localised: every function signature
 // defaulted companyId to 'scrollfuel', and the DDL below defaulted the COLUMN to it too.
 // No caller ever relied on those defaults — all 8 routes.ts call sites and
@@ -464,7 +472,15 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
 
   await sql`UPDATE agent_tasks SET status='in_progress' WHERE id=${taskId}`
 
-  const system = buildAgentSystem(agent, memory, context)
+  // PS-PORT-01: inject this agent's recent misses + learned lessons so it does not repeat them.
+  // Empty string on a cold start (no reflections yet) — additive, never blocks execution.
+  const [reflectionBlock, lessonsBlock] = await Promise.all([
+    getAgentReflectionPrompt(sql, companyId, task.agent_id).catch(() => ''),
+    getAgentLessonsForPrompt(sql, companyId, task.agent_id).catch(() => ''),
+  ])
+  const system = [buildAgentSystem(agent, memory, context), reflectionBlock, lessonsBlock]
+    .filter(Boolean)
+    .join('\n\n')
   const user = `TASK ASSIGNED BY JANET:
 Title: ${task.title}
 Priority: ${task.priority.toUpperCase()}
@@ -540,6 +556,20 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
   `.catch(() => {})
 
   await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${score}/10\n${feedback.slice(0,200)}`).catch(() => {})
+
+  // PS-PORT-01: record the outcome — pass OR fail — into the reflection/learning store. This is
+  // the line that ends PS-LEARN-GATE-01: a score below the pass bar (7) records a correction and
+  // drives -0.08 confidence via learnFromOutcome, so the agent learns from a loss on a cold start.
+  const { correction, lesson } = parseReviewForReflection(feedback, score)
+  await recordAgentReflection(sql, companyId, {
+    agentId: task.agent_id,
+    taskId,
+    success: score >= 7,
+    score,
+    outputPreview: String(task.result).slice(0, 500),
+    correction,
+    lesson,
+  }).catch(() => {})
 
   return { feedback, score, task: { ...task, janet_feedback: feedback, performance_score: score } }
 }

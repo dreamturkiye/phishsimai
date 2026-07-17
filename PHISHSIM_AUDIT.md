@@ -1,5 +1,28 @@
 # PHISHSIM_AUDIT.md — PS-AUDIT-01
 
+## HEADLINE — the answer was in the repo, dated ten days before we re-derived it (PS-SPEC-DIFF-01)
+
+> V7.3 line 66 names PhishSim BY NAME: "Product-agnostic. EVERY agent in EVERY product
+> (ScrollFuel, PhishSim, Notya) must pass all five before it ships." PhishSim was in scope and
+> never received the port.
+>
+> V7.3 line 694 says the L5.8 ladder "does not exist" and ScrollFuel "is not tracking one." I
+> built PS-LADDER-01 anyway, against the wrong database, and reported "day 1 of 5" to the founder
+> for two days. He asked me repeatedly whether the clock was running. It was vapor and I made it.
+>
+> V7.3 documented the wrong-population bounce monitor, the MX-not-HTTP rail, and "specs must not
+> reference infrastructure that does not exist" on 2026-07-07. We re-derived every one of them
+> today, from scratch, over eight hours.
+>
+> The answer to "how do we stop these issues surfacing" is in the repo and dated ten days ago.
+
+_Ports approved 2026-07-17 (executor + reflection loop + SF-DELIV-01 MX pre-check). Neither the
+executor nor the reflection loop needs the v7 core — the reflection module is vendored at v5 and
+identical to canonical; the executor uses `executeTask`/`reviewTask`, which exist in PhishSim's v5
+`kaan_os_v4.ts`. No core-version bump. See PS-PORT-01 below._
+
+---
+
 _Systematic audit of the four failure **shapes** behind every major incident of 2026-07-17.
 Audit for the shapes, not the bugs: each shape below recurs across the codebase, and finding
 one instance predicts the next._
