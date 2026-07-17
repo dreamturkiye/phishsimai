@@ -2,54 +2,21 @@ import type { Express } from "express";
 import express from "express";
 import { updateOrgStripeSubscription } from "../db";
 import { linkStripeCustomerToLead } from "../os/crmLink";
+import { planForPriceId } from "./prices";
 
 type StripePlan = "free" | "starter" | "growth" | "pro" | "unlimited" | "enterprise";
 
 /**
- * PS-BILL-01: build the price->plan map from ONLY the env vars that are actually set.
+ * PS-STRIPE-PRICEMAP-01: the price->plan lookup now reads Stripe (server/stripe/prices.ts),
+ * not env var names.
  *
- * This used to write `[process.env.X ?? "starter_id"]: "starter"` -- so an unset var did not
- * vanish, it inserted a junk key literally named "starter_id". The map looked populated while
- * being blind, which is how a lookup miss became invisible.
- *
- * ENTERPRISE WAS MISSING ENTIRELY. The map knew starter/growth/pro/unlimited; the UI sells
- * "Enterprise" ($1,499, price_1Tnerh...). An Enterprise purchase therefore fell through to the
- * `?? "starter"` default and the customer paid $1,499 for 1 client org and 25 users. Both
- * names are now accepted: Stripe's product is called Enterprise, the code's StripePlan type
- * has carried 'unlimited' since before the rename.
+ * The old buildPriceMap() built the map from STRIPE_*_PRICE_ID env vars. In production NONE of
+ * those names were set (Vercel had STRIPE_PRICE_STARTER etc.), so the map resolved exactly one
+ * entry -- STRIPE_PRICE_PRO -- and that value was a price from a DIFFERENT Stripe account. Every
+ * real purchase missed the map and 400'd. Env names were the thing that drifted, so we stopped
+ * trusting them: planForPriceId() matches priceId against the live Stripe account, which
+ * memory.ts:72 already names as the source of truth.
  */
-function buildPriceMap(): Record<string, StripePlan> {
-  const pairs: Array<[string | undefined, StripePlan]> = [
-    [process.env.STRIPE_STARTER_PRICE_ID, "starter"],
-    [process.env.STRIPE_STARTER_MONTHLY_PRICE_ID, "starter"],
-    [process.env.STRIPE_STARTER_ANNUAL_PRICE_ID, "starter"],
-    [process.env.STRIPE_GROWTH_PRICE_ID, "growth"],
-    [process.env.STRIPE_GROWTH_MONTHLY_PRICE_ID, "growth"],
-    [process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID, "growth"],
-    [process.env.STRIPE_PRO_PRICE_ID, "pro"],
-    [process.env.STRIPE_PRO_MONTHLY_PRICE_ID, "pro"],
-    [process.env.STRIPE_PRO_ANNUAL_PRICE_ID, "pro"],
-    // Enterprise == Unlimited. Stripe names it Enterprise; the type predates the rename.
-    [process.env.STRIPE_ENTERPRISE_PRICE_ID, "enterprise"],
-    [process.env.STRIPE_ENTERPRISE_MONTHLY_PRICE_ID, "enterprise"],
-    [process.env.STRIPE_ENTERPRISE_ANNUAL_PRICE_ID, "enterprise"],
-    [process.env.STRIPE_UNLIMITED_PRICE_ID, "enterprise"],
-    [process.env.STRIPE_UNLIMITED_MONTHLY_PRICE_ID, "enterprise"],
-    [process.env.STRIPE_UNLIMITED_ANNUAL_PRICE_ID, "enterprise"],
-    // legacy
-    [process.env.STRIPE_PRICE_BASIC, "starter"],
-    [process.env.STRIPE_PRICE_PRO, "pro"],
-  ];
-  const map: Record<string, StripePlan> = {};
-  for (const [id, plan] of pairs) {
-    const key = id?.trim();
-    if (key) map[key] = plan;
-  }
-  if (Object.keys(map).length === 0) {
-    console.error("[Webhook] PS-BILL-01: price map is EMPTY — no STRIPE_*_PRICE_ID env vars are set. Every purchase will be rejected until they are.");
-  }
-  return map;
-}
 
 /** Stripe webhook — must be registered before express.json(). */
 export function registerStripeWebhook(app: Express): void {
@@ -80,11 +47,9 @@ export function registerStripeWebhook(app: Express): void {
           return res.json({ verified: true });
         }
 
-        const priceMap = buildPriceMap();
-
         if (event.type === "checkout.session.completed") {
           const session = event.data.object as {
-            metadata?: { org_id?: string; price_id?: string };
+            metadata?: { org_id?: string; price_id?: string; lead_id?: string; plan?: string };
             subscription?: string | null;
             customer?: string | null;
             customer_details?: { email?: string | null } | null;
@@ -103,12 +68,16 @@ export function registerStripeWebhook(app: Express): void {
           // Returning 400 makes Stripe retry and surfaces the failure in their dashboard.
           // The charge already succeeded, so this is deliberately noisy: we would rather owe
           // a customer an apology and an activation than quietly under-provision them.
-          const plan = priceMap[priceId];
+          // PS-STRIPE-PRICEMAP-01: resolve against the live Stripe account, not env. A miss here
+          // means the price is inactive or its product is not named "PhishSim AI *" (e.g. it
+          // belongs to a sibling product in the shared account). Still FAIL LOUD, NEVER GUESS.
+          const plan = await planForPriceId(priceId);
           if (!plan) {
             console.error(
-              `[Webhook] PS-BILL-01: UNKNOWN PRICE ID "${priceId}" for org ${orgId ?? "?"} — REFUSING to guess a plan. ` +
-                `Known price IDs: ${Object.keys(priceMap).join(", ") || "NONE"}. ` +
-                `The customer HAS been charged and is NOT activated. Add the price ID to the STRIPE_*_PRICE_ID env and replay this event from the Stripe dashboard.`,
+              `[Webhook] PS-STRIPE-PRICEMAP-01: price "${priceId}" did not resolve to a PhishSim plan ` +
+                `for org ${orgId ?? "?"} / lead ${session.metadata?.lead_id ?? "?"} — REFUSING to guess. ` +
+                `The price must be ACTIVE and its Stripe product named "PhishSim AI <Tier>". ` +
+                `The customer HAS been charged and is NOT activated. Fix the product/price in Stripe and replay this event.`,
             );
             return res.status(400).json({ error: "unknown_price_id", priceId });
           }
@@ -122,6 +91,18 @@ export function registerStripeWebhook(app: Express): void {
               planActivatedAt: new Date(),
             });
             console.log(`[Webhook] Activated plan '${plan}' for org ${orgId}`);
+          } else if (session.metadata?.lead_id) {
+            // PS-CHECKOUT-PROVISION-01: a cold-email magic-link purchase has NO org yet — the
+            // payer is a lead who never had an account. The charge succeeded and the plan
+            // resolved, but there is nothing to activate. This is a real provisioning gap, not
+            // an error to swallow: fail LOUD so a paid customer is never left dark. The CRM link
+            // below still records the payment against the lead; org creation is a product
+            // decision, filed separately.
+            console.error(
+              `[Webhook] PS-CHECKOUT-PROVISION-01: lead ${session.metadata.lead_id} PAID (${plan}, ` +
+                `sub ${stripeSubscriptionId || "?"}) but has NO org to activate. Customer is charged and NOT ` +
+                `provisioned. Create an org for this lead and attach the subscription.`,
+            );
           }
 
           // PS-CRM-01: close the attribution loop.

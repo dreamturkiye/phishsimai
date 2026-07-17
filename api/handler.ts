@@ -1,6 +1,7 @@
 // Vercel serverless Express app — product API (tRPC, auth, tracking, Mia) + OS routes
 import express from "express";
 import { mountProductApi } from "../server/productApiMount";
+import { registerStripeWebhook } from "../server/stripe/webhook";
 import { scheduledCampaignHandler } from "../server/scheduledHandlers";
 import { initSentry } from "../server/os/sentryServer";
 import { sentryErrorMiddleware } from "../server/os/sentryExpress";
@@ -10,6 +11,15 @@ import { sentryErrorMiddleware } from "../server/os/sentryExpress";
 initSentry();
 
 const app = express();
+
+// PS-STRIPE-WEBHOOK-UNMOUNTED: the Stripe webhook was registered ONLY in server/_core/index.ts
+// (the local Express server) and never shipped — grep api/index.js for "api/stripe/webhook"
+// returned 0. Registering the endpoint in the Stripe dashboard would have pointed at a 404 and
+// every completed checkout would land nowhere. Mounted HERE, and BEFORE express.json(): Stripe
+// signature verification (webhooks.constructEvent) needs the RAW request body, so the raw route
+// must win before the global JSON parser consumes the stream. Order is load-bearing.
+registerStripeWebhook(app);
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -167,6 +177,23 @@ app.get("/preview/social/:token", async (req: any, res: any) => {
 app.post("/preview/social/:token/review", async (req: any, res: any) => {
   const routes = await getRoutes();
   return routes.socialPreviewReview(req, res);
+});
+
+// PS-UNSUBSCRIBE-404. Every cold email since 2026-06-04 carries this link; it had no route and
+// fell through vercel.json's SPA catch-all to NotFound. Mounted HERE, on the Vercel entry, not
+// on server/_core/index.ts — _core is the local Express server and does not ship to production
+// (that is how crmLink's Stripe writer went missing). vercel.json needs the matching rewrite:
+// without it, /unsubscribe never reaches this file.
+app.get("/unsubscribe", async (req: any, res: any) => {
+  const { unsubscribePage } = await import("../server/os/unsubscribe");
+  return unsubscribePage(req, res);
+});
+
+// PS-CHECKOUT-404. Cold-email magic-link funnel entry (no auth — the clicker is a lead with no
+// account). Mounted on the Vercel entry, not _core/index.ts. Needs the vercel.json rewrite.
+app.get("/checkout", async (req: any, res: any) => {
+  const { checkoutRedirect } = await import("../server/os/checkout");
+  return checkoutRedirect(req, res);
 });
 
 // LAST. Catches anything thrown by the routes above (tRPC, auth, tracking, preview

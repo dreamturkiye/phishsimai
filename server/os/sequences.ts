@@ -193,21 +193,25 @@ export async function runFullSequence() {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
         WHERE country = ANY(${GEO}) AND touch2_sent_at IS NULL AND touch1_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer')
         ORDER BY touch1_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else if (def.touch === 3) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
         WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer')
         ORDER BY touch2_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else if (def.touch === 4) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer')
         ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer')
         ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     }
 

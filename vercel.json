@@ -21,6 +21,14 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/unsubscribe",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/checkout",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/((?!api).*)",
       "destination": "/index.html"
     }
