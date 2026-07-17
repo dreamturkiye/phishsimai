@@ -192,6 +192,7 @@ prod."_
 | PS-SEND-LEDGER-01 | 713 leads / 280 sends live in ScrollFuel's DB | FOUND; migration pending founder ruling |
 | PS-POSITIONING-01 | copy sells end-user service to MSP resellers; 0 replies on 245 delivered | copy rewrite = founder's |
 | PS-LEARN-GATE-01 | `sales.ts:46` gates learning on `replied>0` — cold-start trap | LOGGED (deepest finding) |
+| PS-TRUTH-REPORT-01 | daily output-not-status report | DEPLOYED — nightly Vercel cron `/api/os/truth-report` @06:00 UTC; delivered one real RED report. Fail-loud fix: `sendTelegram` returns `{ok}` (always-truthy object) so the prior `if (!sent)` never fired — now checks `.ok`, and the cron returns HTTP 500 on send failure so Vercel Cron records it. |
 | PS-UNSUBSCRIBE-404 | dead CAN-SPAM opt-out link | FIXED + tested (row flips) |
 | PS-CHECKOUT-404 | funnel entry 404s; 0 sessions ever | FIXED + tested (real `cs_live` session) |
 | PS-STRIPE-PRICEMAP-01 | price map read drifted env names / foreign account | FIXED (reads Stripe live) |
