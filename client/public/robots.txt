@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /campaigns
+Disallow: /targets
+Disallow: /templates
+Disallow: /analytics
+Disallow: /settings
+Disallow: /setup
+Disallow: /gamification
+Disallow: /training
+Disallow: /invite
+Disallow: /login
+Disallow: /hq
+Disallow: /heal-test
+
+Sitemap: https://phishsimai.com/sitemap.xml

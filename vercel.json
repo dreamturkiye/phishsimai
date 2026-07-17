@@ -11,6 +11,14 @@
       "includeFiles": "server/os/social/{fonts,assets}/**"
     }
   },
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.phishsimai.com" }],
+      "destination": "https://phishsimai.com/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
