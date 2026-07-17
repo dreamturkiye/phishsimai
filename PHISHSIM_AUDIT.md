@@ -200,7 +200,10 @@ prod."_
 | PS-CHECKOUT-PROVISION-01 | magic-link payer has no org to activate | LOGGED (fails loud; org-creation is a product decision) |
 | PS-ARIA-TAUTOLOGY | `totalSent>=0` health flag can never be false | LOGGED (Shape 3 #1) |
 | PS-STRIPE-LOOKUPKEY-01 | prices lack `lookup_key`/`metadata.tier`; name-prefix is only discriminator | LOGGED (hardening, not urgent) |
-| PS-BACKUP-127 | `com.phishsim.backup` exit 127 for 11 days; no backups | OPEN — **blocks D2** |
+| PS-BACKUP-127 | `com.phishsim.backup` exit 127 for 11 days; no backups | FIXED — root cause was macOS TCC (Desktop is protected; launchd got "Operation not permitted"). Script + output moved to `/Users/kaan/phishsim_backups/`, hourly `pg_dump` of spring-leaf, outcome recorded to `backup_runs` (read by the truth report). Exit 0. |
+| PS-MAGICLINK-SECRET-COUPLING | checkout-link HMAC key IS `STRIPE_WEBHOOK_SECRET`; rotating one breaks the other | LOGGED (4th shared-singleton instance; 0 harm today, split into `CHECKOUT_LINK_SECRET` later) |
+| SF-FABRICATED-LEADS-01 | 420 fabricated `lead_researcher` rows in ScrollFuel's DB (purple-surf) | FOUNDER RULING — cross-product; not PhishSim's to delete |
+| D2 | purge 1,064 `ai_discovery` rows from prod | DONE — 1,064 deleted, 0 remaining, keep-list intact, behind a verified backup |
 
 **PS-STRIPE-WEBHOOK-UNREGISTERED — founder action:** in the StopThreatAI Stripe dashboard, add
 endpoint `https://phishsimai.com/api/stripe/webhook`, events `checkout.session.completed` +

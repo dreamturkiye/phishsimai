@@ -167,10 +167,23 @@ export async function buildTruthReport(): Promise<string> {
   }
 
   // ---- BACKUP ----
-  // Nothing writes a backup record to this database, so from here a backup is unobservable.
-  // The hourly LaunchAgent com.phishsim.backup has exited 127 since 2026-07-06.
+  // PS-BACKUP-127: com.phishsim.backup now records each run into backup_runs. Read the last
+  // SUCCESSFUL dump; a table that exists but holds only failures (or nothing) is still RED.
   L.push('')
-  L.push(`BACKUP         ${RED} ${NOT_MEASURED} — no backup process reports into this DB`)
+  try {
+    const b = (await sql`SELECT ran_at, size_bytes FROM backup_runs WHERE ok = true ORDER BY ran_at DESC LIMIT 1`) as any[]
+    if (b.length === 0) {
+      L.push(`BACKUP         ${RED} 0 successful dumps recorded — backup is NOT running`)
+    } else {
+      const ageH = (Date.now() - new Date(b[0].ran_at).getTime()) / 3_600_000
+      const mb = (Number(b[0].size_bytes) / 1_048_576).toFixed(1)
+      L.push(
+        `BACKUP         ${ageH > 26 ? RED : OK} last dump ${new Date(b[0].ran_at).toISOString().slice(0, 16).replace('T', ' ')} (${ageH.toFixed(0)}h ago, ${mb} MB)`,
+      )
+    }
+  } catch {
+    L.push(`BACKUP         ${RED} backup_runs unreadable — ${NOT_MEASURED}`)
+  }
 
   // ---- DB ----
   L.push(
