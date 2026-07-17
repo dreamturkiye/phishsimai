@@ -22,6 +22,7 @@ import { queueJanetArchitectTask } from './selfHeal'
 import {
   runJanetFullOrchestration, getOSStatus, runDailyStandup, runWeeklyReview,
   talkToAgent, janetTellAgent, issueTask, executeTask, reviewTask,
+  drainAgentTasks,
   AGENTS, AgentId
 } from '../lib/kaan_os_v4'
 import { cronAgentWatchdog } from './agentWatchdog'
@@ -139,6 +140,24 @@ export async function cronFounderBrief(req: Request, res: Response) {
     res.json({ ok: true, ...result })
   } catch (e: any) {
     res.json({ ok: false, error: formatOsError(e) })
+  }
+}
+
+// PS-PORT-01 executor endpoint. MANUAL trigger only — deliberately NOT in vercel.json crons.
+// V7.3's own posture: ScrollFuel's task-runner cron is "OFF deliberately until it drains clean."
+// The drain is non-destructive (executeTask produces reviewed text, no sends/deploys/spend) and
+// only touches tasks already 'assigned' — and issueTask is autonomy-gated at 'manual', so the
+// queue only holds what a human/founder deliberately seeds. Returns honest counts; a run that
+// claimed tasks and failed all of them is NOT reported as healthy.
+export async function osTaskRunner(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const maxTasks = Math.min(Number((req.query.max as string) || 10), 25)
+    const result = await drainAgentTasks(COMPANY, { maxTasks })
+    const healthy = result.claimed === 0 || result.succeeded > 0
+    return res.status(healthy ? 200 : 500).json({ ok: healthy, ...result })
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: formatOsError(e) })
   }
 }
 

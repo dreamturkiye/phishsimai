@@ -203,6 +203,13 @@ async function ensureOSTables(sql: any) {
     )
   `.catch(() => {})
 
+  // PS-PORT-01 executor prereq (SF-DOC-01: create the infra before the build depends on it).
+  // CREATE TABLE IF NOT EXISTS is a no-op on the existing prod table, so these columns — which
+  // the drain's reaper and attempt-capping require — are added explicitly for both fresh and
+  // existing databases. Without them the executor cannot recover a stranded task or cap retries.
+  await sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`.catch(() => {})
+  await sql`ALTER TABLE agent_tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`.catch(() => {})
+
   await sql`
     CREATE TABLE IF NOT EXISTS agent_meetings (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -572,6 +579,117 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
   }).catch(() => {})
 
   return { feedback, score, task: { ...task, janet_feedback: feedback, performance_score: score } }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  EXECUTOR (PS-PORT-01) — the consumer for agent_tasks, ported from ScrollFuel's
+//  drainAgentTasks (SF-EXEC-01, 25 tasks drained live, avg 7.6). PhishSim never had a
+//  consumer: agent_tasks stayed empty (0 rows) because nothing drained it. This is
+//  NON-DESTRUCTIVE — executeTask calls an LLM and stores text; it sends no email,
+//  deploys no code, spends nothing. It only touches tasks already in status='assigned',
+//  and issueTask is autonomy-gated at 'manual', so nothing auto-enters the queue: the
+//  gate controls what is queued, this drains what is there. Manual-trigger only (no cron).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const TASK_MAX_ATTEMPTS = 3
+const STUCK_IN_PROGRESS_MINUTES = 15
+const PASS_BAR = 7
+
+export type DrainResult = {
+  claimed: number; succeeded: number; failed: number; requeued: number; parked: number
+  remaining: number; budget_exhausted: boolean
+  results: { id: string; title: string; agent: string; ok: boolean; score?: number; error?: string }[]
+}
+
+/** V7.3 L5.x item 4: score, and on a sub-bar score run ONE redo with the feedback attached. */
+async function executeReviewWithRedo(taskId: string, companyId: string): Promise<{ score: number }> {
+  await executeTask(taskId, companyId)
+  let review = await reviewTask(taskId, companyId)
+  if (review.score < PASS_BAR) {
+    // One-shot redo: hand the task back and re-execute. The reflection loop wired above means
+    // the agent's own miss is now injected into its retry prompt.
+    const sql = neon(process.env.DATABASE_URL!)
+    await sql`UPDATE agent_tasks SET status='assigned', updated_at=NOW() WHERE id=${taskId}`.catch(() => {})
+    await executeTask(taskId, companyId)
+    review = await reviewTask(taskId, companyId)
+  }
+  return { score: review.score }
+}
+
+export async function drainAgentTasks(
+  companyId = COMPANY_ID,
+  opts: { budgetMs?: number; maxTasks?: number } = {},
+): Promise<DrainResult> {
+  const budgetMs = opts.budgetMs ?? 90_000
+  const maxTasks = opts.maxTasks ?? 10
+  const startedAt = Date.now()
+  const sql = neon(process.env.DATABASE_URL!)
+  await ensureOSTables(sql)
+
+  const out: DrainResult = { claimed: 0, succeeded: 0, failed: 0, requeued: 0, parked: 0, remaining: 0, budget_exhausted: false, results: [] }
+
+  // Reaper: recover tasks stranded 'in_progress' by a killed run; park after max attempts.
+  const reaped = await sql`
+    UPDATE agent_tasks
+    SET status = CASE WHEN attempts >= ${TASK_MAX_ATTEMPTS} THEN 'failed' ELSE 'assigned' END, updated_at = NOW()
+    WHERE company_id = ${companyId} AND status = 'in_progress'
+      AND COALESCE(updated_at, created_at) < NOW() - (${STUCK_IN_PROGRESS_MINUTES} || ' minutes')::interval
+    RETURNING status
+  `.catch(() => [] as any[])
+  for (const r of reaped as any[]) { if (r.status === 'failed') out.parked++; else out.requeued++ }
+
+  const attemptedThisRun = new Set<string>()
+  while (out.claimed < maxTasks) {
+    if (Date.now() - startedAt > budgetMs) { out.budget_exhausted = true; break }
+
+    // Atomic claim — one statement, WHERE re-checks status='assigned'. The Neon HTTP driver has
+    // no read-your-own-write guarantee, so trust ONLY the RETURNING post-image, never a re-read.
+    const claimedRows = await sql`
+      UPDATE agent_tasks
+      SET status='in_progress', attempts = COALESCE(attempts, 0) + 1, updated_at = NOW()
+      WHERE id = (
+        SELECT id FROM agent_tasks
+        WHERE company_id = ${companyId} AND status = 'assigned' AND COALESCE(attempts, 0) < ${TASK_MAX_ATTEMPTS}
+        ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC
+        LIMIT 1
+      ) AND status = 'assigned'
+      RETURNING id, title, agent_id, status AS claimed_status
+    `.catch(() => [] as any[])
+    const task = (claimedRows as any[])[0]
+    if (!task) break
+    if (task.claimed_status !== 'in_progress') {
+      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: false, error: 'claim did not take effect' })
+      out.failed++; break
+    }
+    if (attemptedThisRun.has(task.id)) break
+    attemptedThisRun.add(task.id)
+    out.claimed++
+
+    try {
+      const review = await executeReviewWithRedo(task.id, companyId)
+      out.succeeded++
+      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: true, score: review.score })
+    } catch (e: any) {
+      out.failed++
+      const err = String(e?.message || e).slice(0, 200)
+      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: false, error: err })
+      // Hand back unless attempts are burned. `AND status='in_progress'` is load-bearing: if
+      // executeTask committed a deliverable and a LATER stage threw, do NOT revert a finished task.
+      await sql`
+        UPDATE agent_tasks
+        SET status = CASE WHEN attempts >= ${TASK_MAX_ATTEMPTS} THEN 'failed' ELSE 'assigned' END,
+            janet_feedback = ${'runner error: ' + err}, updated_at = NOW()
+        WHERE id = ${task.id} AND status = 'in_progress'
+      `.catch(() => {})
+    }
+  }
+
+  const rest = await sql`
+    SELECT count(*)::int AS n FROM agent_tasks
+    WHERE company_id = ${companyId} AND status = 'assigned' AND COALESCE(attempts, 0) < ${TASK_MAX_ATTEMPTS}
+  `.catch(() => [{ n: 0 }])
+  out.remaining = ((rest as any[])[0]?.n as number) ?? 0
+  return out
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
