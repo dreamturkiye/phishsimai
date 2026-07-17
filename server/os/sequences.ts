@@ -9,59 +9,43 @@ const REPLY_TO = 'sarah@phishsimai.com'
 export const DAILY_SEND_LIMIT = 20
 export const PAUSE_ON_BOUNCE_RATE = 0.08
 
-async function sendEmail(to: string, subject: string, html: string, tags: { name: string; value: string }[] = []) {
+async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+  tags: { name: string; value: string }[] = [],
+  unsubToken?: string,
+) {
+  // PS-COPY-REWRITE-01: List-Unsubscribe + one-click (RFC 8058). Gmail/Outlook require these for
+  // bulk senders and they directly affect inbox placement. The URL is the same token-based
+  // /unsubscribe route the visible footer links to; it must accept POST for one-click (mounted in
+  // api/handler.ts). Header sent, verbatim:
+  //   List-Unsubscribe: <https://phishsimai.com/unsubscribe?e=TOKEN>
+  //   List-Unsubscribe-Post: List-Unsubscribe=One-Click
+  const headers: Record<string, string> = {}
+  if (unsubToken) {
+    headers['List-Unsubscribe'] = `<https://phishsimai.com/unsubscribe?e=${unsubToken}>`
+    headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
+  }
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, tags }),
+    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, tags, headers }),
   })
   return res.json()
 }
 
-const SEQUENCE = [
-  {
-    touch: 2, delayDays: 3,
-    subject: (_n: string, co: string) => `Re: phishing simulation for ${co}`,
-    html: (name: string, co: string, ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
-<p>Hi ${name},</p>
-<p>Following up — a similar ${ind} company we worked with had 43% of employees click a phishing link in their first simulation. After 30 days of PhishSimAI training, that dropped to 4%.</p>
-<p>That result also satisfies SOC2 and HIPAA auditors looking for documented security awareness training.</p>
-<p>Free simulation offer still stands for ${co}. Just reply and I will set it up — no IT team needed.</p>
-<p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-  {
-    touch: 3, delayDays: 7,
-    subject: (_n: string, co: string) => `Free phishing test for ${co} — 2 slots left`,
-    html: (name: string, co: string, _ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
-<p>${name},</p>
-<p>I run free phishing simulations for 3 companies per week to benchmark their risk before a real attacker does. Two slots left this week.</p>
-<p>If you want one for ${co}, just reply with your employee count. Takes under 10 minutes to launch.</p>
-<p>P.S. If easier to talk first: <a href="https://calendly.com/sarah-phishsimai" style="color:#e53e3e">calendly.com/sarah-phishsimai</a></p>
-<p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-  {
-    touch: 4, delayDays: 12,
-    subject: (_n: string, co: string) => `One question before I close your file`,
-    html: (name: string, co: string, _ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
-<p>Hi ${name},</p>
-<p>Is phishing simulation something ${co} is actively prioritizing, or is the timing off?</p>
-<p>Either answer helps — just want to know whether to follow up or close your file.</p>
-<p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-  {
-    touch: 5, delayDays: 19,
-    subject: (_n: string, co: string) => `Closing your file`,
-    html: (name: string, co: string, _ind: string, token: string) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
-<p>Hi ${name},</p>
-<p>Closing my file on ${co}. If compliance requirements change or you want to benchmark your team's phishing resilience, just reply and I will pick this up immediately.</p>
-<p>Stay safe — phishing attacks are up 48% this year.</p>
-<p>Sarah</p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e=${token}" style="color:#bbb">Unsubscribe</a></p></div>`,
-  },
-]
+// PS-COPY-REWRITE-01: touches 2-5 DELETED. The old bodies were end-user pitches with an invented
+// case study ("43% → 4%"), invented scarcity ("2 slots left"), an unsourced stat ("attacks up 48%"),
+// and a dead calendly link. Better one honest email than five that lie. The sequence is touch-1
+// only until the founder supplies replacement follow-ups. touchDefs below is intentionally empty:
+// runFullSequence sends touch-1 and stops.
+const SEQUENCE: {
+  touch: number
+  delayDays: number
+  subject: (n: string, co: string) => string
+  html: (name: string, co: string, ind: string, token: string) => string
+}[] = []
 
 export async function getSequenceHealth(sql = getSql()) {
   const rows = await sql`SELECT
@@ -161,7 +145,7 @@ export async function runFullSequence() {
         const html = v.html(String(lead.name), String(lead.company), ind).replace('{{TOKEN}}', token)
         const result = await sendEmail(String(lead.email), subject, html, [
           { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
-        ])
+        ], token)
         if (!result?.id) continue
         const ts = now.toISOString()
         await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect', stage_updated_at=${ts} WHERE id=${lead.id}`
@@ -175,12 +159,9 @@ export async function runFullSequence() {
     }
   }
 
-  const touchDefs = [
-    { touch: 2, delayDays: 3 },
-    { touch: 3, delayDays: 7 },
-    { touch: 4, delayDays: 12 },
-    { touch: 5, delayDays: 19, final: true },
-  ]
+  // PS-COPY-REWRITE-01: no follow-up touches until the founder supplies honest replacements.
+  // Empty by design — the loop below is a no-op and only touch-1 above sends.
+  const touchDefs: { touch: number; delayDays: number; final?: boolean }[] = []
 
   for (const def of touchDefs) {
     if (totalSent >= DAILY_SEND_LIMIT) break

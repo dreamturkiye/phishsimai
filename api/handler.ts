@@ -190,6 +190,13 @@ app.get("/unsubscribe", async (req: any, res: any) => {
   return unsubscribePage(req, res);
 });
 
+// RFC 8058 one-click: List-Unsubscribe-Post makes Gmail/Outlook POST to this same URL. The
+// handler reads ?e= from the query for both methods, so one implementation serves both.
+app.post("/unsubscribe", async (req: any, res: any) => {
+  const { unsubscribePage } = await import("../server/os/unsubscribe");
+  return unsubscribePage(req, res);
+});
+
 // PS-CHECKOUT-404. Cold-email magic-link funnel entry (no auth — the clicker is a lead with no
 // account). Mounted on the Vercel entry, not _core/index.ts. Needs the vercel.json rewrite.
 app.get("/checkout", async (req: any, res: any) => {

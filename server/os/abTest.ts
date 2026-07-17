@@ -6,34 +6,53 @@ export interface ABVariant {
   html: (name: string, co: string, ind: string) => string
 }
 
+/**
+ * PS-COPY-REWRITE-01 (PS-POSITIONING-01) — why the OLD touch-1 copy failed, so nobody rebuilds it:
+ *
+ *   It sold MSPs a service they already RESELL. "your team", "your employees", "no IT team
+ *   needed" — sent to companies whose entire business is being the IT team. On top of that it
+ *   invented a customer ("a similar company we worked with had 43% → 4%"), invented scarcity
+ *   ("2 slots left"), quoted unsourced stats (43/4/48/67%), linked a dead calendly (404), and
+ *   signed three different identities on one mailbox. 245 delivered, 0 replies.
+ *
+ * The rewrite below sells the RESELLER motion (white-label, "your clients", a per-client
+ * compliance certificate) and every claim is sourced or true. Nothing is invented: no fake
+ * customers, no fake scarcity, no unsourced percentages. It states plainly that we are new and
+ * have no logos. Industry is NOT interpolated (the old copy called hospitals "technology
+ * organizations"); only FirstName is.
+ *
+ * A/B is OFF: one honest email beats two, and the loser slot is where invented copy used to hide.
+ * Both slots hold the identical approved copy so no stale invented text survives in this file.
+ */
+const TOUCH1_SUBJECT = `Your clients' insurers now want phishing-sim proof — white-label it`
+
+// {{TOKEN}} is replaced per-recipient with the base64url unsubscribe token (sequences.ts).
+const touch1Html = (name: string) => `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:580px;font-size:15px;line-height:1.6;color:#111">
+<p>Hi ${name},</p>
+<p>Cyber insurance underwriting changed in 2026. Phishing simulation is now a hard requirement at renewal — carriers ask for simulation frequency, click-rate trends across the last 12 months, and evidence of remedial training for anyone who failed. Annual video training is explicitly flagged as insufficient by most major carriers.</p>
+<p>And the question underwriters ask has shifted. It used to be "do you have this control?" Now it's "can you prove it was enforced at the time of the incident?" That gap is where claims get denied — and when your client's broker asks for the proof packet, someone has to produce it.</p>
+<p>PhishSim AI is white-label. You run simulations for your clients under your own brand, and it issues a compliance certificate per client, per campaign — the documented evidence their underwriter is asking for.</p>
+<p>Setup takes about 10 minutes. No agents, no IT project, no call with me.</p>
+<p>I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 7-day trial with no credit card.</p>
+<p style="margin:22px 0"><a href="https://phishsimai.com/register" style="color:#e53e3e;font-weight:700;text-decoration:none">→ Start your 7-day trial — phishsimai.com/register</a></p>
+<p>If it's not useful in ten minutes, you've lost ten minutes.</p>
+<p style="margin-top:24px">Sarah Mitchell<br>
+<img src="https://www.phishsimai.com/brand/phishsim-logo-on-white.png" alt="PhishSim AI" width="140" style="display:block;border:0;margin-top:6px"></p>
+<p style="color:#666;font-size:12px;margin-top:28px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a></p>
+</div>`
+
 export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test: ABVariant; active: boolean }> = {
   touch1_subject: {
-    active: true,
+    active: false,
     control: {
-      id: 'ctrl_t1_subject',
-      subject: (_name, co) => `Quick compliance question for ${co}`,
-      html: (name, co, ind) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
-<p>Hi ${name},</p>
-<p>Quick question — when did ${co} last run a phishing simulation for your team?</p>
-<p>I ask because 67% of breaches start with phishing, and most ${ind} organizations haven't tested their staff in 6+ months — creating real compliance exposure.</p>
-<p>We built PhishSimAI to fix this: 10-minute setup, AI-generated campaigns that evolve weekly, automated training for anyone who clicks.</p>
-<p>Happy to run a free simulation for your team this week. Worth a quick look?</p>
-<p>Sarah Mitchell<br>Head of Compliance Partnerships<br><a href="https://phishsimai.com">PhishSimAI</a></p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#bbb">Unsubscribe</a></p>
-</div>`,
+      id: 'ctrl_t1_insurance',
+      subject: () => TOUCH1_SUBJECT,
+      html: (name) => touch1Html(name),
     },
     test: {
-      id: 'test_t1_subject',
-      subject: (_name, co) => `phishing risk at ${co}`,
-      html: (name, co, ind) => `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
-<p>Hi ${name},</p>
-<p>Quick question — how is ${co} currently handling security awareness training for ${ind} compliance requirements?</p>
-<p>Most IT teams we talk to haven't run a phishing test in 6+ months. That's a real audit gap — and 67% of breaches still start with a phishing email.</p>
-<p>PhishSimAI runs automated simulations in under 10 minutes. Happy to benchmark your team for free this week.</p>
-<p>Worth a look?</p>
-<p>Sarah Mitchell<br><a href="https://phishsimai.com">PhishSimAI</a></p>
-<p style="color:#bbb;font-size:11px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#bbb">Unsubscribe</a></p>
-</div>`,
+      id: 'test_t1_insurance',
+      subject: () => TOUCH1_SUBJECT,
+      html: (name) => touch1Html(name),
     },
   },
 }
