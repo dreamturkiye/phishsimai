@@ -249,7 +249,10 @@ export async function webhookReply(req: Request, res: Response) {
 
 export async function cronResearcher(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
-  try { res.json({ ok: true, ...(await runLeadResearcher(6)) }) } catch(e:any) { res.status(500).json({error:e.message}) }
+  // PS-RESEARCHER-TIMEOUT-01: batch 6 -> 4. With per-vendor 20s aborts, worst case is
+  // 4*(20+20+1.5)=166s, comfortably under Vercel's 300s function limit (was 504-ing at 6).
+  // 53 pending drain over successive 30-min crons; each run now COMPLETES and writes its leads.
+  try { res.json({ ok: true, ...(await runLeadResearcher(4)) }) } catch(e:any) { if (!res.headersSent) res.status(500).json({error:e.message}) }
 }
 
 export async function cronDiscover(req: Request, res: Response) {

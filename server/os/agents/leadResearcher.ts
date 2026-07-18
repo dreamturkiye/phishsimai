@@ -60,11 +60,16 @@ async function enrichViaAnyMailFinder(domain: string): Promise<{ email: string; 
     // back as 0 enriched and it looked like an honest miss. That is the exact defect this
     // codebase has spent two days removing: a vendor failure wearing the costume of a real
     // answer. Copy proven code; do not recall it.
+    // PS-RESEARCHER-TIMEOUT-01: a per-call abort. AMF's company-search is slow, and with NO
+    // timeout a single hung call consumed the whole 300s Vercel function budget — the researcher
+    // 504'd (01:30, 01:45) and died before writing any lead. Same lesson as DeepInfra's own 60s
+    // timeout: every vendor call gets its own bound so one slow vendor can't kill the run.
     const res = await fetch('https://api.anymailfinder.com/v5.1/find-email/company', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain, email_type: 'personal' }),
       cache: 'no-store',
+      signal: AbortSignal.timeout(20000),
     })
     const body = await res.text().catch(() => '')
     // 404 here genuinely means "no verified email for this domain" -- AMF only charges when
@@ -100,7 +105,7 @@ async function enrichViaHunter(domain: string) {
     return null
   }
   try {
-    const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${key}&limit=5`)
+    const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${key}&limit=5`, { signal: AbortSignal.timeout(20000) })
     const d = await res.json()
     if (!d.data?.emails?.length) return null
     const dm = d.data.emails.find((e: any) =>

@@ -36,6 +36,23 @@ export async function ensureHqTables() {
     created_at TIMESTAMPTZ DEFAULT NOW(),
     stage_updated_at TIMESTAMPTZ DEFAULT NOW()
   )`
+
+  // PS-SCHEMA-RECONCILE-01 (D4): country + the CRM/billing columns existed ONLY on purple-surf,
+  // hand-ALTERed there through a DATABASE_URL that pointed at the wrong database — the root bug.
+  // They were in no migration and no schema file, so a fresh DB (spring-leaf) lacked them, and the
+  // enrichment INSERT (leadResearcher.ts:219, which sets country) threw "column country does not
+  // exist" — every run paid AMF for a real mailbox and then discarded the lead. CREATE TABLE IF NOT
+  // EXISTS is a no-op on the existing table, so these are added explicitly here. bounced_at is the
+  // reverse-drift case (prod had it, purple-surf did not) — ADD IF NOT EXISTS reconciles both DBs
+  // in one place. This is the durable artifact; see drizzle/pg/0007_reconcile_ps_outreach_leads.sql.
+  await sql`ALTER TABLE ps_outreach_leads
+    ADD COLUMN IF NOT EXISTS country TEXT,
+    ADD COLUMN IF NOT EXISTS tier TEXT,
+    ADD COLUMN IF NOT EXISTS trial_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS customer_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
+    ADD COLUMN IF NOT EXISTS subscription_id TEXT,
+    ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`
   await sql`CREATE TABLE IF NOT EXISTS os_architect_tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     task TEXT NOT NULL,
