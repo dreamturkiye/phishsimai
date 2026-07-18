@@ -1,3 +1,16 @@
+## ⚠️ AMF KEY IS SHARED — ROTATION IS A 4-PLACE OPERATION (PS-SHARED-AMF-01)
+
+ONE AMF KEY, TWO PRODUCTS, PERMANENTLY. AnyMailFinder issues one key per account. Rotating it for
+either product silently 401s the other's enrichment, and NEITHER reports it — proven 2026-07-18:
+rotating for PhishSim took ScrollFuel's enrichment dark for ~2 hours and it was found only by
+testing, not by any alarm. The credit pool is also shared + finite: if it empties, BOTH go dark
+with a 402 (not a 401) — different error, same silence.
+
+RULE: rotating the AMF key is a TWO-PRODUCT operation. Update, in one pass:
+  PhishSim .env.local · PhishSim Vercel · ScrollFuel .env.local · ScrollFuel Vercel
+Four places. Miss one and a product goes dark silently.
+
+
 # ⛔ FOUNDER STANDING ORDER (2026-07-18)
 
 **Outbound was turned off earlier today. Turn it on once all systems are good and running properly.**

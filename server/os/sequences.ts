@@ -1,6 +1,6 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
-import { AB_EXPERIMENTS, getVariant, recordImpression } from './abTest'
+import { AB_EXPERIMENTS, getVariant, recordImpression, deriveFirstName } from './abTest'
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
@@ -198,7 +198,11 @@ export async function runFullSequence() {
         const token = Buffer.from(String(lead.email)).toString('base64url')
         const ind = String(lead.industry || 'technology')
         const subject = v.subject(String(lead.name), String(lead.company))
-        const html = v.html(String(lead.name), String(lead.company), ind).replace('{{TOKEN}}', token)
+        // PS-SALUTATION-01: greet with a derived first name from the email, NOT the stored name
+        // (which is the Google Maps business title for google_maps leads). deriveFirstName returns
+        // "there" when the local part is not a plausible first name — never the business string.
+        const greetName = deriveFirstName(String(lead.email))
+        const html = v.html(greetName, String(lead.company), ind).replace('{{TOKEN}}', token)
         const result = await sendEmail(String(lead.email), subject, html, [
           { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
         ], token)
@@ -255,13 +259,25 @@ export async function runFullSequence() {
     for (const lead of leads) {
       if (totalSent >= DAILY_SEND_LIMIT) break
       try {
+        // PS-TOUCH-GATE-01 / PS-SALUTATION-01 / PS-COPY-REWRITE-01: touch-2..5 inherit EVERY rail
+        // touch-1 has. Built now so re-adding follow-up COPY (SEQUENCE + touchDefs, founder's job)
+        // can never ship without them: MX pre-check, derived first-name salutation, and the
+        // List-Unsubscribe one-click header. Without this block, follow-ups would repeat the exact
+        // bugs touch-1 already fixed. The loop is inert today (touchDefs=[]) — these are dormant rails.
+        const dom = domainOf(String(lead.email))
+        if (!dom || !(await hasMx(dom))) {
+          const ts0 = now.toISOString()
+          await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts0} WHERE id=${lead.id}`
+          console.warn('[sequence] MX gate T' + def.touch + ': no MX for', lead.email, '- marked dead, not sent')
+          continue
+        }
         const token = Buffer.from(String(lead.email)).toString('base64url')
         const ind = String(lead.industry || 'technology')
-        const subject = step.subject(String(lead.name), String(lead.company))
-        const html = step.html(String(lead.name), String(lead.company), ind, token)
+        const subject = step.subject(deriveFirstName(String(lead.email)), String(lead.company))
+        const html = step.html(deriveFirstName(String(lead.email)), String(lead.company), ind, token)
         const result = await sendEmail(String(lead.email), subject, html, [
           { name: 'touch', value: String(def.touch) }, { name: 'lead_id', value: String(lead.id) },
-        ])
+        ], token)
         if (!result?.id) continue
         const ts = now.toISOString()
         if (def.touch === 2) await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts} WHERE id=${lead.id}`

@@ -15,7 +15,7 @@ export function getUsaHipaaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of HIPAA compliance.</p>
         ${TRIAL_CTA_PARAGRAPH}
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $1.9M per violation category per year.</p>
       </div>`;
       break;
@@ -25,7 +25,7 @@ export function getUsaHipaaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Did you know that 1 in 5 healthcare organizations experience a data breach each year?</p>
         <p>Start a free trial to protect your organization: <a href="https://phishsimai.com/trial">https://phishsimai.com/trial</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $1.9M per violation category per year.</p>
       </div>`;
       break;
@@ -35,7 +35,7 @@ export function getUsaHipaaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Every dollar invested in cybersecurity can save up to $3 in breach costs.</p>
         <p>Start your free trial today: <a href="https://phishsimai.com/start">https://phishsimai.com/start</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $1.9M per violation category per year.</p>
       </div>`;
       break;
@@ -45,7 +45,7 @@ export function getUsaHipaaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>This is your last chance to protect your organization from cyber threats.</p>
         <p>Reply to this email to get started: <a href="mailto:sarah@phishsimai.com">sarah@phishsimai.com</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $1.9M per violation category per year.</p>
       </div>`;
       break;
@@ -63,7 +63,7 @@ export function getUsaGlbaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of GLBA compliance.</p>
         ${TRIAL_CTA_PARAGRAPH}
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $100,000 per violation.</p>
       </div>`;
       break;
@@ -73,7 +73,7 @@ export function getUsaGlbaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Did you know that 1 in 5 financial institutions experience a data breach each year?</p>
         <p>Start a free trial to protect your organization: <a href="https://phishsimai.com/trial">https://phishsimai.com/trial</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $100,000 per violation.</p>
       </div>`;
       break;
@@ -83,7 +83,7 @@ export function getUsaGlbaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Every dollar invested in cybersecurity can save up to $3 in breach costs.</p>
         <p>Start your free trial today: <a href="https://phishsimai.com/start">https://phishsimai.com/start</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $100,000 per violation.</p>
       </div>`;
       break;
@@ -93,7 +93,7 @@ export function getUsaGlbaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>This is your last chance to protect your organization from cyber threats.</p>
         <p>Reply to this email to get started: <a href="mailto:sarah@phishsimai.com">sarah@phishsimai.com</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to $100,000 per violation.</p>
       </div>`;
       break;
@@ -111,7 +111,7 @@ export function getUsaCmmcEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of CMMC compliance.</p>
         ${TRIAL_CTA_PARAGRAPH}
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in loss of DoD contracts.</p>
       </div>`;
       break;
@@ -121,7 +121,7 @@ export function getUsaCmmcEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Did you know that 1 in 5 defense organizations experience a data breach each year?</p>
         <p>Start a free trial to protect your organization: <a href="https://phishsimai.com/trial">https://phishsimai.com/trial</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in loss of DoD contracts.</p>
       </div>`;
       break;
@@ -131,7 +131,7 @@ export function getUsaCmmcEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Every dollar invested in cybersecurity can save up to $3 in breach costs.</p>
         <p>Start your free trial today: <a href="https://phishsimai.com/start">https://phishsimai.com/start</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in loss of DoD contracts.</p>
       </div>`;
       break;
@@ -141,7 +141,7 @@ export function getUsaCmmcEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>This is your last chance to protect your organization from cyber threats.</p>
         <p>Reply to this email to get started: <a href="mailto:sarah@phishsimai.com">sarah@phishsimai.com</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in loss of DoD contracts.</p>
       </div>`;
       break;
@@ -159,7 +159,7 @@ export function getUkEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of ICO/GDPR compliance.</p>
         ${TRIAL_CTA_PARAGRAPH}
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to £17.5M or 4% global turnover.</p>
       </div>`;
       break;
@@ -169,7 +169,7 @@ export function getUkEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Did you know that 1 in 5 UK organizations experience a data breach each year?</p>
         <p>Start a free trial to protect your organization: <a href="https://phishsimai.com/trial">https://phishsimai.com/trial</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to £17.5M or 4% global turnover.</p>
       </div>`;
       break;
@@ -179,7 +179,7 @@ export function getUkEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Every dollar invested in cybersecurity can save up to $3 in breach costs.</p>
         <p>Start your free trial today: <a href="https://phishsimai.com/start">https://phishsimai.com/start</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to £17.5M or 4% global turnover.</p>
       </div>`;
       break;
@@ -189,7 +189,7 @@ export function getUkEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>This is your last chance to protect your organization from cyber threats.</p>
         <p>Reply to this email to get started: <a href="mailto:sarah@phishsimai.com">sarah@phishsimai.com</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to £17.5M or 4% global turnover.</p>
       </div>`;
       break;
@@ -207,7 +207,7 @@ export function getCanadaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>As a ${lead.sector} organization, you're likely aware of the importance of PIPEDA compliance.</p>
         ${TRIAL_CTA_PARAGRAPH}
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to CAD $100,000 per violation.</p>
       </div>`;
       break;
@@ -217,7 +217,7 @@ export function getCanadaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Did you know that 1 in 5 Canadian organizations experience a data breach each year?</p>
         <p>Start a free trial to protect your organization: <a href="https://phishsimai.com/trial">https://phishsimai.com/trial</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to CAD $100,000 per violation.</p>
       </div>`;
       break;
@@ -227,7 +227,7 @@ export function getCanadaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>Every dollar invested in cybersecurity can save up to $3 in breach costs.</p>
         <p>Start your free trial today: <a href="https://phishsimai.com/start">https://phishsimai.com/start</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to CAD $100,000 per violation.</p>
       </div>`;
       break;
@@ -237,7 +237,7 @@ export function getCanadaEmail(touch: 1|2|3|4, lead: OutreachLead) {
         <p>Hi ${lead.name},</p>
         <p>This is your last chance to protect your organization from cyber threats.</p>
         <p>Reply to this email to get started: <a href="mailto:sarah@phishsimai.com">sarah@phishsimai.com</a></p>
-        <p>Best, Sarah Mitchell, Founder at PhishSim AI (sarah@phishsimai.com)</p>
+        <p>Best, Sarah Mitchell, Head of Compliance, Partnerships at PhishSim AI (sarah@phishsimai.com)</p>
         <p>P.S. Non-compliance can result in fines up to CAD $100,000 per violation.</p>
       </div>`;
       break;

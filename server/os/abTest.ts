@@ -24,7 +24,24 @@ export interface ABVariant {
  * A/B is OFF: one honest email beats two, and the loser slot is where invented copy used to hide.
  * Both slots hold the identical approved copy so no stale invented text survives in this file.
  */
-const TOUCH1_SUBJECT = `Your clients' insurers now want phishing-sim proof — white-label it`
+const TOUCH1_SUBJECT = `Your Clients' Insurers Now Want Phishing-Sim Proof — White-Label It`
+
+// PS-SALUTATION-01: AMF v5.1 find-email/company returns EMAILS ONLY — no name/first_name/title
+// (verified: bcainc.com returned 20 emails, zero name fields). So the greeting can never come from
+// AMF. Derive a first name from the email local part, but ONLY when it is a plausible single first
+// name: no dots, no digits, not a role inbox. Otherwise "there" — NEVER a Google Maps business
+// string (which is how "Hi BCA IT, Inc. - Managed IT Services Company Miami," shipped). Capitalized.
+const ROLE_LOCALPARTS = new Set([
+  'info','sales','support','hr','admin','contact','hello','team','office','billing','help','service',
+  'marketing','careers','jobs','noreply','no-reply','gov','webmaster','enquiries','enquiry','mail',
+  'accounts','accounting','it','ceo','owner','general','inbox','reception','sysadmin','postmaster',
+])
+export function deriveFirstName(email: string): string {
+  const local = (email.split('@')[0] || '').toLowerCase().trim()
+  if (!local || local.includes('.') || /\d/.test(local) || ROLE_LOCALPARTS.has(local)) return 'there'
+  if (local.length < 2 || local.length > 14) return 'there'
+  return local.charAt(0).toUpperCase() + local.slice(1)
+}
 
 // {{TOKEN}} is replaced per-recipient with the base64url unsubscribe token (sequences.ts).
 const touch1Html = (name: string) => `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:580px;font-size:15px;line-height:1.6;color:#111">
@@ -36,8 +53,9 @@ const touch1Html = (name: string) => `<div style="font-family:-apple-system,Blin
 <p>I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 7-day trial with no credit card.</p>
 <p style="margin:22px 0"><a href="https://phishsimai.com/register" style="color:#e53e3e;font-weight:700;text-decoration:none">→ Start your 7-day trial — phishsimai.com/register</a></p>
 <p>If it's not useful in ten minutes, you've lost ten minutes.</p>
-<p style="margin-top:24px">Sarah Mitchell<br>
-<img src="https://www.phishsimai.com/brand/phishsim-logo-on-white.png" alt="PhishSim AI" width="140" style="display:block;border:0;margin-top:6px"></p>
+<p style="margin-top:24px;margin-bottom:0">Sarah Mitchell</p>
+<p style="margin:0;color:#555">Head of Compliance, Partnerships</p>
+<img src="https://www.phishsimai.com/brand/phishsim-logo-on-white.png" alt="PhishSim AI" width="140" style="display:block;border:0;margin:8px 0 0 0">
 <p style="color:#666;font-size:12px;margin-top:28px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a></p>
 </div>`
 

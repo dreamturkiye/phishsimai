@@ -132,6 +132,26 @@ export async function buildTruthReport(): Promise<string> {
     `REPLIES        ${repliesMeasurable ? String((await sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE replied`)[0].n) : RED + ' ' + NOT_MEASURED + ' — nothing has ever written replied'}`,
   )
 
+  // ---- AMF CREDITS (PS-SHARED-AMF-01) ----
+  // One AMF account, SHARED with ScrollFuel, finite pool. If it empties BOTH products go dark with
+  // a 402 (not a 401) — different error, same silence. Surfaced here so the pool is never invisible.
+  try {
+    const amfRes = await fetch('https://api.anymailfinder.com/v5.1/account', {
+      headers: { Authorization: 'Bearer ' + (process.env.ANYMAILFINDER_API_KEY ?? '') },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (amfRes.ok) {
+      const acct = (await amfRes.json()) as { credits_left?: number }
+      const c = Number(acct?.credits_left ?? NaN)
+      const flag = !Number.isFinite(c) ? RED : c < 50 ? RED : OK
+      L.push(`AMF CREDITS    ${flag} ${Number.isFinite(c) ? c + ' left (SHARED with ScrollFuel — empty = both dark, 402)' : NOT_MEASURED}`)
+    } else {
+      L.push(`AMF CREDITS    ${RED} account check HTTP ${amfRes.status} (401=key invalid, 402=pool empty)`)
+    }
+  } catch {
+    L.push(`AMF CREDITS    ${RED} ${NOT_MEASURED} — AMF account endpoint unreachable`)
+  }
+
   // ---- LEADS: real vs fabricated vs unenriched ----
   const q = (await sql`
     SELECT
