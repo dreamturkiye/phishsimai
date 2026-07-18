@@ -201,10 +201,13 @@ export async function runLeadResearcher(batchSize = 6) {
   let budgetExhausted = false
 
   try {
-    console.log(`[researcher] t=${el()}s discovery start (Outscraper, bounded 90s)`)
-    const discover = await runLeadDiscover(batchSize * 2)
-    stats.discovered = discover.discovered
-    console.log(`[researcher] t=${el()}s discovery done: ${stats.discovered} queued`)
+    // PS-RESEARCHER-SPLIT-01: discovery REMOVED from the researcher. Outscraper ate 181 of 199s
+    // (measured, 03:00 run) — the wrong thing in the wrong place: discovery already runs on its
+    // OWN cron (/api/os/discover, every 6h → cronDiscover → runLeadDiscover, which INSERTs into
+    // lead_research_queue). The researcher's job is ENRICHMENT; it now spends its full budget on
+    // it and drains 5-10x faster. Discovery is NOT orphaned — the discover cron keeps the pool
+    // filled independently. stats.discovered stays 0 here by design (this function no longer discovers).
+    console.log(`[researcher] t=${el()}s enrichment start (discovery runs separately on /api/os/discover)`)
 
     const pending = await sql`
       SELECT id, domain, company_name, research_data FROM lead_research_queue

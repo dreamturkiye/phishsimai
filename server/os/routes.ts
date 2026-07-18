@@ -249,10 +249,11 @@ export async function webhookReply(req: Request, res: Response) {
 
 export async function cronResearcher(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
-  // PS-RESEARCHER-TIMEOUT-01: batch 6 -> 4. With per-vendor 20s aborts, worst case is
-  // 4*(20+20+1.5)=166s, comfortably under Vercel's 300s function limit (was 504-ing at 6).
-  // 53 pending drain over successive 30-min crons; each run now COMPLETES and writes its leads.
-  try { res.json({ ok: true, ...(await runLeadResearcher(4)) }) } catch(e:any) { if (!res.headersSent) res.status(500).json({error:e.message}) }
+  // PS-RESEARCHER-SPLIT-01: batch 4 -> 12. Discovery is gone from the researcher (its own cron
+  // now), so the full ~220s budget goes to enrichment. The internal wall clock stops enqueuing at
+  // 220s regardless, so 12 is a ceiling, not a risk: a fast run drains 12, a slow one returns
+  // partial (budget_exhausted) with the rest pending. Drains the pool in a few runs instead of a dozen.
+  try { res.json({ ok: true, ...(await runLeadResearcher(12)) }) } catch(e:any) { if (!res.headersSent) res.status(500).json({error:e.message}) }
 }
 
 export async function cronDiscover(req: Request, res: Response) {
