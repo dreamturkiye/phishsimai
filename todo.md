@@ -1,3 +1,22 @@
+# ⛔ FOUNDER STANDING ORDER (2026-07-18)
+
+**Outbound was turned off earlier today. Turn it on once all systems are good and running properly.**
+
+Nothing sends until ALL SEVEN gate items are met — every one **measured, not assumed.** The founder
+asked to be reminded; this is the list.
+
+- [ ] **AMF key valid** — the 00:30 UTC researcher run *enriches*, not 401s. _key IS set (Vercel,
+      13h ago); enrichment NOT MEASURED — 6 failed / 47 pending, failures predate the crash fix
+      that just shipped; 00:30 is the first clean test._
+- [ ] **40 google_maps leads enriched** — verified mailboxes + country from research_data.country_code. _0 so far._
+- [ ] **MX gate passes them** — live + verified against the 6 dead test domains; NOT MEASURED on real enriched leads yet.
+- [x] **New copy live** — PS-COPY-REWRITE-01, MSP-positioned, sourced, nothing invented.
+- [x] **Bounce rate rescoped & honest** — PS-BOUNCE-WINDOW-01: rolling 7-day live window; empty = NOT MEASURED, fail closed; only a measured trip is an incident.
+- [ ] **Autonomy raised to l4 (send_simulation)** — NOW actually enforced in the send path. _At l2: nothing sends, verified._
+- [ ] **Founder approves the recipient list** — the final human gate before the first send.
+
+---
+
 # PhishSim AI SaaS — Project TODO
 
 ## Phase 1: Database Schema & Backend

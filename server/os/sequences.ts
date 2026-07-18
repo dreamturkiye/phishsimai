@@ -6,6 +6,7 @@ import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
+import { recordIncident } from './cleanDays'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -50,14 +51,30 @@ const SEQUENCE: {
   html: (name: string, co: string, ind: string, token: string) => string
 }[] = []
 
+// PS-BOUNCE-WINDOW-01: a breaker exists to stop a CURRENT problem, so it must measure a CURRENT
+// population. The old query counted bounced/sent over touch1_sent_at IS NOT NULL — LIFETIME. After
+// the D2 purge, 42 of 43 leads are dead (fabricated), so that rate is 46.5% over a cohort that no
+// longer exists and can never drop. Wiring THAT into the clock would freeze every day dirty forever
+// — V7.3:699's "monitor measuring the wrong population", re-created by the purge. Rescoped to a
+// rolling 7-day window over LIVE (non-dead) leads.
+//
+// `measured` is explicit: an empty window is NOT 0% healthy, it is NOT MEASURED. No data is not
+// permission — the caller fails closed on !measured rather than reading a green over zero sends.
+// `tripped` is TRUE only on a measured, over-threshold rate — a real, current bounce problem.
 export async function getSequenceHealth(sql = getSql()) {
   const rows = await sql`SELECT
-    count(*) filter(where bounced=true AND touch1_sent_at IS NOT NULL) as bounced,
-    count(*) filter(where touch1_sent_at is not null) as sent
-    FROM ps_outreach_leads`
-  const { bounced, sent } = rows[0]
-  const rate = Number(sent) > 0 ? Number(bounced) / Number(sent) : 0
-  return { rate, paused: rate >= PAUSE_ON_BOUNCE_RATE, bounced: Number(bounced), sent: Number(sent) }
+    count(*) filter(where bounced=true) as bounced,
+    count(*) as sent
+    FROM ps_outreach_leads
+    WHERE touch1_sent_at > NOW() - interval '7 days' AND pipeline_stage NOT IN ('dead')`
+  const bounced = Number(rows[0].bounced)
+  const sent = Number(rows[0].sent)
+  const measured = sent > 0
+  const rate = measured ? bounced / sent : 0
+  const tripped = measured && rate >= PAUSE_ON_BOUNCE_RATE
+  // `paused` = do-not-send: a real trip, OR an unmeasured window (fail closed). Only `tripped`
+  // (a measured break) is an autonomy_incident — an empty window is not a break, it is silence.
+  return { rate, measured, tripped, paused: tripped || !measured, bounced, sent }
 }
 
 // PS-INCIDENT-01 (2026-07-15): HARD PAUSE. Aria sequenced leads that appear LLM-fabricated
@@ -121,9 +138,19 @@ export async function runFullSequence() {
     return { paused: true, hard: true, reason: 'PS-INCIDENT-01: outbound halted pending fabricated-lead audit', sent: 0 }
   }
   const health = await getSequenceHealth(sql)
-  if (health.paused) {
-    await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (PAUSE_ON_BOUNCE_RATE * 100) + '%. Sequence halted.')
-    return { paused: true, rate: health.rate, sent: 0 }
+  if (health.tripped) {
+    // A MEASURED, over-threshold bounce rate on the live 7-day window: the funnel is actively
+    // breaking. Record an autonomy_incident so the clean-day clock goes DIRTY today — a broken
+    // funnel is not a clean day. (A deliberate OUTBOUND_HARD_PAUSED above returned already and is
+    // NOT an incident; an empty window below is silence, not a break, and is NOT an incident.)
+    await recordIncident(sql, COMPANY_ID, `bounce breaker tripped: ${(health.rate * 100).toFixed(1)}% over ${health.sent} live sends (7d)`, 'aria').catch(() => {})
+    await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (PAUSE_ON_BOUNCE_RATE * 100) + '% over ' + health.sent + ' live sends. Sequence halted, incident recorded.')
+    return { paused: true, tripped: true, rate: health.rate, sent: 0 }
+  }
+  if (!health.measured) {
+    // No live sends in the 7-day window. Fail closed — no data is not permission — but this is
+    // NOT an incident: nothing broke, nothing was sent. The clock is not dirtied by silence.
+    return { paused: true, measured: false, reason: 'not_measured: no live sends in 7d window', sent: 0 }
   }
 
   // PS-AUTONOMY-GATE-UNWIRED-01: the autonomy level now ACTUALLY gates sending. Before this,
