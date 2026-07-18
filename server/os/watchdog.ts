@@ -4,6 +4,7 @@ import { checkAgentStaleness, reportAgentRun } from './agentHealth'
 import { checkEmployeeStaleness } from './agentHealth_v2'
 import { runOpsRecoveryTick } from './opsRecovery'
 import { runLeadResearcher } from './agents/leadResearcher'
+import { getSequenceHealth } from './sequences'
 import { resolveSystemAlert } from './selfHeal'
 
 const RESEARCHER_PROACTIVE_MS = 55 * 60 * 1000
@@ -56,20 +57,21 @@ export async function runWatchdog() {
   }
 
   try {
-    const bounceStats = await sql`SELECT
-      count(*) filter(where bounced=true) as bounced,
-      count(*) as sent
-      FROM ps_outreach_leads
-      WHERE touch1_sent_at IS NOT NULL`
-    const bounced = Number(bounceStats[0].bounced)
-    const sent = Number(bounceStats[0].sent)
-    const bounceRate = sent > 0 ? (bounced / sent) * 100 : 0
-    if (bounceRate > 8) {
+    // PS-BOUNCE-WINDOW-01 (second reader): this used the SAME lifetime population getSequenceHealth
+    // did before the rescope (bounced/sent over touch1_sent_at IS NOT NULL). After the D2 purge that
+    // is 46.5% over 42 dead leads — a memorial rate that can never drop — and it Telegram-alarmed the
+    // founder hourly with "Sequence paused automatically", which was ALSO false: this watchdog never
+    // paused anything, it only sent the message. Now it calls the ONE rescoped source of truth and
+    // reports honestly: only a MEASURED trip alarms; an empty window is NOT MEASURED, not a scare.
+    const h = await getSequenceHealth(sql)
+    if (!h.measured) {
+      result.actions_taken.push('Bounce rate: NOT MEASURED (no live sends in 7d window)')
+    } else if (h.tripped) {
       result.issues_found++
-      await sendTelegram('PHISHSIMAI BOUNCE ALERT: ' + bounceRate.toFixed(1) + '% (' + bounced + '/' + sent + ' sends). Sequence paused automatically.')
-      result.actions_taken.push('Bounce alert: ' + bounceRate.toFixed(1) + '%')
+      await sendTelegram('PHISHSIMAI BOUNCE ALERT: ' + (h.rate * 100).toFixed(1) + '% over ' + h.sent + ' live sends (7d). Breaker tripped; outbound halts on the next sequence run.')
+      result.actions_taken.push('Bounce alert (measured, tripped): ' + (h.rate * 100).toFixed(1) + '%')
     } else {
-      result.actions_taken.push('Bounce rate OK: ' + bounceRate.toFixed(1) + '% (' + bounced + '/' + sent + ' sent)')
+      result.actions_taken.push('Bounce rate OK: ' + (h.rate * 100).toFixed(1) + '% over ' + h.sent + ' live sends (7d)')
     }
   } catch (e: any) {
     result.actions_taken.push('Bounce check error: ' + e.message?.slice(0, 100))
