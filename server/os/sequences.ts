@@ -4,6 +4,8 @@ import { AB_EXPERIMENTS, getVariant, recordImpression } from './abTest'
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
+import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
+import { COMPANY_ID } from './version'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -122,6 +124,21 @@ export async function runFullSequence() {
   if (health.paused) {
     await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (PAUSE_ON_BOUNCE_RATE * 100) + '%. Sequence halted.')
     return { paused: true, rate: health.rate, sent: 0 }
+  }
+
+  // PS-AUTONOMY-GATE-UNWIRED-01: the autonomy level now ACTUALLY gates sending. Before this,
+  // send_simulation:'l4' lived only in the MIN_LEVEL map and autonomyGate.test.ts — the send path
+  // consulted OUTBOUND_HARD_PAUSED and the breaker but never the level, so the gate everyone
+  // believed locked sending controlled nothing (the purest Shape-3 instance). Checked AFTER the
+  // hard-pause and breaker, so at any level below l4 (including l2) nothing sends even if someone
+  // resets the breaker. A denial is a clean pause, not an error.
+  try {
+    await assertAutonomyAllows('send_simulation', COMPANY_ID)
+  } catch (e) {
+    if (isAutonomyDenied(e)) {
+      return { paused: true, reason: 'autonomy: ' + e.message, sent: 0 }
+    }
+    throw e
   }
 
   const now = new Date()

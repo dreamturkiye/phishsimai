@@ -37,15 +37,14 @@ export async function computeCleanDay(sql: SqlLike, productId: string, dayIso: s
   let violations: string[] = [];
 
   try {
-    // PS-LADDER-01 2026-07-16: SCOPED BY product_id. This query was unscoped while
-    // deploy_verifications and autonomy_incidents below both filter by product -- a leftover
-    // from when architect_tasks was single-product. PhishSim and ScrollFuel share one Neon
-    // database, so unscoped this would have voided PhishSim's clean day using ScrollFuel's 31
-    // failed tasks: a ladder unclimbable for reasons belonging to a different product.
-    // architect_tasks.product_id added the same day and backfilled to 'scrollfuel' (all 124
-    // rows verified as ScrollFuel's by source), DEFAULT 'scrollfuel' so legacy writers keep
-    // working and keep meaning what they meant.
-    const taskFailures = (await sql`SELECT id FROM architect_tasks WHERE product_id = ${productId} AND status = 'failed' AND updated_at::date = ${dayIso}`) as any[];
+    // PS-LADDER-02 2026-07-18: query os_architect_tasks, NOT architect_tasks. `architect_tasks`
+    // is ScrollFuel's table and DOES NOT EXIST in PhishSim's DB — so this query threw every day,
+    // the catch below pushed a violation, and the ladder was stuck at 0: fail-closed, but for a
+    // reason belonging to a table PhishSim never had. Marcus's real queue on PhishSim is
+    // `os_architect_tasks` (productRegistry.ts:43). It has status + updated_at but NO product_id
+    // column (PhishSim is single-product on this table), so the scope filter is dropped. Now the
+    // check verifies PhishSim's actual architect failures instead of throwing on a phantom table.
+    const taskFailures = (await sql`SELECT id FROM os_architect_tasks WHERE status = 'failed' AND updated_at::date = ${dayIso}`) as any[];
     for (const row of taskFailures) {
       violations.push(`unhandled task failure: ${row.id}`);
     }

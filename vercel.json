@@ -43,6 +43,10 @@
   ],
   "crons": [
     {
+      "path": "/api/os/architect/autonomy?action=compute",
+      "schedule": "10 0 * * *"
+    },
+    {
       "path": "/api/os/truth-report",
       "schedule": "0 6 * * *"
     },

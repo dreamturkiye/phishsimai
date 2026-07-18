@@ -47,14 +47,15 @@ export const HARD_STOPS = [
 // An action class absent from this map is fail-closed (denied) at every level —
 // e.g. 'spend' is never auto-approved here; real money stays manual.
 export const MIN_LEVEL: Partial<Record<ActionClass, AutonomyLevel>> = {
+  // PS-AUTONOMY-L2-01: issuing an agent task is the LOWEST-risk autonomous action — the executor
+  // that drains it produces REVIEWED TEXT (executeTask calls an LLM and stores the result; no
+  // send, no code, no spend). It earns its own tier, l2, so the founder can let Janet issue and
+  // watch the executor drain WITHOUT also opening code-generation. Queueing/executing an ARCHITECT
+  // task (Marcus generating and applying code) stays at l3 — deliberately DEcoupled from issuing.
+  // The old design gated both at l3 "so l3 turns both on together"; that coupling was the bug.
+  issue_agent_task: 'l2',
   queue_architect_task: 'l3',
-  // EXECUTING a queued architect task (handing it to the daemon, generating and
-  // applying code) is gated at the same tier that permits queueing one. The gate
-  // previously guarded only CREATION, so a pre-existing 'queued' row was still
-  // executable at 'manual' — closed here. Same threshold as queueing, so raising
-  // the level to l3 turns both paths on together.
   execute_architect_task: 'l3',
-  issue_agent_task: 'l3',
   send_simulation: 'l4',
   crm_write: 'l4',
   deploy: 'l5',

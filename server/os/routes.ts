@@ -764,13 +764,20 @@ export async function bugReport(req: Request, res: Response) {
 }
 
 export async function qaSmokePS(req: Request, res: Response) {
-  if (!okHQ(req,res) && !okCron(req,res)) return
+  // PS-DOUBLE-SEND-01: was `if (!okHQ(req,res) && !okCron(req,res)) return`. okHQ SENDS a 401 on
+  // failure, so for a cron request okHQ sent 401, okCron then passed (returns true), the `return`
+  // was skipped, and res.json() below sent a SECOND time -> ERR_HTTP_HEADERS_SENT. That threw
+  // inside try, the catch's own res.status(500).json() threw AGAIN (headers already sent), and
+  // THAT escaped as an unhandled rejection -> the serverless PROCESS exited 128, killing whatever
+  // else shared the lambda (e.g. an in-flight researcher enrichment). okCronOrHq checks with
+  // non-sending predicates and sends exactly once. Catch is guarded so it can never re-throw.
+  if (!okCronOrHq(req, res)) return
   try {
     const { runQASmoke } = await import('./architectAgent')
     const trigger = (req.query.trigger as string) || 'manual'
     const baseUrl = (req.query.base_url as string) || undefined
     res.json({ ok: true, ...(await runQASmoke(trigger, baseUrl)) })
-  } catch(e: any) { res.status(500).json({ error: e.message }) }
+  } catch(e: any) { if (!res.headersSent) res.status(500).json({ error: e.message }) }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1044,7 +1051,9 @@ export async function architectComplete(req: Request, res: Response) {
 }
 
 export async function architectRun(req: Request, res: Response) {
-  if (!okHQ(req, res) && !okCron(req, res)) return
+  // PS-DOUBLE-SEND-01: same broken guard as qaSmokePS — okHQ sends a 401, then okCron passing
+  // skipped the return and a second send followed. okCronOrHq sends exactly once; catch guarded.
+  if (!okCronOrHq(req, res)) return
   try {
     const bugId = (req.query.bugId as string) || req.body?.bugId
     const mode = (req.query.mode as string) || req.body?.mode || 'diagnose'
@@ -1055,7 +1064,7 @@ export async function architectRun(req: Request, res: Response) {
     if (!bugId) { res.status(400).json({ error: 'bugId required' }); return }
     res.json({ ok: true, ...(await runArchitectAgent(bugId)) })
   } catch (e: any) {
-    res.status(500).json({ error: e.message })
+    if (!res.headersSent) res.status(500).json({ error: e.message })
   }
 }
 

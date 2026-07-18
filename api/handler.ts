@@ -10,6 +10,22 @@ import { sentryErrorMiddleware } from "../server/os/sentryExpress";
 // mounting is still captured. No-op (and never throws) when SENTRY_DSN is unset.
 initSentry();
 
+// PS-DOUBLE-SEND-01 defense-in-depth. Express does not await async route handlers, and there was
+// NO process-level rejection handler — so a single escaped rejection (e.g. a double-send throwing
+// past its own catch) crashed the whole lambda with exit 128, killing any OTHER request in flight
+// on the same reused process. That is how a qa-smoke bug could kill a researcher mid-enrichment.
+// Log and survive instead of dying: one endpoint's failure must never take down another's work.
+// Registered once, guarded so hot-reload re-imports do not stack listeners.
+if (!(globalThis as any).__psRejectionGuard) {
+  (globalThis as any).__psRejectionGuard = true;
+  process.on("unhandledRejection", (reason: any) => {
+    console.error("[unhandledRejection] survived (not crashing the shared process):", reason?.stack || reason);
+  });
+  process.on("uncaughtException", (err: any) => {
+    console.error("[uncaughtException] survived:", err?.stack || err);
+  });
+}
+
 const app = express();
 
 // PS-STRIPE-WEBHOOK-UNMOUNTED: the Stripe webhook was registered ONLY in server/_core/index.ts
