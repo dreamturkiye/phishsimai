@@ -27,7 +27,7 @@ export function getExpectedOpsAgents(companyId: string): Record<string, number> 
 export async function healOpsAgent(agentName: string, companyId: string): Promise<string> {
   switch (agentName) {
     case 'researcher': {
-      const r = await runLeadResearcher(6)
+      const r = await runLeadResearcher(4)
       return `discovered=${r.discovered} added=${r.added} enriched=${r.enriched}`
     }
     case 'discover': {

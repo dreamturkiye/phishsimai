@@ -191,9 +191,20 @@ export async function runLeadResearcher(batchSize = 6) {
   const stats = { discovered: 0, enriched: 0, added: 0, skipped: 0, errors: [] as string[] }
   const start = Date.now()
 
+  // PS-RESEARCHER-TIMEOUT-01: WALL CLOCK. Per-call timeouts bound each call; only a wall clock
+  // bounds the TOTAL. Vercel kills the function at 300s and a 504 loses the whole run AND any
+  // leads it found. Stop enqueuing at 220s and return what we did — partial and honest beats
+  // dead and silent. Elapsed is logged around every vendor call so the logs say which call ate
+  // the budget instead of us guessing.
+  const DEADLINE_MS = 220_000
+  const el = () => Math.round((Date.now() - start) / 1000)
+  let budgetExhausted = false
+
   try {
+    console.log(`[researcher] t=${el()}s discovery start (Outscraper, bounded 90s)`)
     const discover = await runLeadDiscover(batchSize * 2)
     stats.discovered = discover.discovered
+    console.log(`[researcher] t=${el()}s discovery done: ${stats.discovered} queued`)
 
     const pending = await sql`
       SELECT id, domain, company_name, research_data FROM lead_research_queue
@@ -201,8 +212,17 @@ export async function runLeadResearcher(batchSize = 6) {
       ORDER BY created_at ASC LIMIT ${batchSize}`
 
     for (const item of pending) {
+      // Do not START new work past the deadline. The in-flight item (≤~42s of bounded calls)
+      // finishes by ~262s, safely under Vercel's 300s. Remaining rows stay 'pending' for the
+      // next cron — never marked 'researching', so nothing is stranded.
+      if (Date.now() - start > DEADLINE_MS) {
+        budgetExhausted = true
+        console.log(`[researcher] t=${el()}s BUDGET HIT — stopping; ${stats.added} added, remaining left pending`)
+        break
+      }
       try {
         await sql`UPDATE lead_research_queue SET status='researching', attempts=attempts+1, last_attempt_at=NOW() WHERE id=${item.id}`
+        console.log(`[researcher] t=${el()}s enrich ${item.domain}`)
         // AMF first: it takes a bare domain, which is all Google Maps gives us. Hunter needs
         // a name and would return nothing for ~55 of every 56 leads here.
         let hunter = await enrichViaAnyMailFinder(String(item.domain))
@@ -238,13 +258,14 @@ export async function runLeadResearcher(batchSize = 6) {
       }
     }
 
-    await reportAgentRun('researcher', true, { ...stats, duration_ms: Date.now() - start }, undefined, COMPANY_ID)
+    console.log(`[researcher] t=${el()}s DONE — added:${stats.added} enriched:${stats.enriched} skipped:${stats.skipped} budget_hit:${budgetExhausted}`)
+    await reportAgentRun('researcher', true, { ...stats, budget_exhausted: budgetExhausted, duration_ms: Date.now() - start }, undefined, COMPANY_ID)
     if (stats.added > 0) {
-      await sendTelegram(`PHISHSIMAI RESEARCHER: +${stats.added} MSP leads\nDiscovered:${stats.discovered} Enriched:${stats.enriched} Skipped:${stats.skipped}`)
+      await sendTelegram(`PHISHSIMAI RESEARCHER: +${stats.added} MSP leads\nDiscovered:${stats.discovered} Enriched:${stats.enriched} Skipped:${stats.skipped}${budgetExhausted ? ' (budget hit, rest pending)' : ''}`)
     }
   } catch (e: any) {
     await reportAgentRun('researcher', false, {}, e.message, COMPANY_ID)
     stats.errors.push('Fatal: ' + e.message)
   }
-  return stats
+  return { ...stats, budget_exhausted: budgetExhausted, elapsed_s: el() }
 }

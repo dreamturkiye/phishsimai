@@ -64,8 +64,14 @@ export async function searchMaps(query: string, limit = 20): Promise<MapsPlace[]
   if (!key) {
     throw new Error('OUTSCRAPER_API_KEY is NOT SET — discovery is DISABLED, not empty. An unconfigured finder must never be mistaken for an exhausted city.')
   }
+  // PS-RESEARCHER-TIMEOUT-01: THE HANG. `async=false` makes Outscraper run the Google Maps scrape
+  // synchronously and hold the connection open until it finishes — minutes for a busy query — and
+  // this fetch had NO timeout. runLeadResearcher calls discovery FIRST, so it consumed the entire
+  // 300s Vercel budget here and 504'd before any enrichment ran (the AMF/Hunter timeouts were
+  // downstream and never reached). 90s bound: a real scrape returns well inside it; a hang aborts
+  // LOUD (caught by runLeadDiscover) so the run proceeds to enrichment instead of dying whole.
   const url = `${OUTSCRAPER_ENDPOINT}?query=${encodeURIComponent(query)}&limit=${limit}&async=false`
-  const res = await fetch(url, { headers: { 'X-API-KEY': key } })
+  const res = await fetch(url, { headers: { 'X-API-KEY': key }, signal: AbortSignal.timeout(90000) })
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`Outscraper ${res.status} for "${query}" — VENDOR FAILURE, not "no results". ${body.slice(0, 200)}`)

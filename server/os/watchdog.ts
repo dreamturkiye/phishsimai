@@ -19,7 +19,7 @@ async function ensureResearcherRunning(companyId: string, actions: string[]) {
   const age = last ? Date.now() - new Date(last as string).getTime() : Infinity
   if (age < RESEARCHER_PROACTIVE_MS) return
   try {
-    const heal = await runLeadResearcher(6)
+    const heal = await runLeadResearcher(4)
     actions.push(
       `Researcher proactive: discovered=${heal.discovered} added=${heal.added} enriched=${heal.enriched}`
     )

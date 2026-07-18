@@ -18,7 +18,13 @@ import { resolveMx } from 'node:dns/promises'
 
 export async function hasMx(domain: string): Promise<boolean> {
   try {
-    const records = await resolveMx(domain)
+    // PS-RESEARCHER-TIMEOUT-01: dns.resolveMx takes NO AbortSignal and hangs on a dead/slow
+    // nameserver. Race it against a 6s deadline so one bad domain can't stall the send loop.
+    // Timeout resolves to "no MX" — fail closed, consistent with the catch below.
+    const records = await Promise.race([
+      resolveMx(domain),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('mx_timeout')), 6000)),
+    ])
     if (!Array.isArray(records) || records.length === 0) return false
     // RFC 7505 null MX: a lone `0 .` (empty/root exchange) means "this domain accepts no mail".
     const real = records.filter((r) => r.exchange && r.exchange.trim() !== '' && r.exchange.trim() !== '.')
