@@ -11,23 +11,34 @@ RULE: rotating the AMF key is a TWO-PRODUCT operation. Update, in one pass:
 Four places. Miss one and a product goes dark silently.
 
 
-# ⛔ FOUNDER STANDING ORDER (2026-07-18)
+# ✅ OUTBOUND OPEN — 2026-07-18, founder-approved. Reopening gate ALL GREEN.
 
-**Outbound was turned off earlier today. Turn it on once all systems are good and running properly.**
+First scheduled send: **07:00 UTC 2026-07-18** — up to 20 US MSPs, all MX-verified, at l4.
 
-Nothing sends until ALL SEVEN gate items are met — every one **measured, not assumed.** The founder
-asked to be reminded; this is the list.
+- [x] **AMF key valid** — `4GW…` VALID (auth 200 + live enrichments). In all four places: PhishSim
+      `.env.local` + Vercel, ScrollFuel `.env.local` + Vercel (founder set it). See the 4-place rule above.
+- [x] **google_maps leads enriched** — 22 eligible US MSPs (was 0 all week); pool drains ~9/clean run.
+- [x] **MX gate passes them** — enforced at send time; a no-MX lead (nexacoreitsolutions.com) is
+      marked dead + skipped, never emailed. Rail proven on the real list.
+- [x] **New copy live** — PS-COPY-REWRITE-01 (MSP/reseller, insurance wedge, nothing invented) +
+      PS-SALUTATION-01 (derived first name) + PS-LOGO-CROP-01 (tight dark-on-white logo).
+- [x] **Bounce rate rescoped & honest** — PS-BOUNCE-WINDOW-01: rolling 7-day live window, measured
+      flag, only a measured trip is an incident. Both readers (getSequenceHealth, watchdog) rescoped.
+- [x] **Autonomy raised to l4 (send_simulation)** — 2026-07-18, and actually enforced in the send path.
+- [x] **Founder approved the recipient list** — 2026-07-18.
 
-- [x] **AMF key valid** — `4GW…` confirmed VALID (auth 200 + enriched at the 03:00 run). Written
-      to PhishSim + ScrollFuel `.env.local`; PhishSim Vercel done. ⚠️ ScrollFuel Vercel still on the
-      dead `ZVgu` key — founder must set `ANYMAILFINDER_API_KEY=4GW…` there (PS-SHARED-AMF-01).
-- [~] **40 google_maps leads enriched** — **5 landed** (BCA IT, OnboardIT, Trapp, One Step Secure,
-      PK Tech — all US, Owner), 48 pending, draining ~1–4/clean run. Was 0 all week.
-- [x] **MX gate passes them** — 5/5 enriched leads PASS.
-- [x] **New copy live** — PS-COPY-REWRITE-01, MSP-positioned, sourced, nothing invented.
-- [x] **Bounce rate rescoped & honest** — PS-BOUNCE-WINDOW-01: rolling 7-day live window; empty = NOT MEASURED, fail closed; only a measured trip is an incident.
-- [ ] **Autonomy raised to l4 (send_simulation)** — NOW actually enforced in the send path. _At l2: nothing sends, verified._
-- [ ] **Founder approves the recipient list** — the final human gate before the first send.
+Live rails on every send: OUTBOUND_HARD_PAUSED · bounce breaker (7d window) · autonomy gate (l4) ·
+MX pre-check · geo allowlist [US,GB,AU] · DAILY_SEND_LIMIT 20 (query LIMIT 20 + loop break).
+
+## Open, non-blocking (next sessions)
+
+- **PS-BOUNCE-SOURCE-01** — four bounce calculations, one truth. getSequenceHealth + watchdog are
+  rescoped; `routes.ts:456` (HQ dashboard) and `cgoAutonomy.ts:97` (dead code) still compute the
+  lifetime rate. Route ALL bounce readers through getSequenceHealth so there is exactly one number.
+- **PS-DISCOVERY-EMPTY-01** — Outscraper returns 0 places for "managed service provider, Denver,
+  Colorado" after 181s; Miami worked (14 leads), so the query format is fine and Denver is
+  empty/blocked. Pool drains in ~5 runs. RESOLUTION (not a fix): moot once the founder's 12,000
+  US-MSP import lands — that becomes the queue's refill, not Outscraper city-cycling.
 
 ---
 
