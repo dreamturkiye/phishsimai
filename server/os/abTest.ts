@@ -55,7 +55,7 @@ const touch1Html = (name: string) => `<div style="font-family:-apple-system,Blin
 <p>If it's not useful in ten minutes, you've lost ten minutes.</p>
 <p style="margin-top:24px;margin-bottom:0">Sarah Mitchell</p>
 <p style="margin:0;color:#555">Head of Compliance, Partnerships</p>
-<img src="https://www.phishsimai.com/brand/phishsim-logo-on-white.png" alt="PhishSim AI" width="140" style="display:block;border:0;margin:8px 0 0 0">
+<img src="https://www.phishsimai.com/brand/phishsim-nav.png" alt="PhishSim AI" width="150" style="display:block;border:0;outline:0;margin:8px 0 0 0;padding:0;height:auto">
 <p style="color:#666;font-size:12px;margin-top:28px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a></p>
 </div>`
 
