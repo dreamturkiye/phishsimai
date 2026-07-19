@@ -1,6 +1,7 @@
 import { AGENTS, AgentId } from '../lib/kaan_os_v4'
 import { getSql } from './conn'
 import { openSystemAlert, resolveSystemAlert } from './selfHeal'
+import { raiseEscalation } from './escalationNotify'
 
 /** The concrete neon client type returned by getSql() (NeonQueryFunction<false, false>). */
 type Sql = ReturnType<typeof getSql>
@@ -82,7 +83,7 @@ export async function reportAgentHealth(
         updated_at           = NOW()
     `.catch(() => {})
   } else {
-    await sql`
+    const rows = (await sql`
       INSERT INTO agent_health_v2
         (company_id, agent_id, status, last_run_at, consecutive_failures, last_error, total_runs)
       VALUES (${companyId}, ${agentId}, 'warning', NOW(), 1, ${error ?? null}, 1)
@@ -96,7 +97,14 @@ export async function reportAgentHealth(
         last_error           = ${error ?? null},
         total_runs           = agent_health_v2.total_runs + 1,
         updated_at           = NOW()
-    `.catch(() => {})
+      RETURNING status, consecutive_failures
+    `.catch(() => [] as any[])) as any[]
+    // PS-ESCALATION-COVERAGE-01: escalate on the TRANSITION into critical (the 3rd consecutive
+    // failure) only — not every failure ≥3 — so repeated agent failures alert once, not on a loop.
+    const r = rows[0]
+    if (r && r.status === 'critical' && Number(r.consecutive_failures) === 3) {
+      await raiseEscalation('agent_critical', { agentId, consecutiveFailures: 3, lastError: String(error ?? '').slice(0, 200) }, companyId).catch(() => {})
+    }
   }
 }
 
