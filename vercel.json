@@ -47,6 +47,10 @@
       "schedule": "10 0 * * *"
     },
     {
+      "path": "/api/os/autonomy-promote",
+      "schedule": "20 0 * * *"
+    },
+    {
       "path": "/api/os/truth-report",
       "schedule": "0 6 * * *"
     },

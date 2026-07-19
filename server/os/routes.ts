@@ -1178,3 +1178,7 @@ export async function architectIncident(req: Request, res: Response) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }
 }
+
+// PS-AUTONOMY-BRIDGE-01: expose the daily earned-autonomy cron through the routes namespace
+// (api/handler.ts dispatches via `routes.*`).
+export { cronAutonomyPromotion } from './autonomyPromotion'

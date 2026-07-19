@@ -11,6 +11,7 @@
 import { getSql } from './conn'
 import { getCleanStreak } from './cleanDays'
 import { COMPANY_ID } from './version'
+import { sendTelegram } from './telegram'
 
 // Matches os_autonomy_state CHECK + autonomyGate LEVEL_ORDER. Index 0 ('manual') is L1, the floor.
 const ORDER = ['manual', 'l2', 'l3', 'l4', 'l5'] as const
@@ -114,16 +115,44 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
   return { ...d, applied: true, newTrust }
 }
 
-// Cron handler — DELIBERATELY NOT wired into api/handler.ts or vercel.json yet. Enable only after
-// founder approval (add the route + a daily schedule AFTER the daily clean-day compute at 10 0).
+// Latest finalized clean-day result (the compute cron writes YESTERDAY once the day is over).
+async function latestCleanDay(sql: any, companyId: string): Promise<{ day: string | null; clean: boolean | null; violations: string[] }> {
+  const r = (await sql`SELECT day, clean, violations FROM autonomy_clean_days WHERE product_id=${companyId} ORDER BY day DESC LIMIT 1`) as any[]
+  const row = r[0]
+  if (!row) return { day: null, clean: null, violations: [] }
+  const v = Array.isArray(row.violations) ? row.violations : (typeof row.violations === 'string' ? JSON.parse(row.violations || '[]') : [])
+  return { day: new Date(row.day).toISOString().split('T')[0], clean: row.clean, violations: v }
+}
+
+// Map enforcement level -> Kaan's L-label for the daily line (L1==manual).
+function lLabel(level: string): string {
+  return level === 'manual' ? 'L1 (manual)' : `L${ORDER.indexOf(level as EnfLevel) + 1} (${level})`
+}
+
+// Daily autonomy cron. Wired live (api/handler.ts + vercel.json), scheduled AFTER the clean-day
+// compute (10 0) so it reads the finalized result. Runs the token-audited promotion/demotion and
+// emits ONE Telegram line: current level, streak, today clean-or-dirty (+ reason if dirty).
 export async function cronAutonomyPromotion(req: any, res: any) {
   const secret = process.env.CRON_SECRET
-  if (!secret || req.headers?.authorization !== `Bearer ${secret}`) {
-    return res.status(401).json({ error: 'Unauthorized' })
-  }
+  const okCron = !!secret && req.headers?.authorization === `Bearer ${secret}`
+  const okHq = !!process.env.HQ_SECRET && req.query?.secret === process.env.HQ_SECRET
+  if (!okCron && !okHq) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    const result = await runAutonomyPromotion(COMPANY_ID)
-    return res.json({ ok: true, ...result })
+    const sql = getSql()
+    const result = await runAutonomyPromotion(COMPANY_ID, sql)
+    const cd = await latestCleanDay(sql, COMPANY_ID)
+    const dayState = cd.clean === null ? 'not yet computed' : cd.clean ? 'clean ✅' : `dirty ⚠️ (${cd.violations.slice(0, 2).join('; ') || 'see clean-day log'})`
+    const move =
+      result.action === 'promote' ? `PROMOTED ${result.from} → ${result.to} (earned)`
+      : result.action === 'demote' ? `DEMOTED ${result.from} → ${result.to} (${result.reason})`
+      : `held at ${lLabel(result.to)} — ${result.reason}`
+    await sendTelegram(
+      `🎖️ <b>PhishSim Autonomy</b>\n` +
+      `Level: ${lLabel(result.to)} · clean-day streak: ${result.cleanStreak ?? 0}\n` +
+      `${cd.day ?? 'today'}: ${dayState}\n` +
+      `Today: ${move}`,
+    ).catch(() => {})
+    return res.json({ ok: true, ...result, latestCleanDay: cd })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }
