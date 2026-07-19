@@ -264,7 +264,13 @@ export async function cronDiscover(req: Request, res: Response) {
 export async function cronSarahSocial(req: Request, res: Response) {
   if (!okCronOrHq(req, res)) return
   try {
-    res.json({ ok: true, ...(await runSarahSocialCron()) })
+    const reddit = await runSarahSocialCron()
+    // PS-SARAH-LINKEDIN-01: LinkedIn monitor (safe from day 1) + publish approved posts. Publish is
+    // hard-gated behind the Aug-5 start + approval + content-safety; before Aug-5 it no-ops (drafts-only).
+    const { publishApprovedLinkedIn, runLinkedInMonitor } = await import('./social/linkedInPublisher')
+    const linkedinMonitor = await runLinkedInMonitor().catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
+    const linkedinPublish = await publishApprovedLinkedIn(1).catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
+    res.json({ ok: true, reddit, linkedinMonitor, linkedinPublish })
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })
   }
@@ -1182,3 +1188,6 @@ export async function architectIncident(req: Request, res: Response) {
 // PS-AUTONOMY-BRIDGE-01: expose the daily earned-autonomy cron through the routes namespace
 // (api/handler.ts dispatches via `routes.*`).
 export { cronAutonomyPromotion } from './autonomyPromotion'
+
+// PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
+export { resendInbound } from './social/replyCapture'
