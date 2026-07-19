@@ -147,7 +147,11 @@ export async function recordHeal(agentId: AgentId, companyId = 'phishsimai') {
 const EMPLOYEE_PING_THRESHOLDS: Partial<Record<AgentId, number>> = {
   janet: 26 * 60 * 60 * 1000,
 }
-const DEFAULT_EMPLOYEE_PING_MS = 6 * 60 * 60 * 1000
+// PS-STALE-THRESHOLD-01: daily-cadence agents (Aria et al.) heartbeat once/day via their sequence
+// cron, so a 6h threshold tripped a false "stale" ~18h every day (the "Aria 27h / Marcus dispatched"
+// alarm). Raised to 26h — matching Janet's override — so a daily agent is flagged only if it misses a
+// FULL daily cycle (+2h grace), which is a real miss, not normal cadence.
+const DEFAULT_EMPLOYEE_PING_MS = 26 * 60 * 60 * 1000
 
 export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<string[]> {
   const sql = getSql()
