@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install --no-frozen-lockfile && npm run build",
-  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm install --no-frozen-lockfile --prod=false && npm run build",
+  "installCommand": "pnpm install --no-frozen-lockfile --prod=false",
   "outputDirectory": "dist/public",
   "framework": null,
   "functions": {
