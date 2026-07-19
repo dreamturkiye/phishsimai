@@ -65,7 +65,11 @@ export async function openSystemAlert(key: string, detail: string, companyId = C
     await sendTelegram(
       `🚨 <b>JANET — SYSTEM ISSUE</b>\n` +
       `${key}: ${detail}\n` +
-      `Marcus dispatched autonomously if code fix is needed.`
+      // PS-MARCUS-LIE-01: state what ACTUALLY happens. openSystemAlert only records the alert +
+      // notifies — it does NOT dispatch Marcus (that path is queueJanetArchitectTask, autonomy-gated
+      // and never reached from here). Announcing a dispatch that didn't occur is the exact false
+      // system-state claim this fixes. Truth: alert raised, no autonomous action taken.
+      `Alert raised for review. No autonomous action taken.`
     )
   }
 }
