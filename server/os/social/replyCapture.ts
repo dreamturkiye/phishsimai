@@ -37,6 +37,23 @@ export async function isReplyAutoEnabled(): Promise<boolean> {
   return String((r as any[])[0]?.value ?? '') === '1'
 }
 
+// PS-REPLY-AUTH-01: close the injection hole. CloudMailin posts with HTTP Basic Auth (its native
+// target-authentication). Enforce it ONLY when the secret is configured, so setting it up can't break
+// the already-live pipeline: secret unset -> allow + warn (current behaviour); secret set -> reject any
+// request whose Basic credentials don't match. Kaan sets the same user:pass in Vercel AND CloudMailin.
+function checkInboundAuth(req: any): boolean {
+  const pass = process.env.INBOUND_WEBHOOK_PASS
+  if (!pass) {
+    console.warn('[reply-capture] webhook UNAUTHENTICATED — set INBOUND_WEBHOOK_PASS (+ CloudMailin) to close it')
+    return true
+  }
+  const user = process.env.INBOUND_WEBHOOK_USER || 'phishsim-inbound'
+  const m = String(req.headers?.authorization || '').match(/^Basic\s+(.+)$/i)
+  if (!m) return false
+  const [u, ...rest] = Buffer.from(m[1], 'base64').toString().split(':')
+  return u === user && rest.join(':') === pass
+}
+
 function extractEmail(raw: string): string {
   const m = String(raw || '').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)
   return m ? m[0].toLowerCase() : ''
@@ -61,6 +78,7 @@ Voice: warm, concise, helpful peer. NEVER fabricate stats, customers, or claims.
 // CloudMailin, Mailgun Routes, or a plain {from,subject,text}). Always 200s so the relay doesn't retry-storm.
 export async function resendInbound(req: any, res: any) {
   try {
+    if (!checkInboundAuth(req)) return res.status(401).json({ ok: false, error: 'unauthorized' })
     const b = req.body || {}
     const from = extractEmail(b.from || b.sender || b.From || b.envelope?.from || b.from_email || b['from-email'] || '')
     const subject = String(b.subject || b.Subject || '')
