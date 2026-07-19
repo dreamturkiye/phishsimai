@@ -10,8 +10,25 @@ import { recordIncident } from './cleanDays'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
-export const DAILY_SEND_LIMIT = 20
+export const DAILY_SEND_LIMIT = 20 // starting cap / floor; effective cap is the warm-up ramp below
 export const PAUSE_ON_BOUNCE_RATE = 0.08
+
+// PS-RAMP-01: decided warm-up ramp 20 → 50 → 100/day. Day 1 = RAMP_START. The step cadence is
+// explicit and editable here; day 8+ holds at RAMP_MAX. Applied as the per-run cap in
+// runFullSequence so no day exceeds it, drawing from the sanitized-clean pool.
+const RAMP_START = '2026-07-19' // today = day 1 at 20/day
+const RAMP_MAX = 100
+const RAMP: { throughDay: number; cap: number }[] = [
+  { throughDay: 3, cap: 20 }, // days 1-3
+  { throughDay: 7, cap: 50 }, // days 4-7
+] // day 8+ => RAMP_MAX (100)
+export function dailySendCap(now: Date = new Date()): number {
+  const start = Date.parse(`${RAMP_START}T00:00:00Z`)
+  const dayN = Math.floor((now.getTime() - start) / 86_400_000) + 1 // start day is day 1
+  if (dayN < 1) return 0
+  for (const step of RAMP) if (dayN <= step.throughDay) return step.cap
+  return RAMP_MAX
+}
 
 async function sendEmail(
   to: string,
@@ -19,6 +36,7 @@ async function sendEmail(
   html: string,
   tags: { name: string; value: string }[] = [],
   unsubToken?: string,
+  text?: string,
 ) {
   // PS-COPY-REWRITE-01: List-Unsubscribe + one-click (RFC 8058). Gmail/Outlook require these for
   // bulk senders and they directly affect inbox placement. The URL is the same token-based
@@ -34,7 +52,7 @@ async function sendEmail(
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, tags, headers }),
+    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, text, tags, headers }),
   })
   return res.json()
 }
@@ -169,18 +187,19 @@ export async function runFullSequence() {
   }
 
   const now = new Date()
+  const cap = dailySendCap(now) // PS-RAMP-01: today's warm-up cap (20 → 50 → 100)
   let totalSent = 0
   const results: any[] = []
 
-  if (totalSent < DAILY_SEND_LIMIT) {
+  if (totalSent < cap) {
     const exp = AB_EXPERIMENTS.touch1_subject
     const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
       WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND unsubscribed=false
       AND pipeline_stage NOT IN ('dead','customer')
-      ORDER BY created_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
+      ORDER BY created_at ASC LIMIT ${cap - totalSent}`
 
     for (const lead of t1Leads) {
-      if (totalSent >= DAILY_SEND_LIMIT) break
+      if (totalSent >= cap) break
       try {
         // PS-PORT-01 / SF-DELIV-01: pre-send MX gate. A domain with no MX (or an RFC 7505 null MX)
         // cannot receive mail and bounces 100% — free to check, and the rail that would have caught
@@ -202,10 +221,11 @@ export async function runFullSequence() {
         // (which is the Google Maps business title for google_maps leads). deriveFirstName returns
         // "there" when the local part is not a plausible first name — never the business string.
         const greetName = deriveFirstName(String(lead.email))
-        const html = v.html(greetName, String(lead.company), ind).replace('{{TOKEN}}', token)
+        const html = v.html(greetName, String(lead.company), ind).replace(/{{TOKEN}}/g, token)
+        const text = v.text(greetName, String(lead.company), ind).replace(/{{TOKEN}}/g, token)
         const result = await sendEmail(String(lead.email), subject, html, [
           { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
-        ], token)
+        ], token, text)
         if (!result?.id) continue
         const ts = now.toISOString()
         await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect', stage_updated_at=${ts} WHERE id=${lead.id}`

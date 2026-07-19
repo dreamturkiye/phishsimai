@@ -4,7 +4,23 @@ export interface ABVariant {
   id: string
   subject: (name: string, co: string) => string
   html: (name: string, co: string, ind: string) => string
+  text: (name: string, co: string, ind: string) => string
 }
+
+// PS-CANSPAM-01: mandatory footer on every commercial email — physical postal address (confirmed
+// valid by the founder) + the reason-for-contact + a working one-click unsubscribe. Rendered in
+// BOTH the HTML and plain-text parts. {{TOKEN}} is the per-recipient base64url unsubscribe token
+// (replaced in sequences.ts); the same token backs the List-Unsubscribe one-click header.
+const CANSPAM_POSTAL = '240 Queen Street N.E., Leesburg, VA 20176'
+const CANSPAM_HTML = `<hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
+<p style="color:#666;font-size:12px;margin:0">Sarah Mitchell · PhishSim AI</p>
+<p style="color:#666;font-size:12px;margin:0">${CANSPAM_POSTAL}</p>
+<p style="color:#666;font-size:12px;margin:12px 0 0">You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? <a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a> — one click, no hard feelings.</p>`
+const CANSPAM_TEXT = `—
+Sarah Mitchell · PhishSim AI
+${CANSPAM_POSTAL}
+
+You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? Unsubscribe — one click, no hard feelings: https://phishsimai.com/unsubscribe?e={{TOKEN}}`
 
 /**
  * PS-COPY-REWRITE-01 (PS-POSITIONING-01) — why the OLD touch-1 copy failed, so nobody rebuilds it:
@@ -56,8 +72,30 @@ const touch1Html = (name: string) => `<div style="font-family:-apple-system,Blin
 <p style="margin-top:24px;margin-bottom:0">Sarah Mitchell</p>
 <p style="margin:0;color:#555">Head of Compliance, Partnerships</p>
 <img src="https://www.phishsimai.com/brand/phishsim-logo-email.png" alt="PhishSim AI" width="150" style="display:block;border:0;outline:0;margin:8px 0 0 0;padding:0;height:auto">
-<p style="color:#666;font-size:12px;margin-top:28px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a></p>
+${CANSPAM_HTML}
 </div>`
+
+// Plain-text part (CAN-SPAM requires the footer in every part). Mirrors the HTML copy.
+const touch1Text = (name: string) => `Hi ${name},
+
+Cyber insurance underwriting changed in 2026. Phishing simulation is now a hard requirement at renewal — carriers ask for simulation frequency, click-rate trends across the last 12 months, and evidence of remedial training for anyone who failed. Annual video training is explicitly flagged as insufficient by most major carriers.
+
+The question underwriters ask has shifted from "do you have this control?" to "can you prove it was enforced at the time of the incident?" That gap is where claims get denied — and when your client's broker asks for the proof packet, someone has to produce it.
+
+PhishSim AI is white-label. You run simulations for your clients under your own brand, and it issues a compliance certificate per client, per campaign — the documented evidence their underwriter is asking for.
+
+Setup takes about 10 minutes. No agents, no IT project, no call with me.
+
+I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 7-day trial with no credit card.
+
+Start your 7-day trial: https://phishsimai.com/register
+
+If it's not useful in ten minutes, you've lost ten minutes.
+
+Sarah Mitchell
+Head of Compliance, Partnerships
+
+${CANSPAM_TEXT}`
 
 export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test: ABVariant; active: boolean }> = {
   touch1_subject: {
@@ -66,11 +104,13 @@ export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test: ABVarian
       id: 'ctrl_t1_insurance',
       subject: () => TOUCH1_SUBJECT,
       html: (name) => touch1Html(name),
+      text: (name) => touch1Text(name),
     },
     test: {
       id: 'test_t1_insurance',
       subject: () => TOUCH1_SUBJECT,
       html: (name) => touch1Html(name),
+      text: (name) => touch1Text(name),
     },
   },
 }
