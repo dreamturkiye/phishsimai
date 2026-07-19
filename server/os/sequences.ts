@@ -30,6 +30,14 @@ export function dailySendCap(now: Date = new Date()): number {
   return RAMP_MAX
 }
 
+// PS-RAMP-DECOUPLE-01: explicit founder switch for the warm-up ramp, stored in janet_memory so it
+// can be flipped without a redeploy. '1' = the founder has authorized the ramp to send under its
+// own rails (footer/sanitizer/MX/suppression/cap), decoupled from the earned autonomy level.
+export async function isFounderRampEnabled(sql = getSql()): Promise<boolean> {
+  const r = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY_ID} AND type='operating' AND key='outreach_ramp_enabled' LIMIT 1`.catch(() => [])
+  return String((r as any[])[0]?.value ?? '') === '1'
+}
+
 async function sendEmail(
   to: string,
   subject: string,
@@ -177,13 +185,20 @@ export async function runFullSequence() {
   // believed locked sending controlled nothing (the purest Shape-3 instance). Checked AFTER the
   // hard-pause and breaker, so at any level below l4 (including l2) nothing sends even if someone
   // resets the breaker. A denial is a clean pause, not an error.
-  try {
-    await assertAutonomyAllows('send_simulation', COMPANY_ID)
-  } catch (e) {
-    if (isAutonomyDenied(e)) {
-      return { paused: true, reason: 'autonomy: ' + e.message, sent: 0 }
+  // PS-RAMP-DECOUPLE-01: the founder-directed warm-up ramp is NOT an autonomous action — it is an
+  // explicit founder operation with its own rails (footer + sanitizer + MX + suppression + cap).
+  // When the founder flag is ON it sends independent of the EARNED autonomy level (which gates
+  // Janet's AUTONOMOUS sends). Autonomous callers (flag OFF) still require send_simulation >= l4.
+  const founderRamp = await isFounderRampEnabled(sql).catch(() => false)
+  if (!founderRamp) {
+    try {
+      await assertAutonomyAllows('send_simulation', COMPANY_ID)
+    } catch (e) {
+      if (isAutonomyDenied(e)) {
+        return { paused: true, reason: 'autonomy: ' + e.message, sent: 0 }
+      }
+      throw e
     }
-    throw e
   }
 
   const now = new Date()
@@ -195,6 +210,7 @@ export async function runFullSequence() {
     const exp = AB_EXPERIMENTS.touch1_subject
     const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
       WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND unsubscribed=false
+      AND sanitized_at IS NOT NULL
       AND pipeline_stage NOT IN ('dead','customer')
       ORDER BY created_at ASC LIMIT ${cap - totalSent}`
 
