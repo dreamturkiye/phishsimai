@@ -34,14 +34,17 @@ async function verifyEmail(email: string): Promise<Verdict> {
   if (key) {
     try {
       const res = await fetch(
-        `https://client.myemailverifier.com/verifysingle/${encodeURIComponent(key)}/${encodeURIComponent(email)}`,
-        { cache: 'no-store', signal: AbortSignal.timeout(15000) },
+        `https://api.myemailverifier.com/api/validate_single.php?apikey=${encodeURIComponent(key)}&email=${encodeURIComponent(email)}`,
+        { cache: 'no-store', signal: AbortSignal.timeout(20000) },
       )
       if (res.ok) {
-        const body = (await res.text()).toLowerCase()
-        if (/catch[\s_-]?all/.test(body)) return 'catchall'
-        if (/invalid|undeliverable|does not exist/.test(body)) return 'invalid'
-        if (/\bvalid\b|deliverable|\bok\b/.test(body)) return 'valid'
+        // Shape: { Status:"Valid"|"Invalid"|"Catch-all"|..., catch_all:0|1, Role_Based, Disposable_Domain, ... }
+        const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string }
+        const status = String(d.Status || '').toLowerCase()
+        const isCatchAll = ['1', 'true'].includes(String(d.catch_all).toLowerCase()) || status.includes('catch')
+        if (isCatchAll) return 'catchall' // deliverability unverifiable — never promote
+        if (status === 'valid') return 'valid' // mailbox exists + not catch-all → safe to send
+        if (status === 'invalid') return 'invalid'
         return 'unknown'
       }
       console.error(`[refill/mev] ${domain} status=${res.status} — vendor failure, not a verdict`)
