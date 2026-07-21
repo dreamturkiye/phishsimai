@@ -152,6 +152,28 @@ const ICP_CITIES: Array<[string, string, string]> = [
   ['Philadelphia', 'Pennsylvania', 'United States'],
   ['Charlotte', 'North Carolina', 'United States'],
   ['Minneapolis', 'Minnesota', 'United States'],
+  ['San Antonio', 'Texas', 'United States'],
+  ['San Diego', 'California', 'United States'],
+  ['San Jose', 'California', 'United States'],
+  ['San Francisco', 'California', 'United States'],
+  ['Jacksonville', 'Florida', 'United States'],
+  ['Columbus', 'Ohio', 'United States'],
+  ['Indianapolis', 'Indiana', 'United States'],
+  ['Nashville', 'Tennessee', 'United States'],
+  ['Detroit', 'Michigan', 'United States'],
+  ['Portland', 'Oregon', 'United States'],
+  ['Las Vegas', 'Nevada', 'United States'],
+  ['Baltimore', 'Maryland', 'United States'],
+  ['Milwaukee', 'Wisconsin', 'United States'],
+  ['Kansas City', 'Missouri', 'United States'],
+  ['Tampa', 'Florida', 'United States'],
+  ['Orlando', 'Florida', 'United States'],
+  ['St. Louis', 'Missouri', 'United States'],
+  ['Pittsburgh', 'Pennsylvania', 'United States'],
+  ['Cincinnati', 'Ohio', 'United States'],
+  ['Cleveland', 'Ohio', 'United States'],
+  ['Raleigh', 'North Carolina', 'United States'],
+  ['Salt Lake City', 'Utah', 'United States'],
   // Australia
   ['Sydney', 'New South Wales', 'Australia'],
   ['Melbourne', 'Victoria', 'Australia'],
@@ -161,28 +183,56 @@ const ICP_CITIES: Array<[string, string, string]> = [
 ]
 
 /**
- * ONE city per run, chosen by day-of-year. Deterministic, stateless, and self-pacing:
- * 30 cities x ~20 places = ~600 places/month, which is roughly the Outscraper free tier.
- * The pace is a property of the design, not a limit someone has to remember to enforce.
- *
- * Re-running the same day is free: UNIQUE(company_id, domain) makes the insert idempotent,
- * and measured overlap is real (Seriun and AAG appeared under two different queries).
+ * PS-DISCOVER-WIDEN-01: multi-city × multi-term discovery, env-tunable. The DEFAULTS preserve the
+ * original free-tier pace (1 city, 1 term/run), so deploying this changes NOTHING until the knobs
+ * are raised — and raising them requires PAID Outscraper volume (each city×term is a billable query).
+ *   DISCOVERY_CITIES_PER_RUN  (default 1)   — cities covered per run (sliding window over ICP_CITIES)
+ *   DISCOVERY_TERMS           (default below) — comma-separated Maps search terms
+ *   DISCOVERY_LIMIT_PER_QUERY (default = the `limit` arg) — places pulled per (city×term) query
+ * Hard-capped at MAX_QUERIES_PER_RUN so a mis-set env can never fire thousands of billable queries.
+ * Still stateless/idempotent: UNIQUE(company_id, domain) makes overlapping re-runs free.
  */
+const DISCOVERY_TERMS_DEFAULT = ['managed service provider']
+const MAX_QUERIES_PER_RUN = 60
+
 export async function runLeadDiscover(limit = 20) {
   const start = Date.now()
-  const dayOfYear = Math.floor((Date.now() - Date.UTC(new Date().getUTCFullYear(), 0, 0)) / 86400000)
-  const [city, region, country] = ICP_CITIES[dayOfYear % ICP_CITIES.length]
-  try {
-    const r = await discoverMspsForCity('managed service provider', city, region, country, limit)
-    const result = { discovered: r.queued, candidates: r.found, icp: r.icp, city, country, noGeo: r.skippedNoGeo }
-    await reportAgentRun('discover', true, { ...result, duration_ms: Date.now() - start })
-    return result
-  } catch (e: any) {
-    // LOUD. A dead vendor must never read as "no MSPs in this city" -- that mistake is what
-    // let 3,000 fabricated leads look like a working pipeline.
-    await reportAgentRun('discover', false, { city, country }, e?.message)
-    return { discovered: 0, candidates: 0, error: e?.message, city, country }
+  const citiesPerRun = Math.max(1, Number(process.env.DISCOVERY_CITIES_PER_RUN || 1) || 1)
+  const terms = process.env.DISCOVERY_TERMS?.split(',').map((t) => t.trim()).filter(Boolean) || DISCOVERY_TERMS_DEFAULT
+  const limitPerQuery = Math.max(1, Number(process.env.DISCOVERY_LIMIT_PER_QUERY || limit) || limit)
+  // Advance the city window every run (6-hourly), not just per day, so widened runs cover new metros.
+  const runIndex = Math.floor(Date.now() / (6 * 3600_000))
+
+  let discovered = 0
+  let candidates = 0
+  let icp = 0
+  let noGeo = 0
+  let queries = 0
+  const cities: string[] = []
+  const errors: string[] = []
+  outer: for (let c = 0; c < citiesPerRun; c++) {
+    const [city, region, country] = ICP_CITIES[(runIndex * citiesPerRun + c) % ICP_CITIES.length]
+    cities.push(`${city}/${country}`)
+    for (const term of terms) {
+      if (queries >= MAX_QUERIES_PER_RUN) break outer
+      queries++
+      try {
+        const r = await discoverMspsForCity(term, city, region, country, limitPerQuery)
+        discovered += r.queued
+        candidates += r.found
+        icp += r.icp
+        noGeo += r.skippedNoGeo
+      } catch (e: any) {
+        // LOUD per-query, but one dead query must not kill the whole widened run.
+        errors.push(`${term}@${city}: ${String(e?.message || e).slice(0, 80)}`)
+      }
+    }
   }
+  // A run fails only if EVERY query failed (a dead vendor) — never on partial coverage.
+  const ok = queries > 0 && errors.length < queries
+  const result = { discovered, candidates, icp, noGeo, queries, cities, terms: terms.length, errors: errors.slice(0, 3) }
+  await reportAgentRun('discover', ok, { ...result, duration_ms: Date.now() - start })
+  return result
 }
 
 export async function runLeadResearcher(batchSize = 6) {
