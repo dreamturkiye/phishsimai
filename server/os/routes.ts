@@ -1192,5 +1192,8 @@ export { cronAutonomyPromotion } from './autonomyPromotion'
 // PS-REFILL-01: daily sendable-pool auto-refill (AMF-valid + MX), scheduled before the 0 7 send.
 export { cronSanitizeRefill } from './sanitizeRefill'
 
+// PS-HARVEST-01: free MSP discovery from mymsphub.com (sitemap → profile JSON-LD domain → queue).
+export { cronMspHubHarvest } from './agents/mspHubHarvest'
+
 // PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
 export { resendInbound } from './social/replyCapture'
