@@ -16,6 +16,7 @@
 import { getSql } from '../conn'
 import { hostnameOf } from './mapsDiscovery'
 import { reportAgentRun } from '../agentHealth'
+import { sendTelegram } from '../telegram'
 
 const COMPANY_ID = 'phishsimai'
 const SITEMAP = 'https://mymsphub.com/sitemap-companies.xml'
@@ -34,6 +35,9 @@ async function ensureState(sql: any): Promise<void> {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT msp_hub_one_row CHECK (id = 1)
   )`.catch(() => {})
+  // Seed the single row so the cursor UPDATE (WHERE id=1) actually persists — without this the
+  // table has no row, the UPDATE is a no-op, and every run restarts at 0 (re-scraping the top).
+  await sql`INSERT INTO msp_hub_harvest_state (id, cursor, total) VALUES (1, 0, 0) ON CONFLICT (id) DO NOTHING`.catch(() => {})
 }
 
 async function fetchCompanyUrls(): Promise<string[]> {
@@ -145,6 +149,32 @@ export async function cronMspHubHarvest(req: any, res: any) {
     const perRun = Math.max(1, Number(process.env.MSP_HARVEST_PER_RUN || PER_RUN_DEFAULT) || PER_RUN_DEFAULT)
     const r = await harvestMspHub(getSql(), perRun)
     return res.json({ ok: true, ...r })
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) })
+  }
+}
+
+// PS-FUNNEL-01: ONE daily Telegram line so Kaan can watch harvest → valid/day end to end. Read-only.
+export async function cronOutreachFunnel(req: any, res: any) {
+  const secret = process.env.CRON_SECRET
+  const okCron = !!secret && req.headers?.authorization === `Bearer ${secret}`
+  const okHq = !!process.env.HQ_SECRET && req.query?.secret === process.env.HQ_SECRET
+  if (!okCron && !okHq) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const sql = getSql()
+    const n = async (q: Promise<any>) => Number((await q)[0]?.n ?? 0)
+    const harvested24 = await n(sql`SELECT count(*) AS n FROM lead_research_queue WHERE created_at > now() - interval '24 hours'`)
+    const queuePending = await n(sql`SELECT count(*) AS n FROM lead_research_queue WHERE status = 'pending' AND attempts < 3`)
+    const enriched24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE created_at > now() - interval '24 hours'`)
+    const valid24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitize_reason = 'amf_valid' AND sanitized_at > now() - interval '24 hours'`)
+    const sendableNow = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL AND country IN ('US','GB','AU') AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')`)
+    const sent24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE touch1_sent_at > now() - interval '24 hours'`)
+    const funnel = { harvested24, queuePending, enriched24, valid24, sendableNow, sent24 }
+    await sendTelegram(
+      `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
+        `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → valid ${valid24} → sendable ${sendableNow} → sent ${sent24}`,
+    ).catch(() => {})
+    return res.json({ ok: true, ...funnel })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }

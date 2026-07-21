@@ -39,18 +39,28 @@ export async function runWatchdog() {
   }
 
   try {
-    const stalled = await sql`SELECT count(*) as n FROM ps_outreach_leads
-      WHERE touch1_sent_at IS NULL
-      AND created_at < NOW() - INTERVAL '2 days'
-      AND unsubscribed = false AND bounced = false
-      AND pipeline_stage NOT IN ('dead','customer')`
-    const stalledN = Number(stalled[0].n)
+    // PS-WATCHDOG-STALL-01: "stalled" = leads that SHOULD have progressed but didn't — NOT the raw
+    // unsanitized pool. That pool is the funnel RESERVOIR: it correctly sits un-pulled until the
+    // refill verifies it as-needed, so counting touch1_sent_at IS NULL across the whole pool always
+    // alarms as the harvester fills it. A genuine stall is one of:
+    //  (a) verified & sendable, but the send cron hasn't sent it in >2d (a real drain failure);
+    //  (b) research that has exhausted its retries or hung mid-flight (NOT fresh pending backlog).
+    const sendStuck = Number((await sql`SELECT count(*) AS n FROM ps_outreach_leads
+      WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL
+      AND country IN ('US','GB','AU') AND unsubscribed = false AND bounced = false
+      AND pipeline_stage NOT IN ('dead','customer')
+      AND sanitized_at < NOW() - INTERVAL '2 days'`)[0].n)
+    const researchStuck = Number((await sql`SELECT count(*) AS n FROM lead_research_queue
+      WHERE created_at < NOW() - INTERVAL '2 days' AND status NOT IN ('enriched','duplicate')
+      AND (attempts >= 3 OR (status = 'researching' AND last_attempt_at < NOW() - INTERVAL '2 days'))`
+      .catch(() => [{ n: 0 }]))[0].n)
+    const stalledN = sendStuck + researchStuck
     if (stalledN > 20) {
       result.issues_found++
-      await sendTelegram('PHISHSIMAI WATCHDOG: ' + stalledN + ' leads stalled >2d. Check /api/os/aria-daily.')
-      result.actions_taken.push('Stall alert: ' + stalledN + ' leads')
+      await sendTelegram(`PHISHSIMAI WATCHDOG: ${stalledN} leads genuinely stalled >2d — send-stuck ${sendStuck} (→ /api/os/sequence), research-stuck ${researchStuck} (→ /api/os/researcher). Raw unsanitized reservoir excluded by design.`)
+      result.actions_taken.push(`Stall alert: ${stalledN} (send ${sendStuck}, research ${researchStuck})`)
     } else {
-      result.actions_taken.push('Lead stall OK: ' + stalledN + ' stalled')
+      result.actions_taken.push(`Lead stall OK: ${stalledN} genuinely stalled (raw reservoir excluded)`)
     }
   } catch (e: any) {
     result.actions_taken.push('Stall check error: ' + e.message?.slice(0, 100))
