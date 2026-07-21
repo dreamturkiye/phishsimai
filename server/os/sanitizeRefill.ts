@@ -1,17 +1,20 @@
-// PS-REFILL-01 (2026-07-21) — daily auto-refill of the sendable pool.
+// PS-REFILL-01 (2026-07-21) — daily auto-refill of the sendable pool. PS-REFILL-02: pull-until-cap.
 //
 // THE GAP this closes: the l4-era pipeline sanitized the sendable pool EXACTLY ONCE, via a manual
 // one-off script (the untracked `_import.mts`), and was never wired to a cron. Nothing in the repo
-// writes `sanitized_at` — so as the daily send drew the pool down (75 clean leads, ~20/day) it
-// depleted and never topped back up. The discovery (Outscraper) and researcher (AMF) crons ADD/
-// enrich raw leads but do NOT promote anything to sendable. This module is the missing step.
+// writes `sanitized_at` — so as the daily send drew the pool down it depleted and never topped up.
+// This module is the missing step, scheduled BEFORE the 0 7 send.
 //
-// It runs BEFORE the 0 7 send and tops the sendable pool up to the daily cap by AMF-verifying
-// candidates drawn from the RAW (unsanitized) pool and promoting ONLY explicitly-valid ones:
-//   valid-only  = AMF returns the address in `valid_emails` (its confirmed-deliverable list;
-//                 a bare `emails` guess or a catchall does NOT qualify)  AND  a live MX record.
-// Catchall / role / unknown are NEVER promoted — a lead can only become sendable through a real
-// per-domain deliverability check, never by volume. Fail-closed: no AMF key => promote nothing.
+// It tops the sendable pool up to the daily cap by AMF-verifying candidates from the raw pool and
+// promoting ONLY explicitly-valid ones (AMF `valid_emails` + live MX; catchall/role/unknown never
+// promoted). Fail-closed: no AMF key => promote nothing.
+//
+// PS-REFILL-02 — pull-until-cap-met: it does NOT stop at a fixed batch. It keeps pulling fresh
+// candidates and verifying until it has enough VALID to fill the cap, bounded only by (a) the pool,
+// (b) a per-run lookup ceiling, and (c) the function time budget. Every candidate it checks is
+// stamped `refill_checked_at` (valid or not) so the NEXT run skips it and progresses through the
+// pool instead of re-verifying the same dead domains forever. AMF charges only on a hit (a miss is
+// free), so the credit cost ≈ the number promoted, not the number checked.
 import { getSql } from './conn'
 import { COMPANY_ID } from './version'
 import { hasMx, domainOf } from './mxGate'
@@ -19,10 +22,23 @@ import { dailySendCap } from './sequences'
 import { sendTelegram } from './telegram'
 
 const GEO = ['US', 'GB', 'AU'] as const
+const MAX_LOOKUPS_PER_RUN = 500 // sane spend/volume ceiling — verify at most this many candidates/run
+const CONCURRENCY = 10 // parallel AMF+MX lookups, to fit the function budget
+const TIME_BUDGET_MS = 240_000 // stop launching new lookups after 4 min (buffer under the 300s limit)
+
+// One-time additive column: tracks which raw-pool leads the refill has already AMF-checked, so a run
+// resumes where the last one stopped rather than re-verifying rejected candidates. Idempotent.
+async function ensureRefillColumn(sql: any): Promise<void> {
+  try {
+    await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS refill_checked_at TIMESTAMPTZ`
+  } catch {
+    /* best-effort */
+  }
+}
 
 // AMF: find an explicitly-VALID personal email for a domain. valid-only — returns null unless AMF
 // puts an address in `valid_emails`. 404 = no valid email (a free miss); non-ok = vendor failure
-// (skip, never treat as "no email"). Its own 20s abort so one slow lookup can't stall the batch.
+// (skip, never treat as a miss). Its own 20s abort so one slow lookup can't stall the batch.
 async function amfValidEmail(domain: string): Promise<string | null> {
   const key = process.env.ANYMAILFINDER_API_KEY?.trim()
   if (!key) return null
@@ -58,10 +74,11 @@ export interface RefillResult {
   reason: string
 }
 
-// Top the sendable pool up to `cap`. Verifies a bounded batch (AMF spend capped at 4× needed, max 60
-// lookups/run) from the raw pool and promotes only AMF-valid + live-MX leads. Idempotent when full.
+// Top the sendable pool up to `cap`. Pulls-until-cap-met (not a fixed batch), bounded by pool size,
+// the per-run lookup ceiling, and the time budget. Idempotent when already at/above cap.
 export async function refillSendablePool(sqlOverride?: any, now: Date = new Date()): Promise<RefillResult> {
   const sql = sqlOverride ?? getSql()
+  await ensureRefillColumn(sql)
   const cap = dailySendCap(now)
   const before = (await sql`SELECT count(*)::int AS n FROM ps_outreach_leads
      WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL AND country = ANY(${GEO})
@@ -70,52 +87,74 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
   const needed = Math.max(0, cap - sendableBefore)
   const base = { cap, sendableBefore, needed, checked: 0, promoted: 0, promotedLeads: [] as RefillResult['promotedLeads'] }
 
-  if (needed === 0) return { ...base, reason: 'pool already at cap' }
+  if (needed === 0) return { ...base, reason: 'pool already at cap — no refill needed' }
   if (!process.env.ANYMAILFINDER_API_KEY?.trim()) {
-    return { ...base, reason: 'ANYMAILFINDER_API_KEY unset — verification disabled, nothing promoted (fail closed)' }
+    return { ...base, reason: 'ANYMAILFINDER_API_KEY unset — verification disabled, promoted 0 (fail closed)' }
   }
 
-  const batchLimit = Math.min(needed * 4, 60) // bound the AMF spend per run
+  // Fresh, not-yet-refill-checked candidates from the raw pool. Ordered oldest-first; capped at the
+  // per-run lookup ceiling. refill_checked_at excludes anything a prior run already rejected.
   const candidates = (await sql`SELECT id, email FROM ps_outreach_leads
-     WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL AND country = ANY(${GEO})
-       AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')
-     ORDER BY created_at ASC LIMIT ${batchLimit}`) as Array<{ id: string; email: string }>
+     WHERE sanitized_at IS NULL AND refill_checked_at IS NULL AND touch1_sent_at IS NULL
+       AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
+       AND pipeline_stage NOT IN ('dead','customer')
+     ORDER BY created_at ASC LIMIT ${MAX_LOOKUPS_PER_RUN}`) as Array<{ id: string; email: string }>
 
+  const started = Date.now()
+  let idx = 0
   let checked = 0
   let promoted = 0
+  let timedOut = false
   const promotedLeads: RefillResult['promotedLeads'] = []
-  for (const lead of candidates) {
-    if (promoted >= needed) break
-    checked++
-    const domain = domainOf(lead.email)
-    if (!domain) continue
-    if (!(await hasMx(domain))) continue // dead / null-MX domain — never promote
-    const valid = await amfValidEmail(domain) // valid-only gate
-    if (!valid) continue // catchall / unknown / no confirmed-valid — not promoted
-    try {
-      // Promote using the AMF-confirmed valid address. Guarded on sanitized_at IS NULL so a
-      // concurrent run can't double-promote; email is UNIQUE, so a dup throws and we skip.
-      await sql`UPDATE ps_outreach_leads
-         SET email = ${valid}, sanitized_at = now(), sanitize_reason = 'amf_valid'
-         WHERE id = ${lead.id} AND sanitized_at IS NULL`
-      promoted++
-      promotedLeads.push({ id: String(lead.id), email: valid, domain })
-    } catch {
-      // unique-email collision or race — skip this lead, do not count it
+
+  async function worker(): Promise<void> {
+    while (true) {
+      if (promoted >= needed) return // cap met
+      if (Date.now() - started >= TIME_BUDGET_MS) { timedOut = true; return }
+      const i = idx++
+      if (i >= candidates.length) return // pool slice exhausted
+      const lead = candidates[i]
+      checked++
+      const domain = domainOf(lead.email)
+      // Mark checked regardless of outcome so the next run skips this lead. Valid leads additionally
+      // get sanitized_at + the AMF-verified address.
+      if (!domain || !(await hasMx(domain))) {
+        await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
+        continue
+      }
+      const valid = await amfValidEmail(domain) // valid-only
+      if (!valid || promoted >= needed) {
+        await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
+        continue
+      }
+      try {
+        await sql`UPDATE ps_outreach_leads
+           SET email = ${valid}, sanitized_at = now(), sanitize_reason = 'amf_valid', refill_checked_at = now()
+           WHERE id = ${lead.id} AND sanitized_at IS NULL`
+        promoted++
+        promotedLeads.push({ id: String(lead.id), email: valid, domain })
+      } catch {
+        // unique-email collision / race — mark checked, skip
+        await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
+      }
     }
   }
 
-  return {
-    cap, sendableBefore, needed, checked, promoted, promotedLeads,
-    reason:
-      promoted >= needed
-        ? 'refilled to cap'
-        : `raw pool yielded only ${promoted}/${needed} AMF-valid in ${checked} checked — supply-limited (raw pool is role/catchall-heavy)`,
-  }
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) || 1 }, () => worker()))
+
+  const reason =
+    promoted >= needed
+      ? 'refilled to cap'
+      : timedOut
+        ? `hit ${TIME_BUDGET_MS / 1000}s time budget at ${promoted}/${needed} valid (checked ${checked}) — resumes next run`
+        : checked >= MAX_LOOKUPS_PER_RUN
+          ? `hit per-run lookup ceiling ${MAX_LOOKUPS_PER_RUN} at ${promoted}/${needed} valid — resumes next run`
+          : `raw pool exhausted at ${promoted}/${needed} valid (checked ${checked}) — supply-limited, needs more discovery`
+  return { cap, sendableBefore, needed, checked, promoted, promotedLeads, reason }
 }
 
-// Cron body. Scheduled BEFORE the 0 7 send so the pool is topped up in time. Same secret-gate as the
-// other os crons. Emits ONE Telegram line with the refill outcome. Never throws past a 500.
+// Cron body. Scheduled BEFORE the 0 7 send. Same secret-gate as the other os crons. Emits ONE
+// Telegram line with the outcome. Never throws past a 500.
 export async function cronSanitizeRefill(req: any, res: any) {
   const secret = process.env.CRON_SECRET
   const okCron = !!secret && req.headers?.authorization === `Bearer ${secret}`
