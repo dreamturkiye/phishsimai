@@ -104,7 +104,7 @@
     },
     {
       "path": "/api/os/outreach-funnel",
-      "schedule": "0 13 * * *"
+      "schedule": "30 8 * * *"
     },
     {
       "path": "/api/os/researcher",

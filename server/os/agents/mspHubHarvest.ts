@@ -154,6 +154,67 @@ export async function cronMspHubHarvest(req: any, res: any) {
   }
 }
 
+// ── PS-CREDITS-01: daily credit-balance monitoring on the morning funnel line. AMF is the FINDER
+// pool (shared with ScrollFuel — empty = both products dark on a 402). MEV is the verifier. Balances
+// are logged each run so we can show day-over-day burn and flag "dropping fast" before either dries.
+const AMF_LOW = 500
+const MEV_LOW = 1000
+
+async function ensureCreditLog(sql: any): Promise<void> {
+  await sql`CREATE TABLE IF NOT EXISTS credit_readings (
+    id BIGSERIAL PRIMARY KEY, provider TEXT NOT NULL, credits INTEGER NOT NULL, read_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`.catch(() => {})
+}
+
+async function amfCredits(): Promise<number | null> {
+  try {
+    const r = await fetch('https://api.anymailfinder.com/v5.1/account', {
+      headers: { Authorization: 'Bearer ' + (process.env.ANYMAILFINDER_API_KEY ?? '') },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!r.ok) return null
+    const d = (await r.json()) as { credits_left?: number }
+    const c = Number(d?.credits_left)
+    return Number.isFinite(c) ? c : null
+  } catch {
+    return null
+  }
+}
+
+async function mevCredits(): Promise<number | null> {
+  const key = process.env.MYEMAILVERIFIER_API_KEY?.trim()
+  if (!key) return null
+  try {
+    const r = await fetch(`https://client.myemailverifier.com/verifier/getcredits/${encodeURIComponent(key)}`, {
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!r.ok) return null
+    const d = (await r.json()) as { credits?: number }
+    const c = Number(d?.credits)
+    return Number.isFinite(c) ? c : null
+  } catch {
+    return null
+  }
+}
+
+// Balance + day-over-day burn + ~days-left + LOW / dropping-fast flags. Logs this reading for trend.
+async function creditLine(sql: any, provider: string, current: number | null, low: number, label: string): Promise<string> {
+  if (current == null) return `${label}: unknown ⚠️ (balance check failed)`
+  let trend = ''
+  try {
+    const prev = (await sql`SELECT credits FROM credit_readings WHERE provider=${provider} AND read_at < now() - interval '20 hours' ORDER BY read_at DESC LIMIT 1`) as Array<{ credits: number }>
+    await sql`INSERT INTO credit_readings (provider, credits) VALUES (${provider}, ${current})`
+    const burn = prev[0] ? Number(prev[0].credits) - current : 0
+    if (burn > 0) {
+      const daysLeft = Math.floor(current / burn)
+      trend = ` (−${burn.toLocaleString()}/day, ~${daysLeft}d left${daysLeft <= 7 ? ' ⏬ DROPPING FAST' : ''})`
+    }
+  } catch {
+    /* trend is best-effort */
+  }
+  return `${label}: ${current.toLocaleString()}${current < low ? ' 🔴 LOW — top up' : ''}${trend}`
+}
+
 // PS-FUNNEL-01: ONE daily Telegram line so Kaan can watch harvest → valid/day end to end. Read-only.
 export async function cronOutreachFunnel(req: any, res: any) {
   const secret = process.env.CRON_SECRET
@@ -170,11 +231,16 @@ export async function cronOutreachFunnel(req: any, res: any) {
     const sendableNow = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL AND country IN ('US','GB','AU') AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')`)
     const sent24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE touch1_sent_at > now() - interval '24 hours'`)
     const funnel = { harvested24, queuePending, enriched24, valid24, sendableNow, sent24 }
+    await ensureCreditLog(sql)
+    const [amf, mev] = await Promise.all([amfCredits(), mevCredits()])
+    const amfLine = await creditLine(sql, 'amf', amf, AMF_LOW, 'AMF finder (shared w/ ScrollFuel)')
+    const mevLine = await creditLine(sql, 'mev', mev, MEV_LOW, 'MEV verifier')
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
-        `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → valid ${valid24} → sendable ${sendableNow} → sent ${sent24}`,
+        `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → valid ${valid24} → sendable ${sendableNow} → sent ${sent24}\n` +
+        `💳 ${amfLine}\n💳 ${mevLine}`,
     ).catch(() => {})
-    return res.json({ ok: true, ...funnel })
+    return res.json({ ok: true, ...funnel, credits: { amf, mev } })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }
