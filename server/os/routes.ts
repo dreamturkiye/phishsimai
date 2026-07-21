@@ -1195,5 +1195,8 @@ export { cronSanitizeRefill } from './sanitizeRefill'
 // PS-HARVEST-01: free MSP discovery from mymsphub.com (sitemap → profile JSON-LD domain → queue).
 export { cronMspHubHarvest } from './agents/mspHubHarvest'
 
+// PS-FUNNEL-01: one daily Telegram line — harvest → queue → enriched → valid → sendable → sent.
+export { cronOutreachFunnel } from './agents/mspHubHarvest'
+
 // PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
 export { resendInbound } from './social/replyCapture'

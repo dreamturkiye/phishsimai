@@ -103,6 +103,10 @@
       "schedule": "0 */3 * * *"
     },
     {
+      "path": "/api/os/outreach-funnel",
+      "schedule": "0 13 * * *"
+    },
+    {
       "path": "/api/os/researcher",
       "schedule": "*/30 * * * *"
     },
