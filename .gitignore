@@ -115,3 +115,8 @@ client/public/__manus__/version.json
 .vercel
 .env*
 .gstack/
+
+# Local one-off lead-import / diagnostic artifacts — keep out of git & deploys (PS cleanup 2026-07-21)
+_import.mts
+f2.mts
+leads_import.csv

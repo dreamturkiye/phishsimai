@@ -209,9 +209,16 @@ export async function agentsBelowL5TwoWeeks(sql: Sql, companyId: string = COMPAN
   try {
     for (const id of Object.keys(AGENTS)) {
       const rows = (await sql`
-        SELECT level FROM agent_levels WHERE agent_id = ${id} ORDER BY computed_at DESC LIMIT 2
-      `) as Array<{ level: string }>
-      if (rows.length >= 2 && rows.every((r) => r.level !== 'L5')) flagged.push(id)
+        SELECT level, window_stats FROM agent_levels WHERE agent_id = ${id} ORDER BY computed_at DESC LIMIT 2
+      `) as Array<{ level: string; window_stats: any }>
+      // PS-BRIEF-HONESTY-01 (D3): warn ONLY on a real, sustained poor score — never on no-data.
+      // An agent with zero reviewed tasks in the window computes to 'below' because avgScore is
+      // uncomputable (null / taskCount 0); that is "untested", not "underperforming", and flagging
+      // it read to the founder as a performance alarm for idle / pre-revenue agents. A healthy L4
+      // (avg >= 7.0, only short of the L5 self-originated bar) is likewise not a poor score. So flag
+      // only when BOTH recent weeks are level 'below' AND both actually had graded tasks to score.
+      const hasData = (r: any) => Number(r?.window_stats?.trailing30?.taskCount ?? 0) > 0
+      if (rows.length >= 2 && rows.every((r) => r.level === 'below' && hasData(r))) flagged.push(id)
     }
   } catch {
     return []
