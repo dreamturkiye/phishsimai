@@ -1189,5 +1189,8 @@ export async function architectIncident(req: Request, res: Response) {
 // (api/handler.ts dispatches via `routes.*`).
 export { cronAutonomyPromotion } from './autonomyPromotion'
 
+// PS-REFILL-01: daily sendable-pool auto-refill (AMF-valid + MX), scheduled before the 0 7 send.
+export { cronSanitizeRefill } from './sanitizeRefill'
+
 // PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
 export { resendInbound } from './social/replyCapture'

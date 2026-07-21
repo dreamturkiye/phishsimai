@@ -164,6 +164,7 @@ async function dispatchOsRoute(req: any, res: any) {
     // PS-AUTONOMY-BRIDGE-01: daily earned-autonomy promotion (token-audited). Scheduled AFTER the
     // clean-day compute so it reads the finalized result. Emits the daily autonomy Telegram line.
     if (path === "/api/os/autonomy-promote") return routes.cronAutonomyPromotion(req, res);
+    if (path === "/api/os/sanitize-refill") return routes.cronSanitizeRefill(req, res);
     if (path === "/api/os/architect/incident" && method === "post") return routes.architectIncident(req, res);
     if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);

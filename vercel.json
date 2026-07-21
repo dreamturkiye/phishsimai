@@ -59,6 +59,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/os/sanitize-refill",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/os/sequence",
       "schedule": "0 7 * * *"
     },
