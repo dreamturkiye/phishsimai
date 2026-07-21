@@ -419,10 +419,22 @@ async function getCompanyContext(sql: any): Promise<string> {
     ? `\n⚠️ DATA UNAVAILABLE for: ${failed.join(', ')} — the figures above are NOT reliable for these. Do not report them as real zeros.`
     : ''
 
+  // PS-INFRA-SIGNAL-01: the agents read ONLY business metrics above — nothing told them the
+  // platform is already live, so an agent primed with "Neon Postgres / Express on Vercel" expertise
+  // and no pending tasks would hallucinate the archetypal greenfield task ("set up Neon + integrate
+  // Express"). That is the "instrument reporting a state that doesn't exist" pattern, but here the
+  // instrument reported NOTHING about infra and the LLM filled the vacuum. State the ground truth so
+  // it stops: this brief was just read live FROM the prod DB, so the DB is provably configured.
+  const infra =
+    `\nInfra: LIVE IN PRODUCTION — Neon Postgres + Vercel are configured and storing data (this brief ` +
+    `was just read live from the prod DB). Core platform setup — database, hosting, auth, billing — is ` +
+    `COMPLETE. Propose fixes/improvements to the LIVE system; NEVER greenfield "set up / provision / ` +
+    `integrate the database or hosting" tasks — that work is already done.`
+
   return `Orgs: ${free + paying} total | Paying: ${paying} (${mix}) | Free: ${free}
 MRR: $${Math.round(mrr).toLocaleString('en-US')}${legacyUnlimited ? ` (excludes ${legacyUnlimited} legacy 'unlimited' org(s) — no Stripe product)` : ''}
 Campaigns: ${c.total} total | ${c.this_week} created this week
-Simulations: ${s.sent} sent | Open ${rate(s.opened, s.sent)}% | Click ${rate(s.clicked, s.sent)}% | Credentials submitted ${s.submitted} | Reported ${rate(s.reported, s.sent)}%${warn}`
+Simulations: ${s.sent} sent | Open ${rate(s.opened, s.sent)}% | Click ${rate(s.clicked, s.sent)}% | Credentials submitted ${s.submitted} | Reported ${rate(s.reported, s.sent)}%${infra}${warn}`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -436,6 +448,19 @@ Simulations: ${s.sent} sent | Open ${rate(s.opened, s.sent)}% | Click ${rate(s.c
 export type NewAgentTask =
   Omit<AgentTask, 'id' | 'agent_id' | 'status' | 'issued_by' | 'created_at'>
   & { agent_id?: AgentId }
+
+// PS-DUE-01: scale a task's SLA to its size, not a flat 48h. Most standup / L5 tasks are ~1h routine
+// work (review, scan, snapshot, update, refresh); a flat multi-day clock makes fast work look slow
+// and mis-sorts the queue. Infer size from the verb — simple → ~2h, medium → same-day, genuinely
+// large → up to a day. Our cadence is hours, not days, so nothing routine gets a multi-day SLA.
+export function scaledDueHours(title: string, description = ''): number {
+  const t = `${title} ${description}`.toLowerCase()
+  const large = /\b(build|set ?up|migrat|integrat|refactor|implement|overhaul|rebuild|provision|architect|end[- ]to[- ]end|from scratch)\b/
+  const medium = /\b(analy|forecast|plan|research|strategy|model|audit|deep|competitive|write |design )\b/
+  if (large.test(t)) return 24 // genuinely large (rare for standup work) → up to a day
+  if (medium.test(t)) return 8 // medium → same business day
+  return 2 // simple / routine — the common case → ~1-2h
+}
 
 export async function issueTask(
   agentId: AgentId,
@@ -771,7 +796,7 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
       const t = await issueTask(agentId as AgentId, {
         title: taskTitle.slice(0,100),
         description: `Issued during daily standup: ${taskTitle}`,
-        priority: 'high', due_in_hours: 24
+        priority: 'high', due_in_hours: scaledDueHours(taskTitle)
       }, companyId).catch(() => null)
       if (t) newTasks.push(t)
     }
