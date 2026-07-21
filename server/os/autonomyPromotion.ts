@@ -17,7 +17,12 @@ import { sendTelegram } from './telegram'
 const ORDER = ['manual', 'l2', 'l3', 'l4', 'l5'] as const
 export type EnfLevel = (typeof ORDER)[number]
 export const AUTONOMY_FLOOR: EnfLevel = 'manual' // Kaan's L1 — never demote below this
-export const CLEAN_DAYS_PER_RUNG = 5 // the ladder's real criterion: 5 consecutive clean days per rung
+// PS-AUTONOMY-RATE-01 (2026-07-20, founder-directed): one rung per clean day (was 5). This changes
+// the RATE only — promotion still fires ONLY on genuinely-earned clean days, still through the
+// audited grant-token path, still never below the floor, still demotes on a breaker trip. A run
+// now applies EVERY rung the earned-but-ungranted clean days have bought (see runAutonomyPromotion),
+// so the level reaches what the clean days earned instead of crawling one rung per cron.
+export const CLEAN_DAYS_PER_RUNG = 1 // the ladder's criterion: 1 consecutive clean day per rung
 const TRUST_STEP = 0.2
 const rankOf = (l: string): number => Math.max(0, (ORDER as readonly string[]).indexOf(l))
 
@@ -101,18 +106,73 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
   return { ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust }), cleanStreak: streak }
 }
 
-// Apply a decision through the AUDITED, token-gated path: write the grant token FIRST (the 0009
-// trigger requires it to honour a raise), then the level change. Idempotent on 'hold'.
+// Apply the earned decision(s) through the AUDITED, token-gated path. For EACH rung we write the
+// grant token FIRST (the 0009 trigger honours a raise only against a matching, fresh, unconsumed
+// promote token) THEN the single-rung level change the trigger consumes. Applying one rung per
+// UPDATE is what keeps a multi-rung catch-up auditable — it lands as a manual→l2→l3→l4 grant trail,
+// never one blind manual→l4 write the trigger would (correctly) refuse.
+//
+// At CLEAN_DAYS_PER_RUNG=1 a single run applies every rung the earned-but-ungranted clean days have
+// bought (budget = clean days strictly after the last grant), so PhishSim reaches the level it has
+// earned in one run rather than crawling one rung per future cron. The budget is consumed one rung
+// at a time, so the loop stops EXACTLY at the earned level (or the l5 cap) — it cannot over-promote
+// past what was earned. A breaker trip demotes exactly one rung then stops (safety, no cascade).
+// Idempotent when nothing is owed: no grant, no write.
 export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?: any) {
   const sql = sqlOverride ?? getSql()
-  const d = await computeAutonomyDecision(companyId, sql)
-  if (d.action === 'hold') return { ...d, applied: false }
+  const { level, trust } = await readState(sql, companyId)
+  const [budget0, open, streak] = await Promise.all([
+    cleanDaysSinceLastGrant(sql, companyId),
+    breakerOpen(sql, companyId),
+    getCleanStreak(sql, companyId).then((s) => s.streakDays).catch(() => 0),
+  ])
 
-  await sql`INSERT INTO autonomy_grants (company_id, from_level, to_level, direction, reason, clean_days, trust, created_by)
-            VALUES (${companyId}, ${d.from}, ${d.to}, ${d.action}, ${d.reason}, ${d.cleanSinceLastGrant}, ${d.trust}, 'autonomy_promotion_job')`
-  const newTrust = d.action === 'promote' ? d.trust + TRUST_STEP : Math.max(0, d.trust - TRUST_STEP)
-  await sql`UPDATE os_autonomy_state SET level=${d.to}, trust=${newTrust}, clean_day_streak=${d.cleanStreak ?? 0}, updated_at=NOW() WHERE company_id=${companyId}`
-  return { ...d, applied: true, newTrust }
+  let curLevel = level
+  let curTrust = trust
+  let budget = budget0
+  const trail: Array<{ from: EnfLevel; to: EnfLevel; action: 'promote' | 'demote'; reason: string }> = []
+
+  // Decide the NEXT single rung from the live in-memory state, commit it through the audited path,
+  // then repeat. A promote spends CLEAN_DAYS_PER_RUNG of the earned budget (so the loop halts at the
+  // earned level / l5 cap); a demote fires once and breaks. The pure decidePromotion still enforces
+  // the l4 failure-mode guard (budget 0 → hold), the floor, and the cap on every iteration.
+  while (true) {
+    const d = decidePromotion({ level: curLevel, cleanSinceLastGrant: budget, breakerOpen: open, trust: curTrust })
+    if (d.action === 'hold') break
+
+    await sql`INSERT INTO autonomy_grants (company_id, from_level, to_level, direction, reason, clean_days, trust, created_by)
+              VALUES (${companyId}, ${d.from}, ${d.to}, ${d.action}, ${d.reason}, ${budget}, ${curTrust}, 'autonomy_promotion_job')`
+    curTrust = d.action === 'promote' ? curTrust + TRUST_STEP : Math.max(0, curTrust - TRUST_STEP)
+    await sql`UPDATE os_autonomy_state SET level=${d.to}, trust=${curTrust}, clean_day_streak=${streak}, updated_at=NOW() WHERE company_id=${companyId}`
+
+    trail.push({ from: d.from, to: d.to, action: d.action as 'promote' | 'demote', reason: d.reason })
+    curLevel = d.to
+    if (d.action === 'demote') break // a breaker trip steps down exactly one rung — never a cascade
+    budget -= CLEAN_DAYS_PER_RUNG // this rung consumed its earned clean day(s)
+  }
+
+  const netAction: 'promote' | 'demote' | 'hold' =
+    trail.length === 0 ? 'hold' : trail[trail.length - 1].action === 'demote' ? 'demote' : 'promote'
+  const reason =
+    trail.length === 0
+      ? decidePromotion({ level, cleanSinceLastGrant: budget0, breakerOpen: open, trust }).reason
+      : netAction === 'demote'
+        ? trail[trail.length - 1].reason
+        : `earned_${trail.length}_rung${trail.length === 1 ? '' : 's'}_from_${budget0}_clean_days`
+  return {
+    action: netAction,
+    from: level,
+    to: curLevel,
+    reason,
+    cleanSinceLastGrant: budget0,
+    breakerOpen: open,
+    trust,
+    cleanStreak: streak,
+    applied: trail.length > 0,
+    rungs: trail.length,
+    trail,
+    newTrust: curTrust,
+  }
 }
 
 // Latest finalized clean-day result (the compute cron writes YESTERDAY once the day is over).
