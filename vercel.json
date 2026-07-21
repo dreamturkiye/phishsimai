@@ -99,6 +99,10 @@
       "schedule": "0 */6 * * *"
     },
     {
+      "path": "/api/os/msp-harvest",
+      "schedule": "0 */3 * * *"
+    },
+    {
       "path": "/api/os/researcher",
       "schedule": "*/30 * * * *"
     },

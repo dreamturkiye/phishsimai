@@ -82,7 +82,9 @@ async function enrichViaAnyMailFinder(domain: string): Promise<{ email: string; 
     const d = JSON.parse(body || '{}') as { emails?: string[]; valid_emails?: string[]; email_status?: string }
     const email = d.valid_emails?.[0] || d.emails?.[0]
     if (!email) return null
-    return { email: String(email), name: null, title: null }
+    // Normalize to lowercase+trim so the UNIQUE(email) constraint and the LOWER(email) dedup pre-check
+    // treat case variants as the same address — no double-queue / double-send of Info@x vs info@x.
+    return { email: String(email).trim().toLowerCase(), name: null, title: null }
   } catch (e: any) {
     console.error(`[amf] ${domain} threw: ${String(e?.message || e).slice(0, 160)}`)
     return null
