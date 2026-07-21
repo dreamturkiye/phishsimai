@@ -1,20 +1,17 @@
-// PS-REFILL-01 (2026-07-21) — daily auto-refill of the sendable pool. PS-REFILL-02: pull-until-cap.
+// PS-REFILL-01/02/03 (2026-07-21) — daily auto-refill of the sendable pool.
 //
-// THE GAP this closes: the l4-era pipeline sanitized the sendable pool EXACTLY ONCE, via a manual
-// one-off script (the untracked `_import.mts`), and was never wired to a cron. Nothing in the repo
-// writes `sanitized_at` — so as the daily send drew the pool down it depleted and never topped up.
-// This module is the missing step, scheduled BEFORE the 0 7 send.
+// THE GAP this closes: the sendable pool was sanitized ONCE by a manual one-off script and never
+// wired to a cron, so it depleted as sends drew it down. This tops it up before the 0 7 send.
 //
-// It tops the sendable pool up to the daily cap by AMF-verifying candidates from the raw pool and
-// promoting ONLY explicitly-valid ones (AMF `valid_emails` + live MX; catchall/role/unknown never
-// promoted). Fail-closed: no AMF key => promote nothing.
-//
-// PS-REFILL-02 — pull-until-cap-met: it does NOT stop at a fixed batch. It keeps pulling fresh
-// candidates and verifying until it has enough VALID to fill the cap, bounded only by (a) the pool,
-// (b) a per-run lookup ceiling, and (c) the function time budget. Every candidate it checks is
-// stamped `refill_checked_at` (valid or not) so the NEXT run skips it and progresses through the
-// pool instead of re-verifying the same dead domains forever. AMF charges only on a hit (a miss is
-// free), so the credit cost ≈ the number promoted, not the number checked.
+// PS-REFILL-03 — VERIFY-ONLY, NEVER FIND. Every lead in ps_outreach_leads ALREADY has an email
+// (6,127/6,127 populated). AMF's *finder* is for domain-only leads (that path lives in the
+// researcher, over lead_research_queue). Running AMF here re-found emails we already had — pure
+// wasted spend. This module now VERIFIES the existing address and NEVER calls AMF:
+//   • MyEmailVerifier when MYEMAILVERIFIER_API_KEY is set — real per-mailbox check, detects catch-all;
+//   • else a free MX check (domain-level) — which CANNOT detect catch-all, so it is OFF unless the
+//     operator opts in with REFILL_ALLOW_MX_ONLY=1 (accepting that ~82% of this list is catch-all
+//     and MX alone will pass them, risking bounces). SMTP RCPT is not usable — Vercel blocks port 25.
+// Fail-closed: no verifier keyed and no opt-in => promote nothing (and never spend a finder credit).
 import { getSql } from './conn'
 import { COMPANY_ID } from './version'
 import { hasMx, domainOf } from './mxGate'
@@ -22,46 +19,39 @@ import { dailySendCap } from './sequences'
 import { sendTelegram } from './telegram'
 
 const GEO = ['US', 'GB', 'AU'] as const
-const MAX_LOOKUPS_PER_RUN = 500 // sane spend/volume ceiling — verify at most this many candidates/run
-const CONCURRENCY = 10 // parallel AMF+MX lookups, to fit the function budget
-const TIME_BUDGET_MS = 240_000 // stop launching new lookups after 4 min (buffer under the 300s limit)
+const MAX_LOOKUPS_PER_RUN = 500 // per-run verification ceiling
+const CONCURRENCY = 10
+const TIME_BUDGET_MS = 240_000
 
-// One-time additive column: tracks which raw-pool leads the refill has already AMF-checked, so a run
-// resumes where the last one stopped rather than re-verifying rejected candidates. Idempotent.
-async function ensureRefillColumn(sql: any): Promise<void> {
-  try {
-    await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS refill_checked_at TIMESTAMPTZ`
-  } catch {
-    /* best-effort */
-  }
-}
+type Verdict = 'valid' | 'catchall' | 'invalid' | 'mx_ok' | 'no_mx' | 'unknown'
 
-// AMF: find an explicitly-VALID personal email for a domain. valid-only — returns null unless AMF
-// puts an address in `valid_emails`. 404 = no valid email (a free miss); non-ok = vendor failure
-// (skip, never treat as a miss). Its own 20s abort so one slow lookup can't stall the batch.
-async function amfValidEmail(domain: string): Promise<string | null> {
-  const key = process.env.ANYMAILFINDER_API_KEY?.trim()
-  if (!key) return null
-  try {
-    const res = await fetch('https://api.anymailfinder.com/v5.1/find-email/company', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domain, email_type: 'personal' }),
-      cache: 'no-store',
-      signal: AbortSignal.timeout(20000),
-    })
-    if (res.status === 404) return null
-    if (!res.ok) {
-      console.error(`[refill/amf] ${domain} status=${res.status} — vendor failure, not a miss`)
-      return null
+// Verify an EXISTING email. NEVER AMF's finder. MyEmailVerifier when keyed (per-mailbox + catch-all
+// detection); else a free MX check (domain-level only). Returns a verdict; the caller decides.
+async function verifyEmail(email: string): Promise<Verdict> {
+  const domain = domainOf(email)
+  if (!domain) return 'invalid'
+  const key = process.env.MYEMAILVERIFIER_API_KEY?.trim()
+  if (key) {
+    try {
+      const res = await fetch(
+        `https://client.myemailverifier.com/verifysingle/${encodeURIComponent(key)}/${encodeURIComponent(email)}`,
+        { cache: 'no-store', signal: AbortSignal.timeout(15000) },
+      )
+      if (res.ok) {
+        const body = (await res.text()).toLowerCase()
+        if (/catch[\s_-]?all/.test(body)) return 'catchall'
+        if (/invalid|undeliverable|does not exist/.test(body)) return 'invalid'
+        if (/\bvalid\b|deliverable|\bok\b/.test(body)) return 'valid'
+        return 'unknown'
+      }
+      console.error(`[refill/mev] ${domain} status=${res.status} — vendor failure, not a verdict`)
+    } catch (e: any) {
+      console.error(`[refill/mev] ${domain} threw: ${String(e?.message || e).slice(0, 120)}`)
     }
-    const d = JSON.parse((await res.text()) || '{}') as { valid_emails?: string[] }
-    const valid = d.valid_emails?.[0]
-    return valid ? String(valid).trim().toLowerCase() : null // ignore the looser `emails` fallback
-  } catch (e: any) {
-    console.error(`[refill/amf] ${domain} threw: ${String(e?.message || e).slice(0, 140)}`)
-    return null
+    return 'unknown' // keyed but the call failed — don't guess, don't fall back to MX
   }
+  // free fallback (no key): MX only — CANNOT detect catch-all.
+  return (await hasMx(domain)) ? 'mx_ok' : 'no_mx'
 }
 
 export interface RefillResult {
@@ -70,12 +60,12 @@ export interface RefillResult {
   needed: number
   checked: number
   promoted: number
-  promotedLeads: Array<{ id: string; email: string; domain: string }>
+  promotedLeads: Array<{ id: string; email: string; verdict: Verdict }>
   reason: string
 }
 
-// Top the sendable pool up to `cap`. Pulls-until-cap-met (not a fixed batch), bounded by pool size,
-// the per-run lookup ceiling, and the time budget. Idempotent when already at/above cap.
+// Top the sendable pool up to `cap` by VERIFYING existing emails (never finding). Pulls-until-cap,
+// bounded by the per-run ceiling + time budget. Idempotent when already at/above cap.
 export async function refillSendablePool(sqlOverride?: any, now: Date = new Date()): Promise<RefillResult> {
   const sql = sqlOverride ?? getSql()
   await ensureRefillColumn(sql)
@@ -88,12 +78,19 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
   const base = { cap, sendableBefore, needed, checked: 0, promoted: 0, promotedLeads: [] as RefillResult['promotedLeads'] }
 
   if (needed === 0) return { ...base, reason: 'pool already at cap — no refill needed' }
-  if (!process.env.ANYMAILFINDER_API_KEY?.trim()) {
-    return { ...base, reason: 'ANYMAILFINDER_API_KEY unset — verification disabled, promoted 0 (fail closed)' }
+
+  const hasVerifier = !!process.env.MYEMAILVERIFIER_API_KEY?.trim()
+  const allowMxOnly = process.env.REFILL_ALLOW_MX_ONLY === '1'
+  if (!hasVerifier && !allowMxOnly) {
+    return {
+      ...base,
+      reason:
+        'no email verifier: set MYEMAILVERIFIER_API_KEY (recommended — detects catch-all), or ' +
+        'REFILL_ALLOW_MX_ONLY=1 to promote on MX alone (WARNING: ~82% of this pool is catch-all, ' +
+        'MX cannot detect it → bounce risk). Promoted 0. No AMF/finder spend either way.',
+    }
   }
 
-  // Fresh, not-yet-refill-checked candidates from the raw pool. Ordered oldest-first; capped at the
-  // per-run lookup ceiling. refill_checked_at excludes anything a prior run already rejected.
   const candidates = (await sql`SELECT id, email FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND refill_checked_at IS NULL AND touch1_sent_at IS NULL
        AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
@@ -109,52 +106,57 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
 
   async function worker(): Promise<void> {
     while (true) {
-      if (promoted >= needed) return // cap met
+      if (promoted >= needed) return
       if (Date.now() - started >= TIME_BUDGET_MS) { timedOut = true; return }
       const i = idx++
-      if (i >= candidates.length) return // pool slice exhausted
+      if (i >= candidates.length) return
       const lead = candidates[i]
       checked++
-      const domain = domainOf(lead.email)
-      // Mark checked regardless of outcome so the next run skips this lead. Valid leads additionally
-      // get sanitized_at + the AMF-verified address.
-      if (!domain || !(await hasMx(domain))) {
-        await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
-        continue
-      }
-      const valid = await amfValidEmail(domain) // valid-only
-      if (!valid || promoted >= needed) {
-        await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
-        continue
-      }
-      try {
-        await sql`UPDATE ps_outreach_leads
-           SET email = ${valid}, sanitized_at = now(), sanitize_reason = 'amf_valid', refill_checked_at = now()
-           WHERE id = ${lead.id} AND sanitized_at IS NULL`
-        promoted++
-        promotedLeads.push({ id: String(lead.id), email: valid, domain })
-      } catch {
-        // unique-email collision / race — mark checked, skip
+      const verdict = await verifyEmail(lead.email) // verify the EXISTING email — never AMF
+      const promote = verdict === 'valid' || (verdict === 'mx_ok' && allowMxOnly)
+      if (promote && promoted < needed) {
+        try {
+          // Keep the existing email — we verified it, we did not find a new one. Mark it checked.
+          await sql`UPDATE ps_outreach_leads
+             SET sanitized_at = now(), sanitize_reason = ${verdict === 'valid' ? 'mev_valid' : 'mx_only_unverified'}, refill_checked_at = now()
+             WHERE id = ${lead.id} AND sanitized_at IS NULL`
+          promoted++
+          promotedLeads.push({ id: String(lead.id), email: lead.email, verdict })
+        } catch {
+          await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
+        }
+      } else if (verdict === 'unknown') {
+        // Inconclusive (verifier call failed) — DON'T mark checked, so a later run re-verifies.
+      } else {
+        // Definitive reject (catchall / invalid / no_mx) — mark checked so we don't re-verify it.
         await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
       }
     }
   }
-
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) || 1 }, () => worker()))
 
+  const mode = hasVerifier ? 'MyEmailVerifier' : 'MX-only (catch-all NOT filtered)'
   const reason =
     promoted >= needed
-      ? 'refilled to cap'
+      ? `refilled to cap via ${mode}`
       : timedOut
-        ? `hit ${TIME_BUDGET_MS / 1000}s time budget at ${promoted}/${needed} valid (checked ${checked}) — resumes next run`
+        ? `hit ${TIME_BUDGET_MS / 1000}s budget at ${promoted}/${needed} (${mode}) — resumes next run`
         : checked >= MAX_LOOKUPS_PER_RUN
-          ? `hit per-run lookup ceiling ${MAX_LOOKUPS_PER_RUN} at ${promoted}/${needed} valid — resumes next run`
-          : `raw pool exhausted at ${promoted}/${needed} valid (checked ${checked}) — supply-limited, needs more discovery`
+          ? `hit ${MAX_LOOKUPS_PER_RUN}-lookup ceiling at ${promoted}/${needed} (${mode}) — resumes next run`
+          : `pool exhausted at ${promoted}/${needed} verified-valid (${mode})`
   return { cap, sendableBefore, needed, checked, promoted, promotedLeads, reason }
 }
 
-// Cron body. Scheduled BEFORE the 0 7 send. Same secret-gate as the other os crons. Emits ONE
-// Telegram line with the outcome. Never throws past a 500.
+// One-time additive column: which leads the refill has already verified, so runs resume instead of
+// re-verifying. Idempotent.
+async function ensureRefillColumn(sql: any): Promise<void> {
+  try {
+    await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS refill_checked_at TIMESTAMPTZ`
+  } catch {
+    /* best-effort */
+  }
+}
+
 export async function cronSanitizeRefill(req: any, res: any) {
   const secret = process.env.CRON_SECRET
   const okCron = !!secret && req.headers?.authorization === `Bearer ${secret}`
