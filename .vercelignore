@@ -1,0 +1,5 @@
+# Local one-off import/diagnostic artifacts + env/secrets — never deploy these.
+_import.mts
+f2.mts
+leads_import.csv
+.env*
