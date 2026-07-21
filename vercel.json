@@ -111,10 +111,6 @@
       "schedule": "0 10,16 * * *"
     },
     {
-      "path": "/api/os/v4/full",
-      "schedule": "0 9 * * *"
-    },
-    {
       "path": "/api/scheduled/mia-feedback-digest",
       "schedule": "0 11 * * 1"
     }
