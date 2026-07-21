@@ -1000,7 +1000,7 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     `generated_at: ${new Date().toISOString()}`,
     `database: reachable (this probe succeeded)`,
     `agent_tasks by status: ${liveTaskCounts.map(r => `${r.status}=${r.n}`).join(', ') || 'none'}`,
-    `tasks executed this run: ${executed}`,
+    `tasks executed this run: ${executed} (from ${overdueTasks.length} tasks idle >4h; the runner only acts on >4h-idle 'assigned' tasks, so 0 here is the NORMAL idle state, not an outage)`,
   ].join('\n')
   const memoryContract = [
     'MEMORY CONTRACT -- hard rules for this brief:',
@@ -1008,6 +1008,10 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     '- NEVER assert infrastructure state (repository contents, deployments, pipelines, code, environments) as current fact from recall. If recall claims such a blocker, either omit it or write exactly: "unverified agent memory claims: <claim>".',
     '- Only the LIVE FACTS block may be stated as current fact.',
     '- If something is not in LIVE FACTS and Kaan would need it, write "not probed" rather than guessing.',
+    // PS-BRIEF-HONESTY-01 (D1): 0-executed is by-design idle, not an outage.
+    "- '0 tasks executed' / '0 overdue' is the NORMAL idle state (the runner only touches tasks idle >4h). Report it as steady-state -- NEVER as 'Operational Halt', outage, or an issue -- unless a LIVE FACT shows a real failure.",
+    // PS-BRIEF-HONESTY-01 (D2): do not elevate unverified recall into decisions.
+    "- Do NOT elevate UNVERIFIED RECALL (agent claims, or metrics like CAC/LTV/pipeline numbers) into 'Top 3 things' or the 'Decision' item -- those may draw ONLY from LIVE FACTS. An unverified figure may appear only as 'unverified agent memory claims: <claim>'.",
   ].join('\n')
   const kaanBrief = await llm(maxSystem,
     `${memoryContract}\n\nLIVE FACTS (probed now, safe to state):\n${liveFacts}\n\nUNVERIFIED RECALL -- standup summary: ${standup.janet_summary.slice(0,500)}\n\nPrepare Kaan's morning brief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
