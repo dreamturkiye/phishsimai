@@ -17,6 +17,8 @@ import { getSql } from '../conn'
 import { hostnameOf } from './mapsDiscovery'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
+import { dailySendCap } from '../sequences'
+import { DISQUALIFIED_LABELS } from '../sanitizeRefill'
 
 const COMPANY_ID = 'phishsimai'
 const SITEMAP = 'https://mymsphub.com/sitemap-companies.xml'
@@ -260,7 +262,25 @@ export async function cronOutreachFunnel(req: any, res: any) {
     // looked like a drained pool. Report what the send actually had to draw from (pre-send) and
     // keep the post-send leftover as the secondary number — leftover 0 is normal, pre-send 0 is not.
     const sendablePreSend = sendableNow + sent24
-    const funnel = { harvested24, queuePending, enriched24, promoted24, valid24, unverified24, sendablePreSend, sendableNow, sent24 }
+    // PS-BACKLOG-RUNWAY-01: the actual constraint now is the VERIFIABLE backlog — leads that have
+    // an email and haven't been disqualified, i.e. what the refill can still promote to sendable.
+    // The refill draws it down at ~cap/day (to fill the send); the finder replenishes it. Show the
+    // runway to sendable-0 so a drain is seen coming, not discovered at 0. While the finder
+    // out-produces the cap it reads "stable"; the moment finder supply drops below the cap (credits
+    // out, coverage falls) it flips to a day countdown.
+    const cap = dailySendCap(new Date())
+    const backlogVerifiable = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads
+      WHERE email IS NOT NULL AND sanitized_at IS NULL AND touch1_sent_at IS NULL
+        AND country IN ('US','GB','AU') AND bounced = false AND unsubscribed = false
+        AND pipeline_stage NOT IN ('dead','customer')
+        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))`)
+    const finderVerif24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads
+      WHERE created_at > now() - interval '24 hours'
+        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))`)
+    const netDrain = cap - finderVerif24
+    const runway = netDrain > 0 ? `~${Math.floor(backlogVerifiable / netDrain)}d to sendable-0` : 'stable/growing ✅'
+    const runwayLine = `🛟 backlog ${backlogVerifiable} verifiable · finder +${finderVerif24}/day vs cap ${cap}/day → ${runway}`
+    const funnel = { harvested24, queuePending, enriched24, promoted24, valid24, unverified24, sendablePreSend, sendableNow, sent24, backlogVerifiable, finderVerif24, cap, runway }
     await ensureCreditLog(sql)
     // PS-FINDER-ICYPEAS-01: report the ICYPEAS finder balance in place of AMF (retired at 0).
     const [icy, mev] = await Promise.all([icypeasCredits(), mevCredits()])
@@ -269,6 +289,7 @@ export async function cronOutreachFunnel(req: any, res: any) {
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
         `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → verified-valid ${valid24}${unverified24 > 0 ? ` ⚠️ +${unverified24} promoted UNVERIFIED` : ''} → sendable ${sendablePreSend} pre-send (${sendableNow} left) → sent ${sent24}\n` +
+        `${runwayLine}\n` +
         `💳 ${icyLine}\n💳 ${mevLine}`,
     ).catch(() => {})
     return res.json({ ok: true, ...funnel, credits: { icypeas: icy, mev } })
