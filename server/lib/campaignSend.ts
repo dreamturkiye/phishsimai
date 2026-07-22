@@ -29,11 +29,13 @@ export type EnqueueTarget = Pick<Target, "id" | "orgId" | "email" | "isActive">;
  * only when allowed. `trackingToken` is supplied by the caller so token generation stays
  * with the campaign loop.
  */
+export type EnqueueOutcome = SendVerdict & { resultId?: number };
+
 export async function enqueueCampaignSend(
   campaignId: number,
   target: EnqueueTarget,
   trackingToken: string,
-): Promise<SendVerdict> {
+): Promise<EnqueueOutcome> {
   const verifiedDomains = await getVerifiedDomains(target.orgId);
   const verdict = checkSendAllowed(target.orgId, target.email, verifiedDomains, {
     targetActive: target.isActive,
@@ -51,12 +53,16 @@ export async function enqueueCampaignSend(
   if (!verdict.allowed) return verdict;
 
   // The enqueue: the ONLY campaign_results INSERT in the codebase.
-  await createCampaignResult({
+  // PS-SEND-01: emailSentAt stays NULL here. This row is the ENQUEUE record — proof the send
+  // was authorised, not proof it was delivered. It used to be stamped with now() before the
+  // provider had even been called, so a Resend rejection still left a row asserting delivery
+  // and getOrgAnalytics counted it as sent. The caller stamps it only on a confirmed send.
+  const row = await createCampaignResult({
     campaignId,
     targetId: target.id,
     orgId: target.orgId,
     trackingToken,
-    emailSentAt: new Date(),
+    emailSentAt: null,
     emailOpenedAt: null,
     linkClickedAt: null,
     credentialSubmittedAt: null,
@@ -66,5 +72,15 @@ export async function enqueueCampaignSend(
     userAgent: null,
   });
 
-  return verdict;
+  return { ...verdict, resultId: row.id };
+}
+
+/**
+ * Stamp emailSentAt once the provider has CONFIRMED acceptance. Separate from the enqueue so
+ * "a row exists" and "it was delivered" can never be conflated again.
+ */
+export async function markCampaignResultSent(resultId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(sql`UPDATE campaign_results SET "emailSentAt" = now() WHERE id = ${resultId}`);
 }

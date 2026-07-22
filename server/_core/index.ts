@@ -47,6 +47,14 @@ async function startServer() {
     process.exit(1);
   }
 
+  // PS-SENTRY-01 (2026-07-22): initSentry() had NO production caller — it was reachable only
+  // from its own test file, and sentryErrorMiddleware was defined but never mounted. Sentry was
+  // installed, tested, and capturing precisely nothing. Every captureServerError() in the
+  // codebase was an inert no-op. Init first, before anything can throw. Still fail-safe: with
+  // SENTRY_DSN unset this returns false and every capture stays a no-op, by design.
+  const { initSentry } = await import("../os/sentryServer");
+  console.log(`[sentry] server capture ${initSentry() ? "ENABLED" : "disabled (SENTRY_DSN unset)"}`);
+
   const app = express();
   const server = createServer(app);
 
@@ -202,6 +210,12 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  // PS-SENTRY-01: error middleware goes LAST — Express only routes errors to a 4-arg handler
+  // registered after the routes that produce them. Captures 5xx, forwards to the self-heal
+  // bridge, then delegates to Express's default handler.
+  const { sentryErrorMiddleware } = await import("../os/sentryExpress");
+  app.use(sentryErrorMiddleware);
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);
