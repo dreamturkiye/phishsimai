@@ -155,6 +155,8 @@ describe("campaigns.create", () => {
       orgId: 1,
       name: "Q1 Phishing Test",
       language: "en",
+      templateId: 1,             // PS-CAMPAIGN-GATE-01: create now requires a template
+      targetIds: [1],            // ...and at least one target
     });
     expect(db.createCampaign).toHaveBeenCalledWith(expect.objectContaining({
       name: "Q1 Phishing Test",
@@ -174,11 +176,27 @@ describe("campaigns.create", () => {
       name: "Scheduled Campaign",
       language: "es",
       scheduledAt: futureTime,
+      templateId: 1,             // PS-CAMPAIGN-GATE-01: create now requires a template
+      targetIds: [1],            // ...and at least one target
     });
     expect(db.createCampaign).toHaveBeenCalledWith(expect.objectContaining({
       status: "scheduled",
       language: "es",
     }));
+  });
+
+  // PS-CAMPAIGN-GATE-01: the dead end the real customer hit — an unlaunchable campaign that then
+  // silently "completed". Creation must refuse it with a reason instead.
+  it("rejects a campaign with no template", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(caller.campaigns.create({ orgId: 1, name: "No template", targetIds: [1] }))
+      .rejects.toThrow(/template/i);
+  });
+
+  it("rejects a campaign with no targets", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(caller.campaigns.create({ orgId: 1, name: "No targets", templateId: 1, targetIds: [] }))
+      .rejects.toThrow(/target/i);
   });
 });
 

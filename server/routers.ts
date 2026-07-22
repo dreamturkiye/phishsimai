@@ -621,6 +621,16 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
+        // PS-CAMPAIGN-GATE-01: block the dead-end the real customer hit. A campaign with no
+        // template can never send; one with no targets has no one to send to. Both used to be
+        // creatable and then silently "completed" via the fake Launch flip. Refuse at creation
+        // with a reason the founder can act on, instead of minting an unlaunchable row.
+        if (!input.templateId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a template — a campaign can't send without one." });
+        }
+        if (input.targetIds.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one target employee — a campaign needs someone to send to. Add employees under Targets first." });
+        }
         return createCampaign({
           orgId: input.orgId,
           createdByUserId: ctx.user.id,
