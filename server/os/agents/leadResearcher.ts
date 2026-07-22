@@ -106,6 +106,94 @@ async function enrichViaAnyMailFinder(domain: string): Promise<AmfResult> {
   }
 }
 
+// ── ICYPEAS finder (PS-FINDER-ICYPEAS-01) ────────────────────────────────────────────────────
+// AMF's shared pool hit 0 (2026-07-22), so the finder is dead — Icypeas is the active replacement.
+// Auth is the SIMPLE raw-key header (verified live: `Authorization: <key>`; Bearer 401s; no HMAC
+// needed — reported to the founder). The chain is FULLY SYNCHRONOUS (no polling): find-people and
+// sync/email-search both return in the response, so there is no async budget risk.
+//
+// Chain, per domain-only lead:
+//   1. find-people({query:{currentCompanyName:{include:[name]}}}) → people at that company
+//   2. pick the top decision-maker(s) → firstname/lastname
+//   3. sync/email-search({firstname,lastname,domainOrCompany}) → the PERSONAL email
+// Measured 16% personal on 25 named MSP domains vs AMF's 80% — kept only because 16% beats a dead
+// pipeline. The bottleneck is Icypeas lead-DB coverage of small MSPs (60% return no name at all),
+// which is WHY this needs company_name; a domain-derived guess is a weak fallback for nameless leads.
+//
+// SHARED with ScrollFuel: one 1,000-credit pool, two products. sync/email-search charges ~1 credit
+// per FOUND (misses free); find-people is ~0.02/result. Rate limit 30 req/min — every Icypeas call
+// is paced through icyThrottle below.
+let icyKeyWarned = false
+let icyLastCallAt = 0
+const ICY_MIN_GAP_MS = 2100 // 30 req/min with headroom
+async function icyThrottle(): Promise<void> {
+  const wait = icyLastCallAt + ICY_MIN_GAP_MS - Date.now()
+  if (wait > 0) await new Promise(r => setTimeout(r, wait))
+  icyLastCallAt = Date.now()
+}
+async function icyPost(path: string, body: unknown, key: string): Promise<any | 'vendor_error'> {
+  await icyThrottle()
+  try {
+    const r = await fetch(`https://app.icypeas.com/api/${path}`, {
+      method: 'POST',
+      headers: { Authorization: key, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20000),
+    })
+    if (r.status === 401 || r.status === 402 || r.status === 429) {
+      console.error(`[icypeas] ${path} status=${r.status} — VENDOR FAILURE (401 key / 402 credits / 429 rate). NOT a miss.`)
+      return 'vendor_error'
+    }
+    if (!r.ok) { console.error(`[icypeas] ${path} status=${r.status}`); return 'vendor_error' }
+    return await r.json()
+  } catch (e: any) {
+    console.error(`[icypeas] ${path} threw: ${String(e?.message || e).slice(0, 140)}`)
+    return 'vendor_error'
+  }
+}
+
+// A company name for find-people: prefer the harvested one; else a weak guess from the domain
+// (strip TLD, de-dash). The guess rarely matches Icypeas's lead DB, but a nameless lead has no
+// other shot and this never costs a credit (find-people bills per RESULT, and a no-match is empty).
+function companyNameFor(domain: string, companyName?: string | null): string {
+  const c = (companyName ?? '').trim()
+  if (c) return c
+  return String(domain).replace(/\.[a-z.]+$/i, '').replace(/[-_]+/g, ' ').trim()
+}
+
+const DECISION_MAKER = /owner|founder|co-found|ceo|president|principal|partner|managing|director|chief|cto|cio|\bvp\b|vice president|manager/i
+
+async function enrichViaIcypeas(domain: string, companyName?: string | null): Promise<AmfResult> {
+  const key = process.env.ICYPEAS_API_KEY?.trim()
+  if (!key) {
+    if (!icyKeyWarned) {
+      icyKeyWarned = true
+      console.error('[icypeas] ICYPEAS_API_KEY is NOT SET — finder DISABLED. Every lookup returns vendor_error (NOT a miss) so no lead is retired for a key we never set.')
+    }
+    return 'vendor_error'
+  }
+  // 1. Find people at the company.
+  const fp = await icyPost('find-people', { query: { currentCompanyName: { include: [companyNameFor(domain, companyName)] } } }, key)
+  if (fp === 'vendor_error') return 'vendor_error'
+  const leads: Array<{ firstname?: string; lastname?: string; headline?: string }> = fp?.leads ?? []
+  const named = leads
+    .filter(l => l.firstname && l.lastname && !/[.,]/.test(l.firstname) && l.firstname.length <= 20 && (l.lastname as string).length <= 30)
+    .sort((a, b) => (DECISION_MAKER.test(b.headline || '') ? 1 : 0) - (DECISION_MAKER.test(a.headline || '') ? 1 : 0))
+    .slice(0, 2)
+  if (named.length === 0) return null // genuine miss: no person for this company in the lead DB
+
+  // 2. Resolve the personal email for the best-ranked name(s).
+  for (const n of named) {
+    const es = await icyPost('sync/email-search', { firstname: n.firstname, lastname: n.lastname, domainOrCompany: domain }, key)
+    if (es === 'vendor_error') return 'vendor_error' // don't burn the lead's retry budget on an outage
+    if (es?.status === 'FOUND' && es.emails?.[0]?.email) {
+      return { email: String(es.emails[0].email).trim().toLowerCase(), name: `${n.firstname} ${n.lastname}`, title: n.headline || null }
+    }
+  }
+  return null // had name(s) but no verifiable personal email — a genuine miss
+}
+
 let hunterKeyWarned = false
 
 async function enrichViaHunter(domain: string) {
@@ -293,11 +381,16 @@ export async function runLeadResearcher(batchSize = 6) {
       try {
         await sql`UPDATE lead_research_queue SET status='researching', attempts=attempts+1, last_attempt_at=NOW() WHERE id=${item.id}`
         console.log(`[researcher] t=${el()}s enrich ${item.domain}`)
-        // AMF first: it takes a bare domain, which is all Google Maps gives us. Hunter needs
-        // a name and would return nothing for ~55 of every 56 leads here.
-        const amf = await enrichViaAnyMailFinder(String(item.domain))
-        const amfVendorError = amf === 'vendor_error'
-        let hunter = amf && amf !== 'vendor_error' ? amf : null
+        // PS-FINDER-ICYPEAS-01: finder is env-selectable so we can switch back to AMF INSTANTLY
+        // if its shared pool is topped up — LEAD_FINDER=amf restores the old path, no deploy of
+        // logic, just an env flip. Default is icypeas (AMF is at 0). The AMF code stays intact and
+        // dormant below. Both return the same 3-way contract (hit / null miss / 'vendor_error').
+        const finder = (process.env.LEAD_FINDER ?? 'icypeas').toLowerCase()
+        const primary = finder === 'amf'
+          ? await enrichViaAnyMailFinder(String(item.domain))
+          : await enrichViaIcypeas(String(item.domain), item.company_name as string | null)
+        const amfVendorError = primary === 'vendor_error' // "the lookup never ran" — do not retire the lead
+        let hunter = primary && primary !== 'vendor_error' ? primary : null
         if (!hunter) hunter = await enrichViaHunter(String(item.domain))
 
         if (hunter?.email) {

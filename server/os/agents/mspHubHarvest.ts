@@ -49,7 +49,12 @@ async function fetchCompanyUrls(): Promise<string[]> {
 
 // Parse the company's real domain out of the profile's JSON-LD LocalBusiness.url. Returns null on
 // any fetch/parse failure or if the only url is mymsphub itself (a listing with no linked site).
-async function domainFromProfile(url: string): Promise<string | null> {
+// PS-FINDER-ICYPEAS-01: return the company NAME alongside the domain. The JSON-LD LocalBusiness
+// block already carries `name` right next to `url`; we were throwing it away and inserting
+// company_name=null. That's fine for AMF (domain-only finder) but fatal for Icypeas, whose
+// Find-People step searches by company NAME — a nameless lead can't be enriched. Capturing the
+// name here is what makes the Icypeas switch actually work on the bulk mymsphub source.
+async function domainFromProfile(url: string): Promise<{ domain: string; name: string | null } | null> {
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) })
     if (!res.ok) return null
@@ -66,7 +71,10 @@ async function domainFromProfile(url: string): Promise<string | null> {
         const t = it?.['@type']
         const isLocal = t === 'LocalBusiness' || (Array.isArray(t) && t.includes('LocalBusiness'))
         if (isLocal && typeof it.url === 'string' && !/mymsphub\.com/i.test(it.url)) {
-          return hostnameOf(it.url)
+          const dom = hostnameOf(it.url)
+          if (!dom) continue
+          const name = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : null
+          return { domain: dom, name }
         }
       }
     }
@@ -111,7 +119,9 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
       const i = idx++
       if (i >= slice.length) return
       processed++
-      const domain = await domainFromProfile(slice[i])
+      const prof = await domainFromProfile(slice[i])
+      const domain = prof?.domain ?? null
+      const companyName = prof?.name ?? null
       if (!domain) {
         noDomain++
         continue
@@ -122,7 +132,7 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
         // country_code='US' — mymsphub is US-only; the researcher carries this into
         // ps_outreach_leads.country so the geo gate admits them. Domain dedup is the ON CONFLICT.
         const r = (await sql`INSERT INTO lead_research_queue (company_id, domain, company_name, source, status, research_data)
-          VALUES (${COMPANY_ID}, ${domain}, ${null}, 'mymsphub', 'pending',
+          VALUES (${COMPANY_ID}, ${domain}, ${companyName}, 'mymsphub', 'pending',
             ${JSON.stringify({ country_code: 'US', profile: slice[i], harvested_at: new Date().toISOString() })})
           ON CONFLICT (company_id, domain) DO NOTHING RETURNING id`) as any[]
         if (r.length > 0) domainsQueued++
@@ -154,10 +164,11 @@ export async function cronMspHubHarvest(req: any, res: any) {
   }
 }
 
-// ── PS-CREDITS-01: daily credit-balance monitoring on the morning funnel line. AMF is the FINDER
-// pool (shared with ScrollFuel — empty = both products dark on a 402). MEV is the verifier. Balances
-// are logged each run so we can show day-over-day burn and flag "dropping fast" before either dries.
-const AMF_LOW = 500
+// ── PS-CREDITS-01 / PS-FINDER-ICYPEAS-01: daily credit-balance monitoring on the morning funnel
+// line. ICYPEAS is now the FINDER pool (shared with ScrollFuel — one 1,000-credit pool, two
+// products; empty = both products' enrichment dark). AMF is retired (pool hit 0). MEV is the
+// verifier. Balances are logged each run for day-over-day burn + a "dropping fast" flag.
+const ICY_LOW = 200 // founder-set low-balance warning on the shared 1,000 pool
 const MEV_LOW = 1000
 
 async function ensureCreditLog(sql: any): Promise<void> {
@@ -166,16 +177,22 @@ async function ensureCreditLog(sql: any): Promise<void> {
   )`.catch(() => {})
 }
 
-async function amfCredits(): Promise<number | null> {
+// Icypeas remaining credits (shared with ScrollFuel). POST /a/actions/subscription-information with
+// the simple raw-key Authorization header — verified live 2026-07-22. Field: `credits`.
+export async function icypeasCredits(): Promise<number | null> {
+  const key = process.env.ICYPEAS_API_KEY?.trim()
+  if (!key) return null
   try {
-    const r = await fetch('https://api.anymailfinder.com/v5.1/account', {
-      headers: { Authorization: 'Bearer ' + (process.env.ANYMAILFINDER_API_KEY ?? '') },
+    const r = await fetch('https://app.icypeas.com/api/a/actions/subscription-information', {
+      method: 'POST',
+      headers: { Authorization: key, 'Content-Type': 'application/json' },
+      body: '{}',
       signal: AbortSignal.timeout(8000),
     })
     if (!r.ok) return null
-    const d = (await r.json()) as { credits_left?: number }
-    const c = Number(d?.credits_left)
-    return Number.isFinite(c) ? c : null
+    const d = (await r.json()) as { credits?: number }
+    const c = Number(d?.credits)
+    return Number.isFinite(c) ? Math.floor(c) : null // credit_readings.credits is INTEGER
   } catch {
     return null
   }
@@ -245,15 +262,16 @@ export async function cronOutreachFunnel(req: any, res: any) {
     const sendablePreSend = sendableNow + sent24
     const funnel = { harvested24, queuePending, enriched24, promoted24, valid24, unverified24, sendablePreSend, sendableNow, sent24 }
     await ensureCreditLog(sql)
-    const [amf, mev] = await Promise.all([amfCredits(), mevCredits()])
-    const amfLine = await creditLine(sql, 'amf', amf, AMF_LOW, 'AMF finder (shared w/ ScrollFuel)')
+    // PS-FINDER-ICYPEAS-01: report the ICYPEAS finder balance in place of AMF (retired at 0).
+    const [icy, mev] = await Promise.all([icypeasCredits(), mevCredits()])
+    const icyLine = await creditLine(sql, 'icypeas', icy, ICY_LOW, 'Icypeas finder (shared w/ ScrollFuel)')
     const mevLine = await creditLine(sql, 'mev', mev, MEV_LOW, 'MEV verifier')
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
         `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → verified-valid ${valid24}${unverified24 > 0 ? ` ⚠️ +${unverified24} promoted UNVERIFIED` : ''} → sendable ${sendablePreSend} pre-send (${sendableNow} left) → sent ${sent24}\n` +
-        `💳 ${amfLine}\n💳 ${mevLine}`,
+        `💳 ${icyLine}\n💳 ${mevLine}`,
     ).catch(() => {})
-    return res.json({ ok: true, ...funnel, credits: { amf, mev } })
+    return res.json({ ok: true, ...funnel, credits: { icypeas: icy, mev } })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }
