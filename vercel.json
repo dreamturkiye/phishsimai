@@ -119,6 +119,10 @@
       "schedule": "30 8 * * *"
     },
     {
+      "path": "/api/os/trial-nudges",
+      "schedule": "0 9 * * *"
+    },
+    {
       "path": "/api/os/researcher",
       "schedule": "*/30 * * * *"
     },
