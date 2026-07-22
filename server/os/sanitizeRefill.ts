@@ -32,7 +32,7 @@ const TIME_BUDGET_MS = 240_000
 //   1. ORDER BY created_at DESC — verify the freshest (highest-yield) leads first.
 //   2. Skip labels that mean DISQUALIFIED. Labels meaning INCONCLUSIVE (unverified_unknown /
 //      _timeout / _blank, and NULL) stay eligible — those were never actually decided.
-const DISQUALIFIED_LABELS = [
+export const DISQUALIFIED_LABELS = [
   'role_account', 'role_strict', 'catchall', 'unverified_catchall', 'no_mx', 'mev_invalid',
   'edu_gov_domain', 'domain_cap', 'deprioritized_generic', 'initials_greeting', 'generic_greeting',
 ]
