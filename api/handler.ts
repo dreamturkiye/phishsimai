@@ -2,6 +2,7 @@
 import express from "express";
 import { mountProductApi } from "../server/productApiMount";
 import { registerStripeWebhook } from "../server/stripe/webhook";
+import { registerResendWebhook } from "../server/email/resendWebhook";
 import { scheduledCampaignHandler } from "../server/scheduledHandlers";
 import { initSentry } from "../server/os/sentryServer";
 import { sentryErrorMiddleware } from "../server/os/sentryExpress";
@@ -35,6 +36,10 @@ const app = express();
 // signature verification (webhooks.constructEvent) needs the RAW request body, so the raw route
 // must win before the global JSON parser consumes the stream. Order is load-bearing.
 registerStripeWebhook(app);
+// 1b: Resend delivery webhook — same load-bearing rule as Stripe. Its Svix signature is verified
+// over the RAW body, so it MUST win before the global JSON parser below consumes the stream. This
+// is the production (Vercel) entry point; server/_core/index.ts registers it for local/dev.
+registerResendWebhook(app);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));

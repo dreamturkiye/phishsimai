@@ -105,6 +105,9 @@ async function startServer() {
   // Body parsers — reduced limits to prevent DoS
   // Stripe webhook must be registered BEFORE body parsers (express.raw needs the raw body for signature verification)
   registerStripeWebhook(app);
+  // 1b: Resend delivery webhook — same rule, its Svix signature is verified over the raw body.
+  const { registerResendWebhook } = await import("../email/resendWebhook");
+  registerResendWebhook(app);
 
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "5mb", extended: true }));
