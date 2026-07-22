@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
+import { Seo } from "@/components/Seo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -97,9 +99,24 @@ const FAQS = [
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [location] = useLocation();
+
+  // PS-SEO-01: / and /pricing render this same component, so meta is route-aware here.
+  const seo = location.startsWith("/pricing")
+    ? {
+        title: "PhishSim AI Pricing — MSP Phishing Simulation from $149/mo",
+        description: "Transparent per-seat pricing for MSPs: Starter $149, Growth $299, Pro $749, Enterprise $1,499/mo. AI phishing simulations, training, and compliance reporting. 14-day free trial, no card required.",
+        path: "/pricing",
+      }
+    : {
+        title: "PhishSim AI — AI Phishing Simulation & Security Awareness for MSPs",
+        description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 14-day free trial.",
+        path: "/",
+      };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <Seo title={seo.title} description={seo.description} path={seo.path} />
       {/* Navigation */}
       <header className="border-b border-border/40 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container flex items-center justify-between h-16">
