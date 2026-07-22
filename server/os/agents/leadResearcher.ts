@@ -10,6 +10,43 @@ const COMPANY_ID = 'phishsimai'
 // share this constant so they can never drift (a mismatch is exactly what stranded the 69 leads:
 // selection used `< 3`, terminalization never happened).
 const MAX_RESEARCH_ATTEMPTS = 3
+
+// PS-FINDER-THROTTLE-02: the finder's daily output budget, demand-aware. The send draws from
+// VERIFIED-sendable, and only a fraction of finds survive MEV verify, so the finds needed to keep
+// the send fed = cap / pass_rate, plus a small buffer. Self-tunes as the cap ramps and the measured
+// pass-rate drifts. FAIL TOWARD FEEDING, never starving:
+//   • pass-rate is clamped to [0.35, 0.70] — the 0.70 CEILING is the floor on the budget: even a
+//     fluke "100% passed" reading can't drop the budget below ~cap/0.70 ≈ 1.6× cap.
+//   • a thin sample (< MIN_SAMPLE checked) uses a conservative default rather than a noisy ratio.
+//   • FINDER_DAILY_MULTIPLE, if set, is a manual override escape hatch (flat multiple × cap).
+export async function computeFinderBudget(
+  sql: any,
+  now: Date = new Date(),
+): Promise<{ budget: number; cap: number; passRate: number; sampleChecked: number; source: 'measured' | 'default' | 'override' }> {
+  const cap = dailySendCap(now)
+  const override = process.env.FINDER_DAILY_MULTIPLE
+  if (override) {
+    const m = Number(override)
+    if (Number.isFinite(m) && m > 0) return { budget: Math.max(cap, Math.round(m * cap)), cap, passRate: NaN, sampleChecked: 0, source: 'override' }
+  }
+  const PASS_DEFAULT = 0.6, PASS_MIN = 0.35, PASS_MAX = 0.7, BUFFER = 1.1, MIN_SAMPLE = 20
+  let passRate = PASS_DEFAULT
+  let sampleChecked = 0
+  try {
+    const r = (await sql`SELECT
+      count(*) FILTER (WHERE refill_checked_at IS NOT NULL)::int AS checked,
+      count(*) FILTER (WHERE refill_checked_at IS NOT NULL AND sanitize_reason='mev_valid')::int AS promoted
+      FROM ps_outreach_leads WHERE refill_checked_at > now() - interval '7 days'`)[0]
+    sampleChecked = Number(r?.checked ?? 0)
+    if (sampleChecked >= MIN_SAMPLE && Number(r?.promoted) > 0) passRate = Number(r.promoted) / sampleChecked
+  } catch {
+    /* fall back to the conservative default — never throw the finder's budget calc */
+  }
+  const source = sampleChecked >= MIN_SAMPLE ? 'measured' : 'default'
+  const clamped = Math.min(PASS_MAX, Math.max(PASS_MIN, passRate)) // clamp: fail toward feeding
+  const budget = Math.max(cap, Math.ceil((cap / clamped) * BUFFER)) // never below the cap itself
+  return { budget, cap, passRate: clamped, sampleChecked, source }
+}
 const MSP_TITLES = ['Owner', 'CEO', 'Founder', 'President', 'Managing Director', 'IT Director', 'CISO', 'Head of Security', 'CTO']
 
 async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
@@ -365,22 +402,19 @@ export async function runLeadResearcher(batchSize = 6) {
     // filled independently. stats.discovered stays 0 here by design (this function no longer discovers).
     console.log(`[researcher] t=${el()}s enrichment start (discovery runs separately on /api/os/discover)`)
 
-    // PS-FINDER-THROTTLE-01: match finder output to NEED, not capacity. We send min(cap, available)
-    // — 50→100/day — so producing ~322/day just burns the SHARED Icypeas pool (~1 credit/find,
-    // ~3 days of runway) building backlog we can't send. The backlog is already growing, so cap the
-    // finder's DAILY output to FINDER_DAILY_MULTIPLE × the send cap (default 2× → ~100 at cap 50,
-    // ~200 at cap 100). This stretches credits ~3-4× with no effect on send volume. Once the
-    // budget is met, skip enriching entirely until tomorrow — cheapest possible: zero vendor calls.
-    const sendCapToday = dailySendCap(new Date())
-    const finderMultiple = Number(process.env.FINDER_DAILY_MULTIPLE ?? 2)
-    const finderDailyBudget = Math.max(sendCapToday, Math.round(finderMultiple * sendCapToday))
+    // PS-FINDER-THROTTLE-02: DEMAND-AWARE budget. We send min(cap, available) = 50→100/day, and
+    // only ~63% of finds survive MEV verify, so the finds NEEDED to keep the send fed are
+    // cap / pass_rate (+ a small buffer) — not a flat multiple. computeFinderBudget self-tunes as
+    // the cap ramps and the pass-rate drifts, and FLOORS the budget (pass-rate clamped ≤ 0.7) so a
+    // fluke-high reading can't collapse it and starve the send. Once met, skip enriching entirely.
+    const { budget: finderDailyBudget, passRate, sampleChecked } = await computeFinderBudget(sql, new Date())
     // Finds today = ps_outreach_leads the researcher inserted since UTC midnight (its only writer;
     // the backlog is weeks old, the refill only UPDATEs). Duplicates don't insert, so this ≈ credits spent.
     const producedToday = Number((await sql`SELECT count(*) AS n FROM ps_outreach_leads
       WHERE source = 'google_maps' AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`)[0]?.n ?? 0)
     if (producedToday >= finderDailyBudget) {
-      console.log(`[researcher] finder daily budget ${finderDailyBudget} already met (${producedToday} today) — skipping to conserve shared Icypeas credits`)
-      await reportAgentRun('researcher', true, { ...stats, finder_budget_reached: true, produced_today: producedToday }, undefined, COMPANY_ID)
+      console.log(`[researcher] finder budget ${finderDailyBudget}/day (pass-rate ${Math.round(passRate * 100)}%, n=${sampleChecked}) already met (${producedToday} today) — skipping to conserve shared Icypeas credits`)
+      await reportAgentRun('researcher', true, { ...stats, finder_budget_reached: true, produced_today: producedToday, finder_budget: finderDailyBudget, pass_rate: passRate }, undefined, COMPANY_ID)
       return { ...stats, budget_exhausted: budgetExhausted, finder_budget_reached: true, elapsed_s: el() }
     }
 

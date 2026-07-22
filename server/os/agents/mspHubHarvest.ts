@@ -19,6 +19,7 @@ import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
 import { dailySendCap } from '../sequences'
 import { DISQUALIFIED_LABELS } from '../sanitizeRefill'
+import { computeFinderBudget } from './leadResearcher'
 
 const COMPANY_ID = 'phishsimai'
 const SITEMAP = 'https://mymsphub.com/sitemap-companies.xml'
@@ -279,6 +280,10 @@ export async function cronOutreachFunnel(req: any, res: any) {
         AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))`)
     const netDrain = cap - finderVerif24
     const runway = netDrain > 0 ? `~${Math.floor(backlogVerifiable / netDrain)}d to sendable-0` : 'stable/growing ✅'
+    // PS-FINDER-THROTTLE-02: show the demand-aware finder budget + the pass-rate it self-tuned from,
+    // so the throttle is visible rather than silent — budget = ceil(cap / pass-rate) + buffer.
+    const fb = await computeFinderBudget(sql, new Date())
+    const budgetLine = `🎯 finder budget ${fb.budget}/day @ ${Math.round(fb.passRate * 100)}% MEV pass (n=${fb.sampleChecked}, ${fb.source}) · need cap ${fb.cap}`
     const runwayLine = `🛟 backlog ${backlogVerifiable} verifiable · finder +${finderVerif24}/day vs cap ${cap}/day → ${runway}`
     const funnel = { harvested24, queuePending, enriched24, promoted24, valid24, unverified24, sendablePreSend, sendableNow, sent24, backlogVerifiable, finderVerif24, cap, runway }
     await ensureCreditLog(sql)
@@ -289,7 +294,7 @@ export async function cronOutreachFunnel(req: any, res: any) {
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
         `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → verified-valid ${valid24}${unverified24 > 0 ? ` ⚠️ +${unverified24} promoted UNVERIFIED` : ''} → sendable ${sendablePreSend} pre-send (${sendableNow} left) → sent ${sent24}\n` +
-        `${runwayLine}\n` +
+        `${runwayLine}\n${budgetLine}\n` +
         `💳 ${icyLine}\n💳 ${mevLine}`,
     ).catch(() => {})
     return res.json({ ok: true, ...funnel, credits: { icypeas: icy, mev } })
