@@ -42,7 +42,7 @@ describe('tracking routes (never executed in prod — 0 campaign_results rows ev
   it('/landing/:token renders the training page', async () => {
     const r = await fetch(`${base}/landing/${TOKEN}`)
     expect(r.status).toBe(200)
-    expect(await r.text()).toContain('You Clicked a Simulated Phishing Link')
+    expect(await r.text()).toContain('This Was a Simulated Phishing Test')
   })
 
   it('rejects a malformed token on /c/ and /landing/', async () => {

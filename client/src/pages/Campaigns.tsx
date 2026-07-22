@@ -137,6 +137,15 @@ export default function Campaigns() {
   }
 
   const canProceedStep0 = form.name.trim().length > 0;
+  // PS-CAMPAIGN-GATE-01: a campaign needs a template (or it can't send) and at least one target
+  // (or there's no one to send to). Mirror the server gate in the UI so the dead end is visible
+  // before submit, not a rejection after. The "No template (custom)" wizard option resolves to
+  // templateId null, which is exactly what this blocks.
+  const missingToCreate = [
+    !form.templateId ? "a template" : null,
+    form.selectedTargetIds.length === 0 ? "at least one target employee" : null,
+  ].filter(Boolean);
+  const canCreate = missingToCreate.length === 0;
 
   return (
     <AppLayout
@@ -445,13 +454,18 @@ export default function Campaigns() {
                 <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             ) : (
-              <Button
-                size="sm"
-                disabled={createMutation.isPending}
-                onClick={handleCreate}
-              >
-                {createMutation.isPending ? "Creating..." : "Create Campaign"}
-              </Button>
+              <div className="flex items-center gap-3">
+                {!canCreate && (
+                  <span className="text-xs text-amber-400/90">Add {missingToCreate.join(" and ")} to launch</span>
+                )}
+                <Button
+                  size="sm"
+                  disabled={createMutation.isPending || !canCreate}
+                  onClick={handleCreate}
+                >
+                  {createMutation.isPending ? "Creating..." : "Create Campaign"}
+                </Button>
+              </div>
             )}
           </div>
         </DialogContent>
