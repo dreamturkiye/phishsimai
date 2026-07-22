@@ -5,7 +5,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "build": "./node_modules/.bin/tsc --noEmit && vite build && ./node_modules/.bin/esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && ./node_modules/.bin/esbuild api/handler.ts --platform=node --bundle --format=cjs --outfile=api/index.js --external:mysql2 --external:mysql2/promise --external:canvas --external:sharp --external:opentype.js",
+    "build": "./node_modules/.bin/tsc --noEmit && vite build && ./node_modules/.bin/vite build --ssr src/prerender.tsx --outDir ../dist/prerender && node scripts/prerender.mjs && ./node_modules/.bin/esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && ./node_modules/.bin/esbuild api/handler.ts --platform=node --bundle --format=cjs --outfile=api/index.js --external:mysql2 --external:mysql2/promise --external:canvas --external:sharp --external:opentype.js",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
