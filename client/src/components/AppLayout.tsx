@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import TrialBanner from "./TrialBanner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getLoginUrl } from "@/const";
@@ -315,6 +316,9 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
           {title && <h1 className="font-semibold text-base flex-1">{title}</h1>}
           {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
         </header>
+
+        {/* PS-TRIAL-01: trial countdown / upgrade nudge */}
+        <TrialBanner orgId={currentOrg?.id} />
 
         {/* Page content */}
         <div className="flex-1 p-4 lg:p-6">
