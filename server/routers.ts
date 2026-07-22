@@ -768,7 +768,14 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
             rejected.push(`${target.email} (${verdict.reason})`);
             continue;
           }
-          const result = await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
+          // PS-SIM-ISOLATION-01: sims must NOT default to the apex identity. Phishing-shaped
+          // content degrades the sending reputation of whatever domain it uses, and the apex is
+          // shared with sarah@ cold outreach and any real corporate mail. The default sim sender
+          // is env-driven (CAMPAIGN_DEFAULT_SENDER) so ops can point it at a dedicated, verified,
+          // reputation-isolated sim subdomain WITHOUT a code deploy. Falls back to the apex only
+          // until that subdomain is provisioned. A per-campaign senderEmail still overrides.
+          const defaultSender = process.env.CAMPAIGN_DEFAULT_SENDER ?? "security@phishsimai.com";
+          const result = await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? defaultSender, subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
           if (!result.ok) {
             failed.push(`${target.email} (${result.error})`);
             continue; // row stays with emailSentAt NULL — it was authorised, not delivered
