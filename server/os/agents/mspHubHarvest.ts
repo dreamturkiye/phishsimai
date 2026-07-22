@@ -227,17 +227,30 @@ export async function cronOutreachFunnel(req: any, res: any) {
     const harvested24 = await n(sql`SELECT count(*) AS n FROM lead_research_queue WHERE created_at > now() - interval '24 hours'`)
     const queuePending = await n(sql`SELECT count(*) AS n FROM lead_research_queue WHERE status = 'pending' AND attempts < 3`)
     const enriched24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE created_at > now() - interval '24 hours'`)
-    const valid24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitize_reason = 'amf_valid' AND sanitized_at > now() - interval '24 hours'`)
+    // PS-FUNNEL-02 (2026-07-22): this counted sanitize_reason='amf_valid', which PS-REFILL-03
+    // (29368a8) stopped writing when the refill switched from AMF-find to MEV-verify — one commit
+    // AFTER this line shipped. 'amf_valid' then existed nowhere but in this WHERE clause, so the
+    // funnel read "valid 0" every day while the refill was in fact promoting normally. Count the
+    // promotion itself (sanitized_at), and split out anything promoted WITHOUT a real mailbox
+    // verdict so an MX-only promotion can never masquerade as verified.
+    const promoted24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitized_at > now() - interval '24 hours'`)
+    const valid24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitize_reason = 'mev_valid' AND sanitized_at > now() - interval '24 hours'`)
+    const unverified24 = promoted24 - valid24
     const sendableNow = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL AND country IN ('US','GB','AU') AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')`)
     const sent24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE touch1_sent_at > now() - interval '24 hours'`)
-    const funnel = { harvested24, queuePending, enriched24, valid24, sendableNow, sent24 }
+    // PS-FUNNEL-02: crons run refill 06:30 → send 07:00 → this report 08:30, so `sendableNow` is
+    // measured AFTER the send stamped touch1_sent_at and reads ~0 on a perfectly healthy day. That
+    // looked like a drained pool. Report what the send actually had to draw from (pre-send) and
+    // keep the post-send leftover as the secondary number — leftover 0 is normal, pre-send 0 is not.
+    const sendablePreSend = sendableNow + sent24
+    const funnel = { harvested24, queuePending, enriched24, promoted24, valid24, unverified24, sendablePreSend, sendableNow, sent24 }
     await ensureCreditLog(sql)
     const [amf, mev] = await Promise.all([amfCredits(), mevCredits()])
     const amfLine = await creditLine(sql, 'amf', amf, AMF_LOW, 'AMF finder (shared w/ ScrollFuel)')
     const mevLine = await creditLine(sql, 'mev', mev, MEV_LOW, 'MEV verifier')
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
-        `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → valid ${valid24} → sendable ${sendableNow} → sent ${sent24}\n` +
+        `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → verified-valid ${valid24}${unverified24 > 0 ? ` ⚠️ +${unverified24} promoted UNVERIFIED` : ''} → sendable ${sendablePreSend} pre-send (${sendableNow} left) → sent ${sent24}\n` +
         `💳 ${amfLine}\n💳 ${mevLine}`,
     ).catch(() => {})
     return res.json({ ok: true, ...funnel, credits: { amf, mev } })
