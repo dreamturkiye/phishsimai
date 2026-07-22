@@ -132,24 +132,27 @@ export async function buildTruthReport(): Promise<string> {
     `REPLIES        ${repliesMeasurable ? String((await sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE replied`)[0].n) : RED + ' ' + NOT_MEASURED + ' — nothing has ever written replied'}`,
   )
 
-  // ---- AMF CREDITS (PS-SHARED-AMF-01) ----
-  // One AMF account, SHARED with ScrollFuel, finite pool. If it empties BOTH products go dark with
-  // a 402 (not a 401) — different error, same silence. Surfaced here so the pool is never invisible.
+  // ---- ICYPEAS CREDITS (PS-FINDER-ICYPEAS-01) ----
+  // The finder is now Icypeas (AMF's shared pool hit 0). Still SHARED with ScrollFuel — one 1,000
+  // pool, two products — so if it empties BOTH products' enrichment goes dark. Surfaced here so the
+  // shared pool is never invisible. Simple raw-key auth on the subscription-information route.
   try {
-    const amfRes = await fetch('https://api.anymailfinder.com/v5.1/account', {
-      headers: { Authorization: 'Bearer ' + (process.env.ANYMAILFINDER_API_KEY ?? '') },
+    const icyRes = await fetch('https://app.icypeas.com/api/a/actions/subscription-information', {
+      method: 'POST',
+      headers: { Authorization: (process.env.ICYPEAS_API_KEY ?? ''), 'Content-Type': 'application/json' },
+      body: '{}',
       signal: AbortSignal.timeout(8000),
     })
-    if (amfRes.ok) {
-      const acct = (await amfRes.json()) as { credits_left?: number }
-      const c = Number(acct?.credits_left ?? NaN)
-      const flag = !Number.isFinite(c) ? RED : c < 50 ? RED : OK
-      L.push(`AMF CREDITS    ${flag} ${Number.isFinite(c) ? c + ' left (SHARED with ScrollFuel — empty = both dark, 402)' : NOT_MEASURED}`)
+    if (icyRes.ok) {
+      const acct = (await icyRes.json()) as { credits?: number }
+      const c = Number(acct?.credits ?? NaN)
+      const flag = !Number.isFinite(c) ? RED : c < 200 ? RED : OK
+      L.push(`ICYPEAS CREDITS ${flag} ${Number.isFinite(c) ? Math.floor(c) + ' left (SHARED with ScrollFuel — empty = both dark)' : NOT_MEASURED}`)
     } else {
-      L.push(`AMF CREDITS    ${RED} account check HTTP ${amfRes.status} (401=key invalid, 402=pool empty)`)
+      L.push(`ICYPEAS CREDITS ${RED} account check HTTP ${icyRes.status} (401=key invalid)`)
     }
   } catch {
-    L.push(`AMF CREDITS    ${RED} ${NOT_MEASURED} — AMF account endpoint unreachable`)
+    L.push(`ICYPEAS CREDITS ${RED} ${NOT_MEASURED} — Icypeas account endpoint unreachable`)
   }
 
   // ---- LEADS: real vs fabricated vs unenriched ----
