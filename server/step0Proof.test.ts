@@ -77,10 +77,20 @@ describe('domain verification against the REAL DNS resolver', () => {
   // REGRESSION (PS-VERIFY-01): a domain with ZERO TXT records makes node's resolveTxt throw
   // ENODATA. That was reported as 'dns_lookup_failed' — telling a customer mid-onboarding
   // their DNS was broken when they simply had not added the record yet.
-  it('a domain with NO TXT records at all says txt_not_found, not dns_lookup_failed', async () => {
+  // Injected, not live: phishsimai.com had zero TXT records when this bug was found, but a
+  // record has since been published, so asserting against real DNS made the test depend on
+  // mutable external state and it broke the moment the domain was enrolled.
+  it('ENODATA (domain resolves, no TXT records) says txt_not_found, not dns_lookup_failed', async () => {
+    const enodata = Object.assign(new Error('queryTxt ENODATA'), { code: 'ENODATA' })
+    const res = await verifyDomainTxt('no-txt.example', buildVerificationToken(), async () => { throw enodata })
+    expect(res).toBe('txt_not_found')
+  })
+
+  it('real DNS still resolves and grades phishsimai.com without throwing', async () => {
     const res = await verifyDomainTxt('phishsimai.com', buildVerificationToken())
     console.log('  [real DNS] phishsimai.com ->', res)
-    expect(res).toBe('txt_not_found')
+    // A wrong token must never pass, whatever is published today.
+    expect(['txt_not_found', 'token_mismatch']).toContain(res)
   })
 
   it('a genuinely unresolvable domain still fails closed', async () => {

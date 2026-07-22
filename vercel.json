@@ -37,6 +37,18 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/t/:token",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/c/:token",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/landing/:token",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/((?!api).*)",
       "destination": "/index.html"
     }
