@@ -341,6 +341,15 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
+        // PS-TARGET-GATE-01: manual single-target add must pre-check the domain exactly like CSV
+        // bulkImport already does — otherwise a user adds a target on an unverified domain and only
+        // learns at Launch (the compliance floor). Same gate, same message, caught at add.
+        const verifiedDomains = await getVerifiedDomains(input.orgId);
+        const { domainEnrolled } = await import("./lib/complianceGuard");
+        const domain = input.email.split("@")[1]?.toLowerCase();
+        if (!domain || !domainEnrolled(domain, verifiedDomains)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot add ${input.email}: domain ${domain ?? "(none)"} is not a verified enrolled domain for this org. Verify domain ownership (Settings → Verified Domains) first.` });
+        }
         return createTarget({ ...input, isActive: true, title: input.title ?? null, departmentId: input.departmentId ?? null });
       }),
 

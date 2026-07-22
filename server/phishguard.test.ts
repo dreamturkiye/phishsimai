@@ -24,6 +24,7 @@ vi.mock("./db", () => ({
   createDepartment: vi.fn().mockResolvedValue({ id: 1, orgId: 1, name: "Finance", isDefault: false, createdAt: new Date() }),
   deleteDepartment: vi.fn(),
   getTargets: vi.fn().mockResolvedValue([]),
+  getVerifiedDomains: vi.fn().mockResolvedValue(["example.com"]), // PS-TARGET-GATE-01
   createTarget: vi.fn().mockResolvedValue({ id: 1, orgId: 1, email: "test@example.com", firstName: "Test", lastName: "User", departmentId: null, isActive: true, createdAt: new Date(), updatedAt: new Date() }),
   updateTarget: vi.fn(),
   deleteTarget: vi.fn(),
@@ -200,6 +201,20 @@ describe("campaigns.create", () => {
   });
 });
 
+describe("targets.create domain gate (PS-TARGET-GATE-01)", () => {
+  it("rejects a target on an unverified domain (verified: example.com)", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(caller.targets.create({ orgId: 1, firstName: "A", lastName: "B", email: "a@unverified.com" }))
+      .rejects.toThrow(/verified enrolled domain/i);
+  });
+
+  it("allows a target on a verified domain", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    const t = await caller.targets.create({ orgId: 1, firstName: "A", lastName: "B", email: "a@example.com" });
+    expect(t.id).toBe(1);
+  });
+});
+
 describe("departments.create", () => {
   it("creates a department for the org", async () => {
     const db = await import("./db");
@@ -218,12 +233,12 @@ describe("targets.create", () => {
     const caller = appRouter.createCaller(ctx);
     const target = await caller.targets.create({
       orgId: 1,
-      email: "employee@company.com",
+      email: "employee@example.com",
       firstName: "Jane",
       lastName: "Doe",
     });
     expect(db.createTarget).toHaveBeenCalledWith(expect.objectContaining({
-      email: "employee@company.com",
+      email: "employee@example.com",
       firstName: "Jane",
       lastName: "Doe",
     }));
