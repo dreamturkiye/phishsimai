@@ -773,7 +773,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
             failed.push(`${target.email} (${result.error})`);
             continue; // row stays with emailSentAt NULL — it was authorised, not delivered
           }
-          if (verdict.resultId !== undefined) await markCampaignResultSent(verdict.resultId);
+          if (verdict.resultId !== undefined) await markCampaignResultSent(verdict.resultId, result.id);
           sent++;
         }
         if (sent === 0) {

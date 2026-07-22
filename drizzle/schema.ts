@@ -203,12 +203,21 @@ export const campaignResults = pgTable("campaign_results", {
   trainingCompletedAt: timestamp("trainingCompletedAt", { withTimezone: true }),
   ipAddress: varchar("ipAddress", { length: 45 }),
   userAgent: text("userAgent"),
+  // 1b — provider delivery tracking (Resend webhooks). emailSentAt means "the provider ACCEPTED
+  // it"; these mean the provider told us what actually happened next. providerMessageId is the
+  // Resend email id, the correlation key the webhook matches events against.
+  providerMessageId: varchar("providerMessageId", { length: 128 }),
+  deliveredAt: timestamp("deliveredAt", { withTimezone: true }),    // email.delivered
+  bouncedAt: timestamp("bouncedAt", { withTimezone: true }),        // email.bounced
+  bounceType: varchar("bounceType", { length: 64 }),                // hard | soft | suppressed | ...
+  complainedAt: timestamp("complainedAt", { withTimezone: true }),  // email.complained (spam)
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("campaign_results_campaignId_idx").on(t.campaignId),
   index("campaign_results_targetId_idx").on(t.targetId),
   index("campaign_results_orgId_idx").on(t.orgId),
   index("campaign_results_trackingToken_idx").on(t.trackingToken),
+  index("campaign_results_providerMessageId_idx").on(t.providerMessageId),
 ]);
 
 export type CampaignResult = typeof campaignResults.$inferSelect;

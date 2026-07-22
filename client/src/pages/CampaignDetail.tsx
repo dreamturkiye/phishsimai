@@ -37,6 +37,20 @@ export default function CampaignDetail() {
     onError: (e) => toast.error(e.message),
   });
 
+  // 1b: the REAL launch. Previously the "Launch" button called campaigns.update to flip the status
+  // to 'active' — it sent nothing, but told the user it had. This calls campaigns.launch, which
+  // sends through the compliance floor and returns exactly what happened. The status only becomes
+  // 'active' server-side when at least one email was genuinely accepted; on total failure the
+  // mutation throws and the real reason (domain not enrolled / provider error) surfaces.
+  const launchMutation = trpc.campaigns.launch.useMutation({
+    onSuccess: (res) => {
+      if (res.rejected > 0 || res.failed > 0) toast.warning(res.message);
+      else toast.success(res.message);
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   if (!data) return (
     <AppLayout title="Campaign">
       <div className="flex items-center justify-center h-64">
@@ -50,7 +64,12 @@ export default function CampaignDetail() {
   // Build a targetId → name map from the enriched targets list
   const targetMap = Object.fromEntries((targets ?? []).map((t: { id: number; firstName: string; lastName: string }) => [t.id, `${t.firstName} ${t.lastName}`]));
 
-  const sent = results.length;
+  // 1b: count PROVIDER-ACCEPTED sends, not rows. A row can exist for a send the provider rejected
+  // (emailSentAt stays null), so results.length overstated "Emails Sent". delivered/bounced come
+  // from the Resend webhook — the difference between "we sent it" and "it actually arrived".
+  const sent = results.filter(r => r.emailSentAt).length;
+  const delivered = results.filter(r => r.deliveredAt).length;
+  const bounced = results.filter(r => r.bouncedAt).length;
   const opened = results.filter(r => r.emailOpenedAt).length;
   const clicked = results.filter(r => r.linkClickedAt).length;
   const submitted = results.filter(r => r.credentialSubmittedAt).length;
@@ -69,9 +88,17 @@ export default function CampaignDetail() {
         <div className="flex items-center gap-2">
           <Badge variant="outline" className={`border ${sc.className}`}>{sc.label}</Badge>
           {campaign.status === "draft" && (
-            <Button size="sm" onClick={() => updateMutation.mutate({ orgId: orgId!, campaignId, status: "active" })}>
+            <Button
+              size="sm"
+              disabled={launchMutation.isPending}
+              onClick={() => {
+                // Irreversible: this sends real simulated-phishing email to every assigned target.
+                if (!window.confirm(`Launch "${campaign.name}"? This sends a real simulated-phishing email to every assigned target. It cannot be undone.`)) return;
+                launchMutation.mutate({ orgId: orgId!, campaignId });
+              }}
+            >
               <Play className="w-3.5 h-3.5 mr-1.5" />
-              Launch
+              {launchMutation.isPending ? "Launching…" : "Launch"}
             </Button>
           )}
           {campaign.status === "active" && (
@@ -157,6 +184,7 @@ export default function CampaignDetail() {
                             {[
                 { label: "Template", value: template ? template.name : "None" },
                 { label: "Targets", value: (targets ?? []).length > 0 ? `${(targets ?? []).length} assigned` : "None assigned" },
+                { label: "Delivery", value: sent > 0 ? `${delivered} delivered · ${bounced} bounced (of ${sent} sent)` : "Not launched yet" },
                 { label: "Language", value: campaign.language === "en" ? "English" : campaign.language === "es" ? "Spanish" : "Turkish" },
                 { label: "Sender", value: campaign.senderName ? `${campaign.senderName} <${campaign.senderEmail}>` : "Not configured" },
                 { label: "Created", value: new Date(campaign.createdAt).toLocaleString() },
