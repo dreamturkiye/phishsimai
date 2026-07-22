@@ -751,10 +751,16 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         // when the recipient's domain is enrolled for this org. Sends happen only on allow.
         const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
         const { sendCampaignEmail } = await import("./email/sender");
-        const { enqueueCampaignSend } = await import("./lib/campaignSend");
+        const { enqueueCampaignSend, markCampaignResultSent } = await import("./lib/campaignSend");
         const { nanoid } = await import("nanoid");
+        // PS-SEND-01: `sent` counts CONFIRMED provider acceptances only. It previously
+        // incremented unconditionally after a sendCampaignEmail() that swallowed its own
+        // errors, so a campaign where every send failed still reported success. Blocked (the
+        // compliance floor said no) and failed (the provider said no) are tracked separately —
+        // they need different fixes from the customer, so they must not be merged.
         let sent = 0;
         const rejected: string[] = [];
+        const failed: string[] = [];
         for (const target of targets) {
           const trackingToken = nanoid(32);
           const verdict = await enqueueCampaignSend(campaign.id, target, trackingToken);
@@ -762,14 +768,26 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
             rejected.push(`${target.email} (${verdict.reason})`);
             continue;
           }
-          await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
+          const result = await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
+          if (!result.ok) {
+            failed.push(`${target.email} (${result.error})`);
+            continue; // row stays with emailSentAt NULL — it was authorised, not delivered
+          }
+          if (verdict.resultId !== undefined) await markCampaignResultSent(verdict.resultId);
           sent++;
         }
         if (sent === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: no targets passed the compliance floor (recipient domain must be enrolled). ${rejected.length} blocked${rejected.length ? ": " + rejected.slice(0, 5).join("; ") : ""}` });
+          // Say WHICH wall they hit. "Blocked by compliance" and "the mail provider errored"
+          // are entirely different problems and the old message asserted the former for both.
+          const parts: string[] = [];
+          if (rejected.length) parts.push(`${rejected.length} blocked by the compliance floor (recipient domain must be a verified enrolled domain): ${rejected.slice(0, 5).join("; ")}`);
+          if (failed.length) parts.push(`${failed.length} failed to send: ${failed.slice(0, 5).join("; ")}`);
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch — nothing was sent. ${parts.join(". ") || "No eligible targets."}` });
         }
+        // Only reached when at least one email was genuinely accepted by the provider.
         await updateCampaign(input.campaignId, input.orgId, { status: "active" });
-        return { success: true, sent, rejected: rejected.length, message: `Campaign launched — ${sent} sent, ${rejected.length} blocked by the compliance floor.` };
+        const detail = [`${sent} sent`, rejected.length ? `${rejected.length} blocked by the compliance floor` : "", failed.length ? `${failed.length} failed to send` : ""].filter(Boolean).join(", ");
+        return { success: true, sent, rejected: rejected.length, failed: failed.length, rejectedDetail: rejected.slice(0, 10), failedDetail: failed.slice(0, 10), message: `Campaign launched — ${detail}.` };
       }),
 
     reportPhishing: publicProcedure

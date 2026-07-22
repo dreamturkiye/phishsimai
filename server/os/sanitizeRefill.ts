@@ -23,6 +23,43 @@ const MAX_LOOKUPS_PER_RUN = 500 // per-run verification ceiling
 const CONCURRENCY = 10
 const TIME_BUDGET_MS = 240_000
 
+// PS-REFILL-04 (2026-07-22) — measured on prod: of 5,529 unverified candidates, 4,944 (89%) had
+// ALREADY been labelled unusable by an earlier sanitization pass, and the old `ORDER BY created_at
+// ASC` walked them OLDEST-FIRST. The first 500 rows the refill touched were 368 role_account + 100
+// catchall (94% known-bad) and contained ZERO of the 253 fresh AMF-found leads — every one of which
+// was a personal mailbox. So AMF's good output was stranded at the back of the queue while MEV
+// credits were spent re-deriving rejections already recorded in the row. Two fixes below:
+//   1. ORDER BY created_at DESC — verify the freshest (highest-yield) leads first.
+//   2. Skip labels that mean DISQUALIFIED. Labels meaning INCONCLUSIVE (unverified_unknown /
+//      _timeout / _blank, and NULL) stay eligible — those were never actually decided.
+const DISQUALIFIED_LABELS = [
+  'role_account', 'role_strict', 'catchall', 'unverified_catchall', 'no_mx', 'mev_invalid',
+  'edu_gov_domain', 'domain_cap', 'deprioritized_generic', 'initials_greeting', 'generic_greeting',
+]
+
+// Generic ORG inboxes with no individual owner. Deliberately NOT the same list as abTest.ts's
+// ROLE_LOCALPARTS: that one answers "can I greet this local part by name?" (so ceo/owner/it are
+// role-ish there), while this one answers "is there a human decision-maker behind this address?"
+// — and at a small MSP, ceo@/owner@/it@ reach exactly the buyer we want. Those stay eligible.
+// The label filter above only protects rows an OLD pass already labelled; this catches a FRESH
+// AMF-found info@ that has no label at all. 12 of the 50 sent on 2026-07-22 were these.
+const ORG_INBOX_LOCALPARTS = new Set([
+  'info', 'sales', 'support', 'contact', 'hello', 'help', 'office', 'team', 'service', 'enquiries',
+  'enquiry', 'inquiries', 'billing', 'accounts', 'accounting', 'acctmgmt', 'marketing', 'careers',
+  'jobs', 'noreply', 'noreply-', 'postmaster', 'webmaster', 'abuse', 'admin', 'general', 'inbox',
+  'reception', 'mail', 'sysadmin', 'connect', 'hr', 'privacy', 'legal', 'compliance',
+])
+
+/** True if the local part is a generic org inbox (info@, sales@, billing@ …) — never promote. */
+export function isOrgInbox(email: string): boolean {
+  const local = (email.split('@')[0] || '').toLowerCase().trim()
+  if (!local) return false
+  // Collapse digits/separators so info2, info-uk and info.us all reduce to "info" (and no-reply
+  // to noreply). A real name like "amelia.smith" collapses to "ameliasmith" and matches nothing.
+  const base = local.replace(/[0-9._-]+/g, '')
+  return ORG_INBOX_LOCALPARTS.has(local) || ORG_INBOX_LOCALPARTS.has(base)
+}
+
 type Verdict = 'valid' | 'catchall' | 'invalid' | 'mx_ok' | 'no_mx' | 'unknown'
 
 // Verify an EXISTING email. NEVER AMF's finder. MyEmailVerifier when keyed (per-mailbox + catch-all
@@ -63,6 +100,7 @@ export interface RefillResult {
   needed: number
   checked: number
   promoted: number
+  skippedOrgInbox: number
   promotedLeads: Array<{ id: string; email: string; verdict: Verdict }>
   reason: string
 }
@@ -78,7 +116,7 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
        AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')`) as Array<{ n: number }>
   const sendableBefore = Number(before[0]?.n ?? 0)
   const needed = Math.max(0, cap - sendableBefore)
-  const base = { cap, sendableBefore, needed, checked: 0, promoted: 0, promotedLeads: [] as RefillResult['promotedLeads'] }
+  const base = { cap, sendableBefore, needed, checked: 0, promoted: 0, skippedOrgInbox: 0, promotedLeads: [] as RefillResult['promotedLeads'] }
 
   if (needed === 0) return { ...base, reason: 'pool already at cap — no refill needed' }
 
@@ -94,16 +132,19 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
     }
   }
 
+  // PS-REFILL-04: freshest first, and never re-verify a row a previous pass already disqualified.
   const candidates = (await sql`SELECT id, email FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND refill_checked_at IS NULL AND touch1_sent_at IS NULL
        AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
        AND pipeline_stage NOT IN ('dead','customer')
-     ORDER BY created_at ASC LIMIT ${MAX_LOOKUPS_PER_RUN}`) as Array<{ id: string; email: string }>
+       AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
+     ORDER BY created_at DESC LIMIT ${MAX_LOOKUPS_PER_RUN}`) as Array<{ id: string; email: string }>
 
   const started = Date.now()
   let idx = 0
   let checked = 0
   let promoted = 0
+  let skippedOrgInbox = 0
   let timedOut = false
   const promotedLeads: RefillResult['promotedLeads'] = []
 
@@ -114,7 +155,17 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
       const i = idx++
       if (i >= candidates.length) return
       const lead = candidates[i]
-      checked++
+      // PS-REFILL-04: reject org inboxes BEFORE spending a verifier credit — MEV will happily
+      // confirm info@ exists, which is how 12 role accounts reached the send on 2026-07-22.
+      // Label it so the candidate query filters it out for good instead of re-deciding it daily.
+      if (isOrgInbox(lead.email)) {
+        skippedOrgInbox++
+        await sql`UPDATE ps_outreach_leads
+           SET refill_checked_at = now(), sanitize_reason = COALESCE(sanitize_reason, 'role_account')
+           WHERE id = ${lead.id} AND sanitized_at IS NULL`.catch(() => {})
+        continue
+      }
+      checked++ // counts only rows we actually spend a verifier credit on
       const verdict = await verifyEmail(lead.email) // verify the EXISTING email — never AMF
       const promote = verdict === 'valid' || (verdict === 'mx_ok' && allowMxOnly)
       if (promote && promoted < needed) {
@@ -147,7 +198,7 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
         : checked >= MAX_LOOKUPS_PER_RUN
           ? `hit ${MAX_LOOKUPS_PER_RUN}-lookup ceiling at ${promoted}/${needed} (${mode}) — resumes next run`
           : `pool exhausted at ${promoted}/${needed} verified-valid (${mode})`
-  return { cap, sendableBefore, needed, checked, promoted, promotedLeads, reason }
+  return { cap, sendableBefore, needed, checked, promoted, skippedOrgInbox, promotedLeads, reason }
 }
 
 // One-time additive column: which leads the refill has already verified, so runs resume instead of
@@ -169,7 +220,7 @@ export async function cronSanitizeRefill(req: any, res: any) {
     const r = await refillSendablePool(getSql())
     await sendTelegram(
       `🔁 <b>PhishSim pool refill</b> (${COMPANY_ID})\n` +
-        `cap ${r.cap} · sendable ${r.sendableBefore}→${r.sendableBefore + r.promoted} · promoted ${r.promoted}/${r.needed} (checked ${r.checked})\n` +
+        `cap ${r.cap} · sendable ${r.sendableBefore}→${r.sendableBefore + r.promoted} · promoted ${r.promoted}/${r.needed} (verified ${r.checked}, org-inbox skipped ${r.skippedOrgInbox})\n` +
         `${r.reason}`,
     ).catch(() => {})
     return res.json({ ok: true, ...r })

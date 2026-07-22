@@ -40,7 +40,15 @@ export async function verifyDomainTxt(
   let records: string[][];
   try {
     records = await resolveTxt(domain);
-  } catch {
+  } catch (e) {
+    // PS-VERIFY-01 (2026-07-22): node's resolveTxt THROWS ENODATA when the domain resolves but
+    // publishes no TXT records at all — which is the single most common onboarding state ("I
+    // haven't added the record yet"). Reporting that as 'dns_lookup_failed' told customers their
+    // DNS was broken when they had simply not finished. Measured: phishsimai.com itself has zero
+    // apex TXT records and returned ENODATA. Only a domain that genuinely does not resolve
+    // (NXDOMAIN / ENOTFOUND) is a lookup failure.
+    const code = (e as NodeJS.ErrnoException)?.code;
+    if (code === "ENODATA") return "txt_not_found";
     return "dns_lookup_failed";
   }
   const flat = flattenTxt(records);
