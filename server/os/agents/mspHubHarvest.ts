@@ -285,6 +285,39 @@ export async function cronOutreachFunnel(req: any, res: any) {
     const fb = await computeFinderBudget(sql, new Date())
     const budgetLine = `🎯 finder budget ${fb.budget}/day @ ${Math.round(fb.passRate * 100)}% MEV pass (n=${fb.sampleChecked}, ${fb.source}) · need cap ${fb.cap}`
     const runwayLine = `🛟 backlog ${backlogVerifiable} verifiable · finder +${finderVerif24}/day vs cap ${cap}/day → ${runway}`
+
+    // PS-SEND-HEALTH-01: the business now runs on this send (1 signup / 20 emails). It must never
+    // stop SILENTLY. This runs at 08:30, 90 min after the 07:00 send, so by now today's send is
+    // done. Detect the three failure shapes and make each LOUD (a separate 🚨 Telegram), and tell a
+    // real break apart from an expected empty pool.
+    const capToday = dailySendCap(new Date())
+    const sentToday = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE touch1_sent_at::date = CURRENT_DATE`)
+    const sentYesterday = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE touch1_sent_at::date = CURRENT_DATE - 1`)
+    const capYesterday = dailySendCap(new Date(Date.now() - 86_400_000))
+    // The send cron reports as agent 'aria'. If its last run isn't today, the 07:00 cron never fired.
+    const ariaRow = (await sql`SELECT last_run_at FROM agent_health WHERE company_id = ${COMPANY_ID} AND agent_name = 'aria' LIMIT 1`) as Array<{ last_run_at: string }>
+    const todayUtc = new Date().toISOString().slice(0, 10)
+    const ariaRanToday = !!ariaRow[0]?.last_run_at && new Date(ariaRow[0].last_run_at).toISOString().slice(0, 10) === todayUtc
+    const poolWasAvailable = sendableNow + sentToday > 0 // leads existed to send at 07:00
+
+    const sendAlerts: string[] = []
+    let healthLine: string
+    if (sentToday > 0) {
+      healthLine = `✅ SEND ${sentToday}/${capToday}${sentToday < capToday ? ' ⚠️ below cap' : ''}`
+    } else if (!ariaRanToday) {
+      healthLine = `🚨 SEND CRON DID NOT RUN today (last: ${ariaRow[0]?.last_run_at ?? 'never'})`
+      sendAlerts.push(`🚨 <b>PhishSim SEND FAILED</b> — the 07:00 send cron did NOT run today (last run ${ariaRow[0]?.last_run_at ?? 'never'}). Not a supply issue. Check /api/os/sequence.`)
+    } else if (poolWasAvailable) {
+      healthLine = `🚨 SEND RAN but sent 0 with ${sendableNow} sendable`
+      sendAlerts.push(`🚨 <b>PhishSim SEND BROKEN</b> — the send ran but delivered 0 while ${sendableNow} leads were sendable. This is NOT the pool being empty — the send path is broken. Check /api/os/sequence.`)
+    } else {
+      healthLine = `⚪ sent 0 — pool empty (supply, expected, not a fault)`
+    }
+    // Early-warning: two consecutive under-cap days = supply thinning before it hits zero.
+    if (sentToday < capToday && sentYesterday < capYesterday && sentYesterday > 0) {
+      sendAlerts.push(`⚠️ <b>PhishSim SUPPLY DRAINING</b> — sends under cap two days running: ${sentYesterday}/${capYesterday} then ${sentToday}/${capToday}. The verified backlog is thinning; act before it reaches sendable-0.`)
+    }
+    for (const a of sendAlerts) await sendTelegram(a).catch(() => {})
     const funnel = { harvested24, queuePending, enriched24, promoted24, valid24, unverified24, sendablePreSend, sendableNow, sent24, backlogVerifiable, finderVerif24, cap, runway }
     await ensureCreditLog(sql)
     // PS-FINDER-ICYPEAS-01: report the ICYPEAS finder balance in place of AMF (retired at 0).
@@ -294,7 +327,7 @@ export async function cronOutreachFunnel(req: any, res: any) {
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
         `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → verified-valid ${valid24}${unverified24 > 0 ? ` ⚠️ +${unverified24} promoted UNVERIFIED` : ''} → sendable ${sendablePreSend} pre-send (${sendableNow} left) → sent ${sent24}\n` +
-        `${runwayLine}\n${budgetLine}\n` +
+        `${healthLine}\n${runwayLine}\n${budgetLine}\n` +
         `💳 ${icyLine}\n💳 ${mevLine}`,
     ).catch(() => {})
     return res.json({ ok: true, ...funnel, credits: { icypeas: icy, mev } })
