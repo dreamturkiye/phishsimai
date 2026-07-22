@@ -2,6 +2,7 @@ import { getSql } from '../conn'
 import { discoverMspsForCity } from './mapsDiscovery'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
+import { dailySendCap } from '../sequences'
 
 const COMPANY_ID = 'phishsimai'
 // A lead gets this many enrichment attempts. On the last MISS it is retired to a terminal
@@ -364,12 +365,37 @@ export async function runLeadResearcher(batchSize = 6) {
     // filled independently. stats.discovered stays 0 here by design (this function no longer discovers).
     console.log(`[researcher] t=${el()}s enrichment start (discovery runs separately on /api/os/discover)`)
 
+    // PS-FINDER-THROTTLE-01: match finder output to NEED, not capacity. We send min(cap, available)
+    // — 50→100/day — so producing ~322/day just burns the SHARED Icypeas pool (~1 credit/find,
+    // ~3 days of runway) building backlog we can't send. The backlog is already growing, so cap the
+    // finder's DAILY output to FINDER_DAILY_MULTIPLE × the send cap (default 2× → ~100 at cap 50,
+    // ~200 at cap 100). This stretches credits ~3-4× with no effect on send volume. Once the
+    // budget is met, skip enriching entirely until tomorrow — cheapest possible: zero vendor calls.
+    const sendCapToday = dailySendCap(new Date())
+    const finderMultiple = Number(process.env.FINDER_DAILY_MULTIPLE ?? 2)
+    const finderDailyBudget = Math.max(sendCapToday, Math.round(finderMultiple * sendCapToday))
+    // Finds today = ps_outreach_leads the researcher inserted since UTC midnight (its only writer;
+    // the backlog is weeks old, the refill only UPDATEs). Duplicates don't insert, so this ≈ credits spent.
+    const producedToday = Number((await sql`SELECT count(*) AS n FROM ps_outreach_leads
+      WHERE source = 'google_maps' AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`)[0]?.n ?? 0)
+    if (producedToday >= finderDailyBudget) {
+      console.log(`[researcher] finder daily budget ${finderDailyBudget} already met (${producedToday} today) — skipping to conserve shared Icypeas credits`)
+      await reportAgentRun('researcher', true, { ...stats, finder_budget_reached: true, produced_today: producedToday }, undefined, COMPANY_ID)
+      return { ...stats, budget_exhausted: budgetExhausted, finder_budget_reached: true, elapsed_s: el() }
+    }
+
     const pending = await sql`
       SELECT id, domain, company_name, research_data FROM lead_research_queue
       WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < ${MAX_RESEARCH_ATTEMPTS}
       ORDER BY created_at ASC LIMIT ${batchSize}`
 
     for (const item of pending) {
+      // PS-FINDER-THROTTLE-01: stop the moment today's finder output (prior + this run's inserts)
+      // reaches the budget — no more credit-spending lookups for the day.
+      if (producedToday + stats.added >= finderDailyBudget) {
+        console.log(`[researcher] t=${el()}s finder budget ${finderDailyBudget} reached mid-run (${producedToday + stats.added}) — stopping`)
+        break
+      }
       // Do not START new work past the deadline. The in-flight item (≤~42s of bounded calls)
       // finishes by ~262s, safely under Vercel's 300s. Remaining rows stay 'pending' for the
       // next cron — never marked 'researching', so nothing is stranded.
