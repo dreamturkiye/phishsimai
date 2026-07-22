@@ -50,9 +50,17 @@ export async function runWatchdog() {
       AND country IN ('US','GB','AU') AND unsubscribed = false AND bounced = false
       AND pipeline_stage NOT IN ('dead','customer')
       AND sanitized_at < NOW() - INTERVAL '2 days'`)[0].n)
+    // PS-RESEARCHER-TERMINAL-01: exclude every TERMINAL status, not just enriched/duplicate. A lead
+    // the researcher will never touch again — 'unenrichable' (retired after max misses), 'failed'
+    // (errored), 'dead' — is resolved, not stalled, and must not alarm. The researcher only selects
+    // status='pending' AND attempts < max, so a genuine research stall is now precisely: a lead hung
+    // mid-flight in 'researching', or (belt-and-suspenders, shouldn't occur post-fix) a 'pending'
+    // lead that somehow maxed out its attempts without being retired.
     const researchStuck = Number((await sql`SELECT count(*) AS n FROM lead_research_queue
-      WHERE created_at < NOW() - INTERVAL '2 days' AND status NOT IN ('enriched','duplicate')
-      AND (attempts >= 3 OR (status = 'researching' AND last_attempt_at < NOW() - INTERVAL '2 days'))`
+      WHERE created_at < NOW() - INTERVAL '2 days'
+      AND status NOT IN ('enriched','duplicate','unenrichable','failed','dead')
+      AND ((status = 'researching' AND last_attempt_at < NOW() - INTERVAL '2 days')
+           OR (status = 'pending' AND attempts >= 3))`
       .catch(() => [{ n: 0 }]))[0].n)
     const stalledN = sendStuck + researchStuck
     if (stalledN > 20) {

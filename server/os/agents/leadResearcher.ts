@@ -4,6 +4,11 @@ import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
 
 const COMPANY_ID = 'phishsimai'
+// A lead gets this many enrichment attempts. On the last MISS it is retired to a terminal
+// 'unenrichable' status instead of looping as 'pending' forever. Selection and terminalization
+// share this constant so they can never drift (a mismatch is exactly what stranded the 69 leads:
+// selection used `< 3`, terminalization never happened).
+const MAX_RESEARCH_ATTEMPTS = 3
 const MSP_TITLES = ['Owner', 'CEO', 'Founder', 'President', 'Managing Director', 'IT Director', 'CISO', 'Head of Security', 'CTO']
 
 async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
@@ -43,14 +48,22 @@ async function ensureResearchQueue(sql: ReturnType<typeof getSql>) {
  */
 let amfKeyWarned = false
 
-async function enrichViaAnyMailFinder(domain: string): Promise<{ email: string; name: string | null; title: string | null } | null> {
+// Return shape carries the DISTINCTION the pileup depended on:
+//   • an object  → found an email
+//   • null       → genuine MISS (AMF looked and there is no personal email for this domain)
+//   • 'vendor_error' → the lookup never really happened (bad key 401, out of credits 402, timeout).
+// A miss counts against the lead's retry budget and eventually retires it; a vendor error must NOT
+// — the lead did nothing wrong, AMF was down, and it should retry once AMF recovers.
+type AmfResult = { email: string; name: string | null; title: string | null } | null | 'vendor_error'
+
+async function enrichViaAnyMailFinder(domain: string): Promise<AmfResult> {
   const key = process.env.ANYMAILFINDER_API_KEY?.trim()
   if (!key) {
     if (!amfKeyWarned) {
       amfKeyWarned = true
-      console.error('[amf] ANYMAILFINDER_API_KEY is NOT SET — enrichment is DISABLED, not empty. Every lookup returns null and that null means "not checked".')
+      console.error('[amf] ANYMAILFINDER_API_KEY is NOT SET — enrichment is DISABLED, not empty. Every lookup returns vendor_error (NOT a miss) so no lead is retired for a key we never set.')
     }
-    return null
+    return 'vendor_error'
   }
   try {
     // PS-ENRICH-02 FIX: endpoint + body + response shape copied VERBATIM from ScrollFuel's
@@ -74,20 +87,22 @@ async function enrichViaAnyMailFinder(domain: string): Promise<{ email: string; 
     const body = await res.text().catch(() => '')
     // 404 here genuinely means "no verified email for this domain" -- AMF only charges when
     // it finds one, so a miss is free. 401 (bad key) / 402 (out of credits) are NOT misses.
-    if (res.status === 404) return null
+    if (res.status === 404) return null // genuine miss — AMF only charges on a hit, so this is free
     if (!res.ok) {
+      // 401 bad key / 402 out of credits / 5xx — the lookup did not happen. NOT a miss.
       console.error(`[amf] ${domain} FAILED status=${res.status} — VENDOR FAILURE, not "no email found". body=${body.slice(0, 200)}`)
-      return null
+      return 'vendor_error'
     }
     const d = JSON.parse(body || '{}') as { emails?: string[]; valid_emails?: string[]; email_status?: string }
     const email = d.valid_emails?.[0] || d.emails?.[0]
-    if (!email) return null
+    if (!email) return null // 200 but no address — a real miss
     // Normalize to lowercase+trim so the UNIQUE(email) constraint and the LOWER(email) dedup pre-check
     // treat case variants as the same address — no double-queue / double-send of Info@x vs info@x.
     return { email: String(email).trim().toLowerCase(), name: null, title: null }
   } catch (e: any) {
+    // AbortSignal timeout / network error — the lookup did not complete. NOT a miss.
     console.error(`[amf] ${domain} threw: ${String(e?.message || e).slice(0, 160)}`)
-    return null
+    return 'vendor_error'
   }
 }
 
@@ -263,7 +278,7 @@ export async function runLeadResearcher(batchSize = 6) {
 
     const pending = await sql`
       SELECT id, domain, company_name, research_data FROM lead_research_queue
-      WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < 3
+      WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < ${MAX_RESEARCH_ATTEMPTS}
       ORDER BY created_at ASC LIMIT ${batchSize}`
 
     for (const item of pending) {
@@ -280,7 +295,9 @@ export async function runLeadResearcher(batchSize = 6) {
         console.log(`[researcher] t=${el()}s enrich ${item.domain}`)
         // AMF first: it takes a bare domain, which is all Google Maps gives us. Hunter needs
         // a name and would return nothing for ~55 of every 56 leads here.
-        let hunter = await enrichViaAnyMailFinder(String(item.domain))
+        const amf = await enrichViaAnyMailFinder(String(item.domain))
+        const amfVendorError = amf === 'vendor_error'
+        let hunter = amf && amf !== 'vendor_error' ? amf : null
         if (!hunter) hunter = await enrichViaHunter(String(item.domain))
 
         if (hunter?.email) {
@@ -302,9 +319,22 @@ export async function runLeadResearcher(batchSize = 6) {
             stats.added++
             await sql`UPDATE lead_research_queue SET status='enriched', icp_score=72, updated_at=NOW() WHERE id=${item.id}`
           }
-        } else {
+        } else if (amfVendorError) {
+          // PS-RESEARCHER-TERMINAL-01: the lookup NEVER RAN (bad key / out of credits / timeout).
+          // Do not spend the lead's retry budget on an outage it isn't responsible for — undo the
+          // attempt increment and leave it pending so it retries once AMF recovers. This is the bug
+          // that would have stranded every enrichable lead the moment AMF's shared pool hit 402.
           stats.skipped++
-          await sql`UPDATE lead_research_queue SET status='pending', updated_at=NOW() WHERE id=${item.id}`
+          await sql`UPDATE lead_research_queue SET status='pending', attempts=GREATEST(attempts-1,0), updated_at=NOW() WHERE id=${item.id}`
+        } else {
+          // Genuine miss. Give it a TERMINAL state once it has used its retries, instead of
+          // resetting to 'pending' forever (attempts hits 3 → excluded by `attempts < 3` → never
+          // selected again, never resolved → the exact 69 leads the watchdog was alarming on).
+          stats.skipped++
+          await sql`UPDATE lead_research_queue
+            SET status = CASE WHEN attempts >= ${MAX_RESEARCH_ATTEMPTS} THEN 'unenrichable' ELSE 'pending' END,
+                updated_at = NOW()
+            WHERE id = ${item.id}`
         }
         await new Promise(r => setTimeout(r, 1500))
       } catch (e: any) {
