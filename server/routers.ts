@@ -9,6 +9,7 @@ import { llmComplete } from "./os/llmChat";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
+import { entitlementsFor, upgradeMessage } from "./lib/entitlements";
 import {
   acceptInvite,
   addPendingDomain,
@@ -113,6 +114,16 @@ export const appRouter = router({
     myOrgs: protectedProcedure.query(async ({ ctx }) => {
       return getUserOrgs(ctx.user.id);
     }),
+
+    // PS-TRIAL-01: the org's entitlements for the in-app trial banner + gating UX (tier,
+    // trialDaysLeft, whether full access). Read-only, org-scoped.
+    entitlements: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const org = await getOrgById(input.orgId);
+        return entitlementsFor(org ?? ({ plan: "free", planExpiresAt: null } as any));
+      }),
 
     create: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(100) }))
@@ -235,6 +246,14 @@ export const appRouter = router({
           const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
           throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot import: ${blocked.length} target(s) on unverified domains: ${badDomains}. Verify domain ownership (Settings → Verified Domains) first.` });
         }
+        // PS-GATE-01: expired-free target cap also applies to CSV import (else it's a bypass).
+        const impEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!impEnt.full) {
+          const current = (await getTargets(input.orgId)).length;
+          if (current + rows.length > impEnt.limits.targets) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("targets", `Your free plan includes ${impEnt.limits.targets} targets (you have ${current}). Upgrade to import your full team.`) });
+          }
+        }
         const count = await bulkCreateTargets(rows);
         return { count, message: 'Imported '+count+' targets' };
       }),
@@ -350,6 +369,14 @@ export const appRouter = router({
         if (!domain || !domainEnrolled(domain, verifiedDomains)) {
           throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot add ${input.email}: domain ${domain ?? "(none)"} is not a verified enrolled domain for this org. Verify domain ownership (Settings → Verified Domains) first.` });
         }
+        // PS-GATE-01: expired-free target cap.
+        const tgtEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!tgtEnt.full) {
+          const current = (await getTargets(input.orgId)).length;
+          if (current >= tgtEnt.limits.targets) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("targets", `Your free plan includes ${tgtEnt.limits.targets} targets. Upgrade to add your full team.`) });
+          }
+        }
         return createTarget({ ...input, isActive: true, title: input.title ?? null, departmentId: input.departmentId ?? null });
       }),
 
@@ -457,6 +484,15 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
+        // PS-GATE-01: expired-free gets ONE AI template "taste" — capped by the custom-template
+        // allowance so a free account can't burn unlimited LLM credits generating.
+        const genEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!genEnt.full) {
+          const custom = (await getTemplates({ orgId: input.orgId, isBuiltIn: false })).filter((t: { orgId: number | null }) => t.orgId === input.orgId).length;
+          if (custom >= genEnt.limits.customTemplates) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("ai_template", `Your free plan includes ${genEnt.limits.customTemplates} custom template. Upgrade for unlimited AI generation.`) });
+          }
+        }
         checkLlmRateLimit(input.orgId); // SECURITY: rate limit LLM
         const langNames: Record<string, string> = { en: "English", es: "Spanish", tr: "Turkish" };
         const safeContext = input.context ? sanitizeContext(input.context) : null; // SECURITY: sanitize
@@ -530,6 +566,14 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
+        // PS-GATE-01: expired-free custom-template cap (built-in library stays fully usable).
+        const tplEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!tplEnt.full) {
+          const custom = (await getTemplates({ orgId: input.orgId, isBuiltIn: false })).filter((t: { orgId: number | null }) => t.orgId === input.orgId).length;
+          if (custom >= tplEnt.limits.customTemplates) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("template", `Your free plan includes ${tplEnt.limits.customTemplates} custom template. Upgrade to author more (built-in templates stay free).`) });
+          }
+        }
         // SECURITY: Sanitize HTML before storing
         return createTemplate({ ...input, htmlBody: sanitizeEmailHtml(input.htmlBody), industry: input.industry ?? null, createdByUserId: ctx.user.id, isBuiltIn: false, isMspTemplate: false, mspTenantId: null });
       }),
@@ -640,6 +684,19 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         if (input.targetIds.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one target employee — a campaign needs someone to send to. Add employees under Targets first." });
         }
+        // PS-GATE-01: expired-free tier caps lifetime campaigns + no scheduling. The client keeps
+        // the whole wizard usable and renders an "Upgrade to launch" CTA on this `upgrade_required`
+        // error — the soft block at the highest-intent moment, not a dead-end refusal.
+        const campEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!campEnt.full) {
+          if (input.scheduledAt && !campEnt.limits.scheduling) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("scheduling", "Scheduled & recurring campaigns are a paid feature.") });
+          }
+          const existing = await getCampaigns(input.orgId);
+          if (existing.length >= campEnt.limits.campaigns) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("campaign", `Your free plan includes ${campEnt.limits.campaigns} campaign. Upgrade to launch more.`) });
+          }
+        }
         return createCampaign({
           orgId: input.orgId,
           createdByUserId: ctx.user.id,
@@ -676,6 +733,11 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
         const { orgId, campaignId, scheduledAt, ...rest } = input;
+        // PS-GATE-01: scheduling is paid — block setting a future schedule on the expired-free tier.
+        if (scheduledAt) {
+          const updEnt = entitlementsFor((await getOrgById(orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+          if (!updEnt.limits.scheduling) throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("scheduling", "Scheduled & recurring campaigns are a paid feature.") });
+        }
         await updateCampaign(campaignId, orgId, {
           ...rest,
           ...(scheduledAt !== undefined ? { scheduledAt: scheduledAt ? new Date(scheduledAt) : null } : {}),
@@ -700,6 +762,9 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
+        // PS-GATE-01: recurring/scheduled campaigns are a paid feature.
+        const schEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!schEnt.limits.scheduling) throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("scheduling", "Recurring campaigns are a paid feature. Upgrade to automate.") });
         const campaign = await getCampaignById(input.campaignId, input.orgId);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
         // SECURITY: Use CRON_SECRET service token, not user session cookie

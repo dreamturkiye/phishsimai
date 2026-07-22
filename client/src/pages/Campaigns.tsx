@@ -88,7 +88,19 @@ export default function Campaigns() {
       refetch();
       navigate(`/campaigns/${data.id}`);
     },
-    onError: (e) => toast.error(e.message),
+    // PS-GATE-01 soft block: the wizard was fully usable (template picker + target list) — at the
+    // cap we don't dead-end with an error, we route the built-up intent straight to upgrade.
+    onError: (e) => {
+      if (e.message.startsWith("upgrade_required")) {
+        toast.error("Upgrade to launch this campaign", {
+          description: e.message.split("—")[1]?.trim() ?? "You've reached your free-plan limit.",
+          action: { label: "Upgrade", onClick: () => navigate("/settings?tab=billing") },
+          duration: 9000,
+        });
+      } else {
+        toast.error(e.message);
+      }
+    },
   });
 
   const deleteMutation = trpc.campaigns.delete.useMutation({

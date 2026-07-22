@@ -118,7 +118,12 @@ export async function getUserByOpenId(openId: string) {
 export async function createOrganization(data: { name: string; slug: string; userId: number }): Promise<Organization> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [row] = await db.insert(organizations).values({ name: data.name, slug: data.slug }).returning({ id: organizations.id });
+  // PS-TRIAL-01: stamp a real 14-day trial at signup. Until now the welcome email promised a trial
+  // that had no mechanism — a false claim. planExpiresAt makes it true: full access until it
+  // passes, then the gated free tier (see server/lib/entitlements.ts). plan stays 'free'.
+  const { TRIAL_DAYS } = await import("./lib/entitlements");
+  const planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000);
+  const [row] = await db.insert(organizations).values({ name: data.name, slug: data.slug, planExpiresAt }).returning({ id: organizations.id });
   const orgId = row.id;
   await db.insert(orgMembers).values({ orgId, userId: data.userId, role: "admin" });
   // Seed default departments
