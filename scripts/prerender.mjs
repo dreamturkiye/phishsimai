@@ -12,6 +12,12 @@ const ssrEntry = path.join(root, "dist", "prerender", "prerender.js");
 const shellPath = path.join(publicDir, "index.html");
 const shell = fs.readFileSync(shellPath, "utf8");
 
+// Vercel serves the filesystem index.html for `/` BEFORE any rewrite, so the root can't be
+// rewritten away — it must BE the prerendered home. Copy the pristine shell to app.html first; the
+// SPA catch-all points app routes there, so /dashboard etc. still get a clean shell (no flash).
+fs.writeFileSync(path.join(publicDir, "app.html"), shell, "utf8");
+console.log("[prerender] app.html <- pristine SPA shell (app-route fallback)");
+
 const { render, PRERENDER_ROUTES } = await import(pathToFileURL(ssrEntry).href);
 
 // Strip every SEO tag from the shell so the injected per-route block is the single source (no dupes).
@@ -33,9 +39,9 @@ for (const route of PRERENDER_ROUTES) {
   // Inject the prerendered body into the root div (hydration replaces it client-side)
   out = out.replace('<div id="root"></div>', `<div id="root">${html}</div>`);
 
-  // Root goes to a SEPARATE home.html so index.html stays the pristine SPA shell that app routes
-  // fall back to — no marketing-content flash on /dashboard etc. vercel.json rewrites / -> /home.html.
-  const file = route === "/" ? path.join(publicDir, "home.html") : path.join(publicDir, route.replace(/^\//, ""), "index.html");
+  // Root overwrites index.html (Vercel serves it for `/` from the filesystem). app.html above is the
+  // untouched shell app routes fall back to, so this doesn't affect /dashboard etc.
+  const file = route === "/" ? path.join(publicDir, "index.html") : path.join(publicDir, route.replace(/^\//, ""), "index.html");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, out, "utf8");
   written++;
