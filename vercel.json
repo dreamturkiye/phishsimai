@@ -72,11 +72,11 @@
   "crons": [
     {
       "path": "/api/os/architect/autonomy?action=compute",
-      "schedule": "10 0 * * *"
+      "schedule": "30 6 * * *"
     },
     {
       "path": "/api/os/autonomy-promote",
-      "schedule": "20 0 * * *"
+      "schedule": "40 6 * * *"
     },
     {
       "path": "/api/os/truth-report",
