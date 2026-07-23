@@ -10,7 +10,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   computeDayCounters, currentStreak, evaluatePosture, declarePosture, postureLine,
-  POSTURE_LABEL, L5_7_CLEAN_DAYS, DRILL_DAYS, CRITERIA_VERSION,
+  POSTURE_LABEL, L5_7_CLEAN_DAYS, DRILL_DAYS, CRITERIA_VERSION, handledTrips,
 } from './posture'
 
 /** Minimal tagged-template SQL stub: matches on a fragment of the query text. */
@@ -227,5 +227,27 @@ describe('postureLine — shows the denominator, not a bare state', () => {
       drill: { kind: 7, started_on: '2026-07-29', ends_on: '2026-08-05', daysDone: 4, status: 'running' },
     })
     expect(line).toMatch(/drill day 4\/7/)
+  })
+})
+
+describe('handledTrips — PS-POSTURE-02, the criterion must be satisfiable', () => {
+  // The predicate this replaces was `state='closed' AND opened_at IS NOT NULL`. Closing a breaker
+  // nulls opened_at, so a handled trip stopped matching the instant it was handled — the L5.7
+  // gate could not be passed by doing the right thing.
+  it('counts a tripped-then-closed breaker via its surviving escalation row', async () => {
+    const sql = fakeSql([{ match: /escalations/, rows: [{ n: 1 }] }])
+    expect(await handledTrips(sql, 'p', '2026-07-01')).toBe(1)
+  })
+
+  it('queries the escalation trail, NOT the self-erasing opened_at predicate', async () => {
+    const sql = fakeSql([{ match: /escalations/, rows: [{ n: 0 }] }])
+    await handledTrips(sql, 'p', '2026-07-01')
+    expect(sql.calls[0]).toMatch(/breaker_trip/)
+    expect(sql.calls[0]).not.toMatch(/opened_at IS NOT NULL/)
+  })
+
+  it('returns null (blocking) when it cannot measure — never a reassuring 0', async () => {
+    const sql = fakeSql([{ match: /escalations/, rows: (() => { throw new Error('nope') }) as any }])
+    expect(await handledTrips(sql, 'p', '2026-07-01')).toBeNull()
   })
 })
