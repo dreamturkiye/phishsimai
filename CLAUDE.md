@@ -6,7 +6,9 @@ Project-specific notes for working in this repo.
 - PhishSim prod `DATABASE_URL` points at Neon **ep-spring-leaf** (project `phishsim-prod`). This is authoritative — confirmed by reading the Vercel dashboard (Settings → Environment Variables → Production) directly.
 - ⚠️ Do NOT trust `vercel env pull` on this machine for the prod DB URL — it resolves the WRONG scope (returns ScrollFuel's **ep-purple-surf**). This caused a false "DB mismatch" alarm. Ground truth = the Vercel dashboard, not the CLI pull.
 - **ep-purple-surf** is a DIFFERENT database (ScrollFuel / OS-layer: `creators`, `video_generations`, `agent_tasks`). PhishSim's schema (`organizations`, `campaign_results`, `org_verified_domains`, `templates`) lives ONLY on ep-spring-leaf.
-- Migrations `0000`–`0005` are applied to ep-spring-leaf, including the compliance trigger `trg_assert_target_domain_enrolled`.
+- Migrations `0000`–`0014` are applied to ep-spring-leaf (verified 2026-07-23 against `information_schema`; there is no `0008` in the tree). Includes the compliance trigger `trg_assert_target_domain_enrolled` (0002), the autonomy guard triggers `trg_assert_autonomy_level` + `trg_audit_autonomy_delete` (0012), the posture tracker `os_posture_state` / `os_posture_drills` (0013), and `os_autonomy_state.clean_day_streak_criteria` (0014).
+- ⚠️ `drizzle.__drizzle_migrations` is NOT authoritative here — it holds 7 rows while 14 migrations are applied, because 0009+ were applied out-of-band. Verify a migration by checking for the object it creates (`information_schema.columns` / `pg_trigger`), never by counting journal rows.
+- ⚠️ Don't state a migration high-water mark from memory — this line read `0000`–`0005` for weeks while prod was at `0013`.
 - To place a DB connection for a supervised DB gate, use:
   ```sh
   printf 'DATABASE_URL_UNPOOLED=%s\n' 'URL' > .env.prod.local
