@@ -9,7 +9,9 @@ import { Router } from "wouter";
 import Home from "./pages/Home";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
-import { seoForPath, headTags } from "./lib/seoMeta";
+import BlogPost from "./pages/BlogPost";
+import { seoForPath, headTags, jsonLdFor } from "./lib/seoMeta";
+import { BLOG_POSTS } from "./content/blog";
 
 // / and /pricing share the Home component (route-aware meta lives inside it).
 const ROUTES: Record<string, React.ComponentType> = {
@@ -18,6 +20,8 @@ const ROUTES: Record<string, React.ComponentType> = {
   "/privacy": PrivacyPolicy,
   "/terms": TermsOfService,
 };
+// Every blog post prerenders through BlogPost (it reads its slug from the ssrPath).
+for (const p of BLOG_POSTS) ROUTES[`/blog/${p.slug}`] = BlogPost;
 
 export const PRERENDER_ROUTES = Object.keys(ROUTES);
 
@@ -32,7 +36,8 @@ export function render(route: string): { html: string; head: string } {
     </HelmetProvider>,
   );
   // Head comes from the shared, deterministic meta map — not helmet's SSR extraction (which is
-  // brittle). Same source the client <Seo> uses, so raw HTML and hydrated DOM agree.
-  const head = headTags(seoForPath(route));
+  // brittle). Same source the client <Seo> uses, so raw HTML and hydrated DOM agree. JSON-LD
+  // (BlogPosting/FAQPage) is appended so it lands in the raw HTML too.
+  const head = [headTags(seoForPath(route)), jsonLdFor(route)].filter(Boolean).join("\n    ");
   return { html, head };
 }
