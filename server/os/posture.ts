@@ -325,11 +325,34 @@ export async function evaluatePosture(sql: SqlLike, productId: string): Promise<
     if (Number(hs[0]?.n ?? 0) > 0) blockers.push(`${hs[0].n} hard-stop violation(s) — drill FAILS per spec`)
   }
 
-  // The 15-day drill is the L5.8 exit and carries the two criteria this instance cannot see.
-  if (posture === 'drill_15') {
+  // The 15-day drill is the L5.8 exit, and the spec measures it PORTFOLIO-WIDE.
+  //
+  // PS-POSTURE-03. This previously asked only "does this product have any rows at all", which a
+  // partially-reporting product passes trivially: push 10 of 15 days and a presence check says
+  // yes. A missed push (outage, cron failure, a product quietly falling off the rollup) would
+  // have read as consent. Under the one-row-per-product-per-day rollup, absence is the ONLY
+  // signal that a product stopped reporting — so absence has to block, exactly like a violation.
+  //
+  // Every product in scope must have a CLEAN row for EVERY day of the drill window. A missing
+  // day is reported as missing, not tolerated, and never silently averaged away by the days that
+  // did arrive.
+  if (posture === 'drill_15' && active) {
     for (const p of PORTFOLIO.filter(p => p !== productId)) {
-      const rows = (await sql`SELECT count(*) AS n FROM autonomy_clean_days WHERE product_id=${p}`) as any[]
-      if (Number(rows[0]?.n ?? 0) === 0) blockers.push(`portfolio scope: no data for '${p}' in this database — cannot verify portfolio-wide`)
+      const rows = (await sql`
+        SELECT count(*) FILTER (WHERE clean) AS clean_days,
+               count(*) AS reported_days
+        FROM autonomy_clean_days
+        WHERE product_id=${p} AND criteria_version >= ${CRITERIA_VERSION}
+          AND day >= ${active.started_on}::date AND day <= ${active.ends_on}::date`) as any[]
+      const cleanDays = Number(rows[0]?.clean_days ?? 0)
+      const reported = Number(rows[0]?.reported_days ?? 0)
+      if (reported === 0) {
+        blockers.push(`portfolio scope: '${p}' reported nothing in this window — cannot verify portfolio-wide`)
+      } else if (reported < kind) {
+        blockers.push(`portfolio scope: '${p}' reported only ${reported}/${kind} days — ${kind - reported} missing day(s) are UNMEASURED, not clean`)
+      } else if (cleanDays < kind) {
+        blockers.push(`portfolio scope: '${p}' has ${cleanDays}/${kind} clean days`)
+      }
     }
     blockers.push('≥3 self-originated improvements with commit-SHA proof: not tracked in this database')
   }

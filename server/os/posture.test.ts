@@ -182,20 +182,39 @@ describe('declarePosture — declared, never auto-promoted', () => {
   })
 })
 
-describe('evaluatePosture — portfolio scope blocks when a product is unreadable', () => {
-  it('the 15-day drill cannot pass on one product alone', async () => {
-    const sql = fakeSql([
-      { match: /os_posture_state/, rows: [{ product_id: 'phishsimai', posture: 'drill_15', entered_at: '', declared_by: 'kaan', baseline_from: '2026-07-23', notes: null }] },
-      { match: /os_posture_drills/, rows: [{ id: 1, kind: 15, started_on: '2026-07-23', ends_on: '2026-08-07', status: 'running' }] },
-      { match: /hard_stop_violations/, rows: [{ n: 0 }] },
-      // Drill-day count carries criteria_version; the portfolio probe does not. Route on that,
-      // so 'scrollfuel' genuinely resolves to zero rows rather than inheriting phishsimai's.
-      { match: /autonomy_clean_days.*criteria_version/, rows: [{ n: 15 }] },
-      { match: /autonomy_clean_days/, rows: [{ n: 0 }] },
-    ])
-    const ev = await evaluatePosture(sql, 'phishsimai')
+describe('evaluatePosture — portfolio scope: a missed push must BLOCK, never pass', () => {
+  // PS-POSTURE-03. Under a one-row-per-product-per-day rollup, absence is the only signal that a
+  // product stopped reporting. So absence has to block exactly like a violation does.
+  const drill15 = (portfolioRows: any[]) => fakeSql([
+    { match: /os_posture_state/, rows: [{ product_id: 'phishsimai', posture: 'drill_15', entered_at: '', declared_by: 'kaan', baseline_from: '2026-07-23', notes: null }] },
+    { match: /os_posture_drills/, rows: [{ id: 1, kind: 15, started_on: '2026-07-23', ends_on: '2026-08-07', status: 'running' }] },
+    { match: /hard_stop_violations/, rows: [{ n: 0 }] },
+    { match: /clean_days/, rows: portfolioRows },                       // portfolio probe
+    { match: /autonomy_clean_days.*criteria_version/, rows: [{ n: 15 }] }, // local drill days
+  ])
+
+  it('blocks when a product reported NOTHING in the window', async () => {
+    const ev = await evaluatePosture(drill15([{ clean_days: 0, reported_days: 0 }]), 'phishsimai')
     expect(ev.eligibleFor).toBeNull()
-    expect(ev.blockers.join()).toMatch(/portfolio scope: no data for 'scrollfuel'/)
+    expect(ev.blockers.join()).toMatch(/'scrollfuel' reported nothing in this window/)
+  })
+
+  it('blocks a PARTIALLY reporting product — 12/15 days is not a pass', async () => {
+    const ev = await evaluatePosture(drill15([{ clean_days: 12, reported_days: 12 }]), 'phishsimai')
+    expect(ev.eligibleFor).toBeNull()
+    expect(ev.blockers.join()).toMatch(/reported only 12\/15 days — 3 missing day\(s\) are UNMEASURED, not clean/)
+  })
+
+  it('blocks a fully-reporting product that had a dirty day', async () => {
+    const ev = await evaluatePosture(drill15([{ clean_days: 14, reported_days: 15 }]), 'phishsimai')
+    expect(ev.eligibleFor).toBeNull()
+    expect(ev.blockers.join()).toMatch(/'scrollfuel' has 14\/15 clean days/)
+  })
+
+  it('still blocks on the untracked self-originated-improvements criterion when all else passes', async () => {
+    const ev = await evaluatePosture(drill15([{ clean_days: 15, reported_days: 15 }]), 'phishsimai')
+    expect(ev.eligibleFor).toBeNull()
+    expect(ev.blockers.join()).not.toMatch(/scrollfuel/)
     expect(ev.blockers.join()).toMatch(/self-originated improvements/)
   })
 })
