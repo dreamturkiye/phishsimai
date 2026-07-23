@@ -2,7 +2,7 @@ import { llmComplete } from '../os/llmChat'
 import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
-import { assertAutonomyAllows } from '../os/autonomyGate'
+import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
 // PhishSim's task loop — that is why agentReflection had "no callers". Wiring it here injects an
@@ -284,9 +284,20 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
     recallMemory(companyId, undefined, 20).then((m: any[]) => m.filter((x:any) => x.source === agentId)).catch(() => [] as any[])
   ])
 
-  const taskHistory = tasks.slice(0,5).map((t:any) =>
-    `Task: "${t.title}" | Score: ${t.performance_score || '?'}/10 | Feedback: ${t.janet_feedback || 'none'}`
-  ).join('\n')
+  // PS-PHANTOM-01: the completion DATE is load-bearing, not decoration. This line used to
+  // render a completed task with no timestamp at all, so a task finished four days ago was
+  // indistinguishable from one finished last night. Asked "what did you complete yesterday",
+  // an agent whose only history was a stale row answered with that stale row — which is
+  // literally how Aria's 2026-07-23 standup opened ("Completed Yesterday: Launched the weekly
+  // growth content sprint", a task actually completed 2026-07-19). Date it, and say how old
+  // it is in plain words, so recency can never be inferred from position in a list.
+  const taskHistory = tasks.slice(0,5).map((t:any) => {
+    const done = t.completed_at ? new Date(t.completed_at) : null
+    const age = done ? Math.floor((Date.now() - done.getTime()) / 86_400_000) : null
+    const when = !done ? 'completed date unknown'
+      : `completed ${done.toISOString().slice(0,10)} (${age === 0 ? 'today' : age === 1 ? 'YESTERDAY' : `${age} DAYS AGO — NOT recent`})`
+    return `Task: "${t.title}" | ${when} | Score: ${t.performance_score || '?'}/10 | Feedback: ${t.janet_feedback || 'none'}`
+  }).join('\n')
 
   const perfHistory = perf.slice(0,2).map((p:any) =>
     `Strengths: ${p.strengths} | Improve: ${p.improvement_areas} | Janet: ${p.janet_notes}`
@@ -462,17 +473,68 @@ export function scaledDueHours(title: string, description = ''): number {
   return 2 // simple / routine — the common case → ~1-2h
 }
 
+// ── PS-DEDUPE-01: how long the same task stays "already issued" ───────────────
+// 72h matches the 3-day window os6Autonomy's own existingTask() already chose, so the two
+// agree instead of racing. Anything genuinely daily still runs daily — drainAgentTasks
+// executes the open row; what stops is minting a SECOND row for identical work.
+export const TASK_DEDUPE_WINDOW_HOURS = 72
+
+/**
+ * PS-DEDUPE-01. Two proactive loops mint task titles that are identical every run except for
+ * an embedded date — os6Autonomy appends "- ${today}" to every title it builds. os6 DOES have
+ * a dedupe check (existingTask), but it compares titles with `title=${title}`, so that date
+ * suffix defeats it on the very next day: yesterday's row never matches, and the task is
+ * re-issued forever. intelligenceFinance has no check at all and pushes three fixed titles
+ * ("Trend scan…", "Unit economics review…", "30-day revenue forecast…") on EVERY cycle, which
+ * is why Finn and Scout drew byte-identical assignments on 07-22 and again on 07-23.
+ *
+ * Normalising here — rather than in each loop — means a new caller cannot reintroduce the bug.
+ * Strips the trailing date stamp, case, punctuation and whitespace noise so "OS 6.0 sweep -
+ * 2026-07-22" and "OS 6.0 sweep - 2026-07-23" collapse to one key.
+ */
+export function normalizeTaskTitle(title: string): string {
+  return String(title || '')
+    .toLowerCase()
+    // trailing date stamp in any separator style: " - 2026-07-23", " — 2026/07/23", " (2026-07-23)"
+    .replace(/[\s\-–—(\[]*\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\)?\]?\s*$/, '')
+    .replace(/[^a-z0-9]+/g, ' ') // punctuation/markdown noise is not meaning
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
 export async function issueTask(
   agentId: AgentId,
   task: NewAgentTask,
   companyId = COMPANY_ID
-): Promise<{ task_id: string; agent: string; title: string }> {
+): Promise<{ task_id: string; agent: string; title: string; deduped?: boolean }> {
   // AUTONOMY GATE — no agent task is written unless this company's earned level
   // permits it. At 'manual' this throws AutonomyDenied (audited) before any write.
+  // Stays FIRST: it is the security boundary, and its audit trail must not depend
+  // on whether a duplicate happened to short-circuit the write.
   await assertAutonomyAllows('issue_agent_task', companyId)
 
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
+  const agent = AGENTS[agentId]
+
+  // PS-DEDUPE-01 — the single choke point every issuer passes through, matching the autonomy
+  // gate's design. Compared in JS, not SQL, because the normalisation above has no cheap SQL
+  // equivalent and the row count in a 72h window is trivially small.
+  const recent = await sql`
+    SELECT id, title FROM agent_tasks
+    WHERE company_id=${companyId} AND agent_id=${agentId}
+      AND created_at > NOW() - (${TASK_DEDUPE_WINDOW_HOURS} || ' hours')::interval
+    ORDER BY created_at DESC LIMIT 50
+  `.catch(() => [] as any[])
+  const key = normalizeTaskTitle(task.title)
+  const dup = key ? (recent as any[]).find(r => normalizeTaskTitle(r.title) === key) : undefined
+  if (dup) {
+    // Return the EXISTING row rather than throwing: callers legitimately want the task id, and
+    // os6 already treats "found an existing one" as success. No Telegram ping — re-announcing
+    // the same assignment daily is the noise this fix exists to remove.
+    console.log(`[kaan_os_v4] issueTask deduped for ${agentId}: "${task.title.slice(0, 60)}" → existing ${dup.id}`)
+    return { task_id: dup.id, agent: agent.name, title: task.title, deduped: true }
+  }
 
   const [inserted] = await sql`
     INSERT INTO agent_tasks (agent_id, issued_by, title, description, priority, due_in_hours, status, company_id)
@@ -480,10 +542,9 @@ export async function issueTask(
     RETURNING id
   `
 
-  const agent = AGENTS[agentId]
   await sendTelegram(`📋 *Task Assigned by Janet*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
 
-  return { task_id: inserted.id, agent: agent.name, title: task.title }
+  return { task_id: inserted.id, agent: agent.name, title: task.title, deduped: false }
 }
 
 export async function executeTask(taskId: string, companyId = COMPANY_ID): Promise<AgentTask> {
@@ -721,6 +782,144 @@ export async function drainAgentTasks(
 //  MEETINGS — Janet runs structured team meetings
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ── PS-PHANTOM-01: ground truth for "what did you do?" ────────────────────────
+/**
+ * The standup prompt asks every agent what they completed yesterday and what they are
+ * working on today, and until now supplied NOTHING to answer either question with — just
+ * a pending-task list that read "None assigned yet" when empty. That is the same shape as
+ * the infra vacuum fixed in getCompanyContext (PS-INFRA-SIGNAL-01): the instrument reported
+ * nothing and the LLM filled the silence. Marcus filled it with "set up Neon Postgres";
+ * on 2026-07-23 Aria filled it with "I am bypassing the dev queue to unblock us" — which
+ * Janet then escalated to the founder as a live incident. There was no dev queue to bypass
+ * (os_architect_tasks was empty) and Aria has no surface on which to bypass one.
+ *
+ * Two independent gaps produced that sentence, and this closes both:
+ *   1. NO ACTIVITY RECORD — so "yesterday" was answered from undated memory. Fixed by
+ *      stating the real 24h/7d completion record, and stating EXPLICITLY when it is empty.
+ *      "You completed nothing" is a fact; the absence of a fact is an invitation.
+ *   2. NO CAPABILITY RECORD — nothing ever told an agent what it can actually do, so
+ *      "bypassing the dev queue" / "touching production code" / "audited the production
+ *      database" are all coherent things for it to claim. They are not possible: an agent's
+ *      ONLY execution surface is executeTask(), which calls an LLM and writes text to
+ *      agent_tasks.result. It opens no shell, writes no file, touches no repo, runs no
+ *      query, sends no mail, deploys nothing. Code changes live in a different table
+ *      (os_architect_tasks) that no agent_tasks row can ever reach, fed only by Janet via
+ *      queueJanetArchitectTask and applied by an external daemon.
+ *
+ * Uniform across agents ON PURPOSE — Marcus is not special here. Even the architect's
+ * standup runs through the same text-only executeTask; his code path is not reachable
+ * from this meeting.
+ */
+async function buildActivityLedger(
+  agentId: AgentId, sql: any, companyId: string, pendingTasks: any[],
+): Promise<string> {
+  const done = await sql`
+    SELECT title, completed_at, performance_score,
+           (completed_at > NOW() - interval '24 hours') AS is_recent
+    FROM agent_tasks
+    WHERE agent_id=${agentId} AND company_id=${companyId}
+      AND status IN ('completed','reviewed') AND completed_at > NOW() - interval '7 days'
+    ORDER BY completed_at DESC LIMIT 10
+  `.catch(() => [] as any[])
+
+  const rows = done as any[]
+  const last24 = rows.filter(r => r.is_recent)
+  const earlier = rows.filter(r => !r.is_recent)
+
+  const completedBlock = last24.length
+    ? `COMPLETED IN THE LAST 24 HOURS (this, and only this, is "yesterday"):\n` +
+      last24.map(r => `  - "${r.title}" — ${new Date(r.completed_at).toISOString()} (scored ${r.performance_score ?? '?'}/10)`).join('\n')
+    : `COMPLETED IN THE LAST 24 HOURS: NOTHING. You finished no task yesterday. Report exactly that — do not reach further back and present older work as if it were yesterday's.`
+
+  const earlierBlock = earlier.length
+    ? `\n\nEarlier this week (already reported — do NOT re-report as new):\n` +
+      earlier.map(r => `  - "${r.title}" — ${String(r.completed_at).slice(0,10)}`).join('\n')
+    : ''
+
+  const pendingBlock = pendingTasks.length
+    ? `\n\nYOUR ASSIGNED TASKS RIGHT NOW (the complete list — you have no others):\n` +
+      pendingTasks.map((t:any) => `  - "${t.title}" (${t.priority})`).join('\n')
+    : `\n\nYOUR ASSIGNED TASKS RIGHT NOW: NONE. You are unassigned. You are therefore not working on anything, and you must not claim to be.`
+
+  return `━━ ACTIVITY LEDGER — GROUND TRUTH, read live from the production database ━━
+This is the COMPLETE record of your work. It is authoritative. Anything not listed here
+did not happen, no matter what your memory, your job title, or a prior standup suggests.
+
+${completedBlock}${earlierBlock}${pendingBlock}
+
+WHAT YOU CAN ACTUALLY DO: your one and only capability is to receive a task from Janet and
+produce WRITTEN ANALYSIS AND RECOMMENDATIONS in response. That is the whole surface.
+You CANNOT and MUST NEVER claim to have: written, changed, reviewed, deployed or reverted
+code; accessed the repository, the dev queue, a branch, a server, or a shell; run a database
+query or "audited the production database"; sent an email, published a post, or contacted a
+customer; changed a price, a setting, or a campaign. You have no such access. If you catch
+yourself about to report one of these, report instead what you RECOMMEND a human do.
+Reporting invented activity is the single worst failure mode here: Janet escalates your
+standup to the CEO as fact, and a fabricated line becomes a real incident.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+}
+
+// ── PS-PHANTOM-01: parse Janet's assignments out of her standup response ──────
+/**
+ * The pattern this replaces was
+ *   /assign\s+([A-Z][a-z]+):?\s+"([^"]+)"|task\s+for\s+([A-Z][a-z]+):?\s+([^\n]+)/gi
+ * which required Janet to write either a LITERAL double-quoted title after the word "assign",
+ * or the exact phrase "task for X:". An LLM answering "issue 1-3 task assignments" writes a
+ * markdown list — "- **Marcus** — Audit the trial funnel (high)" — so this matched NOTHING,
+ * every single day. The standup then footered "0 tasks issued", which reads identically to
+ * "nothing was needed". It was never dedupe; there was no dedupe. It was a silent parse failure.
+ *
+ * THREE TIERS, in strict preference order. Each is tried only if the previous found nothing:
+ *   Tier 1 — the canonical "ASSIGN <Name>: <title>" line Janet's prompt now mandates. No
+ *            false-positive surface, so it always wins.
+ *   Tier 2 — a markdown TABLE row: "| **Vera** | Build a direct outreach plan... | why | P0 |".
+ *            Not hypothetical — this is verbatim what Janet emitted on 2026-07-23, and it is
+ *            her habitual shape for "who / what / why / priority". A parser that cannot read
+ *            it reports "0 tasks issued" on a standup that assigned four.
+ *   Tier 3 — a markdown list item. Last, and capped, because a bare "<Name>: <text>" also
+ *            matches Janet's prose: in testing it turned her "PERFORMANCE CONCERN / Aria:
+ *            reporting discipline" paragraph into an assigned task. Narrating a concern is
+ *            not assigning work — not confusing the two is the entire point of this fix.
+ *
+ * Long cells are TRUNCATED, never dropped. The original rejected anything over 200 chars,
+ * which silently discarded exactly the detailed assignments most worth keeping.
+ *
+ * Pure and exported so this cannot silently regress the way the original did.
+ */
+export function parseStandupAssignments(response: string): { agentId: AgentId; title: string }[] {
+  const CANONICAL = /^\s*(?:[-*]\s*)?(?:\*\*)?assign\s+(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*[:—–-]\s+(.+?)\s*$/i
+  const TABLE_ROW = /^\s*\|\s*(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*\|\s*(.+?)\s*\|/
+  const LIST_ITEM = /^\s*[-*]\s+(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*[:—–]\s+(.+?)\s*$/i
+
+  const collect = (re: RegExp) => {
+    const out: { agentId: AgentId; title: string }[] = []
+    const seen = new Set<string>()
+    for (const rawLine of response.split('\n')) {
+      const m = rawLine.match(re)
+      if (!m) continue
+      const agentId = Object.values(AGENTS).find(a => a.name.toLowerCase() === m[1].toLowerCase())?.id
+      if (!agentId || agentId === 'janet') continue // Janet does not assign work to herself
+      // Strip markdown and trailing priority garnish: "**", "(high)", "— Priority: MEDIUM".
+      const title = m[2]
+        .replace(/\*\*/g, '')
+        .replace(/\s*[—–-]?\s*\(?(?:priority:?\s*)?(critical|high|medium|low)\)?\.?\s*$/i, '')
+        .trim()
+      if (title.length < 8) continue // a bare name or a table header cell is not a task title
+      const key = `${agentId}:${title.slice(0, 80).toLowerCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ agentId: agentId as AgentId, title: title.slice(0, 300) })
+    }
+    return out
+  }
+
+  const canonical = collect(CANONICAL)
+  if (canonical.length) return canonical
+  const table = collect(TABLE_ROW)
+  if (table.length) return table.slice(0, 4)
+  return collect(LIST_ITEM).slice(0, 3) // cap the loosest tier at the 1-3 the prompt asks for
+}
+
 export async function runDailyStandup(companyId = COMPANY_ID): Promise<{
   meeting_id: string
   reports: AgentReport[]
@@ -747,14 +946,16 @@ export async function runDailyStandup(companyId = COMPANY_ID): Promise<{
       LIMIT 5
     `.catch(() => [])
 
+    const ledger = await buildActivityLedger(agentId, sql, companyId, pendingTasks as any[])
+
     const system = buildAgentSystem(agent, memory, context)
     const standupPrompt = `Daily standup report to Janet (CGO).
 
-Pending tasks: ${pendingTasks.map((t:any) => `"${t.title}" (${t.priority})`).join(', ') || 'None assigned yet'}
+${ledger}
 
 Give your standup (be brief and direct — Janet runs a tight meeting):
-1. What you completed or progressed yesterday
-2. What you're working on today
+1. What you completed or progressed yesterday — ONLY from the ledger above. If it says you completed nothing, say "Nothing completed" and move on.
+2. What you're working on today — ONLY your assigned tasks above. If you have none, say "Unassigned — awaiting a task" and propose ONE thing Janet should assign you. Do NOT describe work in progress you have not been assigned.
 3. Any blockers (only if real — don't waste Janet's time with non-blockers)
 4. One metric or insight from your domain she needs to know right now
 5. Confidence level on hitting your targets this week (0-10)`
@@ -771,10 +972,16 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
       timestamp: new Date().toISOString()
     })
 
+    // PS-PHANTOM-01: getAgentMemory feeds these rows back to the SAME agent tomorrow under
+    // the heading "Knowledge base". At confidence 0.9 and unlabelled, an invented standup
+    // line became a durable fact the agent then built on — a ratchet that turns one bad
+    // sentence into a permanent one. A standup is the least-verified artifact the OS
+    // produces: it is an unaudited self-report. Price it that way and SAY what it is.
     await rememberFact({
       company_id: companyId, type: 'operating',
       key: `standup:${agentId}:${new Date().toISOString().slice(0,10)}`,
-      value: report_text.slice(0,400), confidence: 0.9, source: agentId
+      value: `[UNVERIFIED SELF-REPORT — what you SAID at standup, not evidence that it happened] ${report_text.slice(0,400)}`,
+      confidence: 0.3, source: agentId
     }).catch(() => {})
   }
 
@@ -783,23 +990,59 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
   const janetMemory = await getAgentMemory('janet', sql, companyId)
   const janetSystem = buildAgentSystem(AGENTS.janet, janetMemory, context)
 
-  const janetResponse = await llm(janetSystem, `You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments (who, what, why, priority)\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+  // PS-PHANTOM-01: the other half of the fix. Even a well-grounded agent can slip, and Janet
+  // was reading these reports as EVENTS — on 2026-07-23 she turned Aria's sentence "I am
+  // bypassing the dev queue" into an urgent halt escalated to the CEO, for an action Aria has
+  // no ability to perform and no record of performing. Janet's job at standup is to REPORT
+  // what happened, not to narrate what was claimed. Tell her the difference explicitly, and
+  // tell her the one check that settles it.
+  const janetGrounding = `GROUND RULES — READ FIRST.
+The reports below are UNVERIFIED SELF-REPORTS generated by each agent. They are claims, not events.
+Your team is TEXT-ONLY: each agent's sole capability is producing written analysis when you assign
+it a task. NO agent can write, deploy or revert code, reach the repo, dev queue, branches, servers
+or shell, run a database query, send email, or contact a customer. Those capabilities do not exist
+for them.
+So: if a report claims an ACTION of that kind, the claim is FALSE BY CONSTRUCTION — it is a
+hallucination, not an incident. Do NOT escalate it to Kaan as an event, do not open an incident,
+and do not halt anyone over it. Note it as a REPORTING-QUALITY problem with that agent and move on.
+Escalate to Kaan ONLY what is corroborated by the live company metrics above, never by a report alone.
+Distinguish, in your own output, "X reported that..." from "X did...". Only write the second when a
+system record backs it.
 
-  // Parse and issue new tasks from Janet's response
+`
+  const janetResponse = await llm(janetSystem, `${janetGrounding}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+
+  // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
+  const parsed = parseStandupAssignments(janetResponse)
+
+  // Dedupe is enforced centrally in issueTask (PS-DEDUPE-01) so every issuer — this standup,
+  // os6Autonomy, intelligenceFinance, janetProactive — obeys one rule. Here we only need to
+  // read back which calls were absorbed as duplicates so the footer can say so.
   const newTasks: any[] = []
-  const taskMatches = janetResponse.matchAll(/assign\s+([A-Z][a-z]+):?\s+"([^"]+)"|task\s+for\s+([A-Z][a-z]+):?\s+([^\n]+)/gi)
-  for (const match of taskMatches) {
-    const agentName = (match[1] || match[3] || '').toLowerCase()
-    const taskTitle = match[2] || match[4] || ''
-    const agentId = Object.values(AGENTS).find(a => a.name.toLowerCase() === agentName)?.id
-    if (agentId && taskTitle && agentId !== 'janet') {
-      const t = await issueTask(agentId as AgentId, {
-        title: taskTitle.slice(0,100),
-        description: `Issued during daily standup: ${taskTitle}`,
-        priority: 'high', due_in_hours: scaledDueHours(taskTitle)
-      }, companyId).catch(() => null)
-      if (t) newTasks.push(t)
+  let skippedDuplicate = 0, deniedByGate = 0
+  for (const { agentId, title } of parsed) {
+    try {
+      const t = await issueTask(agentId, {
+        title: title.slice(0, 100),
+        description: `Issued during daily standup: ${title}`,
+        priority: 'high', due_in_hours: scaledDueHours(title),
+      }, companyId)
+      if (t.deduped) skippedDuplicate++
+      else newTasks.push(t)
+    } catch (e: any) {
+      // The autonomy gate denying is a legitimate outcome, but it used to be swallowed by a
+      // bare .catch(() => null), so a gate-denied standup and a parser-failed standup printed
+      // the identical "0 tasks issued". Count them separately and say which.
+      if (isAutonomyDenied(e)) deniedByGate++
+      else console.error(`[kaan_os_v4] standup issueTask failed for ${agentId}: ${String(e?.message || e).slice(0, 200)}`)
     }
+  }
+  console.log(
+    `[kaan_os_v4] standup task issuance: parsed=${parsed.length} issued=${newTasks.length} ` +
+    `duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate}`,
+  )
+  if (parsed.length === 0 && /\bassign|assignment\b/i.test(janetResponse)) {
+    console.warn('[kaan_os_v4] standup: Janet named assignments but NONE parsed — parser/prompt drift, not an empty agenda')
   }
 
   // Log meeting
@@ -813,7 +1056,28 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
   // Product name must be correct IN the string: telegram.ts's prefixMessage() skips adding
   // the product prefix to any message that already leads with a known emoji (🌅 is one), so
   // a wrong label here is never corrected downstream — it ships as-is.
-  const telegramMsg = `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse.slice(0, 600)}\n\n_${reports.length} agents reported | ${newTasks.length} tasks issued_`
+  // PS-PHANTOM-01: a bare "0 tasks issued" is ambiguous in the one way that matters — it read
+  // identically whether nothing was needed, the parser matched nothing, or the autonomy gate
+  // denied every write. Say which, so the footer reports rather than narrates.
+  const issuance = [
+    `${newTasks.length} tasks issued`,
+    skippedDuplicate ? `${skippedDuplicate} dup skipped` : '',
+    deniedByGate ? `${deniedByGate} gate-denied` : '',
+    newTasks.length === 0 && parsed.length === 0 ? 'none proposed' : '',
+  ].filter(Boolean).join(' | ')
+
+  // PS-TRUNCATE-01: this used to send janetResponse.slice(0, 600). On 2026-07-23 that dropped
+  // 74% of her response — it kept the (phantom) halt on Aria and cut every one of the four
+  // assignments she made, including the only revenue action on the page ("Vera: call the 3 free
+  // orgs, find out why they haven't upgraded"). A revenue-first standup therefore reached the
+  // founder looking like agent-policing that produced nothing. Send the WHOLE response;
+  // sendTelegram now splits at 4096 rather than amputating, so length costs a second message,
+  // never a lost conclusion. The assignment list is still appended explicitly: it is the
+  // standup's actual output and must be legible without hunting through her prose for it.
+  const assignmentLines = newTasks.length
+    ? `\n\n📋 *Assigned:*\n${newTasks.map((t: any) => `• ${t.agent}: ${t.title}`).join('\n')}`
+    : ''
+  const telegramMsg = `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse}${assignmentLines}\n\n_${reports.length} agents reported | ${issuance}_`
   await sendTelegram(telegramMsg).catch(() => {})
 
   return { meeting_id: meeting?.id || '', reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
@@ -912,8 +1176,10 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
     RETURNING id
   `.catch(() => [{ id: 'unknown' }])
 
+  // PS-TRUNCATE-01: same amputation the daily standup had — the weekly PLAN is the entire point
+  // of this meeting, and 600 chars cut it mid-thought. sendTelegram splits now; send it whole.
   const scores = performanceReviews.map(r => `${r.name}: ${r.score}/10`).join(' | ')
-  await sendTelegram(`📊 *WEEKLY REVIEW — ${TELEGRAM_PRODUCT}*\n\nScores: ${scores}\n\n${weeklyPlan.slice(0,600)}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
+  await sendTelegram(`📊 *WEEKLY REVIEW — ${TELEGRAM_PRODUCT}*\n\nScores: ${scores}\n\n${weeklyPlan}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
 
   return {
     meeting_id: meeting?.id || '',

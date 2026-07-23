@@ -6,6 +6,7 @@ import {
   AGENTS,
   executeTask,
   issueTask,
+  normalizeTaskTitle,
   reviewTask,
   type AgentId,
 } from '../lib/kaan_os_v4'
@@ -483,16 +484,25 @@ function decide(metrics: Os6Metrics, deltas: MetricDelta, trigger: Trigger, reas
   return decisions.slice(0, trigger === 'lead_import' ? 6 : 8)
 }
 
+// PS-DEDUPE-01: this check is EXACT-MATCH on title, and every title built above ends with
+// `- ${today}`. So yesterday's row never matched today's title and the same decision was
+// re-issued every single day (Finn and Scout drew byte-identical work on 07-22 and 07-23).
+// Normalise before comparing — normalizeTaskTitle strips the trailing date stamp — so the
+// window this function always intended to enforce actually holds. issueTask enforces the
+// same rule centrally as a backstop; this stays because catching it here also avoids
+// writing a redundant kaan_os6_decisions row.
 async function existingTask(sql: Sql, companyId: string, owner: AgentId, title: string) {
   const rows = await sql`
-    SELECT id FROM agent_tasks
+    SELECT id, title FROM agent_tasks
     WHERE company_id=${companyId}
       AND agent_id=${owner}
-      AND title=${title}
       AND created_at > NOW() - INTERVAL '3 days'
-    LIMIT 1
+    ORDER BY created_at DESC
+    LIMIT 50
   `.catch(() => [])
-  return (rows as any[])[0]?.id as string | undefined
+  const key = normalizeTaskTitle(title)
+  if (!key) return undefined
+  return (rows as any[]).find(r => normalizeTaskTitle(r.title) === key)?.id as string | undefined
 }
 
 async function executeDecisions(sql: Sql, companyId: string, cycleId: string, decisions: Os6Decision[]) {
@@ -511,6 +521,14 @@ async function executeDecisions(sql: Sql, companyId: string, cycleId: string, de
       priority: item.priority,
       due_in_hours: item.dueInHours,
     }, companyId).catch(() => null) // notify was never a param of issueTask -- 4th arg was silently ignored
+
+    // PS-DEDUPE-01: issueTask now absorbs a repeat centrally and hands back the EXISTING row.
+    // Treat that exactly like the existingTask() hit above — record the decision as already
+    // assigned, and do NOT write another kaan_os6_decisions row for work already tracked.
+    if (task?.deduped) {
+      assigned.push({ id: task.task_id, owner: item.owner, title: item.title, successMetric: item.successMetric })
+      continue
+    }
 
     const taskId = task?.task_id || `unpersisted:${Date.now()}:${item.owner}`
     assigned.push({ id: taskId, owner: item.owner, title: item.title, successMetric: item.successMetric })

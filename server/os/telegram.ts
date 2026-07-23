@@ -150,6 +150,34 @@ function prefixMessage(text: string): string {
   return `<b>${TELEGRAM_PRODUCT}</b>\n${text}`
 }
 
+// ── PS-TRUNCATE-01: Telegram's hard cap is 4096 chars per message ─────────────
+// This module used to `text.slice(0, 4000)` — silently amputating anything longer. That is how
+// a 2275-char CGO standup reached the founder as its first 600 chars (the caller truncated too):
+// what survived was a phantom "halt Aria" paragraph, and every actual task assignment — the
+// standup's whole output — was cut. A brief that drops its own conclusions is worse than no
+// brief, because it reads complete. Split on paragraph/line boundaries instead of cutting.
+const TELEGRAM_MAX = 4096
+const CHUNK_TARGET = 3900 // headroom for the "(2/3)" part marker and the product prefix
+
+export function splitForTelegram(text: string, limit = CHUNK_TARGET): string[] {
+  if (text.length <= limit) return [text]
+  const chunks: string[] = []
+  let rest = text
+  while (rest.length > limit) {
+    // Prefer a paragraph break, then a line break, then a space — never mid-word, and never
+    // mid-HTML-tag (a split inside "<b>…" makes Telegram reject the whole message).
+    const window = rest.slice(0, limit)
+    let cut = window.lastIndexOf('\n\n')
+    if (cut < limit * 0.5) cut = window.lastIndexOf('\n')
+    if (cut < limit * 0.5) cut = window.lastIndexOf(' ')
+    if (cut < limit * 0.5) cut = limit // no sane boundary — hard split rather than drop text
+    chunks.push(rest.slice(0, cut).trimEnd())
+    rest = rest.slice(cut).trimStart()
+  }
+  if (rest) chunks.push(rest)
+  return chunks
+}
+
 export async function sendTelegram(
   text: string,
   keyboard?: { text: string; callback_data: string }[][]
@@ -170,29 +198,57 @@ export async function sendTelegram(
     return { ok: false, skipped: true, error: `identity check failed: ${v.detail}` }
   }
 
-  const body: Record<string, unknown> = {
-    chat_id: c.chatId,
-    text: prefixMessage(text.slice(0, 4000)),
-    parse_mode: 'HTML',
-    disable_web_page_preview: true,
-  }
-  if (keyboard?.length) {
-    body.reply_markup = { inline_keyboard: keyboard }
-  }
+  // Prefix ONCE, then split — prefixing each chunk would repeat the product header mid-brief
+  // and would also re-trigger the leading-emoji rule inconsistently across parts.
+  const parts = splitForTelegram(prefixMessage(text))
 
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${c.token}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json().catch(() => ({}))
+  const postOne = async (payloadText: string, isLast: boolean): Promise<{ ok: boolean; error?: string }> => {
+    const send = async (withHtml: boolean) => {
+      const body: Record<string, unknown> = {
+        chat_id: c.chatId,
+        text: payloadText.slice(0, TELEGRAM_MAX),
+        disable_web_page_preview: true,
+      }
+      if (withHtml) body.parse_mode = 'HTML'
+      // The keyboard belongs on the LAST part only — buttons attached to part 1 of 3 would
+      // sit above the text they act on.
+      if (isLast && keyboard?.length) body.reply_markup = { inline_keyboard: keyboard }
+      const res = await fetch(`https://api.telegram.org/bot${c.token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      return { res, error: (data as any)?.description || res.statusText }
+    }
+
+    let { res, error } = await send(true)
+    // A split can land between an opening and closing tag. Telegram rejects the whole message
+    // with "can't parse entities" — losing the content entirely, which is the failure mode this
+    // change exists to prevent. Resend that part as plain text: formatting is worth less than
+    // the words.
+    if (!res.ok && /can't parse entities|unsupported start tag|unclosed/i.test(String(error))) {
+      console.warn(`[telegram] HTML parse rejected on a split boundary — resending part as plain text`)
+      ;({ res, error } = await send(false))
+    }
     if (!res.ok) {
-      const error = (data as any)?.description || res.statusText
       console.error(`[telegram] send failed: ${error}`)
       return { ok: false, error }
     }
     return { ok: true }
+  }
+
+  try {
+    if (parts.length > 1) console.log(`[telegram] message split into ${parts.length} parts (${text.length} chars, none dropped)`)
+    let firstError: string | undefined
+    for (let i = 0; i < parts.length; i++) {
+      const marker = parts.length > 1 ? `\n\n<i>(${i + 1}/${parts.length})</i>` : ''
+      const r = await postOne(parts[i] + marker, i === parts.length - 1)
+      // Keep going past a failed part: the remaining parts still carry information, and a
+      // partial brief beats a silent one. Report the FIRST error so the caller sees a failure.
+      if (!r.ok && !firstError) firstError = r.error
+    }
+    return firstError ? { ok: false, error: firstError } : { ok: true }
   } catch (e: any) {
     console.error(`[telegram] send error: ${e.message}`)
     return { ok: false, error: e.message }
