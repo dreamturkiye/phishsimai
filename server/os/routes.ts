@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { getCleanStreak, recordIncident } from './cleanDays'
-import { recordDay, evaluatePosture, declarePosture, postureLine } from './posture'
+import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
@@ -1176,8 +1176,20 @@ export async function architectAutonomy(req: Request, res: Response) {
       return res.status(out.ok ? 200 : 409).json(out)
     }
     const ev = await evaluatePosture(sql, 'phishsimai')
+    // PS-AUTONOMY-CRITERIA-01: getCleanStreak is the UNFILTERED (v1) reader. Its last-computed day
+    // is useful operationally — it says whether the compute cron ran at all — but it sat here as a
+    // bare `lastComputedDay` next to `ev.lastJudgedDay`, which is the v2 baseline-filtered value.
+    // Two dates, different rigor, neither labelled: 2026-07-22 next to null reads like a bug.
+    // Name the version in the key so no reader has to know which ladder produced which.
     const streak = await getCleanStreak(sql, 'phishsimai')
-    return res.json({ product: 'phishsimai', ...ev, line: postureLine(ev), lastComputedDay: streak.lastComputedDay })
+    return res.json({
+      product: 'phishsimai',
+      ...ev,
+      line: postureLine(ev),
+      criteriaVersion: CRITERIA_VERSION,
+      lastJudgedDayV2: ev.lastJudgedDay,
+      lastComputedDayAnyCriteria: streak.lastComputedDay,
+    })
   } catch (e: any) {
     // Fail LOUD. An autonomy endpoint that 200s on error is an instrument reporting health it
     // cannot verify -- precisely what this ladder exists to prevent.

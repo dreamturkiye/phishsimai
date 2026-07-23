@@ -8,8 +8,17 @@
 // stays blocked. Demotion (breaker trip) routes through the same audited path, symmetric.
 //
 // L1 == enforcement 'manual' (the floor Kaan starts from). Promotes manual->l2->l3->l4->l5.
+//
+// PS-AUTONOMY-CRITERIA-01 (2026-07-23) — this job and the posture tracker read the SAME table,
+// autonomy_clean_days, and used to apply different rigor to it. posture.ts filters to
+// `criteria_version >= 2 AND day >= baseline_from`; this job filtered by nothing, so it counted v1
+// rows — including 2026-07-18, the unearned-l4 incident day that v1's three-check version scored
+// clean. The level climbed to l5 on criteria the posture tracker had already been rebuilt to
+// distrust, and the two surfaces then disagreed (streak 5 vs 0) with no way to tell which ladder a
+// number belonged to. Every clean-day read below now goes through the same v2 + baseline filter,
+// and every streak written is stamped with the version that produced it.
 import { getSql } from './conn'
-import { getCleanStreak } from './cleanDays'
+import { CRITERIA_VERSION, getPostureState, currentStreak } from './posture'
 import { COMPANY_ID } from './version'
 import { sendTelegram } from './telegram'
 
@@ -38,6 +47,8 @@ export interface AutonomyDecision extends DecisionInput {
   to: EnfLevel
   reason: string
   cleanStreak?: number
+  /** Which autonomy_clean_days.criteria_version produced cleanStreak. Never read the number without it. */
+  cleanStreakCriteria?: number
 }
 
 // ── PURE decision — no I/O, exhaustively unit-testable. This is the guard against the l4 failure
@@ -66,17 +77,56 @@ export function decidePromotion(input: DecisionInput): AutonomyDecision {
 }
 
 // ── I/O: read the live inputs the pure decision needs. ──
-async function readState(sql: any, companyId: string): Promise<{ level: EnfLevel; trust: number }> {
-  const r = (await sql`SELECT level, trust FROM os_autonomy_state WHERE company_id=${companyId}`) as any[]
-  return { level: (r[0]?.level ?? 'manual') as EnfLevel, trust: Number(r[0]?.trust ?? 0) }
+async function readState(
+  sql: any,
+  companyId: string,
+): Promise<{ level: EnfLevel; trust: number; storedStreak: { days: number; criteria: number | null } }> {
+  const r = (await sql`SELECT level, trust, clean_day_streak, clean_day_streak_criteria
+                       FROM os_autonomy_state WHERE company_id=${companyId}`) as any[]
+  return {
+    level: (r[0]?.level ?? 'manual') as EnfLevel,
+    trust: Number(r[0]?.trust ?? 0),
+    storedStreak: {
+      days: Number(r[0]?.clean_day_streak ?? 0),
+      criteria: r[0]?.clean_day_streak_criteria == null ? null : Number(r[0].clean_day_streak_criteria),
+    },
+  }
+}
+
+/**
+ * The posture baseline this product is judged from — the same `os_posture_state.baseline_from`
+ * posture.ts uses, so neither ladder can credit a day the other refuses.
+ *
+ * Returns null when it cannot be read. Callers must treat that as BLOCKING, never as "no baseline,
+ * count everything": an unreadable baseline is exactly the silence this OS keeps scoring as a pass.
+ */
+async function readBaseline(sql: any, companyId: string): Promise<string | null> {
+  try {
+    const state = await getPostureState(sql, companyId)
+    return state?.baseline_from ? String(state.baseline_from).slice(0, 10) : null
+  } catch {
+    return null
+  }
 }
 
 // Consecutive clean CALENDAR days strictly AFTER the most recent grant — the earning cycle. This is
-// what enforces one-rung-per-cycle: right after a promotion this is 0 and must rebuild to 5.
+// what enforces one-rung-per-cycle: right after a promotion this is 0 and must rebuild.
+//
+// PS-AUTONOMY-CRITERIA-01: only days judged under the CURRENT criteria version and at/after the
+// posture baseline are countable. A v1 'clean' does not become a v2 'clean' by being old — the same
+// rule posture.currentStreak() enforces, now applied to the ladder that actually moves the gate.
+// A missing baseline returns 0, which decidePromotion turns into a HOLD: fail-closed, never a
+// promotion on days we cannot vouch for, and never a demotion either (only an open breaker demotes).
 async function cleanDaysSinceLastGrant(sql: any, companyId: string): Promise<number> {
+  const baselineFrom = await readBaseline(sql, companyId)
+  if (!baselineFrom) return 0
   const g = (await sql`SELECT created_at FROM autonomy_grants WHERE company_id=${companyId} ORDER BY created_at DESC LIMIT 1`) as any[]
   const sinceMs = g[0]?.created_at ? new Date(new Date(g[0].created_at).toISOString().split('T')[0]).getTime() : null
-  const rows = (await sql`SELECT day, clean FROM autonomy_clean_days WHERE product_id=${companyId} ORDER BY day DESC LIMIT 40`) as any[]
+  const rows = (await sql`SELECT day, clean FROM autonomy_clean_days
+                          WHERE product_id=${companyId}
+                            AND criteria_version >= ${CRITERIA_VERSION}
+                            AND day >= ${baselineFrom}::date
+                          ORDER BY day DESC LIMIT 40`) as any[]
   let n = 0
   let prevMs: number | null = null
   for (const row of rows) {
@@ -90,6 +140,22 @@ async function cleanDaysSinceLastGrant(sql: any, companyId: string): Promise<num
   return n
 }
 
+/**
+ * The streak stored on os_autonomy_state, computed by the SAME function the posture tracker uses.
+ * Returns the version alongside the number so the stored value is never ambiguous about its origin.
+ * Unreadable baseline → 0 at the current version (fail-closed), consistent with the promotion path.
+ */
+async function v2Streak(sql: any, companyId: string): Promise<{ days: number; criteria: number }> {
+  try {
+    const baselineFrom = await readBaseline(sql, companyId)
+    if (!baselineFrom) return { days: 0, criteria: CRITERIA_VERSION }
+    const { streak } = await currentStreak(sql, companyId, baselineFrom)
+    return { days: streak, criteria: CRITERIA_VERSION }
+  } catch {
+    return { days: 0, criteria: CRITERIA_VERSION }
+  }
+}
+
 async function breakerOpen(sql: any, companyId: string): Promise<boolean> {
   const r = (await sql`SELECT 1 FROM circuit_breaker_state WHERE product_id=${companyId} AND state='open' LIMIT 1`) as any[]
   return r.length > 0
@@ -101,9 +167,13 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
   const [cleanSinceLastGrant, open, streak] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
-    getCleanStreak(sql, companyId).then((s) => s.streakDays).catch(() => 0),
+    v2Streak(sql, companyId),
   ])
-  return { ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust }), cleanStreak: streak }
+  return {
+    ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust }),
+    cleanStreak: streak.days,
+    cleanStreakCriteria: streak.criteria,
+  }
 }
 
 // Apply the earned decision(s) through the AUDITED, token-gated path. For EACH rung we write the
@@ -120,11 +190,11 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
 // Idempotent when nothing is owed: no grant, no write.
 export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?: any) {
   const sql = sqlOverride ?? getSql()
-  const { level, trust } = await readState(sql, companyId)
+  const { level, trust, storedStreak } = await readState(sql, companyId)
   const [budget0, open, streak] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
-    getCleanStreak(sql, companyId).then((s) => s.streakDays).catch(() => 0),
+    v2Streak(sql, companyId),
   ])
 
   let curLevel = level
@@ -143,12 +213,30 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
     await sql`INSERT INTO autonomy_grants (company_id, from_level, to_level, direction, reason, clean_days, trust, created_by)
               VALUES (${companyId}, ${d.from}, ${d.to}, ${d.action}, ${d.reason}, ${budget}, ${curTrust}, 'autonomy_promotion_job')`
     curTrust = d.action === 'promote' ? curTrust + TRUST_STEP : Math.max(0, curTrust - TRUST_STEP)
-    await sql`UPDATE os_autonomy_state SET level=${d.to}, trust=${curTrust}, clean_day_streak=${streak}, updated_at=NOW() WHERE company_id=${companyId}`
+    await sql`UPDATE os_autonomy_state SET level=${d.to}, trust=${curTrust},
+                     clean_day_streak=${streak.days}, clean_day_streak_criteria=${streak.criteria},
+                     updated_at=NOW()
+               WHERE company_id=${companyId}`
 
     trail.push({ from: d.from, to: d.to, action: d.action as 'promote' | 'demote', reason: d.reason })
     curLevel = d.to
     if (d.action === 'demote') break // a breaker trip steps down exactly one rung — never a cascade
     budget -= CLEAN_DAYS_PER_RUNG // this rung consumed its earned clean day(s)
+  }
+
+  // PS-AUTONOMY-CRITERIA-01 — keep the stored streak honest even when nothing moved. Before this,
+  // clean_day_streak was only ever written alongside a rung, so at the l5 cap (where no rung can
+  // ever land again) it froze at whatever the last promotion saw — a v1 5 sitting next to the
+  // posture tracker's v2 0, on the same table, forever. Sync it on the hold path too.
+  //
+  // Deliberately narrow: this touches ONLY the two streak columns, never `level` or `trust`. It
+  // cannot promote and cannot demote — the level is not in the statement. It is also conditional,
+  // so an unchanged streak writes nothing and does not spend an audit row per day.
+  const streakStale = !trail.length && (storedStreak.days !== streak.days || storedStreak.criteria !== streak.criteria)
+  if (streakStale) {
+    await sql`UPDATE os_autonomy_state
+                 SET clean_day_streak=${streak.days}, clean_day_streak_criteria=${streak.criteria}
+               WHERE company_id=${companyId}`
   }
 
   const netAction: 'promote' | 'demote' | 'hold' =
@@ -167,7 +255,8 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
     cleanSinceLastGrant: budget0,
     breakerOpen: open,
     trust,
-    cleanStreak: streak,
+    cleanStreak: streak.days,
+    cleanStreakCriteria: streak.criteria,
     applied: trail.length > 0,
     rungs: trail.length,
     trail,
@@ -176,12 +265,21 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
 }
 
 // Latest finalized clean-day result (the compute cron writes YESTERDAY once the day is over).
-async function latestCleanDay(sql: any, companyId: string): Promise<{ day: string | null; clean: boolean | null; violations: string[] }> {
-  const r = (await sql`SELECT day, clean, violations FROM autonomy_clean_days WHERE product_id=${companyId} ORDER BY day DESC LIMIT 1`) as any[]
+// PS-AUTONOMY-CRITERIA-01: same v2 + baseline filter as the promotion decision, so the day the
+// Telegram line reports is the day the ladder actually counted. Reporting a v1 row here while
+// promoting on v2 rows would put a "clean ✅" next to a hold nobody could explain.
+async function latestCleanDay(sql: any, companyId: string): Promise<{ day: string | null; clean: boolean | null; violations: string[]; criteriaVersion: number | null }> {
+  const baselineFrom = await readBaseline(sql, companyId)
+  if (!baselineFrom) return { day: null, clean: null, violations: [], criteriaVersion: null }
+  const r = (await sql`SELECT day, clean, violations, criteria_version FROM autonomy_clean_days
+                       WHERE product_id=${companyId}
+                         AND criteria_version >= ${CRITERIA_VERSION}
+                         AND day >= ${baselineFrom}::date
+                       ORDER BY day DESC LIMIT 1`) as any[]
   const row = r[0]
-  if (!row) return { day: null, clean: null, violations: [] }
+  if (!row) return { day: null, clean: null, violations: [], criteriaVersion: null }
   const v = Array.isArray(row.violations) ? row.violations : (typeof row.violations === 'string' ? JSON.parse(row.violations || '[]') : [])
-  return { day: new Date(row.day).toISOString().split('T')[0], clean: row.clean, violations: v }
+  return { day: new Date(row.day).toISOString().split('T')[0], clean: row.clean, violations: v, criteriaVersion: Number(row.criteria_version) }
 }
 
 // Map enforcement level -> Kaan's L-label for the daily line (L1==manual).
@@ -206,10 +304,13 @@ export async function cronAutonomyPromotion(req: any, res: any) {
       result.action === 'promote' ? `PROMOTED ${result.from} → ${result.to} (earned)`
       : result.action === 'demote' ? `DEMOTED ${result.from} → ${result.to} (${result.reason})`
       : `held at ${lLabel(result.to)} — ${result.reason}`
+    // The streak carries its criteria version inline. This surface and the posture line read the
+    // same table, and an unlabelled number here is what made "5" and "0" look contradictory when
+    // they were simply answers to two different questions.
     await sendTelegram(
       `🎖️ <b>PhishSim Autonomy</b>\n` +
-      `Level: ${lLabel(result.to)} · clean-day streak: ${result.cleanStreak ?? 0}\n` +
-      `${cd.day ?? 'today'}: ${dayState}\n` +
+      `Level: ${lLabel(result.to)} · clean-day streak: ${result.cleanStreak ?? 0} (criteria v${result.cleanStreakCriteria ?? '?'})\n` +
+      `${cd.day ?? 'no v' + CRITERIA_VERSION + ' day judged yet'}: ${dayState}\n` +
       `Today: ${move}`,
     ).catch(() => {})
     return res.json({ ok: true, ...result, latestCleanDay: cd })
