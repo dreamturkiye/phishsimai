@@ -3,6 +3,7 @@ import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
+import { evaluatePosture, postureLine } from '../os/posture'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
 // PhishSim's task loop — that is why agentReflection had "no callers". Wiring it here injects an
@@ -1077,7 +1078,17 @@ system record backs it.
   const assignmentLines = newTasks.length
     ? `\n\n📋 *Assigned:*\n${newTasks.map((t: any) => `• ${t.agent}: ${t.title}`).join('\n')}`
     : ''
-  const telegramMsg = `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse}${assignmentLines}\n\n_${reports.length} agents reported | ${issuance}_`
+
+  // PS-POSTURE-01: one line so the founder WATCHES the L5.7/L5.8 posture graduate rather than
+  // discovering it graduated. Shows the denominator and the next blocker, never a bare state.
+  // Best-effort: a tracker read must never take the standup down.
+  const posture = await evaluatePosture(sql as any, companyId)
+    .then(ev => `\n\n${postureLine(ev)}`)
+    .catch((e: any) => {
+      console.error(`[kaan_os_v4] posture line unavailable: ${String(e?.message || e).slice(0, 120)}`)
+      return '\n\n🎖 Posture: UNAVAILABLE (tracker read failed — not a pass)'
+    })
+  const telegramMsg = `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse}${assignmentLines}${posture}\n\n_${reports.length} agents reported | ${issuance}_`
   await sendTelegram(telegramMsg).catch(() => {})
 
   return { meeting_id: meeting?.id || '', reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
