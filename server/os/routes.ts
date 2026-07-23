@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
-import { computeCleanDay, getAutonomyLevel, getCleanStreak, recordIncident } from './cleanDays'
+import { getCleanStreak, recordIncident } from './cleanDays'
+import { recordDay, evaluatePosture, declarePosture, postureLine } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
@@ -1156,13 +1157,27 @@ export async function architectAutonomy(req: Request, res: Response) {
     if (action === 'compute') {
       // Default YESTERDAY: a day is only judgeable once it is over. Computing "today" at
       // 10am would call every day clean until something breaks after lunch.
+      //
+      // PS-POSTURE-01: judged by recordDay() (criteria v2 — the five counter classes) instead of
+      // the old three-check computeCleanDay. v1 scored 2026-07-18 as clean; that was the day of
+      // the unearned-l4 incident and 20 un-gated sends. The classes that would have caught it
+      // simply were not counted.
       const day = String(req.query.day || new Date(Date.now() - 86400000).toISOString().split('T')[0])
-      const result = await computeCleanDay(sql, 'phishsimai', day)
-      return res.json({ product: 'phishsimai', day, ...result })
+      const result = await recordDay(sql, 'phishsimai', day)
+      const ev = await evaluatePosture(sql, 'phishsimai')
+      return res.json({ product: 'phishsimai', day, ...result, posture: ev.posture, next: ev.nextStep })
     }
-    const level = await getAutonomyLevel(sql, 'phishsimai')
+    if (action === 'declare') {
+      // GRADUATION IS DECLARED, NOT AUTO-PROMOTED (spec + the 07-18 lesson). A named human is
+      // mandatory, and declarePosture refuses anything evaluatePosture has not already earned.
+      const to = String(req.query.to || '') as any
+      const by = String(req.query.by || '')
+      const out = await declarePosture(sql, 'phishsimai', to, by, { force: req.query.force === '1' })
+      return res.status(out.ok ? 200 : 409).json(out)
+    }
+    const ev = await evaluatePosture(sql, 'phishsimai')
     const streak = await getCleanStreak(sql, 'phishsimai')
-    return res.json({ product: 'phishsimai', ...level, lastComputedDay: streak.lastComputedDay })
+    return res.json({ product: 'phishsimai', ...ev, line: postureLine(ev), lastComputedDay: streak.lastComputedDay })
   } catch (e: any) {
     // Fail LOUD. An autonomy endpoint that 200s on error is an instrument reporting health it
     // cannot verify -- precisely what this ladder exists to prevent.

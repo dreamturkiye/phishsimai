@@ -102,17 +102,20 @@ export async function getBreakerHandledCount(sql: SqlLike, productId: string, si
   }
 }
 
-export async function getAutonomyLevel(sql: SqlLike, productId: string): Promise<{ level: string; streakDays: number; handledTrips: number; gate: string }> {
-  const streak = await getCleanStreak(sql, productId);
-  if (streak.streakDays >= 5) {
-    const sinceDay = new Date(new Date(streak.lastComputedDay as string).getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const handledTrips = await getBreakerHandledCount(sql, productId, sinceDay);
-    if (handledTrips >= 1) {
-      return { level: 'L5.7', streakDays: streak.streakDays, handledTrips, gate: 'passed: 5 clean days + breaker trip handled' };
-    } else {
-      return { level: 'L5.6', streakDays: streak.streakDays, handledTrips, gate: 'blocked: 5 clean days but no handled breaker trip in window -- inject one per Section A' };
-    }
-  } else {
-    return { level: 'L5.6', streakDays: streak.streakDays, handledTrips: 0, gate: `building: ${streak.streakDays} of 5 consecutive clean days` };
-  }
-}
+// ── PS-POSTURE-01: getAutonomyLevel() REMOVED — it was a third vocabulary that graded nothing.
+//
+// It returned the strings 'L5.6' and 'L5.7' and wrote them nowhere. Two problems, both fatal:
+//
+//   1. 'L5.6' DOES NOT EXIST. Grep KAAN_AI_OS_V7.3 (the governing architecture) for "L5.6":
+//      zero hits. It was invented here as a name for "not yet L5.7". The spec defines exactly
+//      two postures on this axis, L5.7 and L5.8, and reaching either is a declaration backed by
+//      measured exit criteria — not a string a getter returns.
+//   2. Nothing consumed it. It never wrote os_autonomy_state (and could not: the CHECK
+//      constraint admits only manual|l2|l3|l4|l5), so the OS carried two ladders with different
+//      vocabularies, one of which moved nothing. A level nobody enforces is decoration that
+//      reads like governance — the exact failure mode this codebase keeps re-learning.
+//
+// The measurement primitives below (computeCleanDay, getCleanStreak, getBreakerHandledCount)
+// were always the valuable part and are KEPT. What replaces the getter is `posture.ts`, which
+// grades against the spec's real criteria, records WHICH criteria version judged each day, and
+// reports eligibility for a human to declare. See evaluatePosture() / declarePosture().
