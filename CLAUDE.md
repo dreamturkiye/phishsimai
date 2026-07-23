@@ -15,6 +15,17 @@ Project-specific notes for working in this repo.
   ```
   (plain `echo >>` has failed to land.) Delete the file after use.
 
+## Daily autonomy cron chain (ordering is load-bearing)
+- These four crons form a dependency chain. `vercel.json` is strict JSON and cannot say so; `server/os/cronOrdering.test.ts` enforces it and fails the build if a link moves out of order.
+  ```
+  06:00  /api/os/metrics-snapshot            writes metrics_daily for YESTERDAY
+  06:30  /api/os/architect/autonomy?compute  judges YESTERDAY (needs that row)
+  06:40  /api/os/autonomy-promote            reads the finalized clean day
+  08:00  /api/os/janet                       standup renders the posture line
+  ```
+- ⚠️ Posture check 8 requires a `metrics_daily` row for the judged day; a missing one is `unmeasured`, and **unmeasured is not clean**. Compute used to run at 00:10 — 5h50m *before* the snapshot it depends on — so every day was judged not-clean and the L5.7 gate was unreachable. v1 `computeCleanDay` had no metrics check and scored those days clean, which is why it stayed invisible until PS-POSTURE-01 moved the cron to v2 `recordDay`.
+- Each link judges "yesterday" from its own clock, so the whole chain must stay within one UTC day. Don't move a link past midnight.
+
 ## LLM / models
 - AI features route through **`llmComplete`** (`server/os/llmChat.ts`). Default chain: **Cerebras (free) → DeepInfra (cheap paid) → Ollama Cloud (last resort)**, from `DEFAULT_CHAIN` in that file.
 - ⚠️ **`LLM_PROVIDER_CHAIN` unconditionally overrides `DEFAULT_CHAIN`.** If it is set in Vercel, a change to the code default has *no effect in prod*. Check the env before assuming a chain change took effect — a stale value here is how ScrollFuel shipped new providers that silently never ran.
