@@ -92,15 +92,23 @@ export async function getCleanStreak(sql: SqlLike, productId: string): Promise<{
   return { streakDays, lastComputedDay };
 }
 
-export async function getBreakerHandledCount(sql: SqlLike, productId: string, sinceDayIso: string): Promise<number> {
-  try {
-    const sinceDay = new Date(sinceDayIso);
-    const rows = (await sql`SELECT COUNT(*) FROM circuit_breaker_state WHERE product_id = ${productId} AND state = 'closed' AND opened_at IS NOT NULL AND opened_at >= ${sinceDay}`) as any[];
-    return Number(rows[0].count);
-  } catch {
-    return 0;
-  }
-}
+// ── PS-POSTURE-02: getBreakerHandledCount() REMOVED — its predicate was unsatisfiable.
+//
+//   WHERE state = 'closed' AND opened_at IS NOT NULL
+//
+// Closing a breaker sets openedAt: null together with state: 'closed' (circuitBreaker.ts
+// applyOutcome on success, and manualClose). So a HANDLED trip stops matching the moment it is
+// handled, and an UNHANDLED trip is still 'open' and never matched either. The predicate
+// describes a row state the schema never holds: it returned 0 unconditionally.
+//
+// It also returned 0 on error, making "could not measure" indistinguishable from "none happened"
+// — the same conflation this OS keeps paying for.
+//
+// Worse than wrong, it was wrong in the direction that punishes correct behaviour: the spec's
+// L5.7 gate needs ≥1 breaker trip HANDLED CLEANLY, so doing exactly the right thing still scored
+// zero and the gate could never be passed. Replaced by posture.handledTrips(), which counts the
+// persistent evidence — the 'breaker_trip' escalation row, which survives the close — and returns
+// null (blocking) rather than 0 when it cannot measure.
 
 // ── PS-POSTURE-01: getAutonomyLevel() REMOVED — it was a third vocabulary that graded nothing.
 //

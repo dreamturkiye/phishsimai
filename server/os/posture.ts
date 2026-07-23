@@ -211,11 +211,34 @@ export async function currentStreak(sql: SqlLike, productId: string, baselineFro
   return { streak, lastDay: rows[0].day, firstDay }
 }
 
-/** Breaker trips that OPENED and were brought back closed within the window — "handled cleanly". */
+/**
+ * Breaker trips that OPENED and were brought back closed within the window — "handled cleanly",
+ * the second half of the spec's L5.7 gate.
+ *
+ * PS-POSTURE-02. The obvious query is the one cleanDays.getBreakerHandledCount used, and it is
+ * unsatisfiable:
+ *
+ *   WHERE state='closed' AND opened_at IS NOT NULL      -- can never be true
+ *
+ * Closing a breaker (applyOutcome on success, and manualClose) sets `openedAt: null` along with
+ * `state:'closed'`. So the moment a trip is handled, the row stops matching — and an UNhandled
+ * trip is still 'open', which also does not match. The predicate describes a state the schema
+ * never holds, so it returned 0 forever and made the criterion impossible to satisfy by doing
+ * the right thing. A gate nobody can pass is not a strict gate, it is a broken one.
+ *
+ * Count the PERSISTENT evidence instead: a trip raises an `escalations` row (category
+ * 'breaker_trip', payload.fingerprint), and that row survives the close. A trip is "handled"
+ * when its escalation exists in the window AND its breaker is now closed.
+ */
 export async function handledTrips(sql: SqlLike, productId: string, sinceIso: string): Promise<number | null> {
   try {
-    const rows = (await sql`SELECT count(*) AS n FROM circuit_breaker_state
-      WHERE product_id=${productId} AND state='closed' AND opened_at IS NOT NULL AND opened_at >= ${sinceIso}::date`) as any[]
+    const rows = (await sql`
+      SELECT count(*) AS n FROM escalations e
+      WHERE e.product_id=${productId} AND e.category='breaker_trip' AND e.created_at >= ${sinceIso}::date
+        AND EXISTS (
+          SELECT 1 FROM circuit_breaker_state b
+          WHERE b.fingerprint = e.payload->>'fingerprint' AND b.state = 'closed'
+        )`) as any[]
     return Number(rows[0]?.n ?? 0)
   } catch { return null } // null = could not measure; the caller must treat that as blocking
 }
