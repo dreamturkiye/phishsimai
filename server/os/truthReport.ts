@@ -137,9 +137,14 @@ export async function buildTruthReport(): Promise<string> {
   L.push(`DELIVERED      ${NOT_MEASURED} — not mirrored into this DB (authoritative: Resend API)`)
   L.push(`OPENS/CLICKS   ${RED} ${NOT_MEASURED} — open_tracking + click_tracking DISABLED on domain`)
 
+  // PS-PHANTOM-02: `replied` is a REAL metric with a working writer (replyParser + the live
+  // /api/os/webhook/reply endpoint), so a zero is NOT a phantom — it is bucket-2 "no data yet".
+  // But because `replied` is only ever written on capture, a zero cannot itself distinguish
+  // "no prospect has replied" from "the inbound relay is not delivering". Say exactly that,
+  // rather than a bare NOT_MEASURED that reads as broken.
   const repliesMeasurable = await measurability(sql, 'replied')
   L.push(
-    `REPLIES        ${repliesMeasurable ? String((await sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE replied`)[0].n) : RED + ' ' + NOT_MEASURED + ' — nothing has ever written replied'}`,
+    `REPLIES        ${repliesMeasurable ? String((await sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE replied`)[0].n) : '0 so far — inbound relay UNVERIFIED (endpoint live; no reply ever captured, so this is "no data yet", not confirmed-zero)'}`,
   )
 
   // ---- ICYPEAS CREDITS (PS-FINDER-ICYPEAS-01) ----

@@ -203,12 +203,25 @@ Turn the new lead batch into a concrete MSP/security compliance outreach sequenc
   }
 
   if (metrics.touched > 20 && replyRate < 3) {
-    await assignOnce(sql, companyId, assigned, 'aria',
-      'Rewrite compliance outreach hooks',
-      `${WORLD_CLASS_CGO_STANDARD}
+    // PS-PHANTOM-02: a 0% reply rate is only a MESSAGING signal once the inbound reply relay has
+    // proven it can capture a reply. `replied` is monotonic (set true on capture, never reset), so
+    // metrics.replies === 0 means NO reply has EVER been captured — which cannot distinguish "bad
+    // copy" from "the inbound pipe is dead". Attributing an unverified zero to the message and
+    // assigning a hook rewrite is the exact phantom-task shape (a structurally/unverified-zero
+    // metric → inferred fault → wrong work). So: prove the instrument before blaming the copy.
+    if (metrics.replies === 0) {
+      await assignOnce(sql, companyId, assigned, 'rex',
+        'Verify the inbound reply relay is delivering',
+        `${metrics.touched} prospects touched and ZERO replies have EVER been captured. Do NOT treat this as a messaging problem yet — it is unverified. The /api/os/webhook/reply endpoint is live (returns 200 and classifies), but no reply has ever reached it, so a 0% reply rate may mean the Google Workspace forward relay is not wired and every prospect reply is being dropped. Send a controlled test reply from an address matching a seeded lead and confirm the lead's \`replied\` flips to true. Only if capture is confirmed does the reply rate become a messaging signal.`,
+        18)
+    } else {
+      await assignOnce(sql, companyId, assigned, 'aria',
+        'Rewrite compliance outreach hooks',
+        `${WORLD_CLASS_CGO_STANDARD}
 
-Reply rate is ${replyRate.toFixed(1)}%. Produce 3 MSP/compliance hooks using breach risk, audit evidence, and white-label positioning. Each hook must include buyer pain, proof angle, CTA, and why it should outperform the current message.`,
-      18)
+Reply rate is ${replyRate.toFixed(1)}% (capture confirmed — ${metrics.replies} reply(ies) received). Produce 3 MSP/compliance hooks using breach risk, audit evidence, and white-label positioning. Each hook must include buyer pain, proof angle, CTA, and why it should outperform the current message.`,
+        18)
+    }
   }
 
   if (bounceRate > 8) {

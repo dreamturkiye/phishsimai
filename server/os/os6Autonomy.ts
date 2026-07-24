@@ -100,7 +100,7 @@ function cycleIdFor(companyId: string, trigger: Trigger) {
   return `${companyId}:os6:${trigger}:${new Date().toISOString()}`
 }
 
-function zeroMetrics(): Os6Metrics {
+export function zeroMetrics(): Os6Metrics {
   return {
     organizations: 0,
     paidOrganizations: 0,
@@ -353,10 +353,17 @@ function metricDeltas(current: Os6Metrics, previous: Partial<Os6Metrics>): Metri
   return out
 }
 
-function deterministicReasoning(metrics: Os6Metrics, deltas: MetricDelta) {
+export function deterministicReasoning(metrics: Os6Metrics, deltas: MetricDelta) {
   const constraints = []
   if (metrics.leads > 0 && metrics.touched === 0) constraints.push('MSP/security lead pipeline is not being touched')
-  if (metrics.touched > 20 && metrics.replyRate < 3) constraints.push('reply rate is under the minimum viable outbound threshold')
+  // PS-PHANTOM-02: an unverified 0% reply rate (no reply EVER captured) is not a messaging
+  // constraint — it is an unverified inbound relay. Don't let Janet reason toward "fix the copy"
+  // from a metric whose capture pipe has never proven it works.
+  if (metrics.touched > 20 && metrics.replyRate < 3) {
+    constraints.push(metrics.replies === 0
+      ? 'reply rate is 0% but NO reply has ever been captured — treat this as an UNVERIFIED inbound relay to confirm, not a messaging failure to fix'
+      : 'reply rate is under the minimum viable outbound threshold')
+  }
   if (metrics.engaged > 0 && metrics.customers === 0) constraints.push('engaged pipeline is not converting into customers')
   if (metrics.organizations > 3 && metrics.paidOrganizations === 0) constraints.push('organizations exist but paid conversion is zero')
   if (metrics.campaigns === 0 && metrics.organizations > 0) constraints.push('product activation is weak because no campaigns exist')
