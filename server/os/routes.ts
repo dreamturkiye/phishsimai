@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import { getCleanStreak, recordIncident } from './cleanDays'
-import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION } from './posture'
+import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
@@ -1176,7 +1176,13 @@ export async function architectAutonomy(req: Request, res: Response) {
       const day = String(req.query.day || new Date(Date.now() - 86400000).toISOString().split('T')[0])
       const result = await recordDay(sql, 'phishsimai', day)
       const ev = await evaluatePosture(sql, 'phishsimai')
-      return res.json({ product: 'phishsimai', day, ...result, posture: ev.posture, next: ev.nextStep })
+      // PS-POSTURE-ALARM-01: page the founder the moment a day fails to judge clean — a stalled
+      // streak or an unmeasured criterion must not wait to be spotted in the daily brief. Silence
+      // means clean; a message means the gate stalled and says exactly why. Best-effort: an alarm
+      // that can't send must never fail the compute that produced the verdict.
+      const alarm = buildPostureAlarm(day, result, ev)
+      if (alarm) await sendTelegram(alarm).catch(() => {})
+      return res.json({ product: 'phishsimai', day, ...result, posture: ev.posture, next: ev.nextStep, alarmed: !!alarm })
     }
     if (action === 'declare') {
       // GRADUATION IS DECLARED, NOT AUTO-PROMOTED (spec + the 07-18 lesson). A named human is

@@ -218,21 +218,58 @@ async function mevCredits(): Promise<number | null> {
 }
 
 // Balance + day-over-day burn + ~days-left + LOW / dropping-fast flags. Logs this reading for trend.
-async function creditLine(sql: any, provider: string, current: number | null, low: number, label: string): Promise<string> {
-  if (current == null) return `${label}: unknown ⚠️ (balance check failed)`
+// PS-CREDIT-ALARM-01: runway threshold at which a balance stops being a status line and becomes a
+// page. Distinct from creditLine's ≤7-day passive "DROPPING FAST" and from the hard low floor: this
+// is "act now, you have days, not weeks". Tunable here without a deploy of logic.
+export const CREDIT_RUNWAY_ALARM_DAYS = 2
+
+type CreditRead = { line: string; current: number | null; daysLeft: number | null }
+
+async function creditLine(sql: any, provider: string, current: number | null, low: number, label: string): Promise<CreditRead> {
+  if (current == null) return { line: `${label}: unknown ⚠️ (balance check failed)`, current: null, daysLeft: null }
   let trend = ''
+  let daysLeft: number | null = null
   try {
     const prev = (await sql`SELECT credits FROM credit_readings WHERE provider=${provider} AND read_at < now() - interval '20 hours' ORDER BY read_at DESC LIMIT 1`) as Array<{ credits: number }>
     await sql`INSERT INTO credit_readings (provider, credits) VALUES (${provider}, ${current})`
     const burn = prev[0] ? Number(prev[0].credits) - current : 0
     if (burn > 0) {
-      const daysLeft = Math.floor(current / burn)
+      daysLeft = Math.floor(current / burn)
       trend = ` (−${burn.toLocaleString()}/day, ~${daysLeft}d left${daysLeft <= 7 ? ' ⏬ DROPPING FAST' : ''})`
     }
   } catch {
     /* trend is best-effort */
   }
-  return `${label}: ${current.toLocaleString()}${current < low ? ' 🔴 LOW — top up' : ''}${trend}`
+  return { line: `${label}: ${current.toLocaleString()}${current < low ? ' 🔴 LOW — top up' : ''}${trend}`, current, daysLeft }
+}
+
+/**
+ * PS-CREDIT-ALARM-01 — a shared-pool balance must PAGE, not just print.
+ *
+ * Icypeas is ~2 days of runway on a pool shared with ScrollFuel; the funnel already prints the
+ * balance, but printing is not alarming (the `sent: 0`-for-8-days lesson). Three page-worthy
+ * shapes, each a separate loud 🚨 so it can't hide inside the funnel digest:
+ *   • UNREADABLE — the balance check failed, so burn is now unmonitored. Blind = alarm, by the
+ *     same rule that says no-news must mean the monitor died, not that things are fine.
+ *   • BELOW FLOOR — under the founder-set hard floor; top up now.
+ *   • RUNWAY ≤ N days — burning to zero within days; act before it floors.
+ * Pure and exported so the thresholds are unit-tested, not just hoped at.
+ */
+export function buildCreditAlarms(
+  reads: { provider: string; floor: number; current: number | null; daysLeft: number | null }[],
+  runwayAlarmDays = CREDIT_RUNWAY_ALARM_DAYS,
+): string[] {
+  const out: string[] = []
+  for (const r of reads) {
+    if (r.current == null) {
+      out.push(`🚨 <b>PhishSim CREDITS — ${r.provider} balance UNREADABLE</b>\nThe balance check failed, so burn is now unmonitored. Treat as blind until it reads again — a silent meter is not a full one.`)
+    } else if (r.current < r.floor) {
+      out.push(`🚨 <b>PhishSim CREDITS — ${r.provider} below floor</b>\n${r.current.toLocaleString()} left (floor ${r.floor.toLocaleString()}). Top up now — the finder stops when this hits zero.`)
+    } else if (r.daysLeft != null && r.daysLeft <= runwayAlarmDays) {
+      out.push(`🚨 <b>PhishSim CREDITS — ${r.provider} runway ${r.daysLeft}d</b>\n${r.current.toLocaleString()} left, burning to zero in ~${r.daysLeft} day(s). Act before it floors.`)
+    }
+  }
+  return out
 }
 
 // PS-FUNNEL-01: ONE daily Telegram line so Kaan can watch harvest → valid/day end to end. Read-only.
@@ -322,13 +359,20 @@ export async function cronOutreachFunnel(req: any, res: any) {
     await ensureCreditLog(sql)
     // PS-FINDER-ICYPEAS-01: report the ICYPEAS finder balance in place of AMF (retired at 0).
     const [icy, mev] = await Promise.all([icypeasCredits(), mevCredits()])
-    const icyLine = await creditLine(sql, 'icypeas', icy, ICY_LOW, 'Icypeas finder (shared w/ ScrollFuel)')
-    const mevLine = await creditLine(sql, 'mev', mev, MEV_LOW, 'MEV verifier')
+    const icyC = await creditLine(sql, 'icypeas', icy, ICY_LOW, 'Icypeas finder (shared w/ ScrollFuel)')
+    const mevC = await creditLine(sql, 'mev', mev, MEV_LOW, 'MEV verifier')
+    // PS-CREDIT-ALARM-01: page on unreadable / below-floor / short-runway, each as its own loud
+    // 🚨 so it can't be lost inside the funnel digest. Icypeas is the shared ~2-day pool — this is
+    // the credit half of "if it matters enough to write a checklist for, it matters enough to alarm".
+    for (const a of buildCreditAlarms([
+      { provider: 'Icypeas', floor: ICY_LOW, current: icyC.current, daysLeft: icyC.daysLeft },
+      { provider: 'MEV', floor: MEV_LOW, current: mevC.current, daysLeft: mevC.daysLeft },
+    ])) await sendTelegram(a).catch(() => {})
     await sendTelegram(
       `📊 <b>PhishSim outreach funnel · 24h</b>\n` +
         `harvested ${harvested24} → queue ${queuePending} pending → enriched ${enriched24} → verified-valid ${valid24}${unverified24 > 0 ? ` ⚠️ +${unverified24} promoted UNVERIFIED` : ''} → sendable ${sendablePreSend} pre-send (${sendableNow} left) → sent ${sent24}\n` +
         `${healthLine}\n${runwayLine}\n${budgetLine}\n` +
-        `💳 ${icyLine}\n💳 ${mevLine}`,
+        `💳 ${icyC.line}\n💳 ${mevC.line}`,
     ).catch(() => {})
     return res.json({ ok: true, ...funnel, credits: { icypeas: icy, mev } })
   } catch (e: any) {
