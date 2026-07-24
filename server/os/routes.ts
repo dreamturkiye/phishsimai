@@ -473,7 +473,11 @@ export async function hqData(req: Request, res: Response) {
       count(*) filter(where pipeline_stage='prospect') as prospects,
       count(*) filter(where bounced=true and touch1_sent_at is not null) as bounced,
       count(*) filter(where touch1_sent_at is not null) as apollo_sent
-      FROM ps_outreach_leads WHERE bounced=false OR source='apollo'`
+      -- PS-SENDS-COUNT-01: count over ALL leads. The old `WHERE bounced=false OR source='apollo'`
+      -- dropped every bounced lead from the dataset, so a "sends" count excluded ~20 emails that
+      -- WERE sent (understating 273→253) AND the bounced count could never be >0 (bounced=true is
+      -- impossible in a bounced=false dataset → 0, a 0% bounce rate that was itself a phantom).
+      FROM ps_outreach_leads`
 
     const recentLeads = await sql`SELECT name, company, email, pipeline_stage, touch1_sent_at, touch2_sent_at, replied, bounced, created_at
       FROM ps_outreach_leads ORDER BY created_at DESC LIMIT 20`
