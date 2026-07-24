@@ -473,11 +473,12 @@ export async function hqData(req: Request, res: Response) {
       count(*) filter(where pipeline_stage='prospect') as prospects,
       count(*) filter(where bounced=true and touch1_sent_at is not null) as bounced,
       count(*) filter(where touch1_sent_at is not null) as apollo_sent
-      -- PS-SENDS-COUNT-01: count over ALL leads. The old `WHERE bounced=false OR source='apollo'`
-      -- dropped every bounced lead from the dataset, so a "sends" count excluded ~20 emails that
-      -- WERE sent (understating 273→253) AND the bounced count could never be >0 (bounced=true is
-      -- impossible in a bounced=false dataset → 0, a 0% bounce rate that was itself a phantom).
       FROM ps_outreach_leads`
+    // PS-SENDS-COUNT-01: count over ALL leads. The old "WHERE bounced=false OR source=apollo"
+    // dropped every bounced lead from the dataset, so "sends" excluded ~20 emails that WERE sent
+    // (understating 273 to 253), AND the bounced count could never exceed 0 in a bounced=false
+    // dataset (a phantom 0% bounce rate). The comment lives OUT of the sql`` template on purpose:
+    // a backtick inside a tagged template literal terminates it.
 
     const recentLeads = await sql`SELECT name, company, email, pipeline_stage, touch1_sent_at, touch2_sent_at, replied, bounced, created_at
       FROM ps_outreach_leads ORDER BY created_at DESC LIMIT 20`
