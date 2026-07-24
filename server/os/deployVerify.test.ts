@@ -82,11 +82,13 @@ describe('probeDeployTarget — a transient failure is UNMEASURED, never a misma
 })
 
 // ── the honest half: posture probe 7 now blocks on absence ───────────────────
-function sqlWith(deployRows: any[], otherZero = true) {
+function sqlWith(deployRows: any[], birth: string | null = '2026-07-24') {
   // A tiny fake that returns [{n}] counts. Everything not about deploy_verifications returns 0,
-  // and metrics returns 1 so the ONLY thing under test is the deploy probe.
+  // and metrics returns 1 so the ONLY thing under test is the deploy probe. `birth` is the
+  // instrument-birth date returned by the MIN(checked_at) query (PS-DEPLOY-VERIFY-02).
   return (async (strings: TemplateStringsArray) => {
     const q = strings.join(' ')
+    if (/MIN\(checked_at\)/.test(q)) return [{ birth }]
     if (/deploy_verifications/.test(q) && /match=false/.test(q)) return [{ n: deployRows.filter(r => r.match === false).length }]
     if (/deploy_verifications/.test(q)) return [{ n: deployRows.length }]
     if (/metrics_daily/.test(q)) return [{ n: 1 }]
@@ -111,5 +113,28 @@ describe('computeDayCounters — a day with no deploy verification is unmeasured
     const v = await computeDayCounters(sqlWith([{ match: false }, { match: true }]), 'phishsimai', '2026-07-24')
     expect(v.clean).toBe(false)
     expect(v.violations.join(' ')).toMatch(/unverified deploy/)
+  })
+})
+
+// PS-DEPLOY-VERIFY-02 — the instrument is not retroactive. A day BEFORE the writer's first row
+// must not be marked unmeasured, or recomputing any pre-writer day silently voids it — which is
+// exactly how the streak's 07-23 baseline got broken the day the writer shipped.
+describe('computeDayCounters — the deploy criterion does not reach backwards', () => {
+  it('EXEMPTS a day before the instrument was born (07-23 vs writer birth 07-24)', async () => {
+    // No deploy rows for 07-23, birth is 07-24: pre-instrument, so NOT unmeasured.
+    const v = await computeDayCounters(sqlWith([], '2026-07-24'), 'phishsimai', '2026-07-23')
+    expect(v.unmeasured.join(' ')).not.toMatch(/deploy:/)
+    expect(v.clean).toBe(true)
+  })
+
+  it('still BLOCKS a day at/after birth that has no row (a real outage, not pre-instrument)', async () => {
+    const v = await computeDayCounters(sqlWith([], '2026-07-24'), 'phishsimai', '2026-07-25')
+    expect(v.clean).toBe(false)
+    expect(v.unmeasured.join(' ')).toMatch(/deploy: no deploy-target verification/)
+  })
+
+  it('EXEMPTS every day when the writer has never run (birth = null) — no criterion from a dead instrument', async () => {
+    const v = await computeDayCounters(sqlWith([], null), 'phishsimai', '2026-07-24')
+    expect(v.unmeasured.join(' ')).not.toMatch(/deploy:/)
   })
 })
