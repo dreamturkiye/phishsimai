@@ -386,6 +386,32 @@ export async function evaluatePosture(sql: SqlLike, productId: string): Promise<
 }
 
 /**
+ * PS-POSTURE-ALARM-01 — the clean-day verdict must PAGE, not wait to be read.
+ *
+ * The founder's rule, learned the hard way (`sent: 0` unnoticed for 8 days): an expectation you
+ * have to remember to check is the weakest monitoring there is. The daily brief SHOWS the streak,
+ * but showing is not alarming — a stalled streak or an unmeasured criterion sits quietly in a
+ * line nobody is obliged to read. This turns the compute's own verdict into a page.
+ *
+ * The contract is the inversion the founder asked for: SILENCE MEANS CLEAN. A clean day returns
+ * null (no message — the streak advancing needs no announcement). A not-clean day returns a loud
+ * message naming EXACTLY what failed and whether it was a violation (something happened) or
+ * unmeasured (something could not be seen — which blocks just the same). Both are why a streak
+ * stalls, so both fire. Pure and exported so the alarm text is testable without a live send.
+ */
+export function buildPostureAlarm(day: string, verdict: DayVerdict, ev: Evaluation): string | null {
+  if (verdict.clean) return null // clean day: the streak advanced. Silence is the correct signal.
+  const lines = [
+    `🚨 <b>PhishSim POSTURE — ${day} did NOT judge clean</b>`,
+    `The L5.7 clean-day streak did not advance: still ${ev.streak}/${L5_7_CLEAN_DAYS}.`,
+  ]
+  if (verdict.violations.length) lines.push(`❌ Violations: ${verdict.violations.join('; ')}`)
+  if (verdict.unmeasured.length) lines.push(`⬛ UNMEASURED (blocks, not a pass): ${verdict.unmeasured.join('; ')}`)
+  lines.push(`A clean day was expected — the criterion above is why it stalled. Fix it or the gate stays shut.`)
+  return lines.join('\n')
+}
+
+/**
  * Advance the posture. Requires a named human declarer and refuses unless evaluatePosture()
  * already says eligible — so a declaration can confirm earned progress but never manufacture it.
  * This is the whole reason the posture axis exists separately from the auto-promoted gate.
