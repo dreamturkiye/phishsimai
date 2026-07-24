@@ -123,6 +123,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/os/deploy-verify",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/os/discover",
       "schedule": "0 */6 * * *"
     },

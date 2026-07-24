@@ -29,9 +29,13 @@ function fakeSql(routes: { match: RegExp; rows: any[] | (() => never) }[]) {
 }
 
 describe('computeDayCounters — unmeasured is not clean', () => {
-  it('counts a clean day when every probe returns zero and metrics exist', async () => {
+  it('counts a clean day when every probe returns zero, metrics exist, and the deploy target is verified', async () => {
     const sql = fakeSql([
       { match: /metrics_daily/, rows: [{ n: 1 }] },
+      // PS-DEPLOY-VERIFY-01: a clean day now also requires a deploy-target verification for the
+      // day. The mismatch counter (match=false) is 0, and the presence check finds a row.
+      { match: /deploy_verifications.*match=false/, rows: [{ n: 0 }] },
+      { match: /deploy_verifications/, rows: [{ n: 1 }] },
       { match: /count/, rows: [{ n: 0 }] },
     ])
     const v = await computeDayCounters(sql, 'phishsimai', '2026-07-24')

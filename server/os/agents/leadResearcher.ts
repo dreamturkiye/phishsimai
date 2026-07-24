@@ -1,4 +1,11 @@
 import { getSql } from '../conn'
+// PS-ICY-GUARD-01: the finder guard reuses the refill's OWN promotability predicate. Sharing the
+// function (rather than restating the rule) is deliberate — if the two ever disagree about what
+// counts as a usable address, the guard starts skipping domains the refill would never send to.
+import { isOrgInbox } from '../sanitizeRefill'
+// PS-FINDER-LEDGER-01: every paid finder call is written down, so "where did 299 credits go"
+// is a query rather than a reconstruction from row counts.
+import { recordProviderCall } from '../providerUsage'
 import { discoverMspsForCity } from './mapsDiscovery'
 import { reportAgentRun } from '../agentHealth'
 import { sendTelegram } from '../telegram'
@@ -94,6 +101,79 @@ let amfKeyWarned = false
 // — the lead did nothing wrong, AMF was down, and it should retry once AMF recovers.
 type AmfResult = { email: string; name: string | null; title: string | null } | null | 'vendor_error'
 
+// ── PS-ICY-GUARD-01: the finder chokepoint ───────────────────────────────────
+/**
+ * A finder credit must never be spent to re-derive an address we already hold.
+ *
+ * THE PRECEDENT: that is exactly how AMF's shared pool was drained to 0 (PS-REFILL-03) — the
+ * refill was calling the FINDER on ps_outreach_leads rows that already had an email in the row.
+ * That specific path is gone: sanitizeRefill.ts now only VERIFIES (MyEmailVerifier / MX) and
+ * imports no finder at all. This guard closes the same leak one layer up, where it can still
+ * happen: `lead_research_queue` is keyed by DOMAIN and has no email column, so no row here ever
+ * "has an email" in the AMF sense — but the DOMAIN can already have a perfectly good address
+ * sitting in ps_outreach_leads from the CSV import, and the finder would happily pay to find it
+ * again. Measured on prod 2026-07-24: all 7 rows that ended in status 'duplicate' were at a
+ * domain that already held a personal address. The dedup check runs AFTER the spend, so it
+ * detects the waste but does not prevent it. This runs BEFORE.
+ *
+ * WHAT IT MUST NOT DO — and this is why the predicate is narrow rather than "domain has any
+ * email": 107 of the 149 queued domains that overlap the CSV import hold ONLY generic org
+ * inboxes (info@, sales@, support@). sanitizeRefill.isOrgInbox() blocks those from ever being
+ * promoted, so they are dead stock, and finding a named human there is the single highest-value
+ * thing the finder does. A blanket domain guard would skip all 107 and starve the send pool to
+ * save credits — trading the pipeline for the meter. So: skip only when the domain already has a
+ * SENDABLE address (a real mailbox, not an org inbox, not bounced, not unsubscribed).
+ *
+ * Structural, not conventional: every finder call in this module goes through here, so a new
+ * call site cannot bypass it by forgetting a convention. Returns before any HTTP request, so a
+ * skip costs zero credits with either vendor.
+ */
+export type FinderOutcome = AmfResult | 'already_have_sendable'
+
+/** Addresses at this domain that we could actually send to today. */
+async function sendableAddressesAtDomain(sql: ReturnType<typeof getSql>, domain: string): Promise<string[]> {
+  const d = String(domain).trim().toLowerCase()
+  if (!d) return []
+  const rows = (await sql`
+    SELECT email FROM ps_outreach_leads
+    WHERE split_part(lower(email), '@', 2) = ${d}
+      AND bounced = false AND unsubscribed = false
+      AND pipeline_stage NOT IN ('dead')`) as Array<{ email: string }>
+  // isOrgInbox is the SAME predicate the refill uses to decide promotability. Sharing it is the
+  // point: if the refill would never send to it, holding it is not a reason to skip the finder.
+  return rows.map(r => String(r.email)).filter(e => !isOrgInbox(e))
+}
+
+/**
+ * The ONLY way this module reaches a paid finder. Mirrors ScrollFuel's findEmailForDomainOnly():
+ * check first, spend second, and say out loud when a call was skipped.
+ */
+export async function findEmailForDomainOnly(
+  sql: ReturnType<typeof getSql>,
+  domain: string,
+  companyName: string | null,
+  finder: string,
+): Promise<FinderOutcome> {
+  const existing = await sendableAddressesAtDomain(sql, domain).catch((e: any) => {
+    // Fail OPEN on a read error: a DB hiccup must not silently disable lead generation. Say so —
+    // an unguarded call is a thing we want to see in the log, not a thing we want to assume.
+    console.error(`[finder-guard] ${domain}: precheck FAILED (${String(e?.message || e).slice(0, 100)}) — proceeding UNGUARDED`)
+    return [] as string[]
+  })
+  if (existing.length) {
+    // The log line is the whole point of "enforce it structurally" — a guard nobody can see
+    // working is indistinguishable from a guard that silently stopped working.
+    console.log(`[finder-guard] SKIP ${domain} — already hold ${existing.length} sendable address(es) (${existing.slice(0, 2).join(', ')}); 0 credits spent`)
+    // Count the SKIP. Spend avoided is invisible in a balance reading — this is the only record
+    // that the guard did anything, and the only way to show what it saved.
+    await recordProviderCall({ provider: finder === 'amf' ? 'amf' : 'icypeas', endpoint: 'guard/skip', sent: false, skipped: 1 })
+    return 'already_have_sendable'
+  }
+  return finder === 'amf'
+    ? await enrichViaAnyMailFinder(String(domain))
+    : await enrichViaIcypeas(String(domain), companyName)
+}
+
 async function enrichViaAnyMailFinder(domain: string): Promise<AmfResult> {
   const key = process.env.ANYMAILFINDER_API_KEY?.trim()
   if (!key) {
@@ -125,14 +205,20 @@ async function enrichViaAnyMailFinder(domain: string): Promise<AmfResult> {
     const body = await res.text().catch(() => '')
     // 404 here genuinely means "no verified email for this domain" -- AMF only charges when
     // it finds one, so a miss is free. 401 (bad key) / 402 (out of credits) are NOT misses.
-    if (res.status === 404) return null // genuine miss — AMF only charges on a hit, so this is free
+    if (res.status === 404) {
+      await recordProviderCall({ provider: 'amf', endpoint: 'find-email/company', results: 0 })
+      return null // genuine miss — AMF only charges on a hit, so this is free
+    }
     if (!res.ok) {
       // 401 bad key / 402 out of credits / 5xx — the lookup did not happen. NOT a miss.
       console.error(`[amf] ${domain} FAILED status=${res.status} — VENDOR FAILURE, not "no email found". body=${body.slice(0, 200)}`)
+      await recordProviderCall({ provider: 'amf', endpoint: 'find-email/company', sent: false })
       return 'vendor_error'
     }
     const d = JSON.parse(body || '{}') as { emails?: string[]; valid_emails?: string[]; email_status?: string }
     const email = d.valid_emails?.[0] || d.emails?.[0]
+    // AMF bills only on a hit, so `results` is 1/0 rather than a page size.
+    await recordProviderCall({ provider: 'amf', endpoint: 'find-email/company', results: email ? 1 : 0 })
     if (!email) return null // 200 but no address — a real miss
     // Normalize to lowercase+trim so the UNIQUE(email) constraint and the LOWER(email) dedup pre-check
     // treat case variants as the same address — no double-queue / double-send of Info@x vs info@x.
@@ -169,6 +255,12 @@ async function icyThrottle(): Promise<void> {
   if (wait > 0) await new Promise(r => setTimeout(r, wait))
   icyLastCallAt = Date.now()
 }
+/** Billable units in an Icypeas response: leads for a search, 1 for a FOUND email, else 0. */
+function icyResultCount(json: any): number {
+  if (Array.isArray(json?.leads)) return json.leads.length
+  return json?.status === 'FOUND' ? 1 : 0
+}
+
 async function icyPost(path: string, body: unknown, key: string): Promise<any | 'vendor_error'> {
   await icyThrottle()
   try {
@@ -181,12 +273,25 @@ async function icyPost(path: string, body: unknown, key: string): Promise<any | 
     })
     if (r.status === 401 || r.status === 402 || r.status === 429) {
       console.error(`[icypeas] ${path} status=${r.status} — VENDOR FAILURE (401 key / 402 credits / 429 rate). NOT a miss.`)
+      // A rejected request is not a call we were billed for — record it as attempted, not spent.
+      await recordProviderCall({ provider: 'icypeas', endpoint: path, sent: false })
       return 'vendor_error'
     }
-    if (!r.ok) { console.error(`[icypeas] ${path} status=${r.status}`); return 'vendor_error' }
-    return await r.json()
+    if (!r.ok) {
+      console.error(`[icypeas] ${path} status=${r.status}`)
+      await recordProviderCall({ provider: 'icypeas', endpoint: path, sent: false })
+      return 'vendor_error'
+    }
+    const json = await r.json()
+    // PS-FINDER-LEDGER-01: this is the chokepoint both Icypeas endpoints pass through, so it is
+    // the one place that can count calls AND billable results without a caller remembering to.
+    const results = icyResultCount(json)
+    console.log(`[icypeas] ${path} → ${results} result(s)`)
+    await recordProviderCall({ provider: 'icypeas', endpoint: path, results })
+    return json
   } catch (e: any) {
     console.error(`[icypeas] ${path} threw: ${String(e?.message || e).slice(0, 140)}`)
+    await recordProviderCall({ provider: 'icypeas', endpoint: path, sent: false })
     return 'vendor_error'
   }
 }
@@ -212,7 +317,26 @@ async function enrichViaIcypeas(domain: string, companyName?: string | null): Pr
     return 'vendor_error'
   }
   // 1. Find people at the company.
-  const fp = await icyPost('find-people', { query: { currentCompanyName: { include: [companyNameFor(domain, companyName)] } } }, key)
+  //
+  // PS-FINDER-CAP-01 (2026-07-24): this call used to send NO pagination object. Per Icypeas's
+  // documented schema (api-doc.icypeas.com/leads-db/find-people, verified 2026-07-24) the
+  // `pagination.size` default is 100, min 1, max 200 — so every call pulled up to 100 leads and
+  // the code below kept `.slice(0, 2)`. Reconstructed spend for 2026-07-23→24: ~210 of 299
+  // credits went on 247 find-people calls, implying ~42 billed results per call, against 4 we
+  // could possibly use. That is the single largest line in the finder bill.
+  //
+  // THE TRADE-OFF, stated because it is real: the filter below drops leads without a first AND
+  // last name (the module's own measurement says ~60% of small MSPs return no name at all), and
+  // the sort then ranks decision-makers first. A big page means picking the best of many; a
+  // small page means taking what arrives. Too small a cap saves credits by lowering the hit
+  // rate, which starves a send pool currently running at zero buffer — a worse outcome than the
+  // spend. Tunable without a deploy for exactly that reason; raise it if yield drops.
+  const size = Math.min(200, Math.max(1, Number(process.env.ICYPEAS_FIND_PEOPLE_SIZE ?? 3)))
+  const fp = await icyPost(
+    'find-people',
+    { query: { currentCompanyName: { include: [companyNameFor(domain, companyName)] } }, pagination: { size } },
+    key,
+  )
   if (fp === 'vendor_error') return 'vendor_error'
   const leads: Array<{ firstname?: string; lastname?: string; headline?: string }> = fp?.leads ?? []
   const named = leads
@@ -250,6 +374,7 @@ async function enrichViaHunter(domain: string) {
   try {
     const res = await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${key}&limit=5`, { signal: AbortSignal.timeout(20000) })
     const d = await res.json()
+    await recordProviderCall({ provider: 'hunter', endpoint: 'domain-search', results: d?.data?.emails?.length ?? 0 })
     if (!d.data?.emails?.length) return null
     const dm = d.data.emails.find((e: any) =>
       MSP_TITLES.some(t => (e.position || '').toLowerCase().includes(t.toLowerCase()))
@@ -381,7 +506,9 @@ export async function runLeadDiscover(limit = 20) {
 export async function runLeadResearcher(batchSize = 6) {
   const sql = getSql()
   await ensureResearchQueue(sql)
-  const stats = { discovered: 0, enriched: 0, added: 0, skipped: 0, errors: [] as string[] }
+  // PS-ICY-GUARD-01: finder_skipped_have_email is reported per run so the guard's effect is
+  // VISIBLE in agent_health telemetry, not just in a log line nobody reads.
+  const stats = { discovered: 0, enriched: 0, added: 0, skipped: 0, finder_skipped_have_email: 0, errors: [] as string[] }
   const start = Date.now()
 
   // PS-RESEARCHER-TIMEOUT-01: WALL CLOCK. Per-call timeouts bound each call; only a wall clock
@@ -446,9 +573,20 @@ export async function runLeadResearcher(batchSize = 6) {
         // logic, just an env flip. Default is icypeas (AMF is at 0). The AMF code stays intact and
         // dormant below. Both return the same 3-way contract (hit / null miss / 'vendor_error').
         const finder = (process.env.LEAD_FINDER ?? 'icypeas').toLowerCase()
-        const primary = finder === 'amf'
-          ? await enrichViaAnyMailFinder(String(item.domain))
-          : await enrichViaIcypeas(String(item.domain), item.company_name as string | null)
+        // PS-ICY-GUARD-01: routed through the chokepoint — it prechecks and can return without
+        // spending a credit with either vendor.
+        const primary = await findEmailForDomainOnly(sql, String(item.domain), item.company_name as string | null, finder)
+
+        // We already hold a sendable address at this domain. Retire the row as 'duplicate' — the
+        // status that already means "we have this contact" — WITHOUT calling Hunter either: a
+        // second paid enricher for a contact we hold is the same waste with a different invoice.
+        if (primary === 'already_have_sendable') {
+          stats.skipped++
+          stats.finder_skipped_have_email = (stats.finder_skipped_have_email ?? 0) + 1
+          await sql`UPDATE lead_research_queue SET status='duplicate', updated_at=NOW() WHERE id=${item.id}`
+          continue
+        }
+
         const amfVendorError = primary === 'vendor_error' // "the lookup never ran" — do not retire the lead
         let hunter = primary && primary !== 'vendor_error' ? primary : null
         if (!hunter) hunter = await enrichViaHunter(String(item.domain))

@@ -494,6 +494,27 @@ export async function createCampaignResult(data: Omit<CampaignResult, "id" | "cr
   return r;
 }
 
+/**
+ * PS-CREDPAGE-01: which simulation is this token part of?
+ *
+ * The click path branches on it: a credential_harvest simulation shows the fake login page (the
+ * behaviour the product measures), everything else goes straight to training as before. Returns
+ * null when it cannot be resolved — the caller MUST treat null as "go to training", because a
+ * lookup failure is not a reason to show a recipient a login form.
+ */
+export async function getAttackTypeForToken(token: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ attackType: templates.attackType })
+    .from(campaignResults)
+    .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
+    .innerJoin(templates, eq(templates.id, campaigns.templateId))
+    .where(eq(campaignResults.trackingToken, token))
+    .limit(1);
+  return rows[0]?.attackType ?? null;
+}
+
 export async function trackEvent(token: string, event: "open" | "click" | "submit" | "report", meta?: { ip?: string; ua?: string }) {
   const db = await getDb();
   if (!db) return;

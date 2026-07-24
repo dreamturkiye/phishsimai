@@ -57,6 +57,7 @@ const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string 
   { cron: '/api/os/metrics-snapshot', schedule: '0 6 * * *', table: 'metrics_daily', col: 'created_at' },
   { cron: '/api/os/founder-brief', schedule: '0 21 * * *', table: 'founder_briefs', col: 'created_at' },
   { cron: '/api/os/heartbeat', schedule: '0 * * * *', table: 'agent_health', col: 'updated_at' },
+  { cron: '/api/os/deploy-verify', schedule: '0 * * * *', table: 'deploy_verifications', col: 'checked_at' },
   { cron: '/api/os/qa-smoke', schedule: '0 */6 * * *', table: 'qa_runs', col: 'created_at' },
   { cron: '/api/os/escalation-notify', schedule: '*/15 * * * *', table: 'escalations', col: 'created_at' },
   { cron: '/api/os/sarah-social', schedule: '0 10,16 * * *', table: 'os_social_queue', col: 'created_at' },
