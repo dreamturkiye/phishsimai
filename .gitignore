@@ -120,3 +120,9 @@ client/public/__manus__/version.json
 _import.mts
 f2.mts
 leads_import.csv
+
+# scratch DB query helpers (session-local, read gitignored env)
+.q.mjs
+.mig.mjs
+.icy*.ts
+.p.ts
