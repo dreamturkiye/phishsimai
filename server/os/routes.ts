@@ -29,6 +29,7 @@ import {
 import { cronAgentWatchdog } from './agentWatchdog'
 import { buildJanetCgoSummary, type JanetCgoDeps } from './l5Autonomy'
 import { writeMetricsSnapshot } from './metricsSnapshot'
+import { verifyDeployTarget } from './deployVerify'
 import {
   makeSqlBreakerDeps, getBreakerState, recordTaskOutcome, checkDiffSafety, primaryFingerprint,
 } from './circuitBreaker'
@@ -230,6 +231,16 @@ export async function cronWatchdog(req: Request, res: Response) {
 export async function cronHeartbeat(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
   try { res.json(await runHeartbeat()) } catch(e:any) { res.status(500).json({error:e.message}) }
+}
+
+// PS-DEPLOY-VERIFY-01: hourly deploy-target verification. Confirms phishsimai.com serves PhishSim
+// (and NOT ScrollFuel) and writes one deploy_verifications row on a confident answer. This is the
+// WRITER that makes posture probe 7 ("zero blind deploys") measurable — before it, that table had
+// no writer and the criterion passed on absence. Hourly so a single transient miss can't leave a
+// whole day unmeasured, and so YESTERDAY is fully confirmed by the time 06:30 compute judges it.
+export async function cronDeployVerify(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try { res.json(await verifyDeployTarget()) } catch (e: any) { res.status(500).json({ error: formatOsError(e) }) }
 }
 
 export async function webhookReply(req: Request, res: Response) {

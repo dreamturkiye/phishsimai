@@ -154,6 +154,19 @@ export async function computeDayCounters(sql: SqlLike, productId: string, dayIso
     WHERE product_id=${productId} AND match=false AND checked_at::date = ${dayIso}::date`),
     n => { counters.deploy_mismatches = n; if (n) violations.push(`${n} unverified deploy(s)`) })
 
+  // 7b. PS-DEPLOY-VERIFY-01 — the honest half. Counting match=false rows made this criterion
+  //     pass on ABSENCE: with zero rows the count was 0, so a day nobody verified read as clean.
+  //     That is the same instrument-reports-nothing / reader-scores-silence failure Rule 2
+  //     forbids, so a day with NO deploy verification is `unmeasured`, exactly like a missing
+  //     metrics snapshot in probe 8 below. The deploy-verify cron writes ~24 confirmations a day,
+  //     so a genuinely-verified day is measured and a day the origin was never confirmed blocks.
+  try {
+    const n = await one(sql`SELECT count(*) AS n FROM deploy_verifications WHERE product_id=${productId} AND checked_at::date = ${dayIso}::date`)
+    if (n === 0) unmeasured.push('deploy: no deploy-target verification for this day')
+  } catch (e: any) {
+    unmeasured.push(`deploy: ${String(e?.message || e).slice(0, 120)}`)
+  }
+
   // 8. Fabricated metrics (spec: "every dashboard number real-or-null"). We cannot detect a
   //    fabricated number after the fact; what we CAN check is that the day was snapshotted at
   //    all. A missing snapshot is not fabrication — it is an unmeasured day, and unmeasured

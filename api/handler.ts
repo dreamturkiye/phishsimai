@@ -119,6 +119,7 @@ async function dispatchOsRoute(req: any, res: any) {
     const method = req.method.toLowerCase();
 
     if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
+    if (path === "/api/os/deploy-verify") return routes.cronDeployVerify(req, res);
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
     if (path === "/api/os/aria-daily") return routes.cronAriaDaily(req, res);
     if (path === "/api/os/janet" || path === "/api/os/janet-cgo") return routes.cronJanetCgo(req, res);

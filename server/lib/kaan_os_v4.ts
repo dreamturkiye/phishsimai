@@ -921,6 +921,43 @@ export function parseStandupAssignments(response: string): { agentId: AgentId; t
   return collect(LIST_ITEM).slice(0, 3) // cap the loosest tier at the 1-3 the prompt asks for
 }
 
+// ── PS-TRUNCATE-02: the INBOUND half of PS-TRUNCATE-01 ───────────────────────
+/**
+ * PS-TRUNCATE-01 fixed the outbound side (sendTelegram splits at 4096 instead of amputating).
+ * The inbound side kept doing exactly what that fix condemned: `r.summary.slice(0,300)`.
+ *
+ * Agents are prompted for FIVE items (completed / today / blockers / key metric / confidence)
+ * with a 400-token budget — roughly 1,600 chars. Only the first 300 reached Janet OR the stored
+ * transcript. The tell was that every stored standup was exactly 1,549 chars: 5 blocks × 300 +
+ * the fixed "[NAME]: " headers. Items 3, 4 and 5 — blockers and the one metric Janet is
+ * explicitly asking each agent to surface — were structurally never delivered. Janet has been
+ * running the company's daily meeting on the first paragraph of each report.
+ *
+ * Same shape of fix as the outbound one: a GENEROUS limit, a cut on a LINE boundary, and an
+ * explicit marker so a trim is visible rather than silent. At 4,000 the limit does not bind on
+ * any real report (the LLM cannot emit that much at 400 tokens) — it exists as a guard against a
+ * runaway generation blowing Janet's context, not as routine amputation.
+ *
+ * Exported and pure so it cannot silently regress the way slice(0,300) did.
+ */
+export function trimToLineBoundary(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  const window = text.slice(0, limit)
+  // Prefer a paragraph break, then a line break, then a space — never mid-word. Mirrors
+  // splitForTelegram's boundary ladder; the 0.5 floor stops a boundary near the very start
+  // from throwing away most of the allowance.
+  let cut = window.lastIndexOf('\n\n')
+  if (cut < limit * 0.5) cut = window.lastIndexOf('\n')
+  if (cut < limit * 0.5) cut = window.lastIndexOf(' ')
+  if (cut < limit * 0.5) cut = limit
+  const kept = text.slice(0, cut).trimEnd()
+  // SAY that it happened. A trim nobody can see is the same failure as a silent slice.
+  return `${kept}\n… [trimmed ${text.length - kept.length} of ${text.length} chars]`
+}
+
+/** Generous guard rail for one agent's standup report. Does not bind at a 400-token budget. */
+export const AGENT_REPORT_LIMIT = 4000
+
 export async function runDailyStandup(companyId = COMPANY_ID): Promise<{
   meeting_id: string
   reports: AgentReport[]
@@ -987,7 +1024,23 @@ Give your standup (be brief and direct — Janet runs a tight meeting):
   }
 
   // Janet synthesizes and issues new assignments
-  const standupSummary = reports.map(r => `[${r.agent_name.toUpperCase()}]: ${r.summary.slice(0,300)}`).join('\n\n')
+  //
+  // PS-TRUNCATE-02: two renderings, and the difference is deliberate.
+  //
+  //   standupFull  — every report in full, nothing dropped. This is what gets STORED as the
+  //                  meeting transcript and what gets SENT to Telegram. The transcript is the
+  //                  audit artifact: scripts/verify-standup.ts scans it for fabricated
+  //                  capability claims, and a scan of the first 300 chars is a scan that any
+  //                  fabrication in the tail walks straight past. It has to be complete.
+  //   standupForJanet — the same reports behind a generous line-boundary guard rail, because
+  //                  this one goes into an LLM prompt and is the only place a length limit has
+  //                  an actual reason. At 4,000 chars/report it does not bind in practice.
+  //
+  // They are allowed to differ ONLY in that edge case, and when they do, the transcript is the
+  // longer one — never the other way round.
+  const block = (r: AgentReport, text: string) => `[${r.agent_name.toUpperCase()}]: ${text}`
+  const standupFull = reports.map(r => block(r, r.summary)).join('\n\n')
+  const standupSummary = reports.map(r => block(r, trimToLineBoundary(r.summary, AGENT_REPORT_LIMIT))).join('\n\n')
   const janetMemory = await getAgentMemory('janet', sql, companyId)
   const janetSystem = buildAgentSystem(AGENTS.janet, janetMemory, context)
 
@@ -1049,7 +1102,7 @@ system record backs it.
   // Log meeting
   const [meeting] = await sql`
     INSERT INTO agent_meetings (meeting_type, participants, agenda, transcript, decisions, company_id)
-    VALUES ('daily_standup', ${standupAgents}, 'Daily standup', ${standupSummary}, ${[janetResponse]}, ${companyId})
+    VALUES ('daily_standup', ${standupAgents}, 'Daily standup', ${standupFull}, ${[janetResponse]}, ${companyId})
     RETURNING id
   `.catch(() => [{ id: 'unknown' }])
 
@@ -1088,7 +1141,16 @@ system record backs it.
       console.error(`[kaan_os_v4] posture line unavailable: ${String(e?.message || e).slice(0, 120)}`)
       return '\n\n🎖 Posture: UNAVAILABLE (tracker read failed — not a pass)'
     })
-  const telegramMsg = `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse}${assignmentLines}${posture}\n\n_${reports.length} agents reported | ${issuance}_`
+  // PS-TRUNCATE-02: the founder asked to read the AGENT reports on Telegram, not just Janet's
+  // synthesis of them. Janet's summary is a lossy read of five reports she is not obliged to
+  // quote — "ARIA reported nothing completed" is not the same artifact as what Aria actually
+  // wrote, and the whole PS-PHANTOM-01 class of bug lives in that gap. Ship both: her synthesis
+  // first (it is the actionable part), the raw reports under it for anyone checking her work.
+  // sendTelegram splits at 4096, so five full reports cost extra messages, never lost content.
+  const telegramMsg =
+    `🌅 *DAILY STANDUP — ${TELEGRAM_PRODUCT}*\n\n${janetResponse}${assignmentLines}${posture}\n\n` +
+    `_${reports.length} agents reported | ${issuance}_\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n📝 *Agent reports (verbatim, unedited self-reports)*\n\n${standupFull}`
   await sendTelegram(telegramMsg).catch(() => {})
 
   return { meeting_id: meeting?.id || '', reports, janet_summary: janetResponse, new_tasks: newTasks, timestamp: new Date().toISOString() }
@@ -1132,7 +1194,13 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
     const janetMemory = await getAgentMemory('janet', sql, companyId)
     const janetSystem = buildAgentSystem(AGENTS.janet, janetMemory, context)
     const janetReview = await llm(janetSystem,
-      `Weekly performance review: ${agent.name} (${agent.title})\n\nWeek data: ${weekData ? `${weekData.completed} tasks, avg ${weekData.avg_score}/10` : 'No completed tasks'}\n${agent.name}'s self-review: ${selfReview.slice(0,300)}\n\nAs their manager:\n1. Your honest assessment of their performance (be direct)\n2. Specific improvement required with how-to\n3. New priority assignment for next week\n4. Are they performing at the level needed? (yes/needs improvement/critical)\n5. Score: X/10`, 500)
+      // PS-TRUNCATE-02: same bug as the standup, one meeting over. The self-review is prompted
+      // for FIVE items at a 500-token budget (~2,000 chars) and Janet was shown the first 300 —
+      // so "where you fell short and why", "what would make you more effective" and the agent's
+      // own priority proposal never reached the manager writing their review. A performance
+      // review is the worst possible place to read a third of the evidence: the sections that
+      // get cut are exactly the ones an agent would use to explain a bad week.
+      `Weekly performance review: ${agent.name} (${agent.title})\n\nWeek data: ${weekData ? `${weekData.completed} tasks, avg ${weekData.avg_score}/10` : 'No completed tasks'}\n${agent.name}'s self-review: ${trimToLineBoundary(selfReview, AGENT_REPORT_LIMIT)}\n\nAs their manager:\n1. Your honest assessment of their performance (be direct)\n2. Specific improvement required with how-to\n3. New priority assignment for next week\n4. Are they performing at the level needed? (yes/needs improvement/critical)\n5. Score: X/10`, 500)
 
     const scoreMatch = janetReview.match(/Score:\s*(\d+)\/10/i)
     const score = scoreMatch ? parseInt(scoreMatch[1]) : 6
@@ -1140,8 +1208,16 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
     // Update performance record
     await sql`
       INSERT INTO agent_performance (agent_id, period, tasks_completed, avg_score, strengths, improvement_areas, janet_notes, company_id)
+      -- PS-TRUNCATE-02: strengths / improvement_areas / janet_notes are all unbounded TEXT, so
+      -- the 200/200/300 slices bought nothing and cost the record. janet_notes is the only
+      -- durable trace of a review — storing its first 300 chars means the improvement actually
+      -- required (item 2 of her five) is routinely the part that gets dropped. Store in full.
+      --
+      -- improvement_areas and janet_notes have ALWAYS held the same source text at two different
+      -- lengths; they are now identical. Splitting them properly needs a parser over Janet's
+      -- five numbered items, which is a separate change — duplicating beats truncating.
       VALUES (${agentId}, to_char(NOW(), 'YYYY-WW'), ${weekData?.completed || 0}, ${score},
-              ${selfReview.slice(0,200)}, ${janetReview.slice(0,200)}, ${janetReview.slice(0,300)}, ${companyId})
+              ${selfReview}, ${janetReview}, ${janetReview}, ${companyId})
       ON CONFLICT (agent_id, period) DO UPDATE SET
         tasks_completed = EXCLUDED.tasks_completed, avg_score = EXCLUDED.avg_score,
         improvement_areas = EXCLUDED.improvement_areas, janet_notes = EXCLUDED.janet_notes, updated_at = NOW()
@@ -1158,8 +1234,20 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
     performanceReviews.push({ agent_id: agentId, name: agent.name, score, self_review: selfReview, janet_review: janetReview, week_data: weekData })
   }
 
-  // Janet issues next week's assignments
-  const reviewSummary = performanceReviews.map(r => `${r.name} (${r.score}/10): ${r.janet_review.slice(0,200)}`).join('\n')
+  // Janet issues next week's assignments.
+  //
+  // PS-TRUNCATE-02: third instance of the same pattern in this function — she was planning the
+  // whole next week from the first 200 chars of each of her OWN reviews, so the improvement
+  // paths and assignments she had just written were not in front of her when she assigned work.
+  //
+  // A limit IS justified here, unlike the DB write above, and for a concrete reason: this fans
+  // out over every agent, and Cerebras (first on DEFAULT_CHAIN) caps free-tier context at 8,192
+  // tokens — 8 unbounded reviews would silently push every weekly plan onto paid DeepInfra. So:
+  // a line-boundary trim that keeps the substance, with the marker saying when it bit.
+  const WEEKLY_REVIEW_PROMPT_LIMIT = 1200 // ~8 agents × 1.2k chars ≈ 2.4k tokens, well inside the cap
+  const reviewSummary = performanceReviews
+    .map(r => `${r.name} (${r.score}/10): ${trimToLineBoundary(r.janet_review, WEEKLY_REVIEW_PROMPT_LIMIT)}`)
+    .join('\n')
   const janetSystem2 = buildAgentSystem(AGENTS.janet, await getAgentMemory('janet', sql, companyId), context)
 
   const weeklyPlan = await llm(janetSystem2,

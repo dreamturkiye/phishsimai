@@ -43,11 +43,19 @@ export const DISQUALIFIED_LABELS = [
 // — and at a small MSP, ceo@/owner@/it@ reach exactly the buyer we want. Those stay eligible.
 // The label filter above only protects rows an OLD pass already labelled; this catches a FRESH
 // AMF-found info@ that has no label at all. 12 of the 50 sent on 2026-07-22 were these.
+// PS-ICY-GUARD-01 follow-up (2026-07-24): this predicate now has a SECOND consumer — the finder
+// guard in leadResearcher.ts skips a paid Icypeas lookup when we already hold an address it
+// considers usable. So a gap here is no longer just "we send to an org inbox"; it is also "we
+// DON'T pay to find the real human because a helpdesk@ address made the domain look covered".
+// These three were found in the prod queue overlap on 2026-07-24 sitting on the wrong side of it.
+// 'gscsupport' is the digit/separator-collapsed form of gsc-support@ — both are listed because
+// isOrgInbox() checks the raw local part AND the collapsed base.
 const ORG_INBOX_LOCALPARTS = new Set([
   'info', 'sales', 'support', 'contact', 'hello', 'help', 'office', 'team', 'service', 'enquiries',
   'enquiry', 'inquiries', 'billing', 'accounts', 'accounting', 'acctmgmt', 'marketing', 'careers',
   'jobs', 'noreply', 'noreply-', 'postmaster', 'webmaster', 'abuse', 'admin', 'general', 'inbox',
   'reception', 'mail', 'sysadmin', 'connect', 'hr', 'privacy', 'legal', 'compliance',
+  'helpdesk', 'smartsell', 'gsc-support', 'gscsupport',
 ])
 
 /** True if the local part is a generic org inbox (info@, sales@, billing@ …) — never promote. */

@@ -52,10 +52,10 @@ const FABRICATION_PATTERNS: { label: string; re: RegExp }[] = [
 async function main() {
   // ── the standup under test ─────────────────────────────────────────────────
   const meetings: any = day
-    ? await sql`SELECT held_at, transcript, decisions FROM agent_meetings
+    ? await sql`SELECT held_at, transcript, decisions, participants FROM agent_meetings
                 WHERE meeting_type='daily_standup' AND held_at::date = ${day}::date
                 ORDER BY held_at DESC LIMIT 1`
-    : await sql`SELECT held_at, transcript, decisions FROM agent_meetings
+    : await sql`SELECT held_at, transcript, decisions, participants FROM agent_meetings
                 WHERE meeting_type='daily_standup' ORDER BY held_at DESC LIMIT 1`
 
   const meeting = meetings[0]
@@ -75,9 +75,31 @@ async function main() {
   }
 
   // Split the transcript into per-agent report blocks: "[ARIA]: ...".
+  //
+  // PS-TRUNCATE-02: before that fix each block was a 300-char fragment, so any [WORD]: token an
+  // agent wrote had already been cut off and a loose `\[[A-Z]+\]:` lookahead was safe. Reports
+  // are now stored in FULL (~1.5k chars each, five markdown sections), which is five times the
+  // surface on which an agent can write something like "[NOTE]:" at a paragraph start — and a
+  // false split there would silently truncate that agent's block and hide its tail from the
+  // fabrication scan below. Anchor the split to the meeting's actual participant list instead of
+  // to "any uppercase word in brackets".
+  const participants: string[] = Array.isArray(meeting.participants) ? meeting.participants.map(String) : []
+  const names = participants.length ? participants : ['marcus', 'aria', 'finn', 'vera', 'rex']
+  const alt = names.map(n => n.toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean).join('|')
   const reports = new Map<string, string>()
-  const rx = /\[([A-Z]+)\]:\s*([\s\S]*?)(?=\n\n\[[A-Z]+\]:|$)/g
+  const rx = new RegExp(String.raw`\[(${alt})\]:\s*([\s\S]*?)(?=\n\n\[(?:${alt})\]:|$)`, 'g')
   for (const m of transcript.matchAll(rx)) reports.set(m[1].toLowerCase(), m[2].trim())
+
+  // Make the SCAN COVERAGE visible. The whole point of PS-TRUNCATE-02 is that these blocks are
+  // no longer fragments; if a regression re-introduces a cap, every agent's block goes back to
+  // ~300 chars and that shows up here as an obvious flat line rather than as a silent pass.
+  const sizes = [...reports.entries()].map(([a, t]) => `${a} ${t.length}c`).join(', ')
+  console.log(`transcript ${transcript.length}c · ${reports.size}/${names.length} block(s) parsed: ${sizes}`)
+  const missing = names.filter(n => !reports.has(n.toLowerCase()))
+  if (missing.length) console.log(`⚠️  no block parsed for: ${missing.join(', ')} — those reports are NOT being scanned.`)
+  if (reports.size && [...reports.values()].every(t => t.length >= 295 && t.length <= 305)) {
+    console.log(`⚠️  every block is ~300 chars — the inbound truncation (PS-TRUNCATE-02) may have regressed.`)
+  }
 
   // ── CHECK 1 — Aria tells the literal truth ────────────────────────────────
   const aria = reports.get('aria') || ''
@@ -114,8 +136,11 @@ async function main() {
       if (m) hits.push(`${agent}: ${label} — "${text.slice(Math.max(0, m.index! - 30), m.index! + 90).replace(/\n/g, ' ').trim()}"`)
     }
   }
+  // Say how much text was actually scanned. "Clean across 5 reports" was true before
+  // PS-TRUNCATE-02 as well — it was scanning 5 × 300 chars and calling that the reports.
+  const scanned = [...reports.values()].reduce((n, t) => n + t.length, 0)
   record('2. No fabricated capability claims', hits.length === 0,
-    hits.length ? hits.map(h => `\n      ✗ ${h}`).join('') : `clean across ${reports.size} agent report(s).`)
+    hits.length ? hits.map(h => `\n      ✗ ${h}`).join('') : `clean across ${reports.size} agent report(s), ${scanned} chars scanned in full.`)
 
   // ── CHECK 3 — the footer number is real ───────────────────────────────────
   // Tasks Janet's standup actually created, within a 10-min window of the meeting.
