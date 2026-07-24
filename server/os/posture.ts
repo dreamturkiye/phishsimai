@@ -160,9 +160,27 @@ export async function computeDayCounters(sql: SqlLike, productId: string, dayIso
   //     forbids, so a day with NO deploy verification is `unmeasured`, exactly like a missing
   //     metrics snapshot in probe 8 below. The deploy-verify cron writes ~24 confirmations a day,
   //     so a genuinely-verified day is measured and a day the origin was never confirmed blocks.
+  //
+  //     PS-DEPLOY-VERIFY-02 — but the instrument is NOT retroactive. "Unmeasured" must mean "the
+  //     instrument was live and produced nothing", NOT "the instrument did not exist yet". The
+  //     writer went live 2026-07-24; before that there is no row for ANY day, so a blanket
+  //     absence-check marked every earlier day — including 07-23, the streak's baseline — as
+  //     unmeasured and silently broke the streak the moment any pre-writer day was recomputed.
+  //     This is the module's own philosophy (probe 5's honest-limit comment): counting a thing
+  //     starts the day you start counting it, and broader criteria do not reach backwards. So the
+  //     check applies ONLY to days at/after the instrument's BIRTH — the first deploy_verifications
+  //     row ever written. A day before birth is pre-instrument, not unmeasured, and does not block.
   try {
-    const n = await one(sql`SELECT count(*) AS n FROM deploy_verifications WHERE product_id=${productId} AND checked_at::date = ${dayIso}::date`)
-    if (n === 0) unmeasured.push('deploy: no deploy-target verification for this day')
+    // The instrument's BIRTH = the first deploy_verifications row ever written (a DATE, so read it
+    // as text — one() coerces via Number() which would NaN a date).
+    const birthRows = (await sql`SELECT MIN(checked_at)::text AS birth FROM deploy_verifications WHERE product_id=${productId}`) as any[]
+    const birthDay = birthRows[0]?.birth ? String(birthRows[0].birth).slice(0, 10) : null
+    if (birthDay && dayIso >= birthDay) {
+      const n = await one(sql`SELECT count(*) AS n FROM deploy_verifications WHERE product_id=${productId} AND checked_at::date = ${dayIso}::date`)
+      if (n === 0) unmeasured.push('deploy: no deploy-target verification for this day')
+    }
+    // birthDay === null (writer has never run) or dayIso < birthDay (pre-instrument): the deploy
+    // target was not yet being verified, so this criterion is simply not applicable to that day.
   } catch (e: any) {
     unmeasured.push(`deploy: ${String(e?.message || e).slice(0, 120)}`)
   }
