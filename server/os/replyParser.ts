@@ -47,10 +47,34 @@ async function buildAutoResponse(lead: any, intent: ReplyIntent, replyBody: stri
   } catch { return '' }
 }
 
+// PS-REPLY-NOISE-01: obviously-synthetic senders (liveness probes, test/reserved TLDs) must never
+// reach the founder's live channel or spend an LLM classification. Reserved per RFC 2606 / 6761.
+export function isSyntheticSender(email: string): boolean {
+  const e = (email || '').toLowerCase().trim()
+  return /@([^@]*\.)?(invalid|test|example|localhost)$/.test(e) ||
+    /@example\.(com|net|org)$/.test(e) ||
+    /(^|[._-])(liveness|healthcheck|probe|synthetic|test)([._-]|@)/.test(e)
+}
+
 export async function processReply(fromEmail: string, subject: string, body: string) {
+  const NOOP = { matched: false, intent: null as string | null, confidence: 0, summary: '', autoResponseSent: false, checkoutLinkSent: false, escalate: false }
+  // PS-REPLY-NOISE-01: gate BEFORE any side effect. A synthetic probe returns inert.
+  if (isSyntheticSender(fromEmail)) {
+    console.log(`[replyParser] dropped synthetic sender ${fromEmail} — no classify, no notify`)
+    return NOOP
+  }
   const sql = getSql()
   const leads = await sql`SELECT * FROM ps_outreach_leads WHERE LOWER(email)=LOWER(${fromEmail}) LIMIT 1`
   const lead = leads[0]
+  // PS-REPLY-NOISE-01: only PROSPECTS in our outreach DB are actionable. An inbound from an
+  // unknown sender — a bounce, an out-of-office, spam — is not a "reply" to anything and must not
+  // classify (an LLM call) or fire the founder's channel. This is also why the earlier synthetic
+  // liveness probe should never have paged: it matched no lead, yet the old code Telegram'd every
+  // processed inbound unconditionally at the end. No match → do nothing.
+  if (!lead) {
+    console.log(`[replyParser] inbound from unknown sender ${fromEmail} — no matching lead, ignored`)
+    return NOOP
+  }
   const { intent, confidence, summary } = await classifyIntent(body)
   let autoResponseSent = false
   let checkoutLinkSent = false
