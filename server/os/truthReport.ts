@@ -42,7 +42,7 @@ function pct(n: number, d: number): string {
  * table = where this cron's output lands. If max(created_at) is stale, the cron is dead
  * no matter what its last invocation returned.
  */
-const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string }[] = [
+export const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string }[] = [
   // Measured on the touch timestamps, NOT stage_updated_at: this cron's output is EMAIL SENT.
   // stage_updated_at moves on any row edit (a backfill, a manual quarantine), so it reports
   // green on days nothing was sent. The signal must be the thing the cron exists to produce.
@@ -52,6 +52,15 @@ const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string 
     table: 'ps_outreach_leads',
     col: 'GREATEST(touch1_sent_at, touch2_sent_at, touch3_sent_at, touch4_sent_at)',
   },
+  // PS-SEND-HEALTH-02 — who watches the send-health watcher. The 08:30 outreach-funnel is the
+  // FAST send tripwire: it fires "🚨 SEND CRON DID NOT RUN" the same morning a 07:00 send is
+  // missed (via agent_health 'aria'). But nothing watched the WATCHER — if the funnel itself
+  // stopped running, its absence read as silence, exactly the failure the founder called out
+  // ("no news should mean the monitor died, not that things are fine"). The funnel is the ONLY
+  // writer of credit_readings, so a stale read_at here means the send-health check went dark, and
+  // this line makes the 06:00 truth report say so. Belt (this, fast-monitor liveness) and braces
+  // (the /api/os/sequence row above, which independently RED-flags a >26h-old last send).
+  { cron: '/api/os/outreach-funnel', schedule: '30 8 * * *', table: 'credit_readings', col: 'read_at' },
   { cron: '/api/os/researcher', schedule: '*/30 * * * *', table: 'lead_research_queue', col: 'created_at' },
   { cron: '/api/os/janet', schedule: '0 8 * * *', table: 'janet_memory', col: 'created_at' },
   { cron: '/api/os/metrics-snapshot', schedule: '0 6 * * *', table: 'metrics_daily', col: 'created_at' },
