@@ -132,10 +132,12 @@ export async function buildTruthReport(): Promise<string> {
       (health.paused ? ' — OUTBOUND HALTED' : ''),
   )
 
-  // DELIVERED/OPENED/CLICKED live in Resend, not here. Open+click tracking are disabled on the
-  // domain, so they are unknowable for every send to date. Rule 2: say so, do not print 0.
-  L.push(`DELIVERED      ${NOT_MEASURED} — not mirrored into this DB (authoritative: Resend API)`)
-  L.push(`OPENS/CLICKS   ${RED} ${NOT_MEASURED} — open_tracking + click_tracking DISABLED on domain`)
+  // PS-LABEL-HONESTY-01: these are NOT broken instruments — they are elsewhere / off by choice, so
+  // label them n/a-here rather than the alarming "NOT MEASURED", which is reserved for a real
+  // instrument that should have data and doesn't. Delivery is authoritative in Resend; outreach
+  // open/click tracking is deliberately OFF on this domain (product tracking uses our own /t/,/c/).
+  L.push(`DELIVERED      n/a here → Resend API is authoritative (not mirrored into this DB)`)
+  L.push(`OPENS/CLICKS   n/a — outreach open/click tracking OFF by choice (Resend); enable to measure`)
 
   // PS-PHANTOM-02: `replied` is a REAL metric with a working writer (replyParser + the live
   // /api/os/webhook/reply endpoint), so a zero is NOT a phantom — it is bucket-2 "no data yet".
