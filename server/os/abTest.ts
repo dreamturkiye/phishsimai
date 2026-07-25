@@ -66,8 +66,8 @@ const touch1Html = (name: string) => `<div style="font-family:-apple-system,Blin
 <p>And the question underwriters ask has shifted. It used to be "do you have this control?" Now it's "can you prove it was enforced at the time of the incident?" That gap is where claims get denied — and when your client's broker asks for the proof packet, someone has to produce it.</p>
 <p>PhishSim AI is white-label. You run simulations for your clients under your own brand, and it issues a compliance certificate per client, per campaign — the documented evidence their underwriter is asking for.</p>
 <p>Setup takes about 10 minutes. No agents, no IT project, no call with me.</p>
-<p>I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 7-day trial with no credit card.</p>
-<p style="margin:22px 0"><a href="https://phishsimai.com/register" style="color:#e53e3e;font-weight:700;text-decoration:none">→ Start your 7-day trial — phishsimai.com/register</a></p>
+<p>I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 14-day trial with no credit card.</p>
+<p style="margin:22px 0"><a href="https://phishsimai.com/register" style="color:#e53e3e;font-weight:700;text-decoration:none">→ Start your 14-day trial — phishsimai.com/register</a></p>
 <p>If it's not useful in ten minutes, you've lost ten minutes.</p>
 <p style="margin-top:24px;margin-bottom:0">Sarah Mitchell</p>
 <p style="margin:0;color:#555">Head of Compliance, Partnerships</p>
@@ -86,9 +86,9 @@ PhishSim AI is white-label. You run simulations for your clients under your own 
 
 Setup takes about 10 minutes. No agents, no IT project, no call with me.
 
-I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 7-day trial with no credit card.
+I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 14-day trial with no credit card.
 
-Start your 7-day trial: https://phishsimai.com/register
+Start your 14-day trial: https://phishsimai.com/register
 
 If it's not useful in ten minutes, you've lost ten minutes.
 

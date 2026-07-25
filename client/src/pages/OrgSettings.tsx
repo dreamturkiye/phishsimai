@@ -45,7 +45,7 @@ function BillingTabContent({ orgId }: { orgId?: number }) {
     <div className='space-y-5'>
       <div>
         <h3 className='text-sm font-semibold mb-1'>Subscription Plans</h3>
-        <p className='text-xs text-muted-foreground'>All plans include a 7-day free trial. No credit card required.</p>
+        <p className='text-xs text-muted-foreground'>All plans include a 14-day free trial. No credit card required.</p>
       </div>
       <div className='flex items-center gap-3'>
         <span className={`text-xs font-medium ${!annual ? 'text-foreground' : 'text-muted-foreground'}`}>Monthly</span>
