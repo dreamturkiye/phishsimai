@@ -7,6 +7,7 @@ import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
 import { rememberFact } from '../memory'
 import { sarahLinkedInPublishBlocker } from './sarahLinkedIn'
+import { assertPublicPostingDisabled } from './publicPostingLockout'
 
 const COMPANY = 'phishsimai'
 
@@ -63,6 +64,9 @@ export async function isLinkedInAutopostEnabled(): Promise<boolean> {
 
 // ── 4. POSTFORME PUBLISHER (the one door) ────────────────────────────────────
 async function postForMePublish(post: { body: string; title?: string; imageUrl?: string | null }): Promise<{ ok: boolean; url?: string; error?: string }> {
+  // PS-SOCIAL-LOCKOUT-01: structural block. The linkedin_autopost_enabled DB flag above is
+  // founder-flippable without review, so it is not a structural guard on its own.
+  assertPublicPostingDisabled('LinkedIn (PostForMe / linkedInPublisher)')
   const key = process.env.POSTFORME_API_KEY || process.env.POST_FOR_ME_API_KEY
   const base = process.env.POSTFORME_API_URL || 'https://api.postforme.dev/v1/posts'
   const account = process.env.POSTFORME_LINKEDIN_ACCOUNT // Kaan's PostForMe LinkedIn channel id

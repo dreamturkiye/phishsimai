@@ -1,4 +1,11 @@
-/** PostForMe — Sarah Mitchell LinkedIn publish. */
+/**
+ * PostForMe — Sarah Mitchell LinkedIn publish.
+ *
+ * PS-SOCIAL-LOCKOUT-01: publishing is severed here. This module's caller
+ * (publishSarahLinkedIn.ts) had a self-approving "gate" — an unapproved item called
+ * submitSocialReview(token,'approved') on itself and continued — so it enforced nothing.
+ */
+import { assertPublicPostingDisabled } from './publicPostingLockout'
 
 const API_BASE = 'https://api.postforme.dev/v1'
 
@@ -59,6 +66,7 @@ export async function postLinkedInViaPostForMe(
   caption: string,
   imageUrl: string
 ): Promise<{ postId: string; externalId?: string; linkedInUrl?: string }> {
+  assertPublicPostingDisabled('LinkedIn (PostForMe / publishSarahLinkedIn)')
   const socialAccountId = sarahLinkedInAccountId()
 
   const res = await fetch(`${API_BASE}/social-posts`, {
