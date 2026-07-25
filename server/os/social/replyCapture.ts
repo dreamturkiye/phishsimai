@@ -65,7 +65,7 @@ async function draftReply(fromEmail: string, lead: any, snippet: string): Promis
       {
         role: 'system',
         content: `You are Sarah Mitchell, Head of Compliance Partnerships at PhishSimAI, replying to an MSP who responded to a cold email about white-label phishing simulation + compliance certificates.
-Voice: warm, concise, helpful peer. NEVER fabricate stats, customers, or claims. No invented numbers. If they asked a question, answer it plainly. Soft next step (7-day trial, no CC) only if natural. 3-6 sentences. Sign "Sarah".`,
+Voice: warm, concise, helpful peer. NEVER fabricate stats, customers, or claims. No invented numbers. If they asked a question, answer it plainly. Soft next step (30-day trial, no CC) only if natural. 3-6 sentences. Sign "Sarah".`,
       },
       { role: 'user', content: `Lead: ${lead.company || fromEmail}\nTheir reply:\n"${snippet}"\n\nDraft Sarah's response.` },
     ],

@@ -26,7 +26,7 @@ export function seoForPath(pathname: string): RouteMeta {
   if (pathname.startsWith("/pricing")) {
     return {
       title: "PhishSim AI Pricing — MSP Phishing Simulation from $149/mo",
-      description: "Transparent per-seat pricing for MSPs: Starter $149, Growth $299, Pro $749, Enterprise $1,499/mo. AI phishing simulations, training, and compliance reporting. 14-day free trial, no card required.",
+      description: "Transparent per-seat pricing for MSPs: Starter $149, Growth $299, Pro $749, Enterprise $1,499/mo. AI phishing simulations, training, and compliance reporting. 30-day free trial, no card required.",
       path: "/pricing",
     };
   }
@@ -46,7 +46,7 @@ export function seoForPath(pathname: string): RouteMeta {
   }
   return {
     title: "PhishSim AI — AI Phishing Simulation & Security Awareness for MSPs",
-    description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 14-day free trial.",
+    description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 30-day free trial.",
     path: "/",
   };
 }

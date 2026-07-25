@@ -40,7 +40,7 @@ export default function TermsOfService() {
 
           <section>
             <h2 className="text-xl font-bold text-foreground mb-3">4. Subscription and Payment</h2>
-            <p>Access to the Service requires a paid subscription after the 14-day free trial period. Subscription fees are billed monthly or annually in advance. All fees are non-refundable except as required by law. We reserve the right to modify pricing with 30 days' notice. Failure to pay may result in suspension or termination of your account.</p>
+            <p>Access to the Service requires a paid subscription after the 30-day free trial period. Subscription fees are billed monthly or annually in advance. All fees are non-refundable except as required by law. We reserve the right to modify pricing with 30 days' notice. Failure to pay may result in suspension or termination of your account.</p>
           </section>
 
           <section>
