@@ -16,12 +16,26 @@ export const PAUSE_ON_BOUNCE_RATE = 0.08
 // PS-RAMP-01: decided warm-up ramp 20 → 50 → 100/day. Day 1 = RAMP_START. The step cadence is
 // explicit and editable here; day 8+ holds at RAMP_MAX. Applied as the per-run cap in
 // runFullSequence so no day exceeds it, drawing from the sanitized-clean pool.
-const RAMP_START = '2026-07-19' // today = day 1 at 20/day
-const RAMP_MAX = 100
+const RAMP_START = '2026-07-19' // day 1 at 20/day
+// PS-RAMP-HOLD-01 (2026-07-25): RAMP_MAX held at 50, NOT 100. Supply gates the ramp.
+//
+// Day 8 (2026-07-26) would have stepped to 100/day. Measured that morning:
+//   · sendable pool ...... 475 (legacy stock, not a maintained reserve)
+//   · sanitizeRefill ..... tops the pool up to dailySendCap() and no further — just-in-time,
+//                          zero buffer. At sendable=475 it is currently a no-op.
+//   · lead_research_queue  713 pending (newest today — the mymsphub harvester IS feeding it)
+//                          but newest 'enriched' row is 2026-07-23: enrichment has been STALLED
+//                          for 2 days while the backlog grows.
+//
+// At 100/day the 475 buffer drains in ~9 days into a JIT system with no margin, where one failed
+// refill run (API quota, the 240s time budget, a yield dip) means ZERO sends that day — silently.
+// Hold at 50 until enrichment is unstalled and enriched-per-day >= send rate for ~3 consecutive
+// days. Raise this back to 100 only with that evidence.
+const RAMP_MAX = 50
 const RAMP: { throughDay: number; cap: number }[] = [
   { throughDay: 3, cap: 20 }, // days 1-3
   { throughDay: 7, cap: 50 }, // days 4-7
-] // day 8+ => RAMP_MAX (100)
+] // day 8+ => RAMP_MAX (50, held — see PS-RAMP-HOLD-01)
 export function dailySendCap(now: Date = new Date()): number {
   const start = Date.parse(`${RAMP_START}T00:00:00Z`)
   const dayN = Math.floor((now.getTime() - start) / 86_400_000) + 1 // start day is day 1
