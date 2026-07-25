@@ -545,6 +545,20 @@ export async function runLeadResearcher(batchSize = 6) {
       return { ...stats, budget_exhausted: budgetExhausted, finder_budget_reached: true, elapsed_s: el() }
     }
 
+    // PS-ENRICH-STRAND-01: reconcile rows that are unreachable by the selector below. A row at
+    // status='pending' with attempts >= MAX can never be selected (the selector requires
+    // attempts < MAX) and nothing else retires it — it sits in 'pending' forever, inflating the
+    // backlog and never resolving. Four such rows existed in prod on 2026-07-25; the watchdog
+    // calls this the "shouldn't occur" case and only alarms above 20, so it stayed invisible.
+    // Idempotent, cheap, and runs before selection so the count is always honest.
+    const strandedRows = (await sql`
+      UPDATE lead_research_queue SET status='unenrichable', updated_at=NOW()
+      WHERE company_id = ${COMPANY_ID} AND status='pending' AND attempts >= ${MAX_RESEARCH_ATTEMPTS}
+      RETURNING id`) as Array<{ id: string }>
+    if (strandedRows.length > 0) {
+      console.log(`[researcher] reconciled ${strandedRows.length} stranded pending row(s) (attempts>=${MAX_RESEARCH_ATTEMPTS}) -> unenrichable`)
+    }
+
     const pending = await sql`
       SELECT id, domain, company_name, research_data FROM lead_research_queue
       WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < ${MAX_RESEARCH_ATTEMPTS}

@@ -5,6 +5,7 @@ import { checkEmployeeStaleness } from './agentHealth_v2'
 import { runOpsRecoveryTick } from './opsRecovery'
 import { runLeadResearcher } from './agents/leadResearcher'
 import { getSequenceHealth } from './sequences'
+import { alertOnEnrichmentStall } from './enrichmentLiveness'
 import { resolveSystemAlert } from './selfHeal'
 
 const RESEARCHER_PROACTIVE_MS = 55 * 60 * 1000
@@ -69,6 +70,18 @@ export async function runWatchdog() {
       result.actions_taken.push(`Stall alert: ${stalledN} (send ${sendStuck}, research ${researchStuck})`)
     } else {
       result.actions_taken.push(`Lead stall OK: ${stalledN} genuinely stalled (raw reservoir excluded)`)
+    }
+
+    // PS-ENRICH-LIVENESS-01: the checks above count STUCK ROWS. They cannot see a researcher that
+    // stopped running entirely — rows just sit at 'pending' with attempts=0, which looks like a
+    // healthy backlog. Meanwhile the harvester keeps inserting, so every created_at-based liveness
+    // check stays green. This watches the one column only the researcher writes.
+    const enrich = await alertOnEnrichmentStall(sql).catch(() => null)
+    if (enrich?.stalled) {
+      result.issues_found++
+      result.actions_taken.push(`Enricher STALLED: ${enrich.reason}`)
+    } else if (enrich) {
+      result.actions_taken.push(`Enricher OK: ${enrich.reason}`)
     }
   } catch (e: any) {
     result.actions_taken.push('Stall check error: ' + e.message?.slice(0, 100))

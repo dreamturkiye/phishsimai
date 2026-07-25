@@ -61,7 +61,14 @@ export const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: 
   // this line makes the 06:00 truth report say so. Belt (this, fast-monitor liveness) and braces
   // (the /api/os/sequence row above, which independently RED-flags a >26h-old last send).
   { cron: '/api/os/outreach-funnel', schedule: '30 8 * * *', table: 'credit_readings', col: 'read_at' },
-  { cron: '/api/os/researcher', schedule: '*/30 * * * *', table: 'lead_research_queue', col: 'created_at' },
+  // PS-ENRICH-LIVENESS-01: measured on last_attempt_at, NOT created_at — the same trap the
+  // /api/os/sequence row above documents, re-created here and missed. `created_at` on this table
+  // is written by the HARVESTERS (mspHubHarvest / mapsDiscovery INSERT), not by the researcher.
+  // So the researcher's liveness was being proven by a DIFFERENT agent's output: if enrichment
+  // died completely, the harvester would keep inserting rows and this line would stay green
+  // forever. `last_attempt_at` is written ONLY by the researcher, on every row it touches — it is
+  // the thing this cron exists to produce.
+  { cron: '/api/os/researcher', schedule: '*/30 * * * *', table: 'lead_research_queue', col: 'last_attempt_at' },
   { cron: '/api/os/janet', schedule: '0 8 * * *', table: 'janet_memory', col: 'created_at' },
   { cron: '/api/os/metrics-snapshot', schedule: '0 6 * * *', table: 'metrics_daily', col: 'created_at' },
   { cron: '/api/os/founder-brief', schedule: '0 21 * * *', table: 'founder_briefs', col: 'created_at' },
