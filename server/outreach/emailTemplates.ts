@@ -1,7 +1,7 @@
 type OutreachLead = { name: string; company: string; country: string; sector: string; email: string }
 
 const TRIAL_CTA_URL = 'https://phishsimai.com/'
-const TRIAL_CTA_LABEL = 'Start a Free 14-Day Trial'
+const TRIAL_CTA_LABEL = 'Start a Free 30-Day Trial'
 const TRIAL_CTA_PARAGRAPH = `<p><a href="${TRIAL_CTA_URL}">${TRIAL_CTA_LABEL}</a> — no credit card required.</p>`
 const TRIAL_CTA_BUTTON = `<a href="${TRIAL_CTA_URL}" style="background-color: #007bff; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px;">${TRIAL_CTA_LABEL}</a>`
 

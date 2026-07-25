@@ -45,7 +45,7 @@ const FEATURES = [
 const SPEED_PROOF = [
   { stat: "10 min", label: "from signup to first simulation sent" },
   { stat: "0", label: "onboarding calls, demos, or sales gates required" },
-  { stat: "14 days", label: "free trial, no credit card" },
+  { stat: "30 days", label: "free trial, no credit card" },
 ];
 
 const TESTIMONIALS = [
@@ -94,7 +94,7 @@ const FAQS = [
   { q: "Will the phishing emails actually be delivered to inboxes?", a: "Yes. We provide SPF/DKIM/DMARC configuration guidance to whitelist our sending infrastructure. Most organizations achieve 95%+ inbox delivery rates." },
   { q: "Can we use our own phishing templates?", a: "Absolutely. You can create custom templates, import from real phishing emails you have received, and share templates with other organizations in the community library." },
   { q: "How do the compliance certificates work?", a: "After completing the required checklist items for a framework (e.g., HIPAA), you can generate a dated compliance certificate with your organization name, completion percentage, and the specific regulatory citation. These are accepted by most auditors as evidence of a phishing awareness program." },
-  { q: "Is there a free trial?", a: "Yes — all plans include a 14-day free trial with no credit card required. You get full access to all features during the trial." },
+  { q: "Is there a free trial?", a: "Yes — all plans include a 30-day free trial with no credit card required. You get full access to all features during the trial." },
 ];
 
 export default function Home() {
@@ -181,11 +181,11 @@ export default function Home() {
             </div>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
               <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
-                Start Free 14-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
+                Start Free 30-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
-              {["No credit card required", "Setup in under 10 minutes", "14-day free trial", "Cancel anytime"].map(t => (
+              {["No credit card required", "Setup in under 10 minutes", "30-day free trial", "Cancel anytime"].map(t => (
                 <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />{t}</span>
               ))}
             </div>
@@ -230,7 +230,7 @@ export default function Home() {
         <div className="container">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">15 cents per user</span>.</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 30-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
             {PLANS.map((plan) => (
@@ -635,7 +635,7 @@ export default function Home() {
           <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
             Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
-          <p className="text-xs text-muted-foreground mt-4">No credit card required · 14-day free trial · Cancel anytime</p>
+          <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial · Cancel anytime</p>
         </div>
       </section>
 

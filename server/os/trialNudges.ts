@@ -4,17 +4,26 @@
 // pulls REAL account numbers, and sends once (idempotent).
 import { getSql } from "./conn";
 import { sendTelegram } from "./telegram";
-import { sendTrialDay7, sendTrialDay12, sendTrialDay14, type TrialStats } from "../email/janet";
+import { sendTrialDay14, sendTrialDay25, sendTrialDay30, type TrialStats } from "../email/janet";
 
 const DAY_MS = 86_400_000;
 
 // Windows (not exact equality) so a missed cron day or a send failure is still caught the next day;
 // the idempotency table guarantees each nudge goes exactly once. Most-urgent-first.
-export function nudgeFor(daysLeft: number): 7 | 12 | 14 | null {
-  if (daysLeft <= 0) return 14;
-  if (daysLeft <= 3) return 12;
-  if (daysLeft <= 8) return 7;
-  return null; // days 9–14 of the trial: too early to nudge
+//
+// PS-TRIAL-30-01: re-spaced from D7/D12/D14 to D14/D25/D30 for the 30-day trial. The three beats
+// are unchanged in PURPOSE, only in timing:
+//   • D14 (~16 days left) — value recap at the natural mid-point, once a first campaign cycle has
+//     had time to complete. Firing this at day 7 of 30 would recap an empty account.
+//   • D25 (~5 days left)  — loss-anchored urgency, the "near expiry" beat.
+//   • D30 (expired)       — post-expiry recovery. Keyed to daysLeft <= 0 and NOT to day 29: its
+//     copy says the trial "has ended" and the account is on the free plan, which is only true
+//     once the gate has actually dropped. Sending it a day early would be a false statement.
+export function nudgeFor(daysLeft: number): 14 | 25 | 30 | null {
+  if (daysLeft <= 0) return 30;
+  if (daysLeft <= 6) return 25;
+  if (daysLeft <= 17) return 14;
+  return null; // days 1–12 of the trial: too early to nudge
 }
 
 export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }> }> {
@@ -52,9 +61,9 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
     const stats: TrialStats = row[0] ?? { sent: 0, opened: 0, clicked: 0, reported: 0 };
 
     try {
-      const ok = nudge === 7 ? await sendTrialDay7(org.admin_email, org.name, stats)
-        : nudge === 12 ? await sendTrialDay12(org.admin_email, org.name, stats, Math.max(1, daysLeft))
-          : await sendTrialDay14(org.admin_email, org.name);
+      const ok = nudge === 14 ? await sendTrialDay14(org.admin_email, org.name, stats)
+        : nudge === 25 ? await sendTrialDay25(org.admin_email, org.name, stats, Math.max(1, daysLeft))
+          : await sendTrialDay30(org.admin_email, org.name);
       if (ok) sent.push({ orgId: org.id, nudge });
       else {
         // Send failed — un-claim so tomorrow's run retries within the window.

@@ -321,7 +321,7 @@ Product map:
 - Compliance (/compliance) = HIPAA/SOC2/PCI audit reports
 - Settings (/settings) = org & billing
 
-Pricing: Starter $99/mo, Growth $249, Pro $499, Unlimited $999. 14-day free trial.
+Pricing: Starter $99/mo, Growth $249, Pro $499, Unlimited $999. 30-day free trial.
 
 Current page: ${pathname}. ${pageGuide}
 

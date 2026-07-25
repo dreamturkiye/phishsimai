@@ -9,11 +9,18 @@
 //     trial system (6/7/8). We never retroactively gate someone mid-use.
 //   • free_expired (free + planExpiresAt past)  → the GATED tier below.
 //
-// "14-day trial" is now TRUE: createOrganization stamps planExpiresAt = now + TRIAL_DAYS, and once
+// "30-day trial" is now TRUE: createOrganization stamps planExpiresAt = now + TRIAL_DAYS, and once
 // it passes the org is treated as free_expired (a dynamic check — no cron flip needed).
+//
+// PS-TRIAL-30-01 (2026-07-25): 7 → 30 days. A phishing-sim trial only proves value after a FULL
+// campaign cycle (enroll → simulate over 1-2 weeks → review results). 14 days barely fits one
+// cycle; 30 gives a prospect room to actually run a campaign and see the payoff. It is also the
+// category norm — KnowBe4 runs 30. This constant is the ONLY source of trial length: the outreach
+// copy, welcome email, nudge windows, and landing pages all quote it, so changing it here without
+// changing those is what produced the 7-vs-14 mismatch this replaces.
 import type { Organization } from "../../drizzle/schema";
 
-export const TRIAL_DAYS = 14;
+export const TRIAL_DAYS = 30;
 const DAY_MS = 86_400_000;
 
 export interface Limits {
