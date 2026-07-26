@@ -188,6 +188,51 @@ describe("hard-stop + protected-path enforcement", () => {
   it("allows a normal action with normal paths", () => {
     expect(() => assertNotHardStop("deploy", ["server/os/foo.ts", "client/src/Home.tsx"])).not.toThrow();
   });
+
+  // SELF-GUARD: Marcus must not be able to edit the code that decides what Marcus may do.
+  // Group 1 stops him breaking the product; this stops him removing the gate itself, which
+  // is the edit that would make every subsequent edit unguarded.
+  it.each([
+    ["server/os/autonomyGate.ts", "the level gate"],
+    ["server/os/autonomyPromotion.ts", "earned promotion"],
+    ["server/os/circuitBreaker.ts", "the breaker itself"],
+    ["server/os/marcusBreaker.ts", "the breaker wiring"],
+    ["server/os/selfHeal.ts", "park-for-approval"],
+    ["server/os/architectCode.ts", "code-gen + hard stop call site"],
+    ["server/os/architectPending.ts", "the daemon queue"],
+    ["server/os/posture.ts", "clean-day posture"],
+    ["server/os/cleanDays.ts", "clean-day compute"],
+    ["server/os/agentLevels.ts", "agent levels"],
+    ["drizzle/0012_autonomy_audit.sql", "the DB autonomy triggers"],
+    ["drizzle/schema.ts", "schema"],
+    ["server/os/migrations/001_hq_tables.sql", "OS migrations"],
+  ])("refuses %s (%s)", (path) => {
+    expect(isProtectedPath(path)).toBe(true);
+    expect(() => assertNotHardStop("execute_architect_task", [path])).toThrow(/protected/);
+  });
+
+  // The tests that PIN a guard are part of that guard. Leaving them editable would let a
+  // change gut the enforcement while CI stayed green.
+  it.each([
+    "server/os/architectExecGate.test.ts",
+    "server/os/architectProtectedPath.test.ts",
+    "server/os/circuitBreaker.test.ts",
+    "server/os/autonomyGate.test.ts",
+  ])("refuses the guard test %s", (path) => {
+    expect(isProtectedPath(path)).toBe(true);
+  });
+
+  // The self-guard must stay narrow enough that Marcus can still fix ordinary bugs —
+  // a guard that blocks everything gets switched off, which protects nothing.
+  it.each([
+    "server/os/routes.ts",
+    "server/os/janet.ts",
+    "server/email/sender.ts",
+    "client/src/pages/Dashboard.tsx",
+    "server/os/metricsSnapshot.ts",
+  ])("still allows ordinary file %s", (path) => {
+    expect(isProtectedPath(path)).toBe(false);
+  });
 });
 
 describe("secondary fingerprint — same rot across task IDs", () => {

@@ -370,12 +370,40 @@ export async function checkDiffSafety(
 // ═══════════════════════════════════════════════════════════════════════════════
 //  HARD-STOP ENFORCEMENT — never auto-approvable; protected paths never touched.
 // ═══════════════════════════════════════════════════════════════════════════════
-// Protected paths (globs): **/auth/**, **/webhooks/**, **/payment*/**, **/billing/**
+// GROUP 1 — money and identity. **/auth/**, **/webhooks/**, **/payment*/**, **/billing/**
+// A bad edit here costs real money or lets someone in. Never auto-editable.
+//
+// GROUP 2 — THE AGENT'S OWN GOVERNANCE SURFACE (the self-guard gap).
+// Group 1 stops Marcus from breaking the product. It does nothing to stop him editing the
+// code that decides what he is allowed to do — and that is the more dangerous of the two,
+// because it is the only edit that makes every FUTURE edit unguarded. An agent permitted to
+// patch its own gate has no gate; it has a suggestion. So the level gate, the breaker, the
+// park-for-approval path, the clean-day inputs that drive promotion, and the schema/migrations
+// carrying the DB-level autonomy triggers are all hard stops.
+//
+// `.test.ts` variants are protected too, deliberately. A guard is only as real as the test
+// pinning its call site — rewriting `architectExecGate.test.ts` to assert nothing would leave
+// CI green while the enforcement quietly disappeared. That is the same class of hole as
+// editing the guard itself, so it gets the same treatment.
+//
+// KNOWN LIMIT, recorded rather than papered over: `architectComplete` lives in the shared
+// `server/os/routes.ts`, which is not protected here — it is a large file of ordinary
+// handlers, and blocking it would block most legitimate self-heal. Splitting that handler out
+// is the clean fix; until then this pattern set does not cover it.
 const PROTECTED_PATH_RES: RegExp[] = [
+  // Group 1 — money and identity
   /(^|\/)auth\//,
   /(^|\/)webhooks\//,
   /(^|\/)payment[^/]*\//,
   /(^|\/)billing\//,
+  // Group 2 — the gate, the breaker, and the self-heal queue surface
+  /(^|\/)(selfHeal|autonomyGate|autonomyPromotion|circuitBreaker|marcusBreaker)(\.test)?\.ts$/,
+  /(^|\/)architect[A-Za-z]*(\.test)?\.ts$/,
+  // Group 2 — the clean-day inputs that drive earned promotion
+  /(^|\/)(posture|cleanDays|agentLevels)(\.test)?\.ts$/,
+  // Group 2 — schema + migrations (0012's autonomy triggers are enforcement, not plumbing)
+  /(^|\/)drizzle\//,
+  /(^|\/)migrations\//,
 ]
 
 export function isProtectedPath(path: string): boolean {
