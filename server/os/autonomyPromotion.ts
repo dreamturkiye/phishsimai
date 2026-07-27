@@ -28,18 +28,46 @@ export type EnfLevel = (typeof ORDER)[number]
 export const AUTONOMY_FLOOR: EnfLevel = 'manual' // Kaan's L1 — never demote below this
 // PS-AUTONOMY-RATE-01 (2026-07-20, founder-directed): one rung per clean day (was 5). This changes
 // the RATE only — promotion still fires ONLY on genuinely-earned clean days, still through the
-// audited grant-token path, still never below the floor, still demotes on a breaker trip. A run
-// now applies EVERY rung the earned-but-ungranted clean days have bought (see runAutonomyPromotion),
-// so the level reaches what the clean days earned instead of crawling one rung per cron.
+// audited grant-token path, still never below the floor, still demotes on a breaker trip.
+//
+// PS-AUTONOMY-ONERUNG-01 (2026-07-26, founder-directed): a run now applies AT MOST ONE rung.
+// The previous behaviour spent the whole earned-but-ungranted budget in a single run, so a level
+// sitting at the floor with 3 unspent clean days climbed manual→l2→l3→l4 in one cron tick. That is
+// not "earning a rung per clean day" — it is banking days and skipping the earning, and it crosses
+// acting levels without a single day of observation at any rung in between. One rung per RUN, on a
+// genuinely clean day, is what makes the ladder observable: each level gets at least one real day
+// of production behaviour before the next is even considered.
 export const CLEAN_DAYS_PER_RUNG = 1 // the ladder's criterion: 1 consecutive clean day per rung
 const TRUST_STEP = 0.2
 const rankOf = (l: string): number => Math.max(0, (ORDER as readonly string[]).indexOf(l))
+
+// PS-MARCUS-WATCHERGATE-01 — the first ACTING level. At l3 architectPending stops handing the
+// external watcher an empty queue and starts giving it real tasks to apply, so l3 is the rung where
+// generated code can actually reach production.
+//
+// SENTRY_DSN is NOT what makes that dangerous, and gating on it would be the wrong control:
+// queueJanetArchitectTask has seven callers (architectAgent, janet standup, janetReport,
+// agentWatchdog, janetHQActions, l5Autonomy, routes), and all of them can fill the queue at l3 with
+// Sentry switched off entirely. The queue is empty today only because 'manual' denies all seven.
+//
+// So the gate binds on LEVEL, and it is independent of clean days: no number of clean days may carry
+// Marcus into an acting level while the component that actually writes and deploys files — the
+// external watcher — has not been audited. Clean days can still earn him to l2.
+export const FIRST_ACTING_LEVEL: EnfLevel = 'l3'
 
 export interface DecisionInput {
   level: EnfLevel
   cleanSinceLastGrant: number // consecutive clean days earned SINCE the last grant (the cycle)
   breakerOpen: boolean
   trust: number
+  /**
+   * Has the external Marcus watcher been audited? FAIL CLOSED — callers must pass the real
+   * answer, and an absent/unknown audit record must arrive here as `false`. Blocks promotion
+   * into FIRST_ACTING_LEVEL and above; has no effect on demotion, which must always be able
+   * to run. Optional in the type only so existing callers keep compiling; `undefined` is
+   * treated as NOT audited.
+   */
+  watcherAudited?: boolean
 }
 export interface AutonomyDecision extends DecisionInput {
   action: 'promote' | 'demote' | 'hold'
@@ -65,7 +93,15 @@ export function decidePromotion(input: DecisionInput): AutonomyDecision {
   // PROMOTE: breaker closed, below cap, and a FRESH full clean cycle earned. Exactly one rung.
   // cleanSinceLastGrant resets to 0 after every grant, so this cannot fire twice on one cycle.
   if (!breakerOpen && r < rankOf('l5') && cleanSinceLastGrant >= CLEAN_DAYS_PER_RUNG) {
-    return { ...base, action: 'promote', to: ORDER[r + 1], reason: `earned_${cleanSinceLastGrant}_clean_days` }
+    const target = ORDER[r + 1]
+    // WATCHER-AUDIT HARD GATE. Checked here, inside the pure decision, so it is unit-testable and
+    // so EVERY promotion path is covered rather than just the one caller. Written as `>= rank of
+    // the first acting level` rather than `target === 'l3'` so it still holds if the rung vocabulary
+    // changes or if multi-rung promotion is ever reintroduced.
+    if (rankOf(target) >= rankOf(FIRST_ACTING_LEVEL) && input.watcherAudited !== true) {
+      return { ...base, action: 'hold', to: level, reason: `watcher_audit_required_for_${target}` }
+    }
+    return { ...base, action: 'promote', to: target, reason: `earned_${cleanSinceLastGrant}_clean_days` }
   }
   // HOLD — with an explicit reason (never a silent no-op).
   const reason = breakerOpen
@@ -106,6 +142,33 @@ async function readBaseline(sql: any, companyId: string): Promise<string | null>
     return state?.baseline_from ? String(state.baseline_from).slice(0, 10) : null
   } catch {
     return null
+  }
+}
+
+// PS-MARCUS-WATCHERGATE-01 — has the external Marcus watcher been audited?
+//
+// FAIL CLOSED, and deliberately so: this returns false when the row is absent, when the value is
+// anything other than the exact literal 'passed', and when the query throws. Every failure mode of
+// this function must read as "not audited", because the cost of a false negative is a ladder that
+// pauses at l2 until someone records the audit, and the cost of a false positive is Marcus crossing
+// into an acting level with the one component that has real hands still unexamined.
+//
+// Stored in janet_memory (the codebase's convention for operating state) rather than an env var:
+// an env var is invisible in the audit trail, and a level-changing control that leaves no record is
+// the exact failure 0012 was written to close.
+//
+//   INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+//   VALUES ('phishsimai', 'operating', 'watcher_audit', 'passed', 1, 'founder');
+export const WATCHER_AUDIT_KEY = 'watcher_audit'
+
+export async function isWatcherAudited(sql: any, companyId: string): Promise<boolean> {
+  try {
+    const rows = (await sql`SELECT value FROM janet_memory
+                            WHERE company_id=${companyId} AND type='operating' AND key=${WATCHER_AUDIT_KEY}
+                            LIMIT 1`) as any[]
+    return String(rows?.[0]?.value ?? '').trim().toLowerCase() === 'passed'
+  } catch {
+    return false // unreadable audit record is NOT an audit
   }
 }
 
@@ -164,13 +227,16 @@ async function breakerOpen(sql: any, companyId: string): Promise<boolean> {
 export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverride?: any): Promise<AutonomyDecision> {
   const sql = sqlOverride ?? getSql()
   const { level, trust } = await readState(sql, companyId)
-  const [cleanSinceLastGrant, open, streak] = await Promise.all([
+  // Reads the watcher-audit flag too, so this read-only preview reports what the job WILL do rather
+  // than a rosier answer. A preview that says 'promote' while the job holds is worse than no preview.
+  const [cleanSinceLastGrant, open, streak, watcherAudited] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
     v2Streak(sql, companyId),
+    isWatcherAudited(sql, companyId),
   ])
   return {
-    ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust }),
+    ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust, watcherAudited }),
     cleanStreak: streak.days,
     cleanStreakCriteria: streak.criteria,
   }
@@ -182,19 +248,27 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
 // UPDATE is what keeps a multi-rung catch-up auditable — it lands as a manual→l2→l3→l4 grant trail,
 // never one blind manual→l4 write the trigger would (correctly) refuse.
 //
-// At CLEAN_DAYS_PER_RUNG=1 a single run applies every rung the earned-but-ungranted clean days have
-// bought (budget = clean days strictly after the last grant), so PhishSim reaches the level it has
-// earned in one run rather than crawling one rung per future cron. The budget is consumed one rung
-// at a time, so the loop stops EXACTLY at the earned level (or the l5 cap) — it cannot over-promote
-// past what was earned. A breaker trip demotes exactly one rung then stops (safety, no cascade).
+// PS-AUTONOMY-ONERUNG-01: a run applies AT MOST ONE rung. This previously looped, spending the whole
+// earned-but-ungranted budget in one tick — a floor-level product with 3 unspent clean days climbed
+// manual→l2→l3→l4 in a single cron, crossing acting levels with zero days of observation at any rung
+// in between. Banking days and cashing them in a burst is not earning. One rung per run means every
+// level gets at least one real production day before the next is considered.
+//
+// The loop is retained (not flattened to a single call) so the demote path keeps its own explicit
+// break and so the shape stays honest about applying rungs one at a time; it just cannot iterate
+// past a single applied change now. The budget arithmetic is likewise kept: it is what the emitted
+// reason strings report, and it documents how much was earned but deliberately not spent.
+//
+// A breaker trip still demotes exactly one rung then stops (safety, no cascade).
 // Idempotent when nothing is owed: no grant, no write.
 export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?: any) {
   const sql = sqlOverride ?? getSql()
   const { level, trust, storedStreak } = await readState(sql, companyId)
-  const [budget0, open, streak] = await Promise.all([
+  const [budget0, open, streak, watcherAudited] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
     v2Streak(sql, companyId),
+    isWatcherAudited(sql, companyId),
   ])
 
   let curLevel = level
@@ -202,12 +276,11 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
   let budget = budget0
   const trail: Array<{ from: EnfLevel; to: EnfLevel; action: 'promote' | 'demote'; reason: string }> = []
 
-  // Decide the NEXT single rung from the live in-memory state, commit it through the audited path,
-  // then repeat. A promote spends CLEAN_DAYS_PER_RUNG of the earned budget (so the loop halts at the
-  // earned level / l5 cap); a demote fires once and breaks. The pure decidePromotion still enforces
-  // the l4 failure-mode guard (budget 0 → hold), the floor, and the cap on every iteration.
+  // Decide the NEXT single rung from the live in-memory state and commit it through the audited path.
+  // The pure decidePromotion enforces the l4 failure-mode guard (budget 0 → hold), the floor, the cap,
+  // and the watcher-audit gate on entry to any acting level.
   while (true) {
-    const d = decidePromotion({ level: curLevel, cleanSinceLastGrant: budget, breakerOpen: open, trust: curTrust })
+    const d = decidePromotion({ level: curLevel, cleanSinceLastGrant: budget, breakerOpen: open, trust: curTrust, watcherAudited })
     if (d.action === 'hold') break
 
     await sql`INSERT INTO autonomy_grants (company_id, from_level, to_level, direction, reason, clean_days, trust, created_by)
@@ -222,6 +295,7 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
     curLevel = d.to
     if (d.action === 'demote') break // a breaker trip steps down exactly one rung — never a cascade
     budget -= CLEAN_DAYS_PER_RUNG // this rung consumed its earned clean day(s)
+    break // PS-AUTONOMY-ONERUNG-01 — at most ONE rung per run; the rest of the budget is not spent
   }
 
   // PS-AUTONOMY-CRITERIA-01 — keep the stored streak honest even when nothing moved. Before this,

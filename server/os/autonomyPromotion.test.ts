@@ -5,7 +5,10 @@ import { describe, it, expect } from 'vitest'
 import { decidePromotion, CLEAN_DAYS_PER_RUNG, AUTONOMY_FLOOR, runAutonomyPromotion } from './autonomyPromotion'
 import { CRITERIA_VERSION } from './posture'
 
-const base = { breakerOpen: false, trust: 0 }
+// watcherAudited defaults to TRUE here so the ladder-mechanics tests below keep testing ladder
+// mechanics. The gate itself — including its fail-closed default when the field is absent — is
+// exercised explicitly in the 'watcher-audit gate' describe block, which never uses this base.
+const base = { breakerOpen: false, trust: 0, watcherAudited: true }
 
 // ── A fake tagged-template SQL that answers by matching the query text. Each table is a plain
 // array so a test can state exactly which rows exist and assert on what got written. ──
@@ -18,6 +21,8 @@ type FakeDb = {
   cleanDays?: Array<{ day: string; clean: boolean; criteria_version: number }>
   lastGrantAt?: string | null
   breakerOpen?: boolean
+  /** Omitted → no janet_memory row → isWatcherAudited() returns false (fail closed). */
+  watcherAudited?: boolean
 }
 function fakeSql(db: FakeDb) {
   const writes: string[] = []
@@ -29,6 +34,7 @@ function fakeSql(db: FakeDb) {
     if (/FROM os_autonomy_state/i.test(q)) return [{ level: db.level ?? 'l5', trust: db.trust ?? 0.8, clean_day_streak: db.storedStreak ?? 0, clean_day_streak_criteria: db.storedCriteria === undefined ? 1 : db.storedCriteria }]
     if (/FROM autonomy_grants/i.test(q)) return db.lastGrantAt ? [{ created_at: db.lastGrantAt }] : []
     if (/FROM circuit_breaker_state/i.test(q)) return db.breakerOpen ? [{ n: 1 }] : []
+    if (/FROM janet_memory/i.test(q)) return db.watcherAudited ? [{ value: 'passed' }] : []
     if (/FROM autonomy_clean_days/i.test(q)) {
       // Honour the filters the query actually carries — that is the behaviour under test.
       const wantsCriteria = /criteria_version >= /.test(q)
@@ -111,6 +117,62 @@ describe('decidePromotion (pure)', () => {
       level = d.to
     }
     expect(path).toEqual(['l2', 'l3', 'l4', 'l5'])
+  })
+})
+
+// ── PS-MARCUS-WATCHERGATE-01 ────────────────────────────────────────────────────────────────────
+// l3 is the first ACTING level: at l3 architectPending stops handing the external watcher an empty
+// queue and starts giving it real tasks to apply. The watcher is the component with real hands and
+// it lives outside this repo, so no number of clean days may carry Marcus into l3 before it has been
+// audited. The gate is on the LEVEL, not on SENTRY_DSN — queueJanetArchitectTask has seven callers
+// (janet standup, agentWatchdog, janetHQActions, l5Autonomy, janetReport, routes, architectAgent)
+// and they fill the queue at l3 with Sentry switched off entirely.
+describe('decidePromotion — watcher-audit gate on acting levels', () => {
+  const unaudited = { breakerOpen: false, trust: 0, watcherAudited: false }
+
+  it('l2 → l3 is BLOCKED while the watcher is unaudited, however many clean days are earned', () => {
+    const d = decidePromotion({ ...unaudited, level: 'l2', cleanSinceLastGrant: 999 })
+    expect(d.action).toBe('hold')
+    expect(d.to).toBe('l2')
+    expect(d.reason).toBe('watcher_audit_required_for_l3')
+  })
+
+  it('FAILS CLOSED — an absent watcherAudited field blocks just like an explicit false', () => {
+    const d = decidePromotion({ breakerOpen: false, trust: 0, level: 'l2', cleanSinceLastGrant: 5 })
+    expect(d.action).toBe('hold')
+    expect(d.reason).toBe('watcher_audit_required_for_l3')
+  })
+
+  it('still lets clean days earn manual → l2 (the gate blocks acting levels, not the ladder)', () => {
+    const d = decidePromotion({ ...unaudited, level: 'manual', cleanSinceLastGrant: 1 })
+    expect(d.action).toBe('promote')
+    expect(d.to).toBe('l2')
+  })
+
+  it('the ladder stalls AT l2 and goes no further while unaudited', () => {
+    const path: string[] = []
+    let level: any = 'manual'
+    for (let i = 0; i < 8; i++) {
+      const d = decidePromotion({ ...unaudited, level, cleanSinceLastGrant: 5 })
+      if (d.action !== 'promote') break
+      path.push(d.to)
+      level = d.to
+    }
+    expect(path).toEqual(['l2'])
+  })
+
+  it('once audited, the ladder proceeds past l3 normally', () => {
+    const d = decidePromotion({ breakerOpen: false, trust: 0, watcherAudited: true, level: 'l2', cleanSinceLastGrant: 5 })
+    expect(d.action).toBe('promote')
+    expect(d.to).toBe('l3')
+  })
+
+  // Safety must never depend on the audit flag: a breaker trip has to be able to step DOWN out of an
+  // acting level whether or not anyone has recorded an audit.
+  it('does NOT block demotion — a breaker trip still steps down from l3 while unaudited', () => {
+    const d = decidePromotion({ ...unaudited, breakerOpen: true, level: 'l3', cleanSinceLastGrant: 99 })
+    expect(d.action).toBe('demote')
+    expect(d.to).toBe('l2')
   })
 })
 
@@ -199,5 +261,68 @@ describe('runAutonomyPromotion — criteria + baseline alignment', () => {
     const { sql, writes } = fakeSql({ level: 'l5', storedStreak: 0, storedCriteria: CRITERIA_VERSION, baseline: '2026-07-23', cleanDays: v1Days })
     await runAutonomyPromotion('phishsimai', sql)
     expect(writes).toHaveLength(0)
+  })
+})
+
+// ── PS-AUTONOMY-ONERUNG-01 ──────────────────────────────────────────────────────────────────────
+// runAutonomyPromotion used to spend the ENTIRE earned-but-ungranted budget in one tick. A product
+// sitting at the floor with 3 unspent clean days climbed manual→l2→l3→l4 in a single cron run,
+// crossing acting levels with zero days of observation at any rung in between. That is banking days
+// and cashing them in a burst, not earning a rung per clean day. These pin one rung per RUN.
+describe('runAutonomyPromotion — at most ONE rung per run', () => {
+  // 3 consecutive clean v2 days after the last grant = a budget of 3 under the old behaviour.
+  const threeCleanDays = [
+    { day: '2026-07-24', clean: true, criteria_version: CRITERIA_VERSION },
+    { day: '2026-07-25', clean: true, criteria_version: CRITERIA_VERSION },
+    { day: '2026-07-26', clean: true, criteria_version: CRITERIA_VERSION },
+  ]
+  const db = {
+    level: 'manual',
+    baseline: '2026-07-23',
+    lastGrantAt: '2026-07-23T00:00:00.000Z',
+    cleanDays: threeCleanDays,
+    watcherAudited: true, // isolate the one-rung behaviour from the watcher gate
+  }
+
+  it('a 3-day budget at the floor promotes to l2 ONLY — not l3, not l4', async () => {
+    const { sql } = fakeSql(db)
+    const r = await runAutonomyPromotion('phishsimai', sql)
+    expect(r.action).toBe('promote')
+    expect(r.to).toBe('l2')
+  })
+
+  it('writes exactly ONE grant and ONE level change', async () => {
+    const { sql, writes } = fakeSql(db)
+    await runAutonomyPromotion('phishsimai', sql)
+    expect(writes.filter((w) => /INSERT INTO autonomy_grants/.test(w))).toHaveLength(1)
+    expect(writes.filter((w) => /UPDATE os_autonomy_state.*level=/s.test(w))).toHaveLength(1)
+  })
+
+  it('never crosses an acting level in a single run, even with a huge budget', async () => {
+    const bigBudget = Array.from({ length: 30 }, (_, i) => ({
+      day: `2026-08-${String(i + 1).padStart(2, '0')}`,
+      clean: true,
+      criteria_version: CRITERIA_VERSION,
+    }))
+    const { sql, writes } = fakeSql({ ...db, baseline: '2026-07-23', cleanDays: bigBudget })
+    const r = await runAutonomyPromotion('phishsimai', sql)
+    expect(r.to).toBe('l2')
+    expect(writes.some((w) => /'l3'|"l3"/.test(w))).toBe(false)
+    expect(writes.some((w) => /'l4'|"l4"/.test(w))).toBe(false)
+  })
+
+  it('a breaker trip still demotes exactly one rung — the safety path is unchanged', async () => {
+    const { sql } = fakeSql({ ...db, level: 'l4', breakerOpen: true })
+    const r = await runAutonomyPromotion('phishsimai', sql)
+    expect(r.action).toBe('demote')
+    expect(r.to).toBe('l3')
+  })
+
+  it('with the watcher unaudited, a 3-day budget at l2 writes NOTHING', async () => {
+    const { sql, writes } = fakeSql({ ...db, level: 'l2', watcherAudited: false })
+    const r = await runAutonomyPromotion('phishsimai', sql)
+    expect(r.action).toBe('hold')
+    expect(r.reason).toBe('watcher_audit_required_for_l3')
+    expect(writes.filter((w) => /INSERT INTO autonomy_grants/.test(w))).toHaveLength(0)
   })
 })
