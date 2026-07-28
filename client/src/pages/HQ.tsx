@@ -5,7 +5,21 @@ import { HQAnalyticsTab } from '../components/os/HQAnalyticsTab'
 import { HQPipelineTab } from '../components/os/HQPipelineTab'
 import { HQSocialTab } from '../components/os/HQSocialTab'
 
-const SECRET = 'ps-hq-2026'
+// PS-HQAUTH-01 (2026-07-28): the HQ console used to hardcode `ps-hq-2026`, but the server stopped
+// accepting that literal on 2026-07-10 (commit 6a7789d, "remove hardcoded HQ secret; auth fails
+// closed"), so every HQ/chat call has 401'd ever since HQ_SECRET was rotated/unset in prod. A secret
+// shipped inside the client bundle is not a secret anyway — it is served to every visitor. So source
+// it at RUNTIME instead: open /hq?key=<HQ_SECRET> once and it is cached in localStorage; the burned
+// literal is gone from the repo and rotation is just a fresh ?key= visit. Server side is unchanged —
+// this does NOT touch the autonomy gate (DB-level: os_autonomy_state.level) or ARCHITECT_SECRET.
+function readHqSecret(): string {
+  try {
+    const fromUrl = new URL(window.location.href).searchParams.get('key')
+    if (fromUrl) { localStorage.setItem('hq_secret', fromUrl); return fromUrl }
+    return localStorage.getItem('hq_secret') || ''
+  } catch { return '' }
+}
+const SECRET = readHqSecret()
 const API = '/api/os'
 
 type Msg = { role: 'janet' | 'you'; text: string; id: number; attachments?: string[] }
