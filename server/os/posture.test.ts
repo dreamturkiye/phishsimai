@@ -89,6 +89,41 @@ describe('computeDayCounters — unmeasured is not clean', () => {
   })
 })
 
+describe('computeDayCounters — every probe is scoped to THIS product', () => {
+  // PS-SCOPE-01. The clean-day verdict gates L5.7. An unscoped probe lets a sibling product's
+  // failure break PhishSim's streak with no visible cause — the failure would be real, just
+  // somebody else's. ep-purple-surf holds four company_ids in these same tables, so this is one
+  // connection-string mistake away from being live rather than theoretical.
+  it('filters agent_tasks by company_id, like the breaker probe filters product_id', async () => {
+    const sql = fakeSql([
+      { match: /metrics_daily/, rows: [{ n: 1 }] },
+      { match: /deploy_verifications.*match=false/, rows: [{ n: 0 }] },
+      { match: /deploy_verifications/, rows: [{ n: 1 }] },
+      { match: /count/, rows: [{ n: 0 }] },
+    ])
+    await computeDayCounters(sql, 'phishsimai', '2026-07-24')
+    const failedProbe = sql.calls.find((q: string) => /FROM agent_tasks WHERE status='failed'/.test(q))
+    expect(failedProbe, 'the failed_actions probe must run').toBeTruthy()
+    expect(failedProbe).toMatch(/company_id\s*=/)
+  })
+
+  it('no probe reads a tenant table unscoped', async () => {
+    const sql = fakeSql([
+      { match: /metrics_daily/, rows: [{ n: 1 }] },
+      { match: /deploy_verifications.*match=false/, rows: [{ n: 0 }] },
+      { match: /deploy_verifications/, rows: [{ n: 1 }] },
+      { match: /count/, rows: [{ n: 0 }] },
+    ])
+    await computeDayCounters(sql, 'phishsimai', '2026-07-24')
+    for (const q of sql.calls as string[]) {
+      // agent_tasks and circuit_breaker_state both carry a scope column — neither may be read bare.
+      if (/FROM (agent_tasks|circuit_breaker_state)\b/.test(q)) {
+        expect(q, `unscoped read: ${q.slice(0, 90)}`).toMatch(/company_id\s*=|product_id\s*=/)
+      }
+    }
+  })
+})
+
 describe('currentStreak — only days the current criteria judged', () => {
   const rows = (days: [string, boolean][]) => days.map(([day, clean]) => ({ day, clean }))
 
@@ -223,6 +258,42 @@ describe('evaluatePosture — portfolio scope: a missed push must BLOCK, never p
   })
 })
 
+describe('evaluatePosture — the streak is COMPUTED LIVE, never read from a stored column', () => {
+  // os_autonomy_state.clean_day_streak is a SECOND, stored streak, written by the promotion job.
+  // On 2026-07-26 it happened to agree with the live value (both 3), which is exactly how a
+  // lagging display goes unnoticed. The posture line must never source the number from there:
+  // that column is only written when the promotion job runs, so a missed run would freeze the
+  // gate's headline number while the real streak moved. Pin the source, not the coincidence.
+  it('reads autonomy_clean_days and never touches os_autonomy_state', async () => {
+    const sql = fakeSql([
+      { match: /os_posture_state/, rows: [{ product_id: 'phishsimai', posture: 'pre_l5_7', baseline_from: '2026-07-23' }] },
+      { match: /autonomy_clean_days/, rows: [
+        { day: '2026-07-25', clean: true }, { day: '2026-07-24', clean: true }, { day: '2026-07-23', clean: true },
+      ] },
+      { match: /escalations/, rows: [{ n: 0 }] },
+    ])
+    const ev = await evaluatePosture(sql, 'phishsimai')
+    expect(ev.streak).toBe(3)
+    expect(ev.lastJudgedDay).toBe('2026-07-25')
+    // The guarantee: the stored streak column is never consulted.
+    expect(sql.calls.some((q: string) => /os_autonomy_state|clean_day_streak/.test(q))).toBe(false)
+    expect(sql.calls.some((q: string) => /autonomy_clean_days/.test(q))).toBe(true)
+  })
+
+  it('a gap breaks the run — a missing day is not a clean one', async () => {
+    const sql = fakeSql([
+      { match: /os_posture_state/, rows: [{ product_id: 'phishsimai', posture: 'pre_l5_7', baseline_from: '2026-07-20' }] },
+      { match: /autonomy_clean_days/, rows: [
+        { day: '2026-07-25', clean: true }, { day: '2026-07-24', clean: true },
+        /* 07-23 missing entirely */ { day: '2026-07-22', clean: true },
+      ] },
+      { match: /escalations/, rows: [{ n: 0 }] },
+    ])
+    const ev = await evaluatePosture(sql, 'phishsimai')
+    expect(ev.streak).toBe(2)
+  })
+})
+
 describe('postureLine — shows the denominator, not a bare state', () => {
   it('renders progress with what is left', () => {
     const line = postureLine({
@@ -230,7 +301,29 @@ describe('postureLine — shows the denominator, not a bare state', () => {
       lastJudgedDay: '2026-07-24', needDays: 5, handled: 0, needHandled: 1, eligibleFor: null,
       blockers: ['2/5 consecutive clean days'], nextStep: '', drill: null,
     })
-    expect(line).toBe('🎖 Posture: pre-L5.7 · 2/5 clean days · breaker trips 0/1 · next: 2/5 consecutive clean days')
+    expect(line).toBe('🎖 Posture: pre-L5.7 · 2/5 clean days · breaker trips 0/1 · next: 5 consecutive clean days (3 to go)')
+  })
+
+  it('does not echo the streak fraction back as the next step', () => {
+    const line = postureLine({
+      posture: 'pre_l5_7', label: POSTURE_LABEL.pre_l5_7, baselineFrom: '2026-07-23', streak: 3,
+      lastJudgedDay: '2026-07-25', needDays: 5, handled: 0, needHandled: 1, eligibleFor: null,
+      blockers: ['3/5 consecutive clean days', '0/1 breaker trip handled cleanly (inject one per spec Section A)'],
+      nextStep: '', drill: null,
+    })
+    expect(line).toContain('3/5 clean days')
+    expect(line).toContain('next: 5 consecutive clean days (2 to go)')
+    expect(line).not.toContain('next: 3/5')
+  })
+
+  it('once the streak is met, next names the blocker that actually remains', () => {
+    const line = postureLine({
+      posture: 'pre_l5_7', label: POSTURE_LABEL.pre_l5_7, baselineFrom: '2026-07-23', streak: 5,
+      lastJudgedDay: '2026-07-27', needDays: 5, handled: 0, needHandled: 1, eligibleFor: null,
+      blockers: ['0/1 breaker trip handled cleanly (inject one per spec Section A)'],
+      nextStep: '', drill: null,
+    })
+    expect(line).toContain('next: 0/1 breaker trip handled cleanly')
   })
 
   it('announces eligibility rather than advancing', () => {

@@ -14,7 +14,12 @@
   "redirects": [
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "www.phishsimai.com" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "www.phishsimai.com"
+        }
+      ],
       "destination": "https://phishsimai.com/:path*",
       "permanent": true
     }
@@ -161,6 +166,10 @@
     {
       "path": "/api/scheduled/mia-feedback-digest",
       "schedule": "0 11 * * 1"
+    },
+    {
+      "path": "/api/os/gsa",
+      "schedule": "30 7 * * 1"
     }
   ]
 }

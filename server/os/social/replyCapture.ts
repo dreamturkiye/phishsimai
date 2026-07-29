@@ -9,6 +9,7 @@
 import { getSql } from '../conn'
 import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
+import { isSyntheticSender } from '../replyParser'
 
 const COMPANY = 'phishsimai'
 
@@ -91,10 +92,50 @@ export async function resendInbound(req: any, res: any) {
     const rows = (await sql`SELECT id, email, company FROM ps_outreach_leads WHERE LOWER(email)=LOWER(${from}) LIMIT 1`.catch(() => [])) as any[]
     const lead = rows[0]
 
+    // PS-REPLY-NOISE-01, extended to this handler (OS 7.4) — but gated AFTER the lead
+    // lookup, deliberately.
+    //
+    // The GSA governance layer probes this endpoint weekly, and an ungated probe would
+    // mark a lead replied, alert Kaan, and manufacture the very inbound event that
+    // GTM-REPLY-CAPTURE reads as proof the channel works — an auditor forging its own
+    // evidence. So the gate is necessary.
+    //
+    // Ordering it after the lookup is what keeps it safe. The synthetic pattern matches
+    // any address with a `test`/`probe` token, and dropping a REAL prospect who happens
+    // to mail from `test@theirmsp.com` would recreate the exact blindness this system
+    // exists to detect. A sender that matches a lead we actually emailed is by definition
+    // not synthetic, so the lead match wins. The GSA probe uses a reserved .invalid domain
+    // that can never match a lead, so it still lands here and stays inert.
+    if (!lead && isSyntheticSender(from)) {
+      console.log(`[reply-capture] dropped synthetic sender ${from} — no lead match, no notify, no row`)
+      return res.json({ ok: true, matched: false, synthetic: true })
+    }
+
     if (lead) {
       await sql`UPDATE ps_outreach_leads SET replied=true, replied_at=NOW(), last_reply_snippet=${snippet},
         pipeline_stage='engaged', stage_updated_at=NOW() WHERE id=${lead.id}`.catch(() => {})
     }
+
+    // PS-REPLY-PROOF-01: record EVERY genuine inbound, matched or not.
+    //
+    // Previously a row was written only when the sender matched a lead, so an unmatched
+    // reply left no trace in the database at all — it fired a Telegram and vanished. That
+    // had two costs. Operationally, replies from a colleague, a forwarded thread, or a
+    // different address than the one we mailed were invisible to every report. And it made
+    // capture unprovable: replyCaptureProven() and GTM-REPLY-CAPTURE both read this table,
+    // so an end-to-end test reply from the founder's own mailbox would light up Telegram
+    // and still leave the system saying capture had never received anything.
+    //
+    // lead_id is nullable, so an unmatched inbound is a first-class row rather than a
+    // special case. This is the artifact that proves the relay works.
+    const inbound = (await sql`INSERT INTO outreach_reply_drafts (lead_id, from_email, inbound_snippet, draft_body, status)
+      VALUES (${lead?.id ?? null}, ${from}, ${snippet}, NULL, ${lead ? 'awaiting_draft' : 'unmatched_inbound'})
+      RETURNING id`
+      .catch((e: any) => {
+        console.error('[reply-capture] inbound row insert failed:', e?.message || e)
+        return [] as any[]
+      })) as any[]
+    const inboundId = inbound[0]?.id ?? null
 
     // Surface to Kaan immediately — replies are the highest-value revenue signal.
     await sendTelegram(
@@ -109,8 +150,15 @@ export async function resendInbound(req: any, res: any) {
     if (lead) {
       const draft = await draftReply(from, lead, snippet).catch(() => null)
       if (draft) {
-        await sql`INSERT INTO outreach_reply_drafts (lead_id, from_email, inbound_snippet, draft_body)
-          VALUES (${lead.id}, ${from}, ${snippet}, ${draft})`.catch(() => {})
+        // Fill in the row recorded above rather than inserting a second one: the inbound
+        // EVENT and the drafted reply are one fact, and two rows would double-count the
+        // evidence that capture works.
+        if (inboundId) {
+          await sql`UPDATE outreach_reply_drafts SET draft_body=${draft}, status='pending_review' WHERE id=${inboundId}`.catch(() => {})
+        } else {
+          await sql`INSERT INTO outreach_reply_drafts (lead_id, from_email, inbound_snippet, draft_body)
+            VALUES (${lead.id}, ${from}, ${snippet}, ${draft})`.catch(() => {})
+        }
         drafted = true
         const auto = await isReplyAutoEnabled().catch(() => false)
         await sendTelegram(

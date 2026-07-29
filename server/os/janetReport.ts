@@ -11,7 +11,31 @@ import { runEAAgent } from './agents/ea'
 import { queueJanetArchitectTask } from './selfHeal'
 
 const REPORT_EMAIL = process.env.FOUNDER_EMAIL || 'kaanari@mac.com'
-const FROM = 'Janet CGO <sarah@phishsimai.com>'
+
+/**
+ * PS-INTERNAL-MAILBOX-01 — internal reporting is OFF the sales mailbox.
+ *
+ * History: this signed "Janet CGO <sarah@phishsimai.com>", the last survivor of the
+ * three-identities-on-one-mailbox problem. Renaming it to Sarah Mitchell fixed the
+ * name and left the actual defect in place, which was the ADDRESS.
+ *
+ * Why the address matters more than the name. sarah@ is the inbox scanned for
+ * prospect replies, and since PS-REPLY-PROOF-01 every genuine inbound there is
+ * recorded as a row that GTM-REPLY-CAPTURE and replyCaptureProven() read as
+ * evidence the reply channel works. A founder replying to his own weekly report
+ * therefore wrote a real inbound row into the same table used to decide whether
+ * prospects can be followed up. The row is honest — the relay genuinely delivered
+ * it — but it is self-generated, and a system that cannot tell its own traffic from
+ * a customer's is one bad inference away from "we have engagement".
+ *
+ * So internal mail gets its own address. Sales traffic in sarah@ stays uncontaminated
+ * by our own reports, and the reply-capture evidence keeps meaning what it says.
+ *
+ * `reply_to` points at the founder rather than the sending address: replying to a
+ * report should reach a human, and it also means the send does not depend on
+ * reports@ existing as a deliverable mailbox.
+ */
+const FROM = process.env.REPORT_FROM_EMAIL || 'PhishSim Reports <reports@phishsimai.com>'
 
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
@@ -80,7 +104,16 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, to: REPORT_EMAIL, subject: `Janet CGO Report — Week ${weekNumber} — PhishSimAI`, html }),
+    body: JSON.stringify({
+      from: FROM,
+      // Replies reach the founder directly, not the sending address — so a reply to
+      // this report never touches sarah@, and the send does not depend on reports@
+      // existing as a deliverable mailbox.
+      reply_to: REPORT_EMAIL,
+      to: REPORT_EMAIL,
+      subject: `Janet CGO Report — Week ${weekNumber} — PhishSimAI`,
+      html,
+    }),
   }).catch(() => {})
 
   await sendTelegram(
