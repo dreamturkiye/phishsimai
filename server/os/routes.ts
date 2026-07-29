@@ -1250,3 +1250,6 @@ export { cronTrialNudges } from './trialNudges'
 
 // PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
 export { resendInbound } from './social/replyCapture'
+
+// Kaan AI OS 7.4 — Governance & Self-Audit. Read-only check-runner (§2.1).
+export { cronGsa } from './gsa/run'

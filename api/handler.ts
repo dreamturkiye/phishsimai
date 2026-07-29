@@ -146,6 +146,8 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/webhooks/resend" && method === "post") return routes.webhookResend(req, res);
     // PS-REPLY-CAPTURE-01: inbound reply capture (Google Workspace forward relay POSTs here).
     if (path === "/api/os/webhooks/resend-inbound" && method === "post") return routes.resendInbound(req, res);
+    // OS 7.4 GSA governance run (read-only; weekly cron + manual trigger).
+    if (path === "/api/os/gsa") return routes.cronGsa(req, res);
     if (path === "/api/os/hq" && method === "get") return routes.hqData(req, res);
     if (path === "/api/os/hq/chat" && method === "post") return routes.hqChat(req, res);
     if (path === "/api/os/hq/ingest" && method === "post") return routes.hqIngest(req, res);

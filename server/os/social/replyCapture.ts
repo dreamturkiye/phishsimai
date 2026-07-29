@@ -9,6 +9,7 @@
 import { getSql } from '../conn'
 import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
+import { isSyntheticSender } from '../replyParser'
 
 const COMPANY = 'phishsimai'
 
@@ -84,6 +85,17 @@ export async function resendInbound(req: any, res: any) {
     const subject = String(b.subject || b.Subject || '')
     const text = String(b.text || b['body-plain'] || b['stripped-text'] || b.plain || b.TextBody || b.html || '').trim()
     if (!from) return res.json({ ok: true, matched: false, note: 'no sender email in payload' })
+
+    // PS-REPLY-NOISE-01, extended to this handler (OS 7.4). replyParser gates synthetic
+    // senders before any side effect; this path did not, so a liveness probe would have
+    // marked a lead replied, fired a "📬 REPLY" to Kaan and spent an LLM call drafting a
+    // response to nobody. That matters now because the GSA governance layer probes this
+    // very endpoint on a schedule — an auditor must not corrupt the system it audits.
+    // Gated BEFORE any read or write, so a synthetic sender is fully inert.
+    if (isSyntheticSender(from)) {
+      console.log(`[reply-capture] dropped synthetic sender ${from} — no match, no notify, no draft`)
+      return res.json({ ok: true, matched: false, synthetic: true })
+    }
 
     await ensureReplyTables()
     const sql = getSql()

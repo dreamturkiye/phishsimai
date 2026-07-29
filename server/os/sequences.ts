@@ -191,6 +191,24 @@ const OUTBOUND_HARD_PAUSED = false
 const FOLLOWUPS_ARMED = false
 
 /**
+ * Read-only view of the follow-up sequence's configuration, for the GSA governance
+ * layer (OS 7.4). Exported deliberately: the single-touch defect was invisible for
+ * 523 sends precisely because sequence LENGTH and ARMED-NESS were module-private
+ * facts that nothing outside this file could observe. An auditor that cannot see
+ * the config cannot audit it, so the config is now readable — and only readable.
+ */
+export function followUpConfigStatus(): {
+  configured: number; armed: boolean; approvedVariants: number; source: string
+} {
+  return {
+    configured: FOLLOWUP_TOUCHES.length,
+    armed: FOLLOWUPS_ARMED,
+    approvedVariants: FOLLOWUP_TOUCHES.filter(t => approvedBody(t) !== null).length,
+    source: 'server/os/sequences.ts FOLLOWUPS_ARMED + outreachCopy.ts FOLLOWUP_TOUCHES/APPROVED_VARIANT',
+  }
+}
+
+/**
  * Has inbound reply capture ever demonstrably worked?
  *
  * "No one replied" and "we cannot receive replies" produce the same zero, and a follow-up
