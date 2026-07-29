@@ -19,15 +19,22 @@ import path from 'path'
 
 const ROOT = process.cwd()
 
-/** Every file that sends mail through Resend from the shared mailbox. */
+/**
+ * PROSPECT-FACING senders — these use the sales mailbox and must all sign identically.
+ * janetReport.ts is deliberately NOT here: it is internal reporting and was moved OFF
+ * this mailbox by PS-INTERNAL-MAILBOX-01.
+ */
 const SENDER_FILES = [
   'server/os/sequences.ts',
   'server/os/replyParser.ts',
-  'server/os/janetReport.ts',
   'server/outreach/outreachSequence.ts',
 ]
 
+/** Internal/founder-facing senders — must NOT use the sales mailbox. */
+const INTERNAL_SENDER_FILES = ['server/os/janetReport.ts']
+
 const APPROVED_DISPLAY_NAME = 'Sarah Mitchell'
+const SALES_MAILBOX = 'sarah@phishsimai.com'
 
 describe('outbound sender identity', () => {
   it('every sender from sarah@phishsimai.com signs as Sarah Mitchell', () => {
@@ -43,6 +50,26 @@ describe('outbound sender identity', () => {
       for (const m of matches) {
         expect(m[1].trim(), `${rel} sends as "${m[1].trim()}"`).toBe(APPROVED_DISPLAY_NAME)
       }
+    }
+  })
+
+  it('internal reporting does NOT send from the sales mailbox', () => {
+    // PS-INTERNAL-MAILBOX-01. sarah@ is the inbox scanned for prospect replies, and
+    // since PS-REPLY-PROOF-01 every inbound there becomes evidence that the reply
+    // channel works. A founder replying to his own weekly report used to write a real
+    // inbound row into the table that decides whether prospects may be followed up.
+    // Honest data, self-generated — and a system that cannot tell its own traffic from
+    // a customer's is one inference away from claiming engagement it does not have.
+    for (const rel of INTERNAL_SENDER_FILES) {
+      const src = fs.readFileSync(path.resolve(ROOT, rel), 'utf8')
+      const sends = [...src.matchAll(/from:\s*FROM\b/g)]
+      expect(sends.length, `${rel} should send mail`).toBeGreaterThan(0)
+      // The FROM constant itself must not point at the sales mailbox.
+      const fromDecl = src.match(/const FROM\s*=\s*([^\n]+)/)
+      expect(fromDecl, `${rel} should declare FROM`).toBeTruthy()
+      expect(fromDecl![1]).not.toContain(SALES_MAILBOX)
+      // Replies must reach a human rather than the sending address.
+      expect(src, `${rel} must set reply_to`).toMatch(/reply_to:\s*REPORT_EMAIL/)
     }
   })
 

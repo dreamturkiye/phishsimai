@@ -13,30 +13,29 @@ import { queueJanetArchitectTask } from './selfHeal'
 const REPORT_EMAIL = process.env.FOUNDER_EMAIL || 'kaanari@mac.com'
 
 /**
- * PS-ONE-IDENTITY-01: one mailbox, one name.
+ * PS-INTERNAL-MAILBOX-01 — internal reporting is OFF the sales mailbox.
  *
- * This was the last surviving divergence from the three-identities-on-one-mailbox
- * problem: every other sender is "Sarah Mitchell <sarah@phishsimai.com>"
- * (sequences.ts, replyParser.ts, outreach/outreachSequence.ts) and this one signed
- * "Janet CGO" from the same address.
+ * History: this signed "Janet CGO <sarah@phishsimai.com>", the last survivor of the
+ * three-identities-on-one-mailbox problem. Renaming it to Sarah Mitchell fixed the
+ * name and left the actual defect in place, which was the ADDRESS.
  *
- * Scope, stated honestly because it is narrower than it looks: this report goes
- * ONLY to REPORT_EMAIL, the founder's own inbox. No prospect has ever received an
- * email signed "Janet CGO", so this was not a live credibility bug — the mailbox
- * presents one name to the outside world and always has. Standardised anyway,
- * because a second display name on a shared mailbox is a trap waiting for the day
- * someone adds a recipient to this function.
+ * Why the address matters more than the name. sarah@ is the inbox scanned for
+ * prospect replies, and since PS-REPLY-PROOF-01 every genuine inbound there is
+ * recorded as a row that GTM-REPLY-CAPTURE and replyCaptureProven() read as
+ * evidence the reply channel works. A founder replying to his own weekly report
+ * therefore wrote a real inbound row into the same table used to decide whether
+ * prospects can be followed up. The row is honest — the relay genuinely delivered
+ * it — but it is self-generated, and a system that cannot tell its own traffic from
+ * a customer's is one bad inference away from "we have engagement".
  *
- * ⚠️ The REAL issue here is the address, not the name: an internal report should
- * not send from the sales mailbox at all. Replies to it land in sarah@ — the same
- * inbox being scanned for prospect replies — and now that unmatched inbound is
- * recorded (PS-REPLY-PROOF-01), replying to this report writes an
- * `unmatched_inbound` row. That row is legitimate proof the relay works, but it is
- * founder-generated, so it should not be mistaken for prospect engagement.
- * Moving internal reports to their own address is the proper fix; not done here
- * because it changes founder-side mail routing and filters.
+ * So internal mail gets its own address. Sales traffic in sarah@ stays uncontaminated
+ * by our own reports, and the reply-capture evidence keeps meaning what it says.
+ *
+ * `reply_to` points at the founder rather than the sending address: replying to a
+ * report should reach a human, and it also means the send does not depend on
+ * reports@ existing as a deliverable mailbox.
  */
-const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
+const FROM = process.env.REPORT_FROM_EMAIL || 'PhishSim Reports <reports@phishsimai.com>'
 
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
@@ -105,7 +104,16 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, to: REPORT_EMAIL, subject: `Janet CGO Report — Week ${weekNumber} — PhishSimAI`, html }),
+    body: JSON.stringify({
+      from: FROM,
+      // Replies reach the founder directly, not the sending address — so a reply to
+      // this report never touches sarah@, and the send does not depend on reports@
+      // existing as a deliverable mailbox.
+      reply_to: REPORT_EMAIL,
+      to: REPORT_EMAIL,
+      subject: `Janet CGO Report — Week ${weekNumber} — PhishSimAI`,
+      html,
+    }),
   }).catch(() => {})
 
   await sendTelegram(
