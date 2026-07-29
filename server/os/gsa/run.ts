@@ -14,15 +14,26 @@ import { runGsa, renderDigest, auditGsaRun } from './engine'
 import { UNIVERSAL_STANDARDS } from './standards/core'
 import { PHISHSIM_STANDARDS } from './standards/phishsim'
 import { gatherPhishSimFacts } from './adapters/phishsim'
+import { PHISHSIM_APPLIERS, findApplier } from './appliers'
 import type { GsaRun } from './types'
 
 export const GSA_VERSION = 'kaan-os-7.4 · gsa-engine-1.0 · phishsim-gsa-1.0'
 
-export async function runPhishSimGsa(opts: { baseUrl?: string; probeHttp?: boolean } = {}): Promise<GsaRun> {
+export async function runPhishSimGsa(
+  opts: { baseUrl?: string; probeHttp?: boolean; mode?: 'read-only' | 'tier-a-enabled' } = {},
+): Promise<GsaRun> {
   const facts = await gatherPhishSimFacts(opts)
   const sql = getSql()
   return await runGsa([...UNIVERSAL_STANDARDS, ...PHISHSIM_STANDARDS], facts, {
-    mode: 'read-only',
+    // TIER A ARMED (2026-07-29, founder approval after the acceptance test passed).
+    // Armed at a green baseline: both Tier A standards currently PASS, so nothing is
+    // auto-fixed today and the first autonomous write will happen on a future
+    // regression, under a classifier already proven against real history.
+    mode: opts.mode ?? 'tier-a-enabled',
+    appliers: (id) => findApplier(PHISHSIM_APPLIERS, id),
+    // Always supplied: without it a fix is applied unverified, and "no exception
+    // thrown" is not the same as "the deviation cleared".
+    reGatherFacts: () => gatherPhishSimFacts(opts),
     audit: (run) => auditGsaRun(sql, run),
   })
 }

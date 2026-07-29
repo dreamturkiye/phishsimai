@@ -11,16 +11,24 @@
 //  only Tier A is ever applied.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { AppliedFix, CheckResult, CompanyFacts, GsaRun, Standard } from './types'
+import type { FixApplier } from './appliers'
 import { assignTier } from './classify'
 
 export interface RunOptions {
   mode?: 'read-only' | 'tier-a-enabled'
   /**
-   * Applies one Tier A fix. Supplied by the caller, not the engine: the engine
-   * knows WHETHER a change may be made, the company knows HOW to make it. Absent
-   * ⇒ nothing is applied however the tier came out.
+   * Resolves the applier for a standard. Supplied by the caller, not the engine:
+   * the engine knows WHETHER a change may be made, the company knows HOW to make
+   * it. Absent ⇒ nothing is applied however the tier came out, and every Tier A
+   * finding is reported as UNHANDLED rather than quietly passed over.
    */
-  applyFix?: (r: CheckResult) => Promise<{ before: unknown; after: unknown }>
+  appliers?: (standardId: string) => FixApplier | null
+  /**
+   * Re-reads the world after a fix, so the engine can verify the deviation
+   * actually cleared instead of trusting that no exception was thrown. Absent ⇒
+   * fixes are applied unverified, which is why the live runner always supplies it.
+   */
+  reGatherFacts?: () => Promise<CompanyFacts>
   /** Append-only sink. Absent ⇒ results are returned but not persisted. */
   audit?: (run: GsaRun) => Promise<void>
   now?: () => string
@@ -66,24 +74,77 @@ export async function runGsa(
   const results = raw.map(r => assignTier(r, passing))
 
   const applied: AppliedFix[] = []
-  if (mode === 'tier-a-enabled' && opts.applyFix) {
+  if (mode === 'tier-a-enabled') {
     for (const r of results) {
       if (r.tier !== 'A' || !r.remediation) continue
-      try {
-        const { before, after } = await opts.applyFix(r)
-        applied.push({ standardId: r.id, description: r.remediation.description, before, after, ok: true })
-      } catch (e: any) {
-        // §2.1.1: a Tier A fix that fails rolls back and escalates rather than
-        // retrying blindly. Recording it as a failed application puts it in the
-        // digest under the founder's eye instead of leaving a half-made change.
+
+      const applier = opts.appliers ? opts.appliers(r.id) : null
+      if (!applier) {
+        // A Tier A finding the engine cannot actually fix must NOT look handled.
+        // Silently skipping it would make "classified safe to auto-fix" and
+        // "auto-fixed" indistinguishable in every downstream report — the exact
+        // looks-healthy/is-healthy confusion this layer exists to catch.
         applied.push({
           standardId: r.id,
           description: r.remediation.description,
           before: r.remediation.prior,
           after: undefined,
           ok: false,
-          rolledBack: true,
-          error: String(e?.message || e),
+          error: 'UNHANDLED: classified Tier A but no applier is registered for this standard — nothing was changed.',
+        })
+        continue
+      }
+
+      let before: unknown
+      try {
+        const out = await applier.apply(r)
+        before = out.before
+
+        // §2.1.1: "if a Tier-A fix itself fails or produces an unexpected diff, it
+        // rolls back and escalates rather than retrying blindly." Verification is
+        // what makes that clause real — re-run the standard against FRESH facts and
+        // require it to actually pass now. A fix that ran without error but did not
+        // resolve the deviation is precisely an unexpected diff, and trusting the
+        // absence of an exception would let it through.
+        let verified = true
+        if (opts.reGatherFacts) {
+          const fresh = await opts.reGatherFacts()
+          const std = standards.find(s => s.id === r.id)
+          if (std) verified = (await std.run(fresh)).outcome === 'PASS'
+        }
+        if (!verified) {
+          await applier.rollback(before)
+          applied.push({
+            standardId: r.id,
+            description: r.remediation.description,
+            before,
+            after: out.after,
+            ok: false,
+            rolledBack: true,
+            error: 'Fix applied but the standard still did not pass on re-check — rolled back and escalated.',
+          })
+          continue
+        }
+
+        applied.push({ standardId: r.id, description: r.remediation.description, before, after: out.after, ok: true })
+      } catch (e: any) {
+        // Roll back on the way out, and record the rollback's own outcome: a
+        // failed rollback is strictly worse than a failed fix and must not be
+        // reported as if the system were back where it started.
+        let rolledBack = true
+        if (before !== undefined) {
+          try { await applier.rollback(before) } catch { rolledBack = false }
+        }
+        applied.push({
+          standardId: r.id,
+          description: r.remediation.description,
+          before: before ?? r.remediation.prior,
+          after: undefined,
+          ok: false,
+          rolledBack,
+          error:
+            String(e?.message || e) +
+            (rolledBack ? '' : ' — ⚠️ ROLLBACK ALSO FAILED, manual intervention required'),
         })
       }
     }
