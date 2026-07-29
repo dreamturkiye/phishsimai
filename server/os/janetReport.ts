@@ -11,7 +11,32 @@ import { runEAAgent } from './agents/ea'
 import { queueJanetArchitectTask } from './selfHeal'
 
 const REPORT_EMAIL = process.env.FOUNDER_EMAIL || 'kaanari@mac.com'
-const FROM = 'Janet CGO <sarah@phishsimai.com>'
+
+/**
+ * PS-ONE-IDENTITY-01: one mailbox, one name.
+ *
+ * This was the last surviving divergence from the three-identities-on-one-mailbox
+ * problem: every other sender is "Sarah Mitchell <sarah@phishsimai.com>"
+ * (sequences.ts, replyParser.ts, outreach/outreachSequence.ts) and this one signed
+ * "Janet CGO" from the same address.
+ *
+ * Scope, stated honestly because it is narrower than it looks: this report goes
+ * ONLY to REPORT_EMAIL, the founder's own inbox. No prospect has ever received an
+ * email signed "Janet CGO", so this was not a live credibility bug — the mailbox
+ * presents one name to the outside world and always has. Standardised anyway,
+ * because a second display name on a shared mailbox is a trap waiting for the day
+ * someone adds a recipient to this function.
+ *
+ * ⚠️ The REAL issue here is the address, not the name: an internal report should
+ * not send from the sales mailbox at all. Replies to it land in sarah@ — the same
+ * inbox being scanned for prospect replies — and now that unmatched inbound is
+ * recorded (PS-REPLY-PROOF-01), replying to this report writes an
+ * `unmatched_inbound` row. That row is legitimate proof the relay works, but it is
+ * founder-generated, so it should not be mistaken for prospect engagement.
+ * Moving internal reports to their own address is the proper fix; not done here
+ * because it changes founder-side mail routing and filters.
+ */
+const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
