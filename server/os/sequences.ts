@@ -7,6 +7,7 @@ import { hasMx, domainOf } from './mxGate'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
+import { FOLLOWUP_TOUCHES, approvedBody } from './outreachCopy'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -59,6 +60,7 @@ async function sendEmail(
   tags: { name: string; value: string }[] = [],
   unsubToken?: string,
   text?: string,
+  extraHeaders?: Record<string, string>,
 ) {
   // PS-COPY-REWRITE-01: List-Unsubscribe + one-click (RFC 8058). Gmail/Outlook require these for
   // bulk senders and they directly affect inbox placement. The URL is the same token-based
@@ -66,7 +68,7 @@ async function sendEmail(
   // api/handler.ts). Header sent, verbatim:
   //   List-Unsubscribe: <https://phishsimai.com/unsubscribe?e=TOKEN>
   //   List-Unsubscribe-Post: List-Unsubscribe=One-Click
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...(extraHeaders || {}) }
   if (unsubToken) {
     headers['List-Unsubscribe'] = `<https://phishsimai.com/unsubscribe?e=${unsubToken}>`
     headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
@@ -79,17 +81,13 @@ async function sendEmail(
   return res.json()
 }
 
-// PS-COPY-REWRITE-01: touches 2-5 DELETED. The old bodies were end-user pitches with an invented
-// case study ("43% → 4%"), invented scarcity ("2 slots left"), an unsourced stat ("attacks up 48%"),
-// and a dead calendly link. Better one honest email than five that lie. The sequence is touch-1
-// only until the founder supplies replacement follow-ups. touchDefs below is intentionally empty:
-// runFullSequence sends touch-1 and stops.
-const SEQUENCE: {
-  touch: number
-  delayDays: number
-  subject: (n: string, co: string) => string
-  html: (name: string, co: string, ind: string, token: string) => string
-}[] = []
+// PS-COPY-REWRITE-01 / PS-FOLLOWUP-01: touches 2-5 were DELETED here on 2026-07-24 (invented case
+// study "43% → 4%", invented scarcity "2 slots left", unsourced stat "attacks up 48%", dead calendly
+// link — 245 delivered, 0 replies) and the empty array left behind was never refilled. That empty
+// array WAS the single-touch bug: for 523 sends the sequence had exactly one touch and nothing in
+// the system said so. Rebuilt in server/os/outreachCopy.ts as FOLLOWUP_TOUCHES, gated by
+// FOLLOWUPS_ARMED + replyCaptureProven() below. This local const is gone deliberately — one home
+// for the copy, so "the sequence" can never again be empty in one file and assumed full elsewhere.
 
 // PS-BOUNCE-WINDOW-01: a breaker exists to stop a CURRENT problem, so it must measure a CURRENT
 // population. The old query counted bounced/sent over touch1_sent_at IS NOT NULL — LIFETIME. After
@@ -172,6 +170,133 @@ const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 // July-12 lesson on the other product was an env flag everyone believed was set and never was.
 const OUTBOUND_HARD_PAUSED = false
 
+// ── PS-FOLLOWUP-01: touches 2-5 ──────────────────────────────────────────────
+/**
+ * ARMING SWITCH — in CODE, not an env var, for the reason stated at PS-INCIDENT-01 above:
+ * the 2026-07-12 ScrollFuel lesson was an env flag everyone believed was set and never was.
+ *
+ * Flip to true ONLY when BOTH are true:
+ *   1. The founder has approved copy — APPROVED_VARIANT in outreachCopy.ts is populated.
+ *      An unapproved touch is skipped, not defaulted, so a half-filled map is safe.
+ *   2. Inbound reply capture is PROVEN to work. This is not a courtesy: with capture dead,
+ *      `replied` never flips, so the sequence cannot see a reply and would keep emailing
+ *      someone who already answered. That is the single worst thing this system could do to
+ *      a real prospect — and at the time of writing, capture has produced zero rows ever.
+ *
+ * Condition 2 is ALSO enforced at runtime by replyCaptureProven() below, so arming this by
+ * itself still cannot send into a blind funnel. Belt and braces, deliberately: the founder's
+ * ordering rule ("verify capture BEFORE enabling touches 2-5") is structural, not a note in
+ * a doc that a later edit can forget.
+ */
+const FOLLOWUPS_ARMED = false
+
+/**
+ * Has inbound reply capture ever demonstrably worked?
+ *
+ * "No one replied" and "we cannot receive replies" produce the same zero, and a follow-up
+ * sequence is exactly where that ambiguity becomes expensive. Proof is any evidence that a
+ * real inbound message reached us: a captured draft, or a lead marked replied. Absence is
+ * NOT proof of a working-but-quiet channel — we fail closed and send nothing.
+ */
+export async function replyCaptureProven(sql = getSql()): Promise<{ proven: boolean; drafts: number; replied: number }> {
+  const [d] = await sql`SELECT count(*)::int AS n FROM outreach_reply_drafts`.catch(() => [{ n: 0 }] as any)
+  const [r] = await sql`SELECT count(*)::int AS n FROM ps_outreach_leads WHERE replied=true`.catch(() => [{ n: 0 }] as any)
+  const drafts = Number(d?.n ?? 0), replied = Number(r?.n ?? 0)
+  return { proven: drafts > 0 || replied > 0, drafts, replied }
+}
+
+// Touch 5 gets its OWN column. The dormant code reused touch4_sent_at for it, so touch 4
+// and touch 5 selected the identical population (both keyed off `touch4_sent_at IS NULL AND
+// touch3_sent_at < cutoff`) and touch 5 overwrote touch 4's timestamp. Nobody caught it
+// because the loop never ran — a dormant bug in dormant code, waiting for the day it was armed.
+async function ensureFollowUpColumns(sql: any) {
+  // Additive and idempotent, matching ensureReplyTables()'s pattern.
+  await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS touch5_sent_at TIMESTAMPTZ`.catch(() => {})
+  // Threading state, captured at touch-1 send so follow-ups can reply ON the original thread.
+  await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS thread_msgid TEXT`.catch(() => {})
+  await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS touch1_subject TEXT`.catch(() => {})
+  // Manual override: a human can pull one lead out of the sequence without touching the
+  // per-touch timestamps the selector reads.
+  await sql`ALTER TABLE ps_outreach_leads ADD COLUMN IF NOT EXISTS sequence_stopped_at TIMESTAMPTZ`.catch(() => {})
+}
+
+/**
+ * Our own RFC Message-ID for touch 1, so later touches can quote it in In-Reply-To /
+ * References and land in the same conversation rather than as a fresh cold email.
+ *
+ * ⚠️ The 523 leads contacted before this shipped have thread_msgid NULL — their real
+ * Message-IDs were Resend's and were never recorded, so they CANNOT be threaded. They
+ * receive a standalone follow-up under the touch's own subject instead of "Re: …".
+ * Faking a Re: on a thread the recipient's client cannot find is worse than not threading.
+ */
+export function threadMessageId(leadId: string): string {
+  return `<ps-${leadId}-t1@phishsimai.com>`
+}
+
+/**
+ * Eligible leads for one follow-up touch.
+ *
+ * Written out per touch rather than interpolating a column name, because the column IS the
+ * logic here and the one time it was parameterised loosely (the dormant `else` branch) touch
+ * 5 silently inherited touch 4's population. Explicit is the point.
+ *
+ * The stop conditions are identical in every branch and are the ONLY place they live:
+ *   replied=false      → a lead who answered leaves the sequence immediately
+ *   bounced=false      → never re-mail a hard bounce
+ *   unsubscribed=false → never re-mail an opt-out
+ *   stage NOT IN (dead, customer)
+ * `sequence_stopped_at IS NULL` lets a human pull one lead out by hand without editing rows
+ * the sequence also reads.
+ */
+async function selectFollowUpLeads(sql: any, touch: number, cutoff: string, limit: number): Promise<any[]> {
+  // NOTE: every query is written out in full. This client does not splice nested template
+  // fragments — a `sql`…`` embedded in another `sql`…`` is passed as a PARAMETER, not spliced
+  // as SQL — so a shared `guard` fragment would silently become a bind value and the stop
+  // conditions would vanish from the WHERE clause. Repetition here is correctness, not sloppiness.
+  if (limit <= 0) return []
+  switch (touch) {
+    case 2: return await sql`SELECT id, name, company, email, thread_msgid, touch1_subject
+      FROM ps_outreach_leads
+      WHERE touch2_sent_at IS NULL AND touch1_sent_at IS NOT NULL AND touch1_sent_at < ${cutoff}
+        AND replied=false AND bounced=false AND unsubscribed=false AND sequence_stopped_at IS NULL
+        AND pipeline_stage NOT IN ('dead','customer') AND country = ANY(${GEO})
+      ORDER BY touch1_sent_at ASC LIMIT ${limit}`
+    case 3: return await sql`SELECT id, name, company, email, thread_msgid, touch1_subject
+      FROM ps_outreach_leads
+      WHERE touch3_sent_at IS NULL AND touch2_sent_at IS NOT NULL AND touch2_sent_at < ${cutoff}
+        AND replied=false AND bounced=false AND unsubscribed=false AND sequence_stopped_at IS NULL
+        AND pipeline_stage NOT IN ('dead','customer') AND country = ANY(${GEO})
+      ORDER BY touch2_sent_at ASC LIMIT ${limit}`
+    case 4: return await sql`SELECT id, name, company, email, thread_msgid, touch1_subject
+      FROM ps_outreach_leads
+      WHERE touch4_sent_at IS NULL AND touch3_sent_at IS NOT NULL AND touch3_sent_at < ${cutoff}
+        AND replied=false AND bounced=false AND unsubscribed=false AND sequence_stopped_at IS NULL
+        AND pipeline_stage NOT IN ('dead','customer') AND country = ANY(${GEO})
+      ORDER BY touch3_sent_at ASC LIMIT ${limit}`
+    case 5: return await sql`SELECT id, name, company, email, thread_msgid, touch1_subject
+      FROM ps_outreach_leads
+      WHERE touch5_sent_at IS NULL AND touch4_sent_at IS NOT NULL AND touch4_sent_at < ${cutoff}
+        AND replied=false AND bounced=false AND unsubscribed=false AND sequence_stopped_at IS NULL
+        AND pipeline_stage NOT IN ('dead','customer') AND country = ANY(${GEO})
+      ORDER BY touch4_sent_at ASC LIMIT ${limit}`
+    default: return []
+  }
+}
+
+/**
+ * Record a sent touch. Touch 5 is terminal: the lead is marked dead, which is what makes the
+ * breakup email's "this is my last email" a fact about the system rather than a sales line.
+ */
+async function markTouchSent(sql: any, touch: number, leadId: string, ts: string): Promise<void> {
+  switch (touch) {
+    case 2: await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts} WHERE id=${leadId}`; return
+    case 3: await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${leadId}`; return
+    case 4: await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${leadId}`; return
+    case 5: await sql`UPDATE ps_outreach_leads SET touch5_sent_at=${ts}, pipeline_stage='dead',
+              stage_updated_at=${ts} WHERE id=${leadId}`; return
+  }
+}
+
 export async function runFullSequence() {
   const sql = getSql()
   if (OUTBOUND_HARD_PAUSED) {
@@ -220,6 +345,92 @@ export async function runFullSequence() {
   let totalSent = 0
   const results: any[] = []
 
+  await ensureFollowUpColumns(sql)
+
+  // ── FOLLOW-UPS (touches 2-5) — run BEFORE touch 1, deliberately ────────────
+  //
+  // They share ONE daily cap with touch 1 rather than adding to it. That is the
+  // founder's deliverability rule made structural: turning on four more touches must
+  // not multiply daily volume against a domain still inside its warm-up ramp. Because
+  // follow-ups draw first, touch-1 volume falls automatically as the sequence fills up
+  // — which is also the right business order. A second email to someone who already
+  // heard from us is worth more than a first email to a stranger.
+  const followUpState = await replyCaptureProven(sql).catch(() => ({ proven: false, drafts: 0, replied: 0 }))
+  const armed = FOLLOWUPS_ARMED && followUpState.proven
+  if (FOLLOWUPS_ARMED && !followUpState.proven) {
+    // Loud, because this is the exact failure mode the gate exists to prevent: the
+    // founder armed the sequence but inbound capture is still dead, so `replied` can
+    // never flip and we would keep emailing people who have already answered.
+    console.warn('[sequence] follow-ups ARMED but reply capture UNPROVEN — refusing to send touches 2-5')
+    await sendTelegram(
+      '⛔ <b>Follow-ups blocked</b>\nTouches 2-5 are armed, but inbound reply capture has never received ' +
+      'anything (0 drafts, 0 replied leads). Sending now risks emailing prospects who already replied. ' +
+      'Verify the inbound relay, then re-run.',
+    ).catch(() => {})
+  }
+
+  if (armed) {
+    for (const t of FOLLOWUP_TOUCHES) {
+      if (totalSent >= cap) break
+      const body = approvedBody(t)
+      if (!body) continue // no approved variant for this touch — skip, never default
+      const cutoff = new Date(now.getTime() - t.delayDays * 86400000).toISOString()
+      const room = cap - totalSent
+
+      const leads = await selectFollowUpLeads(sql, t.touch, cutoff, room).catch((e: any) => {
+        console.error(`[sequence] T${t.touch} lead select failed:`, e?.message || e)
+        return [] as any[]
+      })
+
+      for (const lead of leads) {
+        if (totalSent >= cap) break
+        try {
+          // PS-TOUCH-GATE-01 / PS-SALUTATION-01: every rail touch 1 has, touch 2-5 inherit —
+          // MX pre-check, derived first-name salutation, List-Unsubscribe one-click header.
+          const dom = domainOf(String(lead.email))
+          if (!dom || !(await hasMx(dom))) {
+            const ts0 = now.toISOString()
+            await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts0} WHERE id=${lead.id}`
+            console.warn(`[sequence] MX gate T${t.touch}: no MX for`, lead.email, '- marked dead, not sent')
+            continue
+          }
+          const token = Buffer.from(String(lead.email)).toString('base64url')
+          const greetName = deriveFirstName(String(lead.email))
+          const co = String(lead.company || 'your team')
+
+          // Thread onto the original conversation when we recorded its Message-ID. Legacy
+          // leads (contacted before threading shipped) have none — they get a standalone
+          // email under this touch's own subject rather than a "Re:" the recipient's client
+          // cannot resolve to any thread.
+          const parentId = lead.thread_msgid ? String(lead.thread_msgid) : null
+          const canThread = t.threaded && !!parentId && !!lead.touch1_subject
+          const subject = canThread
+            ? `Re: ${String(lead.touch1_subject)}`
+            : body.subject(co)
+          const threadHeaders = canThread
+            ? { 'In-Reply-To': parentId!, References: parentId! }
+            : undefined
+
+          const html = body.html(greetName, co).replace(/{{TOKEN}}/g, token)
+          const text = body.text(greetName, co).replace(/{{TOKEN}}/g, token)
+          const result = await sendEmail(String(lead.email), subject, html, [
+            { name: 'touch', value: String(t.touch) },
+            { name: 'lead_id', value: String(lead.id) },
+            { name: 'variant', value: body.id },
+          ], token, text, threadHeaders)
+          if (!result?.id) continue
+
+          await markTouchSent(sql, t.touch, String(lead.id), now.toISOString())
+          totalSent++
+          results.push({ touch: t.touch, company: lead.company, email: lead.email, subject, variant: body.id })
+          await new Promise(r => setTimeout(r, 2000))
+        } catch (e: any) {
+          await sendTelegram(`PS seq error T${t.touch}: ` + (e?.message?.slice(0, 80) || ''))
+        }
+      }
+    }
+  }
+
   if (totalSent < cap) {
     const exp = AB_EXPERIMENTS.touch1_subject
     const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
@@ -253,92 +464,23 @@ export async function runFullSequence() {
         const greetName = deriveFirstName(String(lead.email))
         const html = v.html(greetName, String(lead.company), ind).replace(/{{TOKEN}}/g, token)
         const text = v.text(greetName, String(lead.company), ind).replace(/{{TOKEN}}/g, token)
+        // PS-FOLLOWUP-01: stamp OUR OWN Message-ID so touches 2-5 can reply on this thread.
+        // Resend does not surface the RFC Message-ID it generates, so a header we control is
+        // the only way to thread later. Derived from the lead id — same input, same id, always.
+        const msgId = threadMessageId(String(lead.id))
         const result = await sendEmail(String(lead.email), subject, html, [
           { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
-        ], token, text)
+        ], token, text, { 'Message-ID': msgId })
         if (!result?.id) continue
         const ts = now.toISOString()
-        await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect', stage_updated_at=${ts} WHERE id=${lead.id}`
+        await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect',
+          stage_updated_at=${ts}, thread_msgid=${msgId}, touch1_subject=${subject} WHERE id=${lead.id}`
         await recordImpression(String(lead.id), 'touch1_subject', variant)
         totalSent++
         results.push({ touch: 1, company: lead.company, email: lead.email, subject, variant })
         await new Promise(r => setTimeout(r, 2000))
       } catch (e: any) {
         await sendTelegram('PS seq error: ' + (e?.message?.slice(0, 80) || ''))
-      }
-    }
-  }
-
-  // PS-COPY-REWRITE-01: no follow-up touches until the founder supplies honest replacements.
-  // Empty by design — the loop below is a no-op and only touch-1 above sends.
-  const touchDefs: { touch: number; delayDays: number; final?: boolean }[] = []
-
-  for (const def of touchDefs) {
-    if (totalSent >= DAILY_SEND_LIMIT) break
-    const step = SEQUENCE.find(s => s.touch === def.touch)
-    if (!step) continue
-    const cutoff = new Date(now.getTime() - def.delayDays * 86400000).toISOString()
-
-    let leads: any[] = []
-    if (def.touch === 2) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE country = ANY(${GEO}) AND touch2_sent_at IS NULL AND touch1_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        AND pipeline_stage NOT IN ('dead','customer')
-        ORDER BY touch1_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    } else if (def.touch === 3) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        AND pipeline_stage NOT IN ('dead','customer')
-        ORDER BY touch2_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    } else if (def.touch === 4) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        AND pipeline_stage NOT IN ('dead','customer')
-        ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    } else {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-        WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
-        AND pipeline_stage NOT IN ('dead','customer')
-        ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
-    }
-
-    for (const lead of leads) {
-      if (totalSent >= DAILY_SEND_LIMIT) break
-      try {
-        // PS-TOUCH-GATE-01 / PS-SALUTATION-01 / PS-COPY-REWRITE-01: touch-2..5 inherit EVERY rail
-        // touch-1 has. Built now so re-adding follow-up COPY (SEQUENCE + touchDefs, founder's job)
-        // can never ship without them: MX pre-check, derived first-name salutation, and the
-        // List-Unsubscribe one-click header. Without this block, follow-ups would repeat the exact
-        // bugs touch-1 already fixed. The loop is inert today (touchDefs=[]) — these are dormant rails.
-        const dom = domainOf(String(lead.email))
-        if (!dom || !(await hasMx(dom))) {
-          const ts0 = now.toISOString()
-          await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts0} WHERE id=${lead.id}`
-          console.warn('[sequence] MX gate T' + def.touch + ': no MX for', lead.email, '- marked dead, not sent')
-          continue
-        }
-        const token = Buffer.from(String(lead.email)).toString('base64url')
-        const ind = String(lead.industry || 'technology')
-        const subject = step.subject(deriveFirstName(String(lead.email)), String(lead.company))
-        const html = step.html(deriveFirstName(String(lead.email)), String(lead.company), ind, token)
-        const result = await sendEmail(String(lead.email), subject, html, [
-          { name: 'touch', value: String(def.touch) }, { name: 'lead_id', value: String(lead.id) },
-        ], token)
-        if (!result?.id) continue
-        const ts = now.toISOString()
-        if (def.touch === 2) await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.touch === 3) await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.touch === 4) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.final) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts}, pipeline_stage='dead', stage_updated_at=${ts} WHERE id=${lead.id}`
-        totalSent++
-        results.push({ touch: def.touch, company: lead.company, email: lead.email, subject })
-        await new Promise(r => setTimeout(r, 2000))
-      } catch (e: any) {
-        await sendTelegram('PS seq error T' + def.touch + ': ' + (e?.message?.slice(0, 80) || ''))
       }
     }
   }

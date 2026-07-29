@@ -12,11 +12,11 @@ export interface ABVariant {
 // BOTH the HTML and plain-text parts. {{TOKEN}} is the per-recipient base64url unsubscribe token
 // (replaced in sequences.ts); the same token backs the List-Unsubscribe one-click header.
 const CANSPAM_POSTAL = '240 Queen Street N.E., Leesburg, VA 20176'
-const CANSPAM_HTML = `<hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
+export const CANSPAM_HTML = `<hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
 <p style="color:#666;font-size:12px;margin:0">Sarah Mitchell · PhishSim AI</p>
 <p style="color:#666;font-size:12px;margin:0">${CANSPAM_POSTAL}</p>
 <p style="color:#666;font-size:12px;margin:12px 0 0">You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? <a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a> — one click, no hard feelings.</p>`
-const CANSPAM_TEXT = `—
+export const CANSPAM_TEXT = `—
 Sarah Mitchell · PhishSim AI
 ${CANSPAM_POSTAL}
 
