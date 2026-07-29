@@ -617,7 +617,15 @@ export function topOfFunnelMetric(f: {
   // Deliverability, and the one funnel stage we do not instrument at all.
   if (f.touchedEver > 0) {
     const r = (x: number) => ((x / f.touchedEver) * 100).toFixed(1)
-    lines.push(`Deliverability: ${f.bounced} bounced (${r(f.bounced)}%) · ${f.unsubscribed} unsubscribed (${r(f.unsubscribed)}%) · ${f.readyPool} enriched lead(s) queued and not yet contacted.`)
+    lines.push(`Deliverability: ${f.bounced} bounced (${r(f.bounced)}%) · ${f.unsubscribed} unsubscribed (${r(f.unsubscribed)}%).`)
+    // PS-TOPFUNNEL-02: the sendable pool is just-in-time by design (sanitizeRefill tops it up to
+    // one day's cap and no further), so a low number is normal and only ZERO with a failed refill
+    // is a stall. Say which, because "0 sendable" read cold looks like a catastrophe every day.
+    lines.push(f.readyPool === 0
+      ? `Sendable pool: 0 — refilled just-in-time each morning (06:30) to exactly one day's cap, so 0 ` +
+        `AFTER the 07:00 send is the normal resting state, NOT a fault. It IS a zero-margin design: ` +
+        `one failed refill means zero sends that day. Check the pool before 07:00, not after.`
+      : `Sendable pool: ${f.readyPool} lead(s) sanitized and ready to contact.`)
   }
   lines.push(`Opens on cold outreach: NOT INSTRUMENTED — ps_outreach_leads has no open-tracking column, so ` +
     `there is no external open rate and no honest way to state one. Any "open rate" figure in this brief ` +
@@ -707,6 +715,15 @@ async function getCompanyContext(sql: any): Promise<string> {
       ) t`, [{ internal_sent: 0, external_sent: 0, unknown_sent: 0 }]),
     // PS-TOPFUNNEL-01: the outbound channel that actually acquires people. `touched_today` and
     // `last_send` exist so a STALLED sender cannot hide behind a healthy lifetime total.
+    //
+    // PS-TOPFUNNEL-02: `ready_pool` MUST use the same predicate as the touch-1 selector in
+    // sequences.ts, or it reports a buffer that cannot actually be sent. The first version
+    // counted stage='prospect' with no touch-1 timestamp and claimed 592 sendable when the
+    // true figure was ZERO — it omitted the `sanitized_at IS NOT NULL` gate, which is what
+    // actually holds leads back. An instrument reporting a state that does not exist is the
+    // defect this file keeps being patched for, and a new instrument gets no exemption.
+    // (Comment lives OUT here, not inside the template: a backtick inside sql`` terminates
+    // the literal and breaks the build — PS-SENDS-COUNT-01.)
     q('outreach', sql`SELECT
              count(*) FILTER (WHERE touch1_sent_at IS NOT NULL)::int AS touched_ever,
              count(*) FILTER (WHERE touch1_sent_at > now() - interval '7 days')::int AS touched_7d,
@@ -715,7 +732,9 @@ async function getCompanyContext(sql: any): Promise<string> {
              count(*) FILTER (WHERE replied)::int AS replied,
              count(*) FILTER (WHERE bounced)::int AS bounced,
              count(*) FILTER (WHERE unsubscribed)::int AS unsubscribed,
-             count(*) FILTER (WHERE touch1_sent_at IS NULL AND pipeline_stage = 'prospect')::int AS ready_pool,
+             count(*) FILTER (WHERE touch1_sent_at IS NULL AND sanitized_at IS NOT NULL
+                              AND bounced = false AND unsubscribed = false
+                              AND pipeline_stage NOT IN ('dead','customer'))::int AS ready_pool,
              max(touch1_sent_at) AS last_send
         FROM ps_outreach_leads`,
       [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, last_send: null }]),

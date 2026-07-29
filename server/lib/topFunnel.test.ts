@@ -126,6 +126,21 @@ describe('topOfFunnelMetric — the constraint, stated first', () => {
     expect(t).not.toMatch(/UNVERIFIED/)
   })
 
+  it('reads an empty sendable pool as the normal JIT resting state, not a catastrophe', () => {
+    // PS-TOPFUNNEL-02. sanitizeRefill tops the pool to exactly one day's cap at 06:30 and the
+    // 07:00 run consumes it, so 0 is the expected afternoon reading. The first version of this
+    // metric used the wrong predicate and claimed 592 sendable when the true figure was 0.
+    const t = topOfFunnelMetric({ ...LIVE, readyPool: 0 })
+    expect(t).toMatch(/normal resting state/i)
+    expect(t).toMatch(/NOT a fault/)
+    // But the real risk must still be named, not smoothed over.
+    expect(t).toMatch(/zero-margin/i)
+  })
+
+  it('states a non-empty pool plainly', () => {
+    expect(topOfFunnelMetric({ ...LIVE, readyPool: 120 })).toMatch(/Sendable pool: 120 lead\(s\)/)
+  })
+
   it('says outreach opens are not instrumented rather than implying a rate', () => {
     const t = topOfFunnelMetric(LIVE)
     expect(t).toMatch(/NOT INSTRUMENTED/)
