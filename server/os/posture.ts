@@ -101,8 +101,19 @@ export async function computeDayCounters(sql: SqlLike, productId: string, dayIso
   const one = async (rows: Promise<any>): Promise<number> => Number(((await rows) as any[])[0]?.n ?? 0)
 
   // 1. Failed actions — agent work and architect work that ended in failure.
+  //
+  // PS-SCOPE-01: the agent_tasks half was UNSCOPED while the breaker probe below it filtered on
+  // product_id, so on any database holding more than one product this probe counted a sibling
+  // product's failures as PhishSim's — and a failure elsewhere would silently break PhishSim's
+  // clean-day streak and hold the L5.7 gate shut with no visible cause. agent_tasks.company_id
+  // exists and carries exactly this product's id; use it. (Inert on ep-spring-leaf today, which
+  // is single-tenant — but ep-purple-surf holds four company_ids in these same tables, so the
+  // unscoped form is one connection-string mistake away from corrupting the gate.)
+  //
+  // os_architect_tasks has NO company/product column at all, so it cannot be scoped here. It is
+  // structurally single-tenant: if it ever shares a database, this probe needs a migration first.
   await probe('failed_actions', async () => await one(sql`
-    SELECT (SELECT count(*) FROM agent_tasks WHERE status='failed' AND COALESCE(updated_at, created_at)::date = ${dayIso}::date)
+    SELECT (SELECT count(*) FROM agent_tasks WHERE status='failed' AND company_id=${productId} AND COALESCE(updated_at, created_at)::date = ${dayIso}::date)
          + (SELECT count(*) FROM os_architect_tasks WHERE status='failed' AND updated_at::date = ${dayIso}::date) AS n`),
     n => { counters.failed_actions = n; if (n) violations.push(`${n} failed action(s)`) })
 
@@ -464,7 +475,15 @@ export function postureLine(ev: Evaluation): string {
   const head = `🎖 Posture: ${ev.label}`
   if (ev.posture === 'pre_l5_7') {
     const trips = ev.handled === null ? '?' : ev.handled
-    return `${head} · ${ev.streak}/${ev.needDays} clean days · breaker trips ${trips}/${ev.needHandled} · ${ev.eligibleFor ? 'ELIGIBLE — declare L5.7' : `next: ${ev.blockers[0] ?? 'building'}`}`
+    // The `next:` slot must say what is LEFT. Printing blockers[0] verbatim made it echo the
+    // streak fraction already shown one segment earlier ("3/5 clean days · next: 3/5 consecutive
+    // clean days") — so state the target with the gap, and fall through to the next real blocker
+    // once the streak itself is met.
+    const left = Math.max(0, ev.needDays - ev.streak)
+    const next = left > 0
+      ? `${ev.needDays} consecutive clean days (${left} to go)`
+      : ev.blockers.find(b => !/consecutive clean days/.test(b)) ?? ev.blockers[0] ?? 'building'
+    return `${head} · ${ev.streak}/${ev.needDays} clean days · breaker trips ${trips}/${ev.needHandled} · ${ev.eligibleFor ? 'ELIGIBLE — declare L5.7' : `next: ${next}`}`
   }
   if (ev.drill) {
     return `${head} · drill day ${ev.drill.daysDone}/${ev.drill.kind} · ${ev.eligibleFor ? 'ELIGIBLE — declare to advance' : `next: ${ev.blockers[0] ?? 'running'}`}`

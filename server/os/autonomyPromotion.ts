@@ -287,6 +287,44 @@ function lLabel(level: string): string {
   return level === 'manual' ? 'L1 (manual)' : `L${ORDER.indexOf(level as EnfLevel) + 1} (${level})`
 }
 
+// PS-AUTONOMY-VISIBILITY-01: the daily line reported LEVEL but not the two things the founder needs
+// to "monitor as he climbs" — the breaker (the only safety net now that there's no audit gate) and
+// what Marcus actually DID at his level. Both are added here. Every query is wrapped so a read
+// failure degrades to an explicit "unavailable" note and can NEVER crash the cron or block the
+// level line — an unmeasured signal is reported as unmeasured, never as a silent "all clear".
+async function autonomyMonitorLines(sql: any, companyId: string, dayIso: string | null): Promise<string[]> {
+  const lines: string[] = []
+
+  // Breaker — the safety net. OPEN = Marcus halted + a demote is owed at this cron.
+  try {
+    const b = (await sql`SELECT state, trip_reason, consecutive_failures
+                         FROM circuit_breaker_state
+                         WHERE product_id=${companyId} AND state <> 'closed'
+                         ORDER BY updated_at DESC LIMIT 1`) as any[]
+    if (!b.length) lines.push('Breaker: closed ✅')
+    else lines.push(`Breaker: 🔴 ${String(b[0].state).toUpperCase()} — ${b[0].trip_reason ?? 'trip'} (${b[0].consecutive_failures ?? '?'} consecutive fails). Marcus is HALTED.`)
+  } catch { lines.push('Breaker: ⬛ unavailable (could not read circuit_breaker_state)') }
+
+  // Activity — what Marcus did on the judged day. Silence at low levels is expected, not a fault,
+  // but say "none" explicitly so the absence is visible rather than merely missing.
+  if (!dayIso) { lines.push('Activity: no judged day yet'); return lines }
+  try {
+    const arch = (await sql`SELECT status, count(*)::int n FROM os_architect_tasks
+                            WHERE updated_at::date=${dayIso}::date GROUP BY status`) as any[]
+    const active = (await sql`SELECT count(*)::int n FROM os_architect_tasks
+                              WHERE status IN ('queued','pending','approved','running')`) as any[]
+    const agent = (await sql`SELECT count(*)::int n FROM agent_tasks
+                             WHERE company_id=${companyId} AND COALESCE(updated_at,created_at)::date=${dayIso}::date`) as any[]
+    const by = (s: string) => Number(arch.find(r => r.status === s)?.n ?? 0)
+    const done = by('done'), failed = by('failed')
+    const queuedNow = Number(active[0]?.n ?? 0), agentIssued = Number(agent[0]?.n ?? 0)
+    if (!done && !failed && !queuedNow && !agentIssued) lines.push(`Activity (${dayIso}): none — no architect or agent tasks (expected at low levels)`)
+    else lines.push(`Activity (${dayIso}): architect ${done} done / ${failed} failed / ${queuedNow} queued now · agent-tasks ${agentIssued} issued`)
+  } catch { lines.push(`Activity (${dayIso}): ⬛ unavailable (could not read task tables)`) }
+
+  return lines
+}
+
 // Daily autonomy cron. Wired live (api/handler.ts + vercel.json), scheduled AFTER the clean-day
 // compute (10 0) so it reads the finalized result. Runs the token-audited promotion/demotion and
 // emits ONE Telegram line: current level, streak, today clean-or-dirty (+ reason if dirty).
@@ -307,13 +345,15 @@ export async function cronAutonomyPromotion(req: any, res: any) {
     // The streak carries its criteria version inline. This surface and the posture line read the
     // same table, and an unlabelled number here is what made "5" and "0" look contradictory when
     // they were simply answers to two different questions.
+    const monitor = await autonomyMonitorLines(sql, COMPANY_ID, cd.day)
     await sendTelegram(
       `🎖️ <b>PhishSim Autonomy</b>\n` +
       `Level: ${lLabel(result.to)} · clean-day streak: ${result.cleanStreak ?? 0} (criteria v${result.cleanStreakCriteria ?? '?'})\n` +
       `${cd.day ?? 'no v' + CRITERIA_VERSION + ' day judged yet'}: ${dayState}\n` +
-      `Today: ${move}`,
+      `Today: ${move}\n` +
+      monitor.join('\n'),
     ).catch(() => {})
-    return res.json({ ok: true, ...result, latestCleanDay: cd })
+    return res.json({ ok: true, ...result, latestCleanDay: cd, monitor })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }

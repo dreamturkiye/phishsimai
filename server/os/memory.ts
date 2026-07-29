@@ -34,9 +34,28 @@ export async function rememberFact(e: MemoryEntry) {
       updated_at = NOW()`
 }
 
-export async function recallMemory(companyId: string, type?: MemoryType, limit = 20): Promise<any[]> {
+/**
+ * PS-RATCHET-01: `source` filters in SQL, and that is the whole point of it existing.
+ *
+ * Callers that want one agent's rows used to do `recallMemory(c, undefined, 20).filter(r => r.source === id)`
+ * — a filter AFTER the LIMIT. The 20 newest rows company-wide are dominated by whoever writes most
+ * (measured 2026-07-26: janet 11, founder_hq 6, architect 1, founder 1, marcus_watcher 1), so the
+ * filter matched NOTHING and every non-Janet agent's "Knowledge base" section was silently empty.
+ * Nobody noticed because an empty knowledge base is indistinguishable from a new agent.
+ *
+ * That also meant the UNVERIFIED-SELF-REPORT labelling written by the standup loop was never read
+ * by the agent it was written for — the safety rail existed and was unreachable. Filtering in SQL
+ * makes the limit mean "20 of THIS agent's rows", which is what every call site already assumed.
+ */
+export async function recallMemory(companyId: string, type?: MemoryType, limit = 20, source?: string): Promise<any[]> {
   const sql = getSql()
   await ensureMemoryTable()
+  if (type && source) {
+    return await sql`SELECT * FROM janet_memory WHERE company_id=${companyId} AND type=${type} AND source=${source} ORDER BY updated_at DESC LIMIT ${limit}` as any
+  }
+  if (source) {
+    return await sql`SELECT * FROM janet_memory WHERE company_id=${companyId} AND source=${source} ORDER BY updated_at DESC LIMIT ${limit}` as any
+  }
   if (type) {
     return await sql`SELECT * FROM janet_memory WHERE company_id=${companyId} AND type=${type} ORDER BY updated_at DESC LIMIT ${limit}` as any
   }
@@ -91,6 +110,28 @@ export async function seedPhishSimMemory() {
     { company_id:'phishsimai', type:'operating', key:'tone', value:'Professional, compliance-urgency, data-driven. Reference breach stats. Position as compliance tool not just security tool.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'operating', key:'os_version', value:'Kaan AI OS v4.5.4 — PhishSimAI Edition (Neon Postgres + first-party site analytics)', confidence:1, source:'system' },
     { company_id:'phishsimai', type:'operating', key:'site_analytics', value:'Kaan OS Analytics v4.5.4 — free first-party pageview tracking in os_site_analytics (Neon). HQ Analytics tab. No Google/Umami account. Hashed visitors, UTM capture, top pages/referrers. Janet uses for growth decisions.', confidence:1, source:'system' },
+    // PS-CREDPHANTOM-01. A capability the team cannot see is one they will re-diagnose as
+    // missing. Between 2026-07-24 and 07-26 Marcus opened the same investigation three times
+    // under three titles ("the technical chain for the attack vector is broken", 10/10
+    // confidence), Vera and Finn echoed it, and Janet kept assigning it — all from the single
+    // number "credentials submitted: 0", which at the time sat over TWO clicks. Nothing in the
+    // OS said the capture existed. Seeding the build as a fact, with its evidence, is what
+    // closes the premise; getCompanyContext states the same thing every cycle.
+    { company_id:'phishsimai', type:'company', key:'credential_capture', value:'BUILT AND LIVE since 2026-07-24 (PS-CREDPAGE-01, pinned by server/credPage.test.ts). A credential_harvest simulation serves a real fake login page at /c/:token; submitting it POSTs to /submit/:token, which sets credentialSubmittedAt on that recipient\'s campaign_results row. BY DESIGN the password input has NO name attribute and the handler reads ONLY the token — PhishSim records THAT a credential was submitted, never WHAT was submitted. This is the defensible design, not an unfinished one. Therefore "credentials submitted: 0" is a BEHAVIOURAL result (nobody who clicked has filled the form in yet), NOT a broken capture layer, template misconfiguration or reporting gap. That premise was investigated and CLOSED on 2026-07-24 — do not reopen it. Nor should it be reopened as a CONVERSION question (PS-SIMFRICTION-01, 2026-07-29): every simulation ever sent went to our own internal org, so there is no visitor behaviour to study and no page change that could move the number. Building capture-by-default or storing the typed password is REFUSED outright — a liability, not a feature.', confidence:1, source:'architect' },
+    // PS-INTERNAL-SIM-01 (2026-07-29, founder directive). Vera read a 40% click rate off 5
+    // internal sends and compared it to a 10-15% industry benchmark; Rex read the same rates
+    // as "high engagement, conversion friction". The rates are real — what was invented is
+    // that they say anything about the market. Seed the provenance as a durable fact so the
+    // interpretation cannot be re-derived from the bare number tomorrow.
+    { company_id:'phishsimai', type:'company', key:'sim_metrics_provenance', value:'PhishSim simulation metrics (sent/open/click/submit/report rates) are NOT market data and must never be used as one. Measured 2026-07-29: all 5 simulations ever sent belong to org 8 "PhishSim Internal" — the founder\'s own org. Zero went to a real external customer\'s employees. So "100% open rate" and "40% click rate" describe US testing OURSELVES on a sample of 5. Do NOT compare them to industry benchmarks, do NOT describe them as engagement, vulnerability, urgency or demand, and do NOT build outreach narratives, pricing arguments or campaign strategy on them. They prove the product works end-to-end, which is real and useful, and that is ALL they prove. These become market data only when real external recipients exist at volume.', confidence:1, source:'founder' },
+    // PS-FAKEPIPELINE-01 (2026-07-29, founder directive — resurfacing for the second time).
+    // The "4 free orgs" read as a conversion pipeline and produced a pricing campaign aimed
+    // mostly at ourselves. getCompanyContext now subtracts the internal/test orgs every cycle;
+    // this states the same fact durably, because the illusion has come back once already.
+    { company_id:'phishsimai', type:'company', key:'real_pipeline', value:'There is exactly ONE real external prospect, and any plan premised on more is aimed at ourselves. The 4 free orgs are NOT 4 leads: org 8 "PhishSim Internal" is the founder\'s own (kaanari@mac.com); orgs 6 "ai worker" and 7 "sending" are ONE person\'s duplicated throwaway test signups (asadbek.munasar@forliion.com). Only org 9 "egroth" (info@belldesign.net, trial to 2026-08-08) is a genuine outside trial. Do NOT propose a "convert the 4 free orgs" pricing campaign, follow-up cadence or CRM stage mapping — the denominator is 1. With a pipeline this small, conversion work cannot move revenue; the binding constraint is TOP OF FUNNEL — getting new real MSPs in. Propose top-of-funnel work instead.', confidence:1, source:'founder' },
+    // PS-CREDPHANTOM-01. PhishSim's outreach runs through Sarah Mitchell. "Kaan's LinkedIn" is
+    // not a PhishSim channel, and an assignment aimed at one is misrouted work, not a plan.
+    { company_id:'phishsimai', type:'company', key:'gtm_channels', value:'PhishSim GTM runs through ONE outbound identity: Sarah Mitchell, Head of Compliance Partnerships — sarah@phishsimai.com email, Sarah\'s LinkedIn, Sarah\'s Reddit. Audience: MSP owners and IT Directors, compliance-led. Kaan\'s personal/CEO LinkedIn is NOT a PhishSim marketing channel and no agent should plan content for it; founder-personal posting is out of scope. Marketing work belongs to Sarah\'s channels or it is misrouted. PhishSim is also a SEPARATE product from any other in the portfolio: never carry another product\'s audience, personas, offers or content strategy into PhishSim work, and never plan for a channel not listed here.', confidence:1, source:'founder' },
   ]
   for (const e of entries) await rememberFact(e)
   return entries.length
