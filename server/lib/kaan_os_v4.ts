@@ -453,6 +453,54 @@ export const NON_LEAD_ORG_ADMIN_EMAILS: readonly string[] = [
   'asadbek.munasar@forliion.com',
 ]
 
+/**
+ * PS-INTERNAL-FUNNEL-01 (2026-08-02, founder directive) — internal traffic is excluded from the
+ * RATES, not merely annotated beside them.
+ *
+ * PS-INTERNAL-SIM-01 added a provenance warning under a blended funnel line. That was necessary
+ * and insufficient: the rates themselves were still computed over all 5 rows, so the line still
+ * literally read "Opened 5/5 (100.0%) | Clicked 2/5 (40.0%)" and an agent quoting the number
+ * without the paragraph beneath it reproduced the original error exactly. A caveat under a number
+ * does not fix the number. The denominator has to change.
+ *
+ * Established by direct query of ep-spring-leaf on 2026-08-02 — the full population, all 5 rows:
+ *   • every row belongs to org 8 ("PhishSim Internal"), admin kaanari@mac.com;
+ *   • every recipient is kaan@phishsimai.com — our own apex domain;
+ *   • every ipAddress is 127.0.0.1 — localhost, i.e. generated on the dev machine, so not even
+ *     a real network round-trip, let alone a real person;
+ *   • three of five carry the synthetic UA "Mozilla/5.0";
+ *   • two rows record a click or a report EARLIER than their own open — causally impossible for
+ *     a human, and proof these were manual endpoint pokes rather than a funnel.
+ * External sends: 0. So the honest external funnel is empty and every rate over it is undefined.
+ */
+
+/** Recipient domains that are OURS. A send to one of these is a self-test, never market data. */
+export const INTERNAL_RECIPIENT_DOMAINS: readonly string[] = ['phishsimai.com']
+
+/**
+ * Orgs that are ours. `organizations` has NO internal/test boolean — confirmed against
+ * information_schema on 2026-08-02, the columns are: id, name, slug, logoUrl, gamificationEnabled,
+ * trainingEnabled, stripeCustomerId, stripeSubscriptionId, stripePriceId, plan, planActivatedAt,
+ * planExpiresAt, createdAt, updatedAt. So these are pinned by id, which is a real liability: a new
+ * test org created tomorrow is counted as a customer until someone edits this array.
+ *
+ * TODO(PS-INTERNAL-FUNNEL-02): add `organizations.is_internal boolean NOT NULL DEFAULT false`,
+ * backfill 6/7/8, and read that column here instead of this list. Needs a prod migration, which
+ * is a founder-approval gate — not taken in this change.
+ *
+ *   6 = "ai worker"         admin @forliion.com  — test tenant
+ *   7 = "sending"           admin @forliion.com  — test tenant (0 targets, 0 campaigns)
+ *   8 = "PhishSim Internal" admin @mac.com       — founder org, owns all 5 lifetime results
+ */
+export const INTERNAL_ORG_IDS: readonly number[] = [6, 7, 8]
+
+/**
+ * Below this external denominator we print counts only and no percentage, at any n. 30 is the
+ * founder's standing reporting rule. It is deliberately a hard floor rather than a caveat: a
+ * printed "40.0%" gets quoted downstream stripped of whatever qualifier sat next to it.
+ */
+export const MIN_RATE_DENOMINATOR = 30
+
 export function revenueMetric(mrr: number, paying: number, freeOrgs: number, everPaid: number, oldestOrgAgeDays: number | null): string {
   if (paying > 0 || mrr > 0) return `MRR: $${Math.round(mrr).toLocaleString('en-US')} from ${paying} paying org(s)`
   const age = oldestOrgAgeDays === null ? '' :
@@ -551,6 +599,125 @@ export function simProvenanceNote(internalSent: number, externalSent: number, un
     `claim about how the market behaves, and at that count say the raw number, never a benchmark comparison.`
 }
 
+export type FunnelCounts = {
+  sent: number; opened: number; clicked: number; submitted: number; reported: number
+}
+export type ExcludedBreakdown = {
+  /**
+   * ACTUAL number of excluded rows. Must be counted independently, never derived by summing the
+   * reason fields below: a row typically trips several rules at once (all 5 production rows trip
+   * domain AND private-ip AND org simultaneously), so byDomain+byPrivateIp+byOrg = 15 for a
+   * population of 5. The first draft of this function did exactly that and rendered "15
+   * internal/test EXCLUDED" against 5 real rows — inventing 10 sends that do not exist, which is
+   * the same fabrication class as the bug this whole change removes.
+   */
+  total: number
+  /** Recipient address is on one of OUR domains. Overlaps the other reasons. */
+  byDomain: number
+  /** Event came from loopback or an RFC1918 private range. Overlaps the other reasons. */
+  byPrivateIp: number
+  /** Recipient org is one of ours. Overlaps the other reasons. */
+  byOrg: number
+  /** Org owner could not be resolved; withheld from the external funnel rather than assumed real. */
+  unknown: number
+}
+
+/**
+ * PS-INTERNAL-FUNNEL-01 — render the simulation funnel over EXTERNAL sends only.
+ *
+ * Three rules, in priority order:
+ *   1. Excluded rows are never silently dropped. The count and the reason are always printed. A
+ *      funnel that quietly shrank from 5 to 0 is worse than the blended one, because it looks like
+ *      data loss and invites someone to "fix" it by putting the internal rows back.
+ *   2. At an external denominator of 0 there is no funnel — say N/A, never 0%. "0%" is a measured
+ *      finding; "N/A, n=0" is the absence of measurement. Collapsing the two is precisely the bug
+ *      that produced "0% credential submission rate" as a reported conversion failure.
+ *   3. Below MIN_RATE_DENOMINATOR, counts only — no percentage is emitted at all.
+ */
+export function externalFunnelMetric(ext: FunnelCounts, excluded: ExcludedBreakdown): string {
+  const totalExcluded = excluded.total
+  const reasons: string[] = []
+  if (excluded.byOrg) reasons.push(`${excluded.byOrg} to our own org(s)`)
+  if (excluded.byDomain) reasons.push(`${excluded.byDomain} to an @${INTERNAL_RECIPIENT_DOMAINS.join('/@')} address`)
+  if (excluded.byPrivateIp) reasons.push(`${excluded.byPrivateIp} from localhost/private IP`)
+  if (excluded.unknown) reasons.push(`${excluded.unknown} unattributable`)
+  // A row usually trips several rules at once, so the reason counts overlap and will not sum to the
+  // total. Say that, or the arithmetic looks broken.
+  const detail = reasons.length ? ` — ${reasons.join(', ')}; reasons overlap, so they do not sum` : ''
+  const excludedNote = totalExcluded
+    ? ` (${totalExcluded} internal/test EXCLUDED from every rate${detail})`
+    : ''
+
+  if (ext.sent === 0) {
+    return `Simulations: 0 external sends${excludedNote} | funnel N/A — n=0\n` +
+      `   ↳ There is NO external simulation data. Not a low number, not a zero result: no measurement ` +
+      `exists. Every open/click/report/submission figure the product has ever recorded came from the ` +
+      `excluded rows above. Any sentence about "our open rate", "our click rate", engagement, ` +
+      `vulnerability, urgency or demand is unsupported at this denominator — including a sentence ` +
+      `saying those things are BAD. The correct read is: the product works end-to-end and has never ` +
+      `been pointed at a real recipient. The constraint is acquisition, not the funnel.`
+  }
+
+  if (ext.sent < MIN_RATE_DENOMINATOR) {
+    return `Simulations: ${ext.sent} external send(s)${excludedNote}\n` +
+      `   ↳ Opened ${ext.opened}/${ext.sent} | Clicked ${ext.clicked}/${ext.sent} | ` +
+      `Reported ${ext.reported}/${ext.sent} | Submitted ${ext.submitted}/${ext.sent}\n` +
+      `   ↳ COUNTS ONLY — no percentage is shown because the external denominator (${ext.sent}) is ` +
+      `below ${MIN_RATE_DENOMINATOR}. Quote these as raw counts. Do not convert them to a rate, do ` +
+      `not compare them to an industry benchmark, and do not read a trend across them.`
+  }
+
+  const pct = (x: number) => ((x / ext.sent) * 100).toFixed(1)
+  return `Simulations: ${ext.sent} external send(s)${excludedNote}\n` +
+    `   ↳ Opened ${ext.opened}/${ext.sent} (${pct(ext.opened)}%) | Clicked ${ext.clicked}/${ext.sent} (${pct(ext.clicked)}%) | ` +
+    `Reported ${ext.reported}/${ext.sent} (${pct(ext.reported)}%) | Submitted ${ext.submitted}/${ext.sent} (${pct(ext.submitted)}%)`
+}
+
+/**
+ * PS-INTERNAL-FUNNEL-01 — capture-layer status, stated as deployment fact rather than inferred
+ * from a count. Marcus's 2026-08-02 standup asserted the credential endpoint was "still unbuilt"
+ * while `/c/:token` and `POST /submit/:token` had been live on main since 2026-07-24; the only
+ * evidence for "unbuilt" was that `credentialSubmittedAt` was 0. This line removes the inference
+ * by naming the routes, so a zero can never again be read as an absent feature.
+ */
+export function credentialCaptureStatus(submitted: number): string {
+  return `Credential capture: BUILT AND LIVE (/c/:token, /submit/:token) | ${submitted} submission(s)`
+}
+
+export type SuspectedInternalOrg = { id: number; name: string; adminEmail: string }
+
+/**
+ * PS-INTERNAL-FUNNEL-01 — the tripwire on INTERNAL_ORG_IDS being a hardcoded list.
+ *
+ * The list is a known liability: a test org created tomorrow is counted as a real external
+ * customer until a human edits the array, and the funnel lies again in exactly the way this
+ * change removed. Until PS-INTERNAL-FUNNEL-02 adds `organizations.is_internal`, this detects the
+ * drift and SHOUTS rather than letting it pass silently.
+ *
+ * DETECTION IS BROADER THAN THE FOUNDER'S BRIEF, deliberately — and it has to be. The directive
+ * said "admin email @phishsimai.com", but measured against ep-spring-leaf on 2026-08-02 the three
+ * known internal orgs have admins asadbek.munasar@forliion.com (orgs 6, 7) and kaanari@mac.com
+ * (org 8). NOT ONE is @phishsimai.com. A check written to that letter would match 0 of 3 existing
+ * test orgs and would miss a fourth created the same way — a tripwire that cannot fire on any
+ * instance of the thing it watches for. So it fires on our own domain OR any address already
+ * known to be ours (NON_LEAD_ORG_ADMIN_EMAILS), which is the pattern the data actually shows.
+ *
+ * Fail-LOUD, not fail-closed: it does not auto-exclude the org. Silently reclassifying a real
+ * customer as internal would delete genuine market data, which is the costlier error — one is a
+ * warning a human resolves, the other is data that disappears without anyone noticing.
+ */
+export function unflaggedInternalOrgWarning(orgs: readonly SuspectedInternalOrg[]): string {
+  if (orgs.length === 0) return ''
+  const list = orgs.map(o => `#${o.id} "${o.name}" (${o.adminEmail})`).join(', ')
+  return `\n🚨 FUNNEL INTEGRITY — ${orgs.length} ORG(S) LOOK INTERNAL BUT ARE NOT EXCLUDED: ${list}. ` +
+    `Their admin contact is one of ours, but their id is not in INTERNAL_ORG_IDS, so every ` +
+    `simulation they run is being counted as EXTERNAL market data in the funnel above. If these are ` +
+    `test orgs, the external numbers in this brief are INFLATED and must not be quoted until the ` +
+    `list is corrected (server/lib/kaan_os_v4.ts, INTERNAL_ORG_IDS). If any is a genuine customer, ` +
+    `no action is needed — say so explicitly rather than leaving this warning to recur. Root fix is ` +
+    `PS-INTERNAL-FUNNEL-02 (an is_internal column), which needs a prod migration.`
+}
+
 /**
  * PS-TOPFUNNEL-01 (2026-07-29, founder directive) — put the funnel's ACTUAL constraint in front
  * of the team.
@@ -642,7 +809,10 @@ export function topOfFunnelMetric(f: {
  *   - campaigns       — table exists, but the column is "createdAt", not created_at
  * Reads PhishSim's real schema now. Identifiers are quoted because this schema is camelCase.
  */
-async function getCompanyContext(sql: any): Promise<string> {
+// Exported (PS-INTERNAL-FUNNEL-01) so the brief's metrics block can be rendered against a real
+// database and inspected verbatim, without going through a standup that would also spend LLM
+// calls. It is read-only: every statement inside is a SELECT.
+export async function getCompanyContext(sql: any): Promise<string> {
   // A swallowed query error is what caused the original bug: it is indistinguishable from a
   // genuine zero, so Janet confidently reported a flatlined business that was really just a
   // broken query. Keep the fallback (context must never take the cycle down) but make the
@@ -655,18 +825,63 @@ async function getCompanyContext(sql: any): Promise<string> {
       return fallback
     })
 
-  const [orgRows, camps, results, orgAges, leadOrgs, simProv, outreach, replyDrafts, newSignups] = await Promise.all([
+  const [orgRows, camps, results, orgAges, leadOrgs, unflagged, outreach, replyDrafts, newSignups] = await Promise.all([
     q('organizations', sql`SELECT plan::text AS plan, "stripePriceId" AS price_id, count(*)::int AS n
         FROM organizations GROUP BY plan, "stripePriceId"`, [] as any[]),
     q('campaigns', sql`SELECT count(*)::int AS total,
                count(*) FILTER (WHERE "createdAt" > now() - interval '7 days')::int AS this_week
         FROM campaigns`, [{ total: 0, this_week: 0 }]),
-    q('campaign_results', sql`SELECT count(*) FILTER (WHERE "emailSentAt" IS NOT NULL)::int AS sent,
-               count(*) FILTER (WHERE "emailOpenedAt" IS NOT NULL)::int AS opened,
-               count(*) FILTER (WHERE "linkClickedAt" IS NOT NULL)::int AS clicked,
-               count(*) FILTER (WHERE "credentialSubmittedAt" IS NOT NULL)::int AS submitted,
-               count(*) FILTER (WHERE "reportedAt" IS NOT NULL)::int AS reported
-        FROM campaign_results`, [{ sent: 0, opened: 0, clicked: 0, submitted: 0, reported: 0 }]),
+    // PS-INTERNAL-FUNNEL-01: classify every sent row as internal / unknown / external FIRST, then
+    // aggregate the funnel over EXTERNAL only. The excluded rows are counted and returned beside
+    // the funnel — never dropped — so the brief can always state what was removed and why.
+    //
+    // A row is INTERNAL if ANY of: its org is one of ours, its org admin is one of us, the
+    // recipient is on one of our domains, or the event came from loopback/RFC1918. Any one of
+    // those is sufficient — the tests are OR'd, and a row that trips several is still one row.
+    // `targets` is LEFT JOINed because targets get deleted while their results persist (2 target
+    // rows survive for 5 results), so a NULL recipient must not resurrect a row as external.
+    //
+    // The private-IP test is string-based on purpose: `ipAddress` is a varchar that can hold
+    // anything, and `::inet` throws on malformed input, which would take down the whole brief.
+    q('campaign_results', sql`
+      SELECT count(*) FILTER (WHERE bucket = 'external')::int                    AS sent,
+             count(*) FILTER (WHERE bucket = 'external' AND opened)::int         AS opened,
+             count(*) FILTER (WHERE bucket = 'external' AND clicked)::int        AS clicked,
+             count(*) FILTER (WHERE bucket = 'external' AND submitted)::int      AS submitted,
+             count(*) FILTER (WHERE bucket = 'external' AND reported)::int       AS reported,
+             count(*) FILTER (WHERE bucket = 'internal')::int                    AS internal_sent,
+             count(*) FILTER (WHERE bucket = 'unknown')::int                     AS unknown_sent,
+             count(*) FILTER (WHERE bucket = 'internal' AND is_int_domain)::int  AS excl_domain,
+             count(*) FILTER (WHERE bucket = 'internal' AND is_priv_ip)::int     AS excl_priv_ip,
+             count(*) FILTER (WHERE bucket = 'internal' AND is_int_org)::int     AS excl_org
+      FROM (
+        SELECT
+          CASE WHEN is_int_org OR is_int_owner OR is_int_domain OR is_priv_ip THEN 'internal'
+               WHEN owner IS NULL THEN 'unknown'
+               ELSE 'external' END AS bucket,
+          is_int_org, is_int_domain, is_priv_ip, opened, clicked, submitted, reported
+        FROM (
+          SELECT
+            r."orgId" = ANY(${INTERNAL_ORG_IDS}::int[])                      AS is_int_org,
+            lower(split_part(t.email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS}) AS is_int_domain,
+            COALESCE(r."ipAddress" = '127.0.0.1' OR r."ipAddress" LIKE '127.%'
+                  OR r."ipAddress" = '::1'       OR r."ipAddress" = '0:0:0:0:0:0:0:1'
+                  OR r."ipAddress" LIKE '10.%'   OR r."ipAddress" LIKE '192.168.%'
+                  OR r."ipAddress" ~ '^172\\.(1[6-9]|2[0-9]|3[01])\\.', false) AS is_priv_ip,
+            (SELECT lower(u.email) FROM org_members m JOIN users u ON u.id = m."userId"
+               WHERE m."orgId" = r."orgId" AND m.role = 'admin' AND u.email IS NOT NULL
+               ORDER BY m.id ASC LIMIT 1)                                    AS owner,
+            r."emailOpenedAt"         IS NOT NULL AS opened,
+            r."linkClickedAt"         IS NOT NULL AS clicked,
+            r."credentialSubmittedAt" IS NOT NULL AS submitted,
+            r."reportedAt"            IS NOT NULL AS reported
+          FROM campaign_results r
+          LEFT JOIN targets t ON t.id = r."targetId"
+          WHERE r."emailSentAt" IS NOT NULL
+        ) c
+        CROSS JOIN LATERAL (SELECT c.owner = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}) AS is_int_owner) o
+      ) t`, [{ sent: 0, opened: 0, clicked: 0, submitted: 0, reported: 0,
+               internal_sent: 0, unknown_sent: 0, excl_domain: 0, excl_priv_ip: 0, excl_org: 0 }]),
     // PS-BAREMETRIC-01: the two facts that tell pre-revenue apart from churn-to-zero. `ever_paid`
     // counts orgs that have ever activated a paid plan — if that is 0, $0 MRR cannot be a decline.
     q('org_ages', sql`SELECT count(*) FILTER (WHERE "planActivatedAt" IS NOT NULL)::int AS ever_paid,
@@ -689,22 +904,31 @@ async function getCompanyContext(sql: any): Promise<string> {
         )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}) AS is_excluded
         FROM organizations o WHERE o.plan = 'free'
       ) t`, [{ free_excluded: 0 }]),
-    // PS-INTERNAL-SIM-01: split the simulation funnel by WHO received it. Deliberately THREE-way:
-    // a result whose org has no resolvable admin email is counted `unknown`, never quietly folded
-    // into either side. Calling it external would rebuild the exact illusion this removes; calling
-    // it internal would hide real customer data. Unknown is the honest bucket, and the note says so.
-    q('sim_provenance', sql`
-      SELECT count(*) FILTER (WHERE owner IS NOT NULL AND owner = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}))::int AS internal_sent,
-             count(*) FILTER (WHERE owner IS NOT NULL AND NOT (owner = ANY(${NON_LEAD_ORG_ADMIN_EMAILS})))::int AS external_sent,
-             count(*) FILTER (WHERE owner IS NULL)::int AS unknown_sent
-      FROM (
-        SELECT lower((
+    // PS-INTERNAL-FUNNEL-01: tripwire on the hardcoded INTERNAL_ORG_IDS list. Finds orgs whose
+    // admin contact is one of OURS but whose id was never added to the list — i.e. a test org
+    // created after this code shipped, silently counting as external market data. Matches our own
+    // domain OR a known-internal address, because the existing test orgs use @forliion.com and
+    // @mac.com, not @phishsimai.com. Detect-and-shout only; it never auto-excludes.
+    q('unflagged_internal', sql`
+      SELECT id, name, admin_email FROM (
+        SELECT o.id, o.name, lower((
           SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-          WHERE m."orgId" = r."orgId" AND m.role = 'admin' AND u.email IS NOT NULL
+          WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
           ORDER BY m.id ASC LIMIT 1
-        )) AS owner
-        FROM campaign_results r WHERE r."emailSentAt" IS NOT NULL
-      ) t`, [{ internal_sent: 0, external_sent: 0, unknown_sent: 0 }]),
+        )) AS admin_email
+        FROM organizations o
+      ) t
+      WHERE admin_email IS NOT NULL
+        AND (admin_email LIKE ${'%@' + INTERNAL_RECIPIENT_DOMAINS[0]}
+             OR admin_email = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}))
+        AND NOT (id = ANY(${INTERNAL_ORG_IDS}::int[]))
+      ORDER BY id`, [] as any[]),
+    // PS-INTERNAL-SIM-01's separate `sim_provenance` query was REMOVED by PS-INTERNAL-FUNNEL-01:
+    // the campaign_results query above now performs the same three-way split (internal / unknown /
+    // external) as part of setting the funnel denominator, and returns those counts directly. Two
+    // queries computing "how many sends were ours" by different rules — that one keyed only on the
+    // org admin email, this one also on recipient domain, org id and source IP — would drift apart
+    // and put two different internal counts in the same brief.
     // PS-TOPFUNNEL-01: the outbound channel that actually acquires people. `touched_today` and
     // `last_send` exist so a STALLED sender cannot hide behind a healthy lifetime total.
     q('outreach', sql`SELECT
@@ -807,7 +1031,26 @@ async function getCompanyContext(sql: any): Promise<string> {
     nowMs: Date.now(),
   })
 
-  const prov = (simProv as any[])[0] || { internal_sent: 0, external_sent: 0, unknown_sent: 0 }
+  // PS-INTERNAL-FUNNEL-01: provenance is derived from the SAME classification that sets the funnel
+  // denominator, not from a second query with its own rules. Two independent internal/external
+  // counts in one brief will eventually disagree, and a brief that contradicts itself gets resolved
+  // by whichever number the reader liked better.
+  const ext: FunnelCounts = {
+    sent: Number(s.sent ?? 0), opened: Number(s.opened ?? 0), clicked: Number(s.clicked ?? 0),
+    submitted: Number(s.submitted ?? 0), reported: Number(s.reported ?? 0),
+  }
+  const internalSent = Number(s.internal_sent ?? 0)
+  const suspectedInternal: SuspectedInternalOrg[] = ((unflagged as any[]) || []).map(r => ({
+    id: Number(r.id), name: String(r.name ?? ''), adminEmail: String(r.admin_email ?? ''),
+  }))
+  const excluded: ExcludedBreakdown = {
+    // Counted from the rows themselves, NOT summed from the reasons below — see ExcludedBreakdown.
+    total: internalSent + Number(s.unknown_sent ?? 0),
+    byDomain: Number(s.excl_domain ?? 0),
+    byPrivateIp: Number(s.excl_priv_ip ?? 0),
+    byOrg: Number(s.excl_org ?? 0),
+    unknown: Number(s.unknown_sent ?? 0),
+  }
 
   return `${topFunnel}
 
@@ -817,12 +1060,13 @@ ${revenueMetric(mrr, paying, freeLeads, Number(ages.ever_paid ?? 0), ages.oldest
 Campaigns: ${c.total} total | ${c.this_week} created this week
 
 ── PRODUCT USAGE (simulations run INSIDE signed-up orgs — not a market signal) ──
-Simulations: ${s.sent} sent | Opened ${n(s.opened, s.sent)} | Clicked ${n(s.clicked, s.sent)}
-${reportRateMetric(Number(s.reported), Number(s.sent))}
-${submittedMetric(Number(s.submitted), Number(s.clicked))}
-${simProvenanceNote(Number(prov.internal_sent ?? 0), Number(prov.external_sent ?? 0), Number(prov.unknown_sent ?? 0))}
-⚠️ SAMPLE SIZE: every rate above is over ${s.sent} sent email(s). These are counts, not trends — do not
-reason about a percentage without saying the raw number it came from.${infra}${warn}`
+${externalFunnelMetric(ext, excluded)}
+${credentialCaptureStatus(ext.submitted)}${ext.sent > 0 ? `
+${reportRateMetric(ext.reported, ext.sent)}
+${submittedMetric(ext.submitted, ext.clicked)}` : ''}
+${simProvenanceNote(internalSent, ext.sent, excluded.unknown)}
+⚠️ SAMPLE SIZE: every figure above is over ${ext.sent} EXTERNAL sent email(s). These are counts, not
+trends — do not reason about a percentage without saying the raw number it came from.${unflaggedInternalOrgWarning(suspectedInternal)}${infra}${warn}`
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
