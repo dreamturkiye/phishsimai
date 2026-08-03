@@ -265,7 +265,7 @@ export default function Home() {
         <div className="container">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">15 cents per user</span>.</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 30-day free trial, no credit card. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 30-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
             {PLANS.map((plan) => (
@@ -664,7 +664,7 @@ export default function Home() {
           <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
             Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
-          <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial · Full access</p>
+          <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial · Cancel anytime</p>
         </div>
       </section>
 
