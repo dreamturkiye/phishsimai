@@ -78,6 +78,59 @@ export async function learnFromOutcome(companyId: string, action: string, outcom
     value: `Action:${action}|Outcome:${outcome}|Lesson:${lesson}`, confidence: 0.9, source: 'reflection' })
 }
 
+
+/**
+ * PS-JANET-DOCTRINE-01 — lessons that must OUTLIVE any prompt edit.
+ *
+ * A system prompt is one thin-memory turn from being rewritten, summarised or truncated, and the
+ * two facts below were each learned expensively. They are written to os_agent_lessons, which
+ * getAgentLessonsForPrompt() reads into every agent's context regardless of what the prompt
+ * currently says — so reverting the prompt cannot revert the lesson.
+ *
+ * DELIBERATELY NOT IN kaan-os-core. The first version of this lived in
+ * kaan-os-core/outcomeLearning.ts and CI rejected it: that directory is a pinned vendored copy of
+ * dreamturkiye/kaan-os-core and editing it in place forks the shared core silently. These lessons
+ * are PhishSim doctrine, not core behaviour, so they belong here in product-owned code. The table
+ * is shared; the content is ours.
+ *
+ * Both recorded as success=false: they are failures we paid for, and the negative confidence_delta
+ * is the point. Idempotent by signature.
+ */
+export const PERMANENT_LESSONS: { signature: string; lesson: string }[] = [
+  {
+    signature: 'phishsim:insurance-angle-failed',
+    lesson:
+      'INSURANCE/COMPLIANCE-URGENCY OPENER FAILED, MEASURED: 908 cold sends (2026-07-04..08-02) ' +
+      'produced 1 human reply and it was hostile ("stop emailing me"). Do NOT lead outreach, ' +
+      'landing copy, or a pitch with insurance, underwriting, audits, or breach-fear framing. ' +
+      'Lead with price ($299/500 users = 60c), 10-minute setup, no-card 30-day trial, and MSP ' +
+      'margin. Compliance is a SECOND-position supporting point for larger MSPs, never the opener.',
+  },
+  {
+    signature: 'phishsim:pricing-frozen-live-stripe',
+    lesson:
+      'PRICING IS FROZEN AND LIVE-STRIPE-SOURCED: Starter $149 (100 users), Growth $299 (500), ' +
+      'Pro $749 (2,500), Enterprise $1,499 (10,000); annual = 10x monthly; trial 30 days no card. ' +
+      'A prompt once carried $99/$249/$499/$999 — all four wrong, and ea.ts/finance.ts proposed a ' +
+      '$49/mo founding rate that exists in NO Stripe account. NEVER quote a price not read from ' +
+      'server/stripe/prices.ts, never discount or invent one, never propose a pricing change.',
+  },
+]
+
+/** Write the permanent doctrine lessons once. Safe to call on every boot. */
+export async function seedPermanentLessons(): Promise<void> {
+  const sql = getSql()
+  for (const l of PERMANENT_LESSONS) {
+    const existing = (await sql`SELECT 1 FROM os_agent_lessons
+      WHERE company_id='phishsimai' AND signature=${l.signature} LIMIT 1`.catch(() => [])) as any[]
+    if (existing.length) continue
+    await sql`INSERT INTO os_agent_lessons
+      (company_id, agent_id, source, signature, lesson, success, score, confidence_delta)
+      VALUES ('phishsimai', 'janet', 'experiment', ${l.signature}, ${l.lesson}, false, 0, -0.08)`
+      .catch(() => {})
+  }
+}
+
 export async function seedPhishSimMemory() {
   const entries: MemoryEntry[] = [
     { company_id:'phishsimai', type:'company', key:'product', value:'AI-powered phishing simulation + security awareness training for MSPs and IT teams. Automated campaigns, real-time reporting, staff training post-click.', confidence:1, source:'founder' },
@@ -102,12 +155,27 @@ export async function seedPhishSimMemory() {
     { company_id:'phishsimai', type:'company', key:'reddit_sarah', value:'Sarah Mitchell Reddit persona — dedicated account (not founder login). Target subs: r/msp, r/MSSP, r/sysadmin, r/cybersecurity, r/compliance. Voice: helpful peer MSP/compliance practitioner, 90% value / 10% soft product mention. Janet auto-posts via SARAH_REDDIT_USERNAME + SARAH_REDDIT_PASSWORD in Vercel env (never in chat). Cron /api/os/sarah-social 10:00+16:00 UTC. Limits: 3 comments/day, 1 post/day. PostForMe = LinkedIn only, not Reddit.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'operating', key:'linkedin_sarah_ops', value:'Sarah LinkedIn autopost NOT LIVE until POSTFORME_API_KEY in Vercel. Janet answers from janetOpsSnapshot — must state blocker, never say "waiting on marketing". Reddit cron 10+16 UTC separate. Target: 2-3 LinkedIn posts/week when PostForMe wired.', confidence:1, source:'system' },
     { company_id:'phishsimai', type:'campaign', key:'touch1_best_subject', value:'Phishing simulation for {company} — free compliance audit', confidence:0.7, source:'initial' },
-    { company_id:'phishsimai', type:'campaign', key:'current_sequence', value:'5-touch email: T1(d0), T2(d3), T3(d7), T4(d12), T5(d19). Daily cap 20. Pause >8% bounce.', confidence:1, source:'system' },
+    // PS-JANET-DOCTRINE-01: touches 2-5 were DELETED in PS-COPY-REWRITE-01 (their bodies carried an
+    // invented case study and a dead link). The sequence is touch-1 only until replacement copy is
+    // approved, and the cap is the ramp value, not 20.
+    { company_id:'phishsimai', type:'campaign', key:'current_sequence', value:'TOUCH-1 ONLY. Touches 2-5 were deleted 2026-07-2x (invented case study, dead link) and are not scheduled; SEQUENCE in sequences.ts is intentionally empty. Cap is the warm-up ramp (currently 50/day, RAMP_MAX). Bounce breaker PAUSE_ON_BOUNCE_RATE=0.08 over a 7-day window.', confidence:1, source:'system' },
     { company_id:'phishsimai', type:'campaign', key:'outreach_batch_1', value:'0 MSP leads seeded yet. Target: MSP owners + IT Directors 50-500 employees. Compliance-driven.', confidence:1, source:'system' },
-    { company_id:'phishsimai', type:'campaign', key:'key_stat', value:'67% of data breaches start with phishing. Average breach cost $4.45M (IBM 2024). Use in every touch.', confidence:1, source:'research' },
-    { company_id:'phishsimai', type:'operating', key:'autonomy_level', value:'L3 — execute with approval for sends >20/day. L4 for tagging, task creation, CRM updates.', confidence:1, source:'founder' },
-    { company_id:'phishsimai', type:'strategic', key:'week1_priority', value:'Close first 3 MSP clients. One MSP = 10-100x LTV of direct SMB. Offer founding rate $49/mo first 3 months.', confidence:0.9, source:'janet' },
-    { company_id:'phishsimai', type:'operating', key:'tone', value:'Professional, compliance-urgency, data-driven. Reference breach stats. Position as compliance tool not just security tool.', confidence:1, source:'founder' },
+    // PS-JANET-DOCTRINE-01: said 'Use in every touch'. Breach-fear stats ARE the demoted angle, and a
+    // standing instruction to inject them into every message is what produced the failed pitch.
+    // Kept as background context with its source, explicitly NOT a copy directive.
+    { company_id:'phishsimai', type:'campaign', key:'key_stat', value:'BACKGROUND ONLY, NOT A COPY DIRECTIVE: industry reporting (IBM Cost of a Data Breach) attributes a large share of breaches to phishing. Do NOT open outreach or landing copy with breach statistics — that angle was measured at 908 sends / 1 hostile reply. Cite a statistic only if a prospect asks, and only with its source named.', confidence:0.6, source:'research' },
+    // PS-JANET-DOCTRINE-01: this was a hand-written snapshot that drifted from the real gate. The
+    // level is EARNED and auto-advances; a seeded string can only ever be stale. Point at the source.
+    { company_id:'phishsimai', type:'operating', key:'autonomy_level', value:'DO NOT READ A LEVEL FROM THIS STRING. Enforcement level is os_autonomy_state.level, earned and auto-advanced by the 06:40 cron; the gate map is autonomyGate.ts ACTION_MIN_LEVEL (send_simulation l4, crm_write l4, deploy l5). Posture (os_posture_state) is a SEPARATE axis declared by a human and is never permission.', confidence:1, source:'system' },
+    // PS-JANET-DOCTRINE-01: the "founding rate $49/mo" was a ROGUE PRICE — it exists in no Stripe
+    // account, was seeded by an agent at confidence 0.9, and any agent reading it would have quoted
+    // it to a prospect as an approved offer. Pricing is a founder hard stop; an agent may not invent
+    // a discount. Removed. The priority itself is real and stays.
+    { company_id:'phishsimai', type:'strategic', key:'week1_priority', value:'Close the first paying MSP. One MSP = many end customers, so MSP LTV dwarfs a direct SMB. NO discount, founding rate or custom price may be offered — pricing is frozen at the live Stripe values and only Kaan changes it.', confidence:0.9, source:'founder' },
+    // PS-JANET-DOCTRINE-01: was 'compliance-urgency, reference breach stats'. That framing was
+    // MEASURED over 908 cold sends and produced 1 reply, hostile. Replaced with the price-led
+    // doctrine; compliance drops to a second-position supporting point.
+    { company_id:'phishsimai', type:'operating', key:'tone', value:'Direct, specific, numeric. LEAD WITH: price ($299 covers 500 users = 60c each, 30c on Pro), 10-minute setup, no-card 30-day trial, and MSP margin (flat per-MSP pricing means adding a client grows margin). Compliance/insurance is a DEMOTED supporting point for larger MSPs — never the opener, never urgency framing. No breach-fear, no scarcity, no unsourced statistics.', confidence:1, source:'founder' },
     { company_id:'phishsimai', type:'operating', key:'os_version', value:'Kaan AI OS v4.5.4 — PhishSimAI Edition (Neon Postgres + first-party site analytics)', confidence:1, source:'system' },
     { company_id:'phishsimai', type:'operating', key:'site_analytics', value:'Kaan OS Analytics v4.5.4 — free first-party pageview tracking in os_site_analytics (Neon). HQ Analytics tab. No Google/Umami account. Hashed visitors, UTM capture, top pages/referrers. Janet uses for growth decisions.', confidence:1, source:'system' },
     // PS-CREDPHANTOM-01. A capability the team cannot see is one they will re-diagnose as
@@ -134,5 +202,10 @@ export async function seedPhishSimMemory() {
     { company_id:'phishsimai', type:'company', key:'gtm_channels', value:'PhishSim GTM runs through ONE outbound identity: Sarah Mitchell, Head of Compliance Partnerships — sarah@phishsimai.com email, Sarah\'s LinkedIn, Sarah\'s Reddit. Audience: MSP owners and IT Directors, compliance-led. Kaan\'s personal/CEO LinkedIn is NOT a PhishSim marketing channel and no agent should plan content for it; founder-personal posting is out of scope. Marketing work belongs to Sarah\'s channels or it is misrouted. PhishSim is also a SEPARATE product from any other in the portfolio: never carry another product\'s audience, personas, offers or content strategy into PhishSim work, and never plan for a channel not listed here.', confidence:1, source:'founder' },
   ]
   for (const e of entries) await rememberFact(e)
+  // PS-JANET-DOCTRINE-01: seed the two lessons that must survive a prompt rewrite. They live in
+  // os_agent_lessons (read into every agent's context by getAgentLessonsForPrompt) rather than the
+  // system prompt, so truncating or rewriting JANET_SYSTEM cannot revert the pricing values or
+  // resurrect the insurance-urgency pitch. Idempotent by signature; never fails the seed.
+  await seedPermanentLessons().catch(() => {})
   return entries.length
 }

@@ -44,7 +44,7 @@ export async function runFinanceAgent(companyId = 'phishsimai'): Promise<Finance
     nextMilestone: next.label,
     conversionFunnelCost: '$0 (organic outreach only). Hunter.io enrichment per lead.',
     pricingRecommendation: customers === 0
-      ? 'Founding MSP rate: $49/mo first 3 months for first 5 MSPs. Close fast, get testimonials, then enforce full pricing.'
+      ? 'Pricing is FROZEN at the live Stripe values (Starter $149 / Growth $299 / Pro $749 / Enterprise $1,499). Do NOT model, propose or assume a founding rate or discount — an earlier $49/mo suggestion referenced a price that exists in no Stripe account.'
       : `${customers} client(s) at $${avgRevenue}/mo avg. Test upgrade email to Pro tier at day 30.`,
   }
 
