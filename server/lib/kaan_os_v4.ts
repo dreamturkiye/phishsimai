@@ -740,6 +740,10 @@ export function topOfFunnelMetric(f: {
   touchedEver: number; touched7d: number; touchedToday: number; lastSendIso: string | null
   touch2: number; replied: number; bounced: number; unsubscribed: number
   readyPool: number; replyDraftsEver: number; newRealSignups7d: number; realLeadsTotal: number
+  /** OUR OWN addresses that received touch-1. Counted, excluded from every rate above. */
+  internalExcl?: number
+  /** Replies from those addresses — self-tests, never market signal. */
+  internalReplies?: number
   nowMs: number
 }): string {
   const lines: string[] = ['── TOP OF FUNNEL (REAL EXTERNAL PROSPECTS — this is the binding constraint) ──']
@@ -778,7 +782,23 @@ export function topOfFunnelMetric(f: {
       `ZERO rows ever. "No prospect replied" and "we cannot receive replies" are indistinguishable from ` +
       `this number. Confirming the relay actually fires is a prerequisite for any claim about reply rate.`)
   } else {
-    lines.push(`Replies: ${f.replied} from ${f.touchedEver} contacted (${f.replyDraftsEver} inbound message(s) captured).`)
+    // PS-OUTREACH-INTERNAL-01: state the EXTERNAL reply count, and say plainly when the only
+    // captured reply was one of ours. "1 reply from 884" reads as first market traction; if that 1
+    // is the founder typing TEST to check the pipe, it is the opposite of traction and every plan
+    // built on it is built on nothing.
+    const internal = f.internalExcl ?? 0
+    const selfReplies = f.internalReplies ?? 0
+    const excl = internal
+      ? ` · ${internal} of our own address(es) EXCLUDED from this count${selfReplies ? `, incl. ${selfReplies} self-test repl(y/ies)` : ''}`
+      : ''
+    lines.push(`Replies: ${f.replied} EXTERNAL from ${f.touchedEver} contacted ` +
+      `(${f.replyDraftsEver} inbound message(s) captured, so the capture path is PROVEN LIVE)${excl}.`)
+    if (f.replied === 0 && f.replyDraftsEver > 0) {
+      lines.push(`   ↳ Zero EXTERNAL replies so far, but this is now a measured zero rather than an ` +
+        `unverified one: inbound capture has demonstrably written a row, so "nobody replied" and ` +
+        `"we cannot hear replies" are no longer indistinguishable. At this denominator do not read ` +
+        `it as the message failing — it is the honest starting point.`)
+    }
   }
 
   // Deliverability, and the one funnel stage we do not instrument at all.
@@ -948,18 +968,41 @@ export async function getCompanyContext(sql: any): Promise<string> {
     // and put two different internal counts in the same brief.
     // PS-TOPFUNNEL-01: the outbound channel that actually acquires people. `touched_today` and
     // `last_send` exist so a STALLED sender cannot hide behind a healthy lifetime total.
+    // PS-OUTREACH-INTERNAL-01 (2026-08-03, founder directive) — our own addresses are NOT market
+    // data, in the OUTREACH funnel exactly as in the simulation funnel.
+    //
+    // Measured: kaanari@mac.com (the founder's personal address) was on the cold list and received
+    // touch-1 on 2026-07-18. On 2026-08-03 he sent a one-word "TEST" reply to verify the newly
+    // wired Gmail capture, and it landed as replied=true, pipeline_stage='engaged'. That single row
+    // was about to become the ENTIRE numerator of the reply metric — "1 reply from 884 contacted",
+    // where the 1 is us. Identical to the 5 localhost simulations that produced "100% open rate",
+    // and reintroduced here by the 2026-08-03 Resend backfill, which matched on email alone and
+    // filtered nothing internal.
+    //
+    // Excluded three ways so a future row cannot slip through a single gap: an address on one of
+    // OUR domains, an address already known to be ours (NON_LEAD_ORG_ADMIN_EMAILS), or a row
+    // explicitly staged 'internal_test'. Excluded rows are COUNTED, never dropped — internal_excl
+    // travels with the metric so the brief can always say what was removed.
     q('outreach', sql`SELECT
-             count(*) FILTER (WHERE touch1_sent_at IS NOT NULL)::int AS touched_ever,
-             count(*) FILTER (WHERE touch1_sent_at > now() - interval '7 days')::int AS touched_7d,
-             count(*) FILTER (WHERE touch1_sent_at > now() - interval '24 hours')::int AS touched_today,
-             count(*) FILTER (WHERE touch2_sent_at IS NOT NULL)::int AS touch2,
-             count(*) FILTER (WHERE replied)::int AS replied,
-             count(*) FILTER (WHERE bounced)::int AS bounced,
-             count(*) FILTER (WHERE unsubscribed)::int AS unsubscribed,
-             count(*) FILTER (WHERE touch1_sent_at IS NULL AND pipeline_stage = 'prospect')::int AS ready_pool,
-             max(touch1_sent_at) AS last_send
-        FROM ps_outreach_leads`,
-      [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, last_send: null }]),
+             count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at IS NOT NULL)::int AS touched_ever,
+             count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at > now() - interval '7 days')::int AS touched_7d,
+             count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at > now() - interval '24 hours')::int AS touched_today,
+             count(*) FILTER (WHERE NOT is_internal AND touch2_sent_at IS NOT NULL)::int AS touch2,
+             count(*) FILTER (WHERE NOT is_internal AND replied)::int AS replied,
+             count(*) FILTER (WHERE NOT is_internal AND bounced)::int AS bounced,
+             count(*) FILTER (WHERE NOT is_internal AND unsubscribed)::int AS unsubscribed,
+             count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at IS NULL AND pipeline_stage = 'prospect')::int AS ready_pool,
+             count(*) FILTER (WHERE is_internal AND touch1_sent_at IS NOT NULL)::int AS internal_excl,
+             count(*) FILTER (WHERE is_internal AND replied)::int AS internal_replies,
+             max(touch1_sent_at) FILTER (WHERE NOT is_internal) AS last_send
+        FROM (
+          SELECT touch1_sent_at, touch2_sent_at, replied, bounced, unsubscribed, pipeline_stage,
+                 (lower(email) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS})
+                  OR lower(split_part(email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS})
+                  OR pipeline_stage = 'internal_test') AS is_internal
+          FROM ps_outreach_leads
+        ) t`,
+      [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, internal_excl: 0, internal_replies: 0, last_send: null }]),
     // PS-TOPFUNNEL-01: has inbound reply capture EVER received anything? Distinguishes "no one
     // replied" from "we cannot hear replies" — see topOfFunnelMetric.
     q('reply_drafts', sql`SELECT count(*)::int AS n FROM outreach_reply_drafts`, [{ n: 0 }]),
@@ -1042,6 +1085,8 @@ export async function getCompanyContext(sql: any): Promise<string> {
     bounced: Number(of_.bounced ?? 0),
     unsubscribed: Number(of_.unsubscribed ?? 0),
     readyPool: Number(of_.ready_pool ?? 0),
+    internalExcl: Number(of_.internal_excl ?? 0),
+    internalReplies: Number(of_.internal_replies ?? 0),
     replyDraftsEver: Number((replyDrafts as any[])[0]?.n ?? 0),
     newRealSignups7d: Number((newSignups as any[])[0]?.n ?? 0),
     realLeadsTotal: freeLeads + paying,
