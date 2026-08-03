@@ -4,6 +4,7 @@ import { AB_EXPERIMENTS, TOUCH2_VARIANT, getVariant, recordImpression, deriveFir
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
+import { assertSendable } from './sendGate'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
@@ -200,10 +201,10 @@ export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
  * leave a row claiming it went out — that is PS-SEND-01's lesson, and it applies to every touch.
  */
 export async function runTouch2Batch(sqlOverride?: any): Promise<{
-  attempted: number; sent: number; failed: number; noMx: number; headroom: number; holding: boolean; reason?: string
+  attempted: number; sent: number; failed: number; noMx: number; suppressed: number; headroom: number; holding: boolean; reason?: string
 }> {
   const sql = sqlOverride ?? getSql()
-  const out = { attempted: 0, sent: 0, failed: 0, noMx: 0, headroom: 0, holding: false as boolean, reason: undefined as string | undefined }
+  const out = { attempted: 0, sent: 0, failed: 0, noMx: 0, suppressed: 0, headroom: 0, holding: false as boolean, reason: undefined as string | undefined }
 
   const health = await getSequenceHealth(sql).catch(() => null)
   if (health?.paused) {
@@ -231,6 +232,13 @@ export async function runTouch2Batch(sqlOverride?: any): Promise<{
       if (!dom || !(await hasMx(dom))) {
         await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${now.toISOString()} WHERE id=${lead.id}`.catch(() => {})
         out.noMx++
+        continue
+      }
+      // PS-DEX-GATE-01 layer 2 — universal per-address consent gate, on every send path.
+      const gate2 = await assertSendable(sql, String(lead.email))
+      if (!gate2.allowed) {
+        console.warn('[sequence] T2 send gate blocked', lead.email, '-', gate2.reason)
+        out.suppressed++
         continue
       }
       const token = Buffer.from(String(lead.email)).toString('base64url')
@@ -384,10 +392,14 @@ export async function runFullSequence() {
 
   if (totalSent < cap) {
     const exp = AB_EXPERIMENTS.touch1_subject
-    const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
-      WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND unsubscribed=false
+    // PS-DEX-GATE-01: `AND NOT EXISTS (suppression)` added here. Touch-1 filtered on `unsubscribed`
+    // alone and never consulted ps_outreach_suppression — a provider-suppressed lead whose flag was
+    // unset (Rex found 8 on 2026-08-03) was fully eligible for a first touch.
+    const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
+      WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND l.unsubscribed=false
       AND sanitized_at IS NOT NULL
       AND pipeline_stage NOT IN ('dead','customer')
+      AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
       ORDER BY created_at ASC LIMIT ${cap - totalSent}`
 
     for (const lead of t1Leads) {
@@ -402,6 +414,12 @@ export async function runFullSequence() {
           const ts = now.toISOString()
           await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts} WHERE id=${lead.id}`
           console.warn('[sequence] MX gate: no deliverable MX for', lead.email, '- marked dead, not sent')
+          continue
+        }
+        // PS-DEX-GATE-01 layer 2 — universal per-address consent gate, on every send path.
+        const gate1 = await assertSendable(sql, String(lead.email))
+        if (!gate1.allowed) {
+          console.warn('[sequence] T1 send gate blocked', lead.email, '-', gate1.reason)
           continue
         }
         const variant = getVariant(String(lead.id), 'touch1_subject')
@@ -443,30 +461,39 @@ export async function runFullSequence() {
     if (!step) continue
     const cutoff = new Date(now.getTime() - def.delayDays * 86400000).toISOString()
 
+    // PS-DEX-GATE-01: every one of these four carried `unsubscribed=false` but NO suppression check
+    // — only touch2Eligible() (the separate PS-TOUCH2-PRICE-01 batch path) ever consulted the
+    // suppression table. That is the partial-gate pattern: it reads as "we have a gate" while three
+    // of four follow-up paths leak. The NOT EXISTS clause is now on all of them, and assertSendable()
+    // below re-checks per address so a future path cannot regress this by omission.
     let leads: any[] = []
     if (def.touch === 2) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
+      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch2_sent_at IS NULL AND touch1_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
+        AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         ORDER BY touch1_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else if (def.touch === 3) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
+      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
+        AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         ORDER BY touch2_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else if (def.touch === 4) {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
+      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
+        AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     } else {
-      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads
+      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
-        AND replied=false AND bounced=false AND unsubscribed=false
+        AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
     }
 
@@ -483,6 +510,14 @@ export async function runFullSequence() {
           const ts0 = now.toISOString()
           await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts0} WHERE id=${lead.id}`
           console.warn('[sequence] MX gate T' + def.touch + ': no MX for', lead.email, '- marked dead, not sent')
+          continue
+        }
+        // PS-DEX-GATE-01 layer 2 — universal per-address consent gate, on every send path.
+        // This is the block that closes the touch-3/4/5 hole at runtime: even if a future edit drops
+        // the NOT EXISTS clause from the SELECT above, a suppressed address cannot reach sendEmail.
+        const gateN = await assertSendable(sql, String(lead.email))
+        if (!gateN.allowed) {
+          console.warn('[sequence] T' + def.touch + ' send gate blocked', lead.email, '-', gateN.reason)
           continue
         }
         const token = Buffer.from(String(lead.email)).toString('base64url')

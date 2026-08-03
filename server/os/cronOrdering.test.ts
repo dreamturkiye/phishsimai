@@ -93,6 +93,7 @@ describe('Rex runs ahead of the chain he certifies (PS-REX-01)', () => {
   it('Rex is the earliest link and the extended chain stays inside one UTC day', () => {
     const chain = [
       at('/api/os/rex'),
+      at('/api/os/dex'),
       at('metrics-snapshot'),
       at('autonomy?action=compute'),
       at('autonomy-promote'),
@@ -101,5 +102,16 @@ describe('Rex runs ahead of the chain he certifies (PS-REX-01)', () => {
     expect(chain).toEqual([...chain].sort((a, b) => a - b))
     expect(Math.min(...chain)).toBe(at('/api/os/rex'))
     expect(Math.max(...chain)).toBeLessThan(24 * 60)
+  })
+})
+
+// PS-DEX-01 — Dex certifies the PATHS; Rex certifies the DATA those paths produced.
+describe('Dex runs between Rex and the snapshot (PS-DEX-01)', () => {
+  it('Rex certifies the data before Dex certifies the paths', () => {
+    expect(at('/api/os/rex')).toBeLessThan(at('/api/os/dex'))
+  })
+
+  it('both certifications land before the metrics snapshot reads anything', () => {
+    expect(at('/api/os/dex')).toBeLessThan(at('metrics-snapshot'))
   })
 })

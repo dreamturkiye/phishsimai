@@ -9,6 +9,7 @@ import { runResearchAgent } from './agents/research'
 import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
 import { runRexAgent } from './agents/rex'
+import { runDexAgent } from './agents/dex'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -104,7 +105,7 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, marketing, product, research, finance, cs, rex] = await Promise.all([
+  const [sales, marketing, product, research, finance, cs, rex, dex] = await Promise.all([
     runSalesAgent(companyId),
     runMarketingAgent(companyId),
     runProductAgent(companyId),
@@ -116,6 +117,9 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // A failed sweep must not take the standup down, so a null verdict degrades to "NOT CHECKED"
     // below rather than throwing.
     runRexAgent({ skipCurrency: true }).catch(() => null),
+    // PS-DEX-01. skipCurrency/skipDns for the same reason as Rex: those belong to Dex's own 05:50
+    // cron. The standup needs his gate-coverage and bounce verdict, not a second DNS sweep.
+    runDexAgent({ skipCurrency: true, skipDns: true }).catch(() => null),
   ])
   const ea = await runEAAgent(sales, finance, product, companyId)
   const memCtx = await recallContext(companyId)
@@ -137,6 +141,9 @@ MEMORY:
 ${memCtx}
 
 ${rexBlock}
+
+DELIVERABILITY (Dex — whether the mail physically arrives):
+${dex ? dex.line : 'NOT CHECKED this cycle — the deliverability sweep failed to run. Do not assert send health.'}
 
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers

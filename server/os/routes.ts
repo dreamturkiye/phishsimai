@@ -1260,3 +1260,7 @@ export { cronSalesReplies } from './agents/salesReplies'
 // PS-REX-01 — Revenue Operations. Runs at 05:45 UTC, BEFORE the 06:00 metrics snapshot, so his
 // verdict on whether the numbers can be trusted arrives ahead of the numbers themselves.
 export { cronRex } from './agents/rex'
+
+// PS-DEX-01 — Deliverability & Infrastructure. 05:50 UTC, between Rex (05:45) and the metrics
+// snapshot (06:00): Rex certifies the funnel data, Dex certifies the paths that produced it.
+export { cronDex } from './agents/dex'

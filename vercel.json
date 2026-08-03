@@ -108,6 +108,10 @@
       "schedule": "45 5 * * *"
     },
     {
+      "path": "/api/os/dex",
+      "schedule": "50 5 * * *"
+    },
+    {
       "path": "/api/os/metrics-snapshot",
       "schedule": "0 6 * * *"
     },
