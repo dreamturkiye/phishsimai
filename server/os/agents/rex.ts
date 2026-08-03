@@ -662,7 +662,7 @@ export const SCAN_TARGETS = [
   'server/os/agents/product.ts',
   'server/os/agents/scout.ts',
   'server/os/agents/finn.ts',
-  'server/os/agents/customerSuccess.ts',
+  'server/os/agents/vera.ts',
   'server/os/agents/sales.ts',
   'server/os/agents/ea.ts',
   'server/os/janetReport.ts',

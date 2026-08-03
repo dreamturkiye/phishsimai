@@ -6,7 +6,7 @@ import { runScoutAgent } from './agents/scout'
 import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runAriaAgent } from './agents/aria'
 import { runProductAgent } from './agents/product'
-import { runCSAgent } from './agents/customerSuccess'
+import { runVeraAgent } from './agents/vera'
 import { runEAAgent } from './agents/ea'
 import { queueJanetArchitectTask } from './selfHeal'
 
@@ -16,12 +16,12 @@ const FROM = 'Janet CGO <sarah@phishsimai.com>'
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
 
-  const [sales, finn, aria, product, cs, scout] = await Promise.all([
+  const [sales, finn, aria, product, vera, scout] = await Promise.all([
     runSalesAgent(companyId),
     runFinnAgent({ skipCurrency: true }).catch(() => null),
     runAriaAgent({ skipCurrency: true }).catch(() => null),
     runProductAgent(companyId),
-    runCSAgent(companyId),
+    runVeraAgent({ skipCurrency: true }).catch(() => null),
     runScoutAgent({ skipCurrency: true }).catch(() => null),
   ])
   const founderBrief = await runEAAgent(sales, finn ?? { customers: 0 }, product, companyId)
@@ -37,7 +37,7 @@ METRICS:
 Sales: ${sales.touched} touched, ${sales.replied} replied (${(sales.replyRate * 100).toFixed(1)}%), ${sales.customers} customers
 Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED — no MRR or pricing claim may be made.'}
 Product top: ${product.topFeature}
-CS: ${cs.retentionScore}% retention
+CS (Vera): ${vera ? vera.line : 'NOT CHECKED — no retention claim may be made.'}
 
 Write a sharp CGO report (Week ${weekNumber}). Include top 3 actions, one founder decision, autonomous actions, one risk, 30-day revenue forecast.
 If architect task needed: ARCHITECT_TASK: [what to build and why]`
@@ -88,5 +88,5 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
     (architectTasksQueued.length ? `\nArchitect tasks: ${architectTasksQueued.length}` : '')
   )
 
-  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, product, cs, scout, founderBrief, architectTasksQueued }
+  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, product, vera, scout, founderBrief, architectTasksQueued }
 }

@@ -1277,3 +1277,6 @@ export { cronScout } from './agents/scout'
 
 // PS-FINN-01 — CFO. 06:40 UTC. Pricing guard ACTIVE; revenue metrics built and armed at $0.
 export { cronFinn } from './agents/finn'
+
+// PS-VERA-01 — VP Customer Success. 06:50 UTC. BUILD-AND-ARM: machinery live, book empty, honest.
+export { cronVera } from './agents/vera'

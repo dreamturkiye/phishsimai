@@ -132,6 +132,10 @@
       "schedule": "40 6 * * *"
     },
     {
+      "path": "/api/os/vera",
+      "schedule": "50 6 * * *"
+    },
+    {
       "path": "/api/os/escalation-notify",
       "schedule": "*/15 * * * *"
     },

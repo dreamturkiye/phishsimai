@@ -4,13 +4,13 @@ import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } fro
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
 import { runProductAgent } from './agents/product'
-import { runCSAgent } from './agents/customerSuccess'
 import { runRexAgent } from './agents/rex'
 import { runDexAgent } from './agents/dex'
 import { runAriaAgent } from './agents/aria'
 import { runMasonAgent } from './agents/mason'
 import { runScoutAgent } from './agents/scout'
 import { runFinnAgent, mrrDisplay } from './agents/finn'
+import { runVeraAgent } from './agents/vera'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -106,7 +106,7 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, aria, product, scout, finn, cs, rex, dex, mason] = await Promise.all([
+  const [sales, aria, product, scout, finn, vera, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
     // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
     // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
@@ -120,7 +120,9 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // `const avgRevenue = 99` — a price that matches no live Stripe product — and derived a
     // projectedMrrIn90Days from it that Janet read every morning. Finn reads Stripe.
     runFinnAgent({ skipCurrency: true }).catch(() => null),
-    runCSAgent(companyId),
+    // PS-VERA-01: customerSuccess.ts is DELETED. It returned retentionScore=100 over ZERO
+    // customers, and Janet printed "100% retention" every morning with nothing to retain.
+    runVeraAgent({ skipCurrency: true }).catch(() => null),
     // PS-REX-01. skipCurrency: the currency loop belongs to Rex's own 05:45 cron — running it again
     // inside the standup would double the network and LLM cost to re-read pages nothing has changed.
     // A failed sweep must not take the standup down, so a null verdict degrades to "NOT CHECKED"
@@ -166,7 +168,7 @@ Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*
 Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED this cycle — no MRR or pricing claim may be made.'}
 Product top feature needed: ${product.topFeature}
 ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
-CS: ${cs.retentionScore}% retention score
+CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or health claim may be made.'} score
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 
@@ -202,7 +204,7 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
     summary.slice(0, 300)
   )
 
-  return { ok: true, summary, sales, finn, product, scout, aria, mason, rex, dex, cs, ea, archTasks }
+  return { ok: true, summary, sales, finn, product, scout, aria, mason, rex, dex, vera, ea, archTasks }
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {
