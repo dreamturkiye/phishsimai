@@ -1,5 +1,4 @@
 import { neon } from '@neondatabase/serverless'
-import { seedPermanentLessons } from './kaan-os-core/outcomeLearning'
 import { getSql } from './conn'
 
 export type MemoryType = 'company' | 'customer' | 'campaign' | 'strategic' | 'operating'
@@ -79,6 +78,59 @@ export async function learnFromOutcome(companyId: string, action: string, outcom
     value: `Action:${action}|Outcome:${outcome}|Lesson:${lesson}`, confidence: 0.9, source: 'reflection' })
 }
 
+
+/**
+ * PS-JANET-DOCTRINE-01 — lessons that must OUTLIVE any prompt edit.
+ *
+ * A system prompt is one thin-memory turn from being rewritten, summarised or truncated, and the
+ * two facts below were each learned expensively. They are written to os_agent_lessons, which
+ * getAgentLessonsForPrompt() reads into every agent's context regardless of what the prompt
+ * currently says — so reverting the prompt cannot revert the lesson.
+ *
+ * DELIBERATELY NOT IN kaan-os-core. The first version of this lived in
+ * kaan-os-core/outcomeLearning.ts and CI rejected it: that directory is a pinned vendored copy of
+ * dreamturkiye/kaan-os-core and editing it in place forks the shared core silently. These lessons
+ * are PhishSim doctrine, not core behaviour, so they belong here in product-owned code. The table
+ * is shared; the content is ours.
+ *
+ * Both recorded as success=false: they are failures we paid for, and the negative confidence_delta
+ * is the point. Idempotent by signature.
+ */
+export const PERMANENT_LESSONS: { signature: string; lesson: string }[] = [
+  {
+    signature: 'phishsim:insurance-angle-failed',
+    lesson:
+      'INSURANCE/COMPLIANCE-URGENCY OPENER FAILED, MEASURED: 908 cold sends (2026-07-04..08-02) ' +
+      'produced 1 human reply and it was hostile ("stop emailing me"). Do NOT lead outreach, ' +
+      'landing copy, or a pitch with insurance, underwriting, audits, or breach-fear framing. ' +
+      'Lead with price ($299/500 users = 60c), 10-minute setup, no-card 30-day trial, and MSP ' +
+      'margin. Compliance is a SECOND-position supporting point for larger MSPs, never the opener.',
+  },
+  {
+    signature: 'phishsim:pricing-frozen-live-stripe',
+    lesson:
+      'PRICING IS FROZEN AND LIVE-STRIPE-SOURCED: Starter $149 (100 users), Growth $299 (500), ' +
+      'Pro $749 (2,500), Enterprise $1,499 (10,000); annual = 10x monthly; trial 30 days no card. ' +
+      'A prompt once carried $99/$249/$499/$999 — all four wrong, and ea.ts/finance.ts proposed a ' +
+      '$49/mo founding rate that exists in NO Stripe account. NEVER quote a price not read from ' +
+      'server/stripe/prices.ts, never discount or invent one, never propose a pricing change.',
+  },
+]
+
+/** Write the permanent doctrine lessons once. Safe to call on every boot. */
+export async function seedPermanentLessons(): Promise<void> {
+  const sql = getSql()
+  for (const l of PERMANENT_LESSONS) {
+    const existing = (await sql`SELECT 1 FROM os_agent_lessons
+      WHERE company_id='phishsimai' AND signature=${l.signature} LIMIT 1`.catch(() => [])) as any[]
+    if (existing.length) continue
+    await sql`INSERT INTO os_agent_lessons
+      (company_id, agent_id, source, signature, lesson, success, score, confidence_delta)
+      VALUES ('phishsimai', 'janet', 'experiment', ${l.signature}, ${l.lesson}, false, 0, -0.08)`
+      .catch(() => {})
+  }
+}
+
 export async function seedPhishSimMemory() {
   const entries: MemoryEntry[] = [
     { company_id:'phishsimai', type:'company', key:'product', value:'AI-powered phishing simulation + security awareness training for MSPs and IT teams. Automated campaigns, real-time reporting, staff training post-click.', confidence:1, source:'founder' },
@@ -154,6 +206,6 @@ export async function seedPhishSimMemory() {
   // os_agent_lessons (read into every agent's context by getAgentLessonsForPrompt) rather than the
   // system prompt, so truncating or rewriting JANET_SYSTEM cannot revert the pricing values or
   // resurrect the insurance-urgency pitch. Idempotent by signature; never fails the seed.
-  await seedPermanentLessons(getSql(), 'phishsimai').catch(() => {})
+  await seedPermanentLessons().catch(() => {})
   return entries.length
 }
