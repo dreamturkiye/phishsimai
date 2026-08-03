@@ -166,6 +166,23 @@ describe('detector 2 — pricing drift', () => {
     expect(incidents[0].subject).toContain('avgRevenue')
   })
 
+  // PS-REX-COMMENT-01 regression: Rex flagged Finn's header comment, which documents the ghost it
+  // replaced ("computed the revenue picture from `const avgRevenue = 99`"), as a critical defect in
+  // the very file built to remove it. Keeping the explanation of a fixed bug must not re-file it.
+  it('does NOT flag a price literal that appears only in a comment', () => {
+    const documented = src('server/os/agents/finn.ts',
+      '// finance.ts computed the picture from `const avgRevenue = 99` — deleted.\n' +
+      '/* projectedMrrIn90Days = contacted * 0.02 * 0.30 * 99 */\n' +
+      'export const x = 1')
+    expect(detectPricingDrift([documented], [149, 299, 749, 1499]).incidents).toEqual([])
+  })
+
+  it('still flags the same literal when it is real code beside the comment', () => {
+    const mixed = src('server/os/agents/finance.ts',
+      '// historical note: avgRevenue = 99 was wrong\nconst avgRevenue = 99')
+    expect(detectPricingDrift([mixed], [149, 299, 749, 1499]).incidents).toHaveLength(1)
+  })
+
   it('never scans the Stripe reader itself — it is the source of truth, not a consumer', () => {
     const { incidents } = detectPricingDrift([src('server/stripe/prices.ts', 'const price = 299')], null)
     expect(incidents).toHaveLength(0)

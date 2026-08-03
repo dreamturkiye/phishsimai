@@ -268,6 +268,19 @@ const PRICE_LITERAL_RE =
 /** Identifiers that look price-ish but are counts/ids/limits, not money. */
 const NOT_MONEY_RE = /(price_?id|priceid|_cents|cents|maxprice|price_?count|_ms\b|_idx|_limit)/i
 
+/**
+ * Strip comments before scanning.
+ *
+ * PS-REX-COMMENT-01 — a real false positive. Finn's header DOCUMENTS the ghost it replaced,
+ * verbatim: "finance.ts computed the revenue picture from `const avgRevenue = 99`". Scanning raw
+ * source flagged that documentation as a critical pricing defect in the very file built to remove
+ * it. A price literal in a comment computes nothing and is quoted to nobody; keeping the explanation
+ * of a fixed bug must not re-file the bug.
+ */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+}
+
 export function detectPricingDrift(
   files: SourceFile[],
   livePricesUsd: number[] | null,
@@ -275,7 +288,8 @@ export function detectPricingDrift(
   const incidents: Incident[] = []
   const notChecked: string[] = []
 
-  for (const f of files) {
+  for (const raw of files) {
+    const f: SourceFile = { relPath: raw.relPath, text: raw.text === null ? null : stripComments(raw.text) }
     if (f.text === null) {
       notChecked.push(f.relPath)
       continue
@@ -647,7 +661,7 @@ export const SCAN_TARGETS = [
   'server/os/agents/aria.ts',
   'server/os/agents/product.ts',
   'server/os/agents/scout.ts',
-  'server/os/agents/finance.ts',
+  'server/os/agents/finn.ts',
   'server/os/agents/customerSuccess.ts',
   'server/os/agents/sales.ts',
   'server/os/agents/ea.ts',

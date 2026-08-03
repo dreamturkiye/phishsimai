@@ -2,7 +2,11 @@ export interface EAReport { priorityActions:string[]; blockers:string[]; decisio
 
 export async function runEAAgent(sales:any, finance:any, product:any, companyId='phishsimai'): Promise<EAReport> {
   const p: string[] = [], b: string[] = [], d: string[] = []
-  if (sales.replyRate===0 && sales.touched>=5) p.push('A/B test: compliance-urgency subject line vs discovery question')
+  // PS-FINN-01 (in passing): this proposed the compliance-urgency angle — the exact framing the
+  // permanent lesson phishsim:insurance-angle-failed retired after 908 sends produced 1 hostile
+  // reply. An agent must not propose a doctrine-forbidden angle. Messaging is Aria's; she holds the
+  // current best outreach and the reason the old angle is dead.
+  if (sales.replyRate===0 && sales.touched>=5) p.push('Ask Aria for the current best outreach — do NOT reopen the compliance/insurance angle (retired: 908 sends, 1 hostile reply)')
   if (finance.customers===0) {
     // PS-JANET-DOCTRINE-01: proposed a $49/mo rate that exists in no Stripe account. An agent may
     // not invent a discount; pricing is frozen and only Kaan changes it.

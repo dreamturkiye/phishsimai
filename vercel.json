@@ -128,6 +128,10 @@
       "schedule": "30 6 * * *"
     },
     {
+      "path": "/api/os/finn",
+      "schedule": "40 6 * * *"
+    },
+    {
       "path": "/api/os/escalation-notify",
       "schedule": "*/15 * * * *"
     },

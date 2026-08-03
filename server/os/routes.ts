@@ -1274,3 +1274,6 @@ export { cronMason } from './agents/mason'
 
 // PS-SCOUT-01 — VP Market Intelligence. 06:30 UTC. Data-side only: never edits copy, never prices.
 export { cronScout } from './agents/scout'
+
+// PS-FINN-01 — CFO. 06:40 UTC. Pricing guard ACTIVE; revenue metrics built and armed at $0.
+export { cronFinn } from './agents/finn'

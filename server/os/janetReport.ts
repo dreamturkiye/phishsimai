@@ -3,7 +3,7 @@ import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome } from './memory'
 import { runSalesAgent } from './agents/sales'
 import { runScoutAgent } from './agents/scout'
-import { runFinanceAgent } from './agents/finance'
+import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runAriaAgent } from './agents/aria'
 import { runProductAgent } from './agents/product'
 import { runCSAgent } from './agents/customerSuccess'
@@ -16,15 +16,15 @@ const FROM = 'Janet CGO <sarah@phishsimai.com>'
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
 
-  const [sales, finance, aria, product, cs, scout] = await Promise.all([
+  const [sales, finn, aria, product, cs, scout] = await Promise.all([
     runSalesAgent(companyId),
-    runFinanceAgent(companyId),
+    runFinnAgent({ skipCurrency: true }).catch(() => null),
     runAriaAgent({ skipCurrency: true }).catch(() => null),
     runProductAgent(companyId),
     runCSAgent(companyId),
     runScoutAgent({ skipCurrency: true }).catch(() => null),
   ])
-  const founderBrief = await runEAAgent(sales, finance, product, companyId)
+  const founderBrief = await runEAAgent(sales, finn ?? { customers: 0 }, product, companyId)
   const memoryContext = await recallContext(companyId)
   const weekNumber = Math.max(1, Math.ceil((Date.now() - new Date('2026-06-01').getTime()) / (7 * 86400000)))
 
@@ -35,7 +35,7 @@ ${memoryContext}
 
 METRICS:
 Sales: ${sales.touched} touched, ${sales.replied} replied (${(sales.replyRate * 100).toFixed(1)}%), ${sales.customers} customers
-Finance: $${finance.mrr} MRR, next milestone: ${finance.nextMilestone}
+Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED — no MRR or pricing claim may be made.'}
 Product top: ${product.topFeature}
 CS: ${cs.retentionScore}% retention
 
@@ -63,14 +63,14 @@ If architect task needed: ARCHITECT_TASK: [what to build and why]`
   }
 
   await learnFromOutcome(companyId, `janet_report_week_${weekNumber}`,
-    `MRR: $${finance.mrr}, Customers: ${finance.customers}`, executiveSummary.slice(0, 200))
+    mrrDisplay(finn), executiveSummary.slice(0, 200))
 
   const html = `<div style="font-family:-apple-system,sans-serif;max-width:700px;color:#111;padding:24px">
 <h1 style="font-size:20px">Janet CGO Report — Week ${weekNumber}</h1>
 <p style="color:#888;font-size:12px">PhishSimAI · ${new Date().toLocaleDateString()}</p>
 <div style="background:#f7f7f5;border-radius:8px;padding:16px;margin:16px 0;white-space:pre-wrap;font-size:14px;line-height:1.75">${executiveSummary}</div>
 <table style="width:100%;font-size:13px;border-collapse:collapse">
-<tr><td style="padding:6px">MRR</td><td style="text-align:right">$${finance.mrr}</td></tr>
+<tr><td style="padding:6px">MRR</td><td style="text-align:right">${finn && finn.stripe.checked ? '$' + finn.stripe.mrrUsd.toFixed(2) : 'NOT CHECKED'}</td></tr>
 <tr><td style="padding:6px">Pipeline touched</td><td style="text-align:right">${sales.touched}</td></tr>
 <tr><td style="padding:6px">Reply rate</td><td style="text-align:right">${(sales.replyRate * 100).toFixed(1)}%</td></tr>
 </table>
@@ -84,9 +84,9 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
   }).catch(() => {})
 
   await sendTelegram(
-    `PHISHSIMAI JANET REPORT W${weekNumber}\nMRR: $${finance.mrr} | Pipeline: ${sales.touched} touched | ${sales.replied} replied` +
+    `PHISHSIMAI JANET REPORT W${weekNumber}\n${mrrDisplay(finn)} | Pipeline: ${sales.touched} touched | ${sales.replied} replied` +
     (architectTasksQueued.length ? `\nArchitect tasks: ${architectTasksQueued.length}` : '')
   )
 
-  return { ok: true, weekNumber, executiveSummary, sales, finance, aria, product, cs, scout, founderBrief, architectTasksQueued }
+  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, product, cs, scout, founderBrief, architectTasksQueued }
 }

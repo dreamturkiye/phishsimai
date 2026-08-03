@@ -4,13 +4,13 @@ import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } fro
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
 import { runProductAgent } from './agents/product'
-import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
 import { runRexAgent } from './agents/rex'
 import { runDexAgent } from './agents/dex'
 import { runAriaAgent } from './agents/aria'
 import { runMasonAgent } from './agents/mason'
 import { runScoutAgent } from './agents/scout'
+import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -106,7 +106,7 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, aria, product, scout, finance, cs, rex, dex, mason] = await Promise.all([
+  const [sales, aria, product, scout, finn, cs, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
     // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
     // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
@@ -116,7 +116,10 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // PS-SCOUT-01: research.ts is DELETED. It wrote four hardcoded competitor strings to memory at
     // confidence 0.9 — including dollar figures that came from a developer's memory, not a fetch.
     runScoutAgent({ skipCurrency: true }).catch(() => null),
-    runFinanceAgent(companyId),
+    // PS-FINN-01: finance.ts is DELETED. It computed the whole revenue picture from
+    // `const avgRevenue = 99` — a price that matches no live Stripe product — and derived a
+    // projectedMrrIn90Days from it that Janet read every morning. Finn reads Stripe.
+    runFinnAgent({ skipCurrency: true }).catch(() => null),
     runCSAgent(companyId),
     // PS-REX-01. skipCurrency: the currency loop belongs to Rex's own 05:45 cron — running it again
     // inside the standup would double the network and LLM cost to re-read pages nothing has changed.
@@ -131,7 +134,7 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // not perform retirement; that belongs to Mason's own 06:20 cron behind the crm_write gate.
     runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
-  const ea = await runEAAgent(sales, finance, product, companyId)
+  const ea = await runEAAgent(sales, finn ?? { customers: 0 }, product, companyId)
   const memCtx = await recallContext(companyId)
 
   // Rex's verdict leads the metrics block deliberately: it tells Janet WHICH of the numbers below
@@ -160,7 +163,7 @@ ${mason ? mason.line : 'NOT CHECKED this cycle — the sales operator failed to 
 
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers
-Finance: $${finance.mrr} MRR, next milestone: ${finance.nextMilestone}
+Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED this cycle — no MRR or pricing claim may be made.'}
 Product top feature needed: ${product.topFeature}
 ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
 CS: ${cs.retentionScore}% retention score
@@ -188,18 +191,18 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
   }
 
   await learnFromOutcome(companyId, 'janet_daily_brief',
-    `MRR:$${finance.mrr} Customers:${finance.customers} ReplyRate:${(sales.replyRate*100).toFixed(1)}%`,
+    `${mrrDisplay(finn)} ReplyRate:${(sales.replyRate*100).toFixed(1)}%`,
     summary.slice(0, 200))
 
   await sendTelegram(
     'PHISHSIMAI JANET BRIEF\n' +
-    `MRR: $${finance.mrr} | Customers: ${finance.customers}\n` +
+    `${mrrDisplay(finn)}\n` +
     `Pipeline: ${sales.touched} touched | ${sales.replied} replied | ${sales.engaged} engaged\n` +
     (archTasks.length ? `Architect tasks: ${archTasks.length}\n` : '') +
     summary.slice(0, 300)
   )
 
-  return { ok: true, summary, sales, finance, product, scout, aria, mason, rex, dex, cs, ea, archTasks }
+  return { ok: true, summary, sales, finn, product, scout, aria, mason, rex, dex, cs, ea, archTasks }
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {
