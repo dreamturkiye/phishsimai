@@ -12,5 +12,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: node ci/check-imports.mjs
       - run: node ci/check-core-drift.mjs server/os/kaan-os-core
+      # PS-CI-DETECTORS-01 — Rex's and Dex's SOURCE detectors run HERE, where source exists.
+      # They examine zero units in a serverless bundle, so prod correctly reports NOT_CHECKED for
+      # these dimensions. The defects they hunt can only enter at commit time, so this gate fails
+      # the build before bad code ships rather than noticing it in tomorrow's standup.
+      - run: pnpm run ci:detectors
+      # PS-PRICE-SNAPSHOT-01 — the committed price-claim snapshot must match the current copy.
+      # A stale snapshot would leave prod comparing yesterday's claims against live Stripe.
+      - run: pnpm run claims:check
       - run: pnpm run check
+      # The suite was NOT part of this gate before; a branch could go green with failing tests.
+      - run: pnpm run test
       - run: pnpm run build

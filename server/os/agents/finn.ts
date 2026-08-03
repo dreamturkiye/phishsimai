@@ -34,6 +34,10 @@ import { loadPhishSimPrices, type StripePlan } from '../../stripe/prices'
 import { readSource, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { scanVerdict, scanVerdictReason } from './scanVerdict'
+// PS-PRICE-SNAPSHOT-01. Statically imported so the bundler INLINES it — the whole point is that
+// this survives into the serverless bundle, where .ts sources do not. Regenerated at build and
+// freshness-checked in CI, so it can never describe copy we no longer ship.
+import priceClaimSnapshot from './priceClaims.generated.json'
 
 const COMPANY = 'phishsimai'
 
@@ -324,6 +328,11 @@ export type FinnReport = {
   pricingGuard: 'GREEN' | 'DRIFT' | 'NOT_CHECKED'
   /** Why the guard reached that verdict — an abstention with no stated cause is barely better than a false green. */
   pricingGuardReason: string
+  /**
+   * Where the compared claims came from. `live-source` locally and in CI; `build-snapshot` in the
+   * serverless bundle; `none` if neither is available, which forces NOT_CHECKED.
+   */
+  claimSource: 'live-source' | 'build-snapshot' | 'none'
   stripe: StripeTruth
   claims: PriceClaim[]
   incidents: Incident[]
@@ -349,6 +358,12 @@ export async function runFinnAgent(
      * path instead, which is correct behaviour but a different code path from the one that shipped.
      */
     stripeOverride?: StripeTruth
+    /**
+     * Injectable claim snapshot. Defaults to the build-time artifact. Exists so a test can simulate
+     * the one state where the LAW still governs — no readable sources AND no snapshot — which is
+     * otherwise unreachable now that the snapshot is statically bundled.
+     */
+    snapshotOverride?: PriceClaim[]
   } = {},
 ): Promise<FinnReport> {
   const sql = opts.sql ?? getSql()
@@ -357,11 +372,26 @@ export async function runFinnAgent(
   const stripe = opts.stripeOverride ?? (await readStripeTruth())
 
   const files: SourceFile[] = PRICE_CLAIM_SURFACES.map((p) => readSource(p, root))
-  const claims = files.flatMap((f) => (f.text === null ? [] : extractPriceClaims(f.relPath, f.text)))
+  const liveClaims = files.flatMap((f) => (f.text === null ? [] : extractPriceClaims(f.relPath, f.text)))
   const unreadable = files.filter((f) => f.text === null).map((f) => `source:${f.relPath}`)
 
+  // THE TWO CLOCKS. Copy changes at commit time; a Stripe price changes in the dashboard at any
+  // time, with no commit to trigger CI. Reading live sources is better when they exist (local, CI),
+  // but in the serverless bundle they do not — so the build-time snapshot supplies the claims and
+  // prod still compares them against LIVE Stripe every day. Without this, dashboard-side drift is
+  // invisible to both CI and prod.
+  const snapshotClaims: PriceClaim[] = opts.snapshotOverride ??
+    (priceClaimSnapshot.claims as { file: string; plan: string; amountUsd: number; context: string }[])
+      .map((c) => ({ file: c.file, plan: c.plan as StripePlan, amountUsd: c.amountUsd, context: c.context }))
+  const usingSnapshot = liveClaims.length === 0 && snapshotClaims.length > 0
+  const claims: PriceClaim[] = usingSnapshot ? snapshotClaims : liveClaims
+  const claimSource: 'live-source' | 'build-snapshot' | 'none' =
+    liveClaims.length ? 'live-source' : usingSnapshot ? 'build-snapshot' : 'none'
+
   const incidents = auditPriceClaims(claims, stripe.monthlyUsd, stripe.checked)
-  const gaps = stripe.checked ? coverageGaps(claims, stripe.monthlyUsd) : []
+  // Coverage gaps over an EMPTY claim set are an artifact of not scanning, not a finding. Same law
+  // as the guard verdict: nothing examined, nothing to conclude.
+  const gaps = stripe.checked && claims.length > 0 ? coverageGaps(claims, stripe.monthlyUsd) : []
   const lessonsWritten = await writeFinnLessons(sql, incidents).catch(() => 0)
 
   let dbCustomers: number | null = null
@@ -388,10 +418,10 @@ export async function runFinnAgent(
     : await runCurrencyLoop('finn', 'SaaS revenue metrics, pricing discipline and unit economics', FINN_SOURCES, sql).catch(() => null)
 
   const status: FinnReport['status'] = stripe.checked || claims.length > 0 ? 'ACTIVE' : 'INSUFFICIENT_DATA'
-  const line = buildFinnLine({ status, pricingGuard, stripe, claims, incidents, gaps, revenue, notChecked })
+  const line = buildFinnLine({ status, pricingGuard, stripe, claims, incidents, gaps, revenue, notChecked, claimSource })
 
   return {
-    status, pricingGuard, pricingGuardReason, stripe, claims, incidents, gaps, revenue, lessonsWritten,
+    status, pricingGuard, pricingGuardReason, claimSource, stripe, claims, incidents, gaps, revenue, lessonsWritten,
     customers: stripe.checked ? stripe.activeSubs : 0,
     notChecked, currency,
     line: currency ? `${line} ${currency.line}` : line,
@@ -407,6 +437,7 @@ export function buildFinnLine(a: {
   gaps: string[]
   revenue: RevenuePack
   notChecked: string[]
+  claimSource?: FinnReport['claimSource']
 }): string {
   if (a.status === 'INSUFFICIENT_DATA') {
     return 'Finn (CFO): insufficient data — Stripe unreachable and no price surface readable. No revenue or pricing claim is possible. Playbook built and armed.'
@@ -417,7 +448,8 @@ export function buildFinnLine(a: {
           ? 'ZERO price claims were readable (serverless bundles ship no .ts sources), so nothing was verified'
           : a.stripe.reason} — no drift verdict this cycle, and an empty scan is NOT a clean one`
       : a.pricingGuard === 'GREEN'
-        ? `pricing guard GREEN — all ${a.claims.length} plan-price claim(s) across ${new Set(a.claims.map((c) => c.file)).size} surface(s) match live Stripe`
+        ? `pricing guard GREEN — all ${a.claims.length} plan-price claim(s) across ${new Set(a.claims.map((c) => c.file)).size} surface(s) match live Stripe` +
+          (a.claimSource === 'build-snapshot' ? ' (claims from the build-time snapshot; Stripe read live just now)' : '')
         : `pricing guard RED — ${a.incidents.length} claim(s) contradict live Stripe: ${a.incidents.map((i) => i.subject).join(', ')}`
   const gaps = a.gaps.length ? ` · ${a.gaps.join('; ')}` : ''
   const nc = a.notChecked.length ? ` · NOT CHECKED: ${a.notChecked.join(', ')}` : ''

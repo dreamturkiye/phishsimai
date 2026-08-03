@@ -17,6 +17,7 @@ import {
   breakerVerdict,
   authIncidents,
   buildDexLine,
+  auditSendSites,
   organizationalDomain,
   isInboundMailHost,
   checkDomainAuth,
@@ -210,6 +211,52 @@ describe("Dex's send-path coverage audit", () => {
   it('does not flag a registered sender', () => {
     const { incidents } = detectUnregisteredSenders([f('server/os/sequences.ts', 'api.resend.com/emails')])
     expect(incidents).toEqual([])
+  })
+})
+
+// PS-DEX-SITE-01 — found by a NEGATIVE test: stripping the gate from one of three send sites in
+// sequences.ts left the audit green, because the other two still matched the file-level regex.
+// The partial-gate pattern, inside the detector built to catch partial gates.
+describe('rails are checked PER SEND SITE, not per file', () => {
+  const guarded = `
+    for (const lead of leads) {
+      const dom = domainOf(lead.email); if (!await hasMx(dom)) continue
+      const g = await assertSendable(sql, lead.email); if (!g.allowed) continue
+      const result = await sendEmail(lead.email, s, h)
+    }`
+
+  it('passes a fully guarded send site', () => {
+    expect(auditSendSites(guarded)).toEqual([])
+  })
+
+  it('catches ONE unguarded site in a file whose other sites are guarded', () => {
+    // This is exactly the shape the file-level check missed.
+    const mixed = guarded + `
+    for (const lead of more) {
+      const dom = domainOf(lead.email); if (!await hasMx(dom)) continue
+      const result = await sendEmail(lead.email, s, h)
+    }`
+    const gaps = auditSendSites(mixed)
+    expect(gaps).toHaveLength(1)
+    expect(gaps[0].missing).toContain('assertSendable() consent gate')
+  })
+
+  it('catches a missing MX check on one site', () => {
+    const noMx = `
+    for (const lead of leads) {
+      const g = await assertSendable(sql, lead.email); if (!g.allowed) continue
+      const result = await sendEmail(lead.email, s, h)
+    }`
+    expect(auditSendSites(noMx)[0].missing).toContain('hasMx() pre-send MX check')
+  })
+
+  it('catches a send that is not inside a per-lead loop at all', () => {
+    const loose = `const result = await sendEmail('x@y.com', s, h)`
+    expect(auditSendSites(loose)[0].missing).toContain('not inside a per-lead loop')
+  })
+
+  it('the real sequences.ts has zero unguarded send sites', () => {
+    expect(auditSendSites(SEQ)).toEqual([])
   })
 })
 
