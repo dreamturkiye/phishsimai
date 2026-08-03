@@ -4,13 +4,13 @@ import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } fro
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
 import { runProductAgent } from './agents/product'
-import { runResearchAgent } from './agents/research'
 import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
 import { runRexAgent } from './agents/rex'
 import { runDexAgent } from './agents/dex'
 import { runAriaAgent } from './agents/aria'
 import { runMasonAgent } from './agents/mason'
+import { runScoutAgent } from './agents/scout'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -106,14 +106,16 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, aria, product, research, finance, cs, rex, dex, mason] = await Promise.all([
+  const [sales, aria, product, scout, finance, cs, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
     // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
     // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
     // Aria measures instead. skipCurrency — that belongs to her own 06:10 cron.
     runAriaAgent({ skipCurrency: true }).catch(() => null),
     runProductAgent(companyId),
-    runResearchAgent(companyId),
+    // PS-SCOUT-01: research.ts is DELETED. It wrote four hardcoded competitor strings to memory at
+    // confidence 0.9 — including dollar figures that came from a developer's memory, not a fetch.
+    runScoutAgent({ skipCurrency: true }).catch(() => null),
     runFinanceAgent(companyId),
     runCSAgent(companyId),
     // PS-REX-01. skipCurrency: the currency loop belongs to Rex's own 05:45 cron — running it again
@@ -160,7 +162,7 @@ CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers
 Finance: $${finance.mrr} MRR, next milestone: ${finance.nextMilestone}
 Product top feature needed: ${product.topFeature}
-ICP: ${research.icpNote}
+ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
 CS: ${cs.retentionScore}% retention score
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
@@ -197,7 +199,7 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
     summary.slice(0, 300)
   )
 
-  return { ok: true, summary, sales, finance, product, research, cs, ea, archTasks }
+  return { ok: true, summary, sales, finance, product, scout, aria, mason, rex, dex, cs, ea, archTasks }
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {

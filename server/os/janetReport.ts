@@ -2,7 +2,7 @@ import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome } from './memory'
 import { runSalesAgent } from './agents/sales'
-import { runResearchAgent } from './agents/research'
+import { runScoutAgent } from './agents/scout'
 import { runFinanceAgent } from './agents/finance'
 import { runAriaAgent } from './agents/aria'
 import { runProductAgent } from './agents/product'
@@ -16,13 +16,13 @@ const FROM = 'Janet CGO <sarah@phishsimai.com>'
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
 
-  const [sales, finance, aria, product, cs, research] = await Promise.all([
+  const [sales, finance, aria, product, cs, scout] = await Promise.all([
     runSalesAgent(companyId),
     runFinanceAgent(companyId),
     runAriaAgent({ skipCurrency: true }).catch(() => null),
     runProductAgent(companyId),
     runCSAgent(companyId),
-    runResearchAgent(companyId),
+    runScoutAgent({ skipCurrency: true }).catch(() => null),
   ])
   const founderBrief = await runEAAgent(sales, finance, product, companyId)
   const memoryContext = await recallContext(companyId)
@@ -88,5 +88,5 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
     (architectTasksQueued.length ? `\nArchitect tasks: ${architectTasksQueued.length}` : '')
   )
 
-  return { ok: true, weekNumber, executiveSummary, sales, finance, aria, product, cs, research, founderBrief, architectTasksQueued }
+  return { ok: true, weekNumber, executiveSummary, sales, finance, aria, product, cs, scout, founderBrief, architectTasksQueued }
 }

@@ -124,6 +124,10 @@
       "schedule": "20 6 * * *"
     },
     {
+      "path": "/api/os/scout",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/os/escalation-notify",
       "schedule": "*/15 * * * *"
     },

@@ -646,7 +646,7 @@ export type RexReport = {
 export const SCAN_TARGETS = [
   'server/os/agents/aria.ts',
   'server/os/agents/product.ts',
-  'server/os/agents/research.ts',
+  'server/os/agents/scout.ts',
   'server/os/agents/finance.ts',
   'server/os/agents/customerSuccess.ts',
   'server/os/agents/sales.ts',
