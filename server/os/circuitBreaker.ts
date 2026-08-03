@@ -370,16 +370,96 @@ export async function checkDiffSafety(
 // ═══════════════════════════════════════════════════════════════════════════════
 //  HARD-STOP ENFORCEMENT — never auto-approvable; protected paths never touched.
 // ═══════════════════════════════════════════════════════════════════════════════
-// Protected paths (globs): **/auth/**, **/webhooks/**, **/payment*/**, **/billing/**
-const PROTECTED_PATH_RES: RegExp[] = [
-  /(^|\/)auth\//,
-  /(^|\/)webhooks\//,
-  /(^|\/)payment[^/]*\//,
-  /(^|\/)billing\//,
+// ── PS-MARCUS-SELFGUARD-01 ───────────────────────────────────────────────────
+//
+// THE ORIGINAL SET GUARDED FOUR DIRECTORIES THIS REPO DOES NOT HAVE.
+//   **/auth/**, **/webhooks/**, **/payment*/**, **/billing/** — a sensible generic layout, and
+//   a match for 0 of 486 tracked files here. PhishSim keeps identity in `server/_core/oauth.ts`,
+//   money in `server/stripe/`, and webhook handlers in `server/email/resendWebhook.ts` and
+//   `server/stripe/webhook.ts`. Not one of them was covered.
+//
+//   The unit tests passed the whole time, because they asserted against INVENTED paths
+//   (`server/webhooks/stripe.ts`, `server/billing/invoice.ts`) that exist nowhere in the tree.
+//   A guard proven on hypothetical inputs is a guard over zero units — it reads as protection and
+//   protects nothing. The coverage assertion in architectProtectedPath.test.ts is what makes that
+//   impossible to repeat: every category below must match at least one REAL tracked file.
+//
+// Grouped so each category can be asserted non-empty independently. A category that silently
+// stops matching is a category that silently stopped protecting.
+export const PROTECTED_CATEGORIES: ReadonlyArray<{ name: string; res: RegExp[] }> = [
+  {
+    // IDENTITY. A bad edit here lets someone in. Case-insensitive throughout: macOS is a
+    // case-insensitive filesystem, so `Auth/` and `auth/` are the same directory and a
+    // case-sensitive pattern is trivially evaded by capitalisation.
+    name: 'identity',
+    res: [
+      /(^|\/)auth\//i,
+      /(^|\/)[^/]*auth[^/]*\.(ts|tsx)$/i,          // oauth.ts, useAuth.ts, auth.logout.test.ts
+      /(^|\/)_core\/(cookies|context|trpc|sdk)\.ts$/i, // session, request ctx, procedure gates
+    ],
+  },
+  {
+    // MONEY. A bad edit here costs real money or charges a customer wrongly.
+    name: 'money',
+    res: [
+      /(^|\/)payment[^/]*\//i,
+      /(^|\/)billing\//i,
+      /(^|\/)stripe\//i,                            // server/stripe/** — prices, webhook, checkout
+      /(^|\/)[^/]*(billing|payment)[^/]*\.(ts|tsx)$/i,
+    ],
+  },
+  {
+    // WEBHOOKS. Externally-reachable entry points that mutate state on someone else's trigger.
+    name: 'webhooks',
+    res: [
+      /(^|\/)webhooks\//i,
+      /(^|\/)[^/]*webhook[^/]*\.(ts|tsx)$/i,
+    ],
+  },
+  {
+    // THE SEND RAILS. `enqueueCampaignSend` is the only campaign_results writer in the codebase
+    // and `checkSendAllowed` is the app-side twin of the 0002 enrolment trigger. Editing either
+    // is how a simulation reaches a domain that never consented — the one product action with a
+    // legal consequence.
+    name: 'send_rails',
+    res: [
+      /(^|\/)(campaignSend|complianceGuard)(\.test)?\.ts$/i,
+    ],
+  },
+  {
+    // THE AGENT'S OWN GOVERNANCE SURFACE — the self-guard gap, and the more dangerous half.
+    // The groups above stop Marcus breaking the product. None of them stops him editing the code
+    // that decides what he is allowed to do, and that is the only edit which makes every FUTURE
+    // edit unguarded. An agent permitted to patch its own gate does not have a gate, it has a
+    // suggestion.
+    //
+    // `.test.ts` variants are protected deliberately: a guard is only as real as the test pinning
+    // its call site, so rewriting `architectExecGate.test.ts` to assert nothing would leave CI
+    // green while the enforcement quietly disappeared. Same hole, same treatment.
+    name: 'governance',
+    res: [
+      /(^|\/)(selfHeal|autonomyGate|autonomyPromotion|circuitBreaker|marcusBreaker)(\.test)?\.ts$/i,
+      /(^|\/)architect[A-Za-z]*(\.test)?\.ts$/i,
+      /(^|\/)(posture|cleanDays|agentLevels)(\.test)?\.ts$/i,
+      /(^|\/)drizzle\//i,       // schema + migrations: 0012's autonomy triggers are enforcement
+      /(^|\/)migrations\//i,
+    ],
+  },
 ]
 
+const PROTECTED_PATH_RES: RegExp[] = PROTECTED_CATEGORIES.flatMap((c) => c.res)
+
+/**
+ * KNOWN LIMIT, recorded rather than papered over: `architectComplete` lives in the shared
+ * `server/os/routes.ts`, a large file of ordinary handlers. Protecting it would block most
+ * legitimate self-heal, so it is not covered. Splitting that handler out is the clean fix.
+ */
 export function isProtectedPath(path: string): boolean {
-  return PROTECTED_PATH_RES.some((re) => re.test(path))
+  // Normalise before matching, so an absolute path, a `./` prefix or a Windows separator cannot
+  // walk around an anchor. The `(^|\/)` anchors already handle absolute paths; this closes the
+  // rest. Matching stays on the normalised form only — the ORIGINAL string is what gets reported.
+  const p = String(path ?? '').replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/{2,}/g, '/')
+  return PROTECTED_PATH_RES.some((re) => re.test(p))
 }
 
 export class HardStopError extends Error {
