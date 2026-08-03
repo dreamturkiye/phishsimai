@@ -341,10 +341,17 @@ export async function miaChat(input: MiaChatInput): Promise<MiaChatResult> {
       pathname,
       // Name / phone / best-time come from the contact form, which is NOT built yet — they arrive
       // null and the Telegram says so rather than implying they were collected.
+      // The EMAIL is not from the form: requestHumanHandoff resolves the logged-in account address
+      // itself (PS-MIA-REACHABLE-01), so it cannot be lost by a caller that forgets to pass it.
       contact: { timezone: input.timezone },
     })
   }
   const handoffFlagged = handoffResult?.ok === true && handoffResult.notified === true
+  // PS-MIA-REACHABLE-01. Being told is not the same as being able to answer. Mia may promise an
+  // EMAIL only when the notification actually carried an address — otherwise "Kaan will email you
+  // shortly" is a promise that was delivered and still cannot be kept, which is the exact defect
+  // this ticket exists to remove.
+  const handoffReachable = handoffResult?.ok === true && handoffResult.reachable === true
 
   const activationBlock =
     `Activation: step ${activation.step}/${activation.totalSteps} (${activation.label}). ` +
@@ -370,10 +377,21 @@ export async function miaChat(input: MiaChatInput): Promise<MiaChatResult> {
   }
 
   if (handoffKind) {
-    if (handoffFlagged) {
+    if (handoffFlagged && handoffReachable) {
       actionLines.push(
-        'They asked for a human, and the request WAS flagged to Kaan successfully. You may say: ' +
-        '"I\'ve flagged this — Kaan will email you shortly." Do not promise a phone call or a time window.',
+        'They asked for a human, and the request WAS flagged to Kaan successfully, WITH their ' +
+        'account email attached so he can reply. You may say: ' +
+        '"I\'ve flagged this — Kaan will email you shortly." Do not promise a phone call or a time window. ' +
+        'Do NOT ask them for their email address: we already have it and asking implies we do not.',
+      )
+    } else if (handoffFlagged) {
+      // Told, but unanswerable. The honest sentence is the one that gets an address, not the one
+      // that promises a reply we have no way to send.
+      actionLines.push(
+        'They asked for a human and the request WAS flagged to Kaan — but we have NO email address ' +
+        'on file for this account, so he cannot reply. You may say it is flagged. You may NOT say ' +
+        'he will email them. Ask them for the best address to reach them on, and give them ' +
+        'sales@phishsimai.com as a channel they can use right now.',
       )
     } else {
       actionLines.push(
