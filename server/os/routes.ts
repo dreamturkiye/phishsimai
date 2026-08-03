@@ -1253,3 +1253,6 @@ export { resendInbound } from './social/replyCapture'
 
 // KAAN AI OS 7.5 §5 #3 — weekly competitor intel (fetched, never recalled).
 export { cronCompetitorIntel } from './competitorIntel'
+
+// PS-SALES-REPLY-01 — 15-minute reply sweep (replyCapture also triggers it inline).
+export { cronSalesReplies } from './agents/salesReplies'

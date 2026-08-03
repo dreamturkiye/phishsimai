@@ -170,6 +170,10 @@
     {
       "path": "/api/os/competitor-intel",
       "schedule": "30 5 * * 1"
+    },
+    {
+      "path": "/api/os/sales-replies",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

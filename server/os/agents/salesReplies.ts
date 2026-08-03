@@ -278,3 +278,29 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
     `your send · ${res.suppressed} auto-suppressed · ${res.noAction} no-action. No draft was sent to a prospect.`
   return res
 }
+
+/**
+ * GET /api/os/sales-replies — the 15-minute sweep.
+ *
+ * Every 15 minutes rather than daily because a reply's value decays fast: an MSP who asks "how
+ * much?" at 09:00 and hears nothing until tomorrow's standup has already moved on. The sweep is the
+ * floor; replyCapture also triggers this agent inline the moment it writes a row, so the usual
+ * latency is seconds and the cron only catches what the inline path missed (a failed trigger, a
+ * row written while a deploy was rolling).
+ *
+ * Idempotent by construction: the queue is `classification IS NULL`, so a row already handled is
+ * invisible to the next run. Overlapping runs cannot double-draft or double-suppress.
+ */
+export async function cronSalesReplies(req: any, res: any) {
+  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
+  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
+  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
+  const viaVercel = !!req.headers?.['x-vercel-cron']
+  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const run = await runSalesReplyAgent()
+    return res.json({ success: true, ...run })
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: String(e?.message || e) })
+  }
+}
