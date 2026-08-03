@@ -234,9 +234,19 @@ describe('detector 4 — stage violations', () => {
     expect(notChecked).toHaveLength(STAGE_CHECKS.length)
   })
 
-  it('treats an unsubscribed lead in an active stage as critical — it can be contacted again', () => {
+  it('treats an unsubscribed lead in an active stage as critical', () => {
     const c = STAGE_CHECKS.find((c) => c.key === 'suppressed_but_active_stage')!
     expect(c.severity).toBe('critical')
+  })
+
+  // PS-REX-RECONCILE-01 — both invariants are now enforced at the DB by triggers
+  // (0018_suppression_invariants.sql). These two checks are RETAINED deliberately as the assertion
+  // that the triggers are actually working: if a trigger is ever dropped, disabled, or bypassed by a
+  // bulk load, Rex is what notices. A guard with no independent verifier is a guard nobody audits.
+  it('keeps asserting both suppression invariants on every run', () => {
+    const keys = STAGE_CHECKS.map((c) => c.key)
+    expect(keys).toContain('suppressed_but_active_stage')
+    expect(keys).toContain('suppression_not_reconciled')
   })
 })
 
