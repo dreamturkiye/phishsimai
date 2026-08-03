@@ -1250,3 +1250,6 @@ export { cronTrialNudges } from './trialNudges'
 
 // PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
 export { resendInbound } from './social/replyCapture'
+
+// KAAN AI OS 7.5 §5 #3 — weekly competitor intel (fetched, never recalled).
+export { cronCompetitorIntel } from './competitorIntel'

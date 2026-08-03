@@ -103,7 +103,7 @@ PhishSim AI:
 
 - $299/mo covers 500 users — 60¢/user. Drops to 30¢ on Pro. Flat pricing, so your margin grows as you add clients. Starts at $149 if you're smaller.
 - Live in under 10 minutes — no security engineer. First campaign running the same afternoon.
-- 30-day free trial, no credit card. Full access. Cancel anytime.
+- 30-day free trial, no credit card. Full access.
 
 Built for MSPs who want a recurring revenue line without the complexity.
 
