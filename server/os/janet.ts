@@ -11,6 +11,7 @@ import { runScoutAgent } from './agents/scout'
 import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runVeraAgent } from './agents/vera'
 import { runNovaAgent } from './agents/nova'
+import { readMiaInbox } from '../mia/feedbackTool'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -140,6 +141,11 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // not perform retirement; that belongs to Mason's own 06:20 cron behind the crm_write gate.
     runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
+  // PS-MIA-HONEST-01 — the READER for what Mia logs. The weekly digest already existed; this is the
+  // DAILY surface, and it exists mainly for unnotifiedHandoffs: a customer who asked for a human and
+  // whose notification failed is invisible in every other channel.
+  const miaInbox = await readMiaInbox().catch(() => null)
+
   const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
 
@@ -174,6 +180,7 @@ Product growth (Nova): ${nova ? nova.line : 'NOT CHECKED this cycle — no activ
 ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
 CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or health claim may be made.'}
 MESSAGING / CHANNELS (Aria — she owns current best outreach; pricing is a hard stop for her): ${aria ? aria.line : 'NOT CHECKED this cycle — no messaging or channel claim may be made.'}
+CUSTOMER VOICE (Mia — trial feedback, bugs, and customers waiting on a human): ${miaInbox ? miaInbox.line : 'NOT CHECKED this cycle — no feedback or handoff claim may be made.'}
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 

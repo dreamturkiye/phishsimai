@@ -1561,6 +1561,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         explicitFeedback: z.boolean().optional(),
         feedbackCategory: z.enum(['bug', 'ux', 'feature', 'praise', 'other']).optional(),
         rating: z.number().min(1).max(5).optional(),
+        timezone: z.string().max(64).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id)
@@ -1573,6 +1574,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           explicitFeedback: input.explicitFeedback,
           feedbackCategory: input.feedbackCategory,
           rating: input.rating,
+          timezone: input.timezone,
         })
       }),
 
