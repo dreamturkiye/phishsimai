@@ -9,6 +9,8 @@ import {
 } from './marcus'
 import { guardMarcusAllowed, guardMarcusDiff, recordMarcusOutcome, fileSetToDiff, makeMarcusBreakerDeps } from './marcusBreaker'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
+import { assertNotHardStop, isHardStopError } from './circuitBreaker'
+import { sendTelegram } from './telegram'
 
 const FILE_BLOCK_RE = /FILE:\s*(.+?)\n---\n([\s\S]*?)\n---END---/g
 
@@ -236,6 +238,43 @@ export async function architectCode(req: Request, res: Response) {
     }
     if (!Object.keys(files).length) {
       return res.json({ ok: false, error: 'No FILE blocks or markdown code fences', raw: output.slice(0, 1000), provider })
+    }
+
+    // PROTECTED-PATH HARD STOP — identity, money, webhooks, the send rails, and Marcus's own
+    // governance surface are never auto-editable, at ANY autonomy level including l5.
+    //
+    // `assertNotHardStop` and `isProtectedPath` shipped with the breaker and were unit-tested from
+    // day one — with ZERO production callers. The enforcement existed as a tested function nobody
+    // invoked, so on the ONE endpoint that hands generated code out to be applied, every protected
+    // path was unguarded. The product is at l4 and `execute_architect_task` gates at l3, so this
+    // was reachable in production, not hypothetical.
+    //
+    // Placed BEFORE the destructive-diff tripwire deliberately. That check is about SIZE (>10 files
+    // or >500 net lines) and a payment-path edit is dangerous while being small: a three-line change
+    // to server/stripe/ sails through the size check cleanly. Size can never be what protects these.
+    //
+    // Treated as a Marcus failure, exactly like a destructive diff: recorded on the breaker so
+    // repeated attempts halt him, escalated to the founder, and the change DISCARDED — never
+    // returned for application.
+    try {
+      assertNotHardStop('execute_architect_task', Object.keys(files))
+    } catch (e) {
+      if (!isHardStopError(e)) throw e
+      await recordMarcusOutcome(breaker, false, `protected_path: ${e.detail}`)
+      console.warn(`[marcus] protected path REFUSED: ${e.detail} — change discarded`)
+      await sendTelegram(
+        `🛑 <b>MARCUS BLOCKED — PROTECTED PATH</b>\n` +
+        `Generated a change touching <b>${e.detail}</b>.\n` +
+        `Identity, money, webhooks, the send rails and his own gate are hard stops at every level.\n` +
+        `Change DISCARDED — not applied, not deployed. A human must make this edit.`,
+      ).catch(() => {})
+      return res.json({
+        ok: false,
+        error: `Protected path refused — change discarded: ${e.detail}`,
+        discarded: true,
+        hard_stop: 'protected_path',
+        path: e.detail,
+      })
     }
 
     // DESTRUCTIVE-DIFF TRIPWIRE — before the change is handed off for apply. An
