@@ -114,6 +114,55 @@ PhishSim AI
 
 ${CANSPAM_TEXT}`
 
+
+/**
+ * PS-TOUCH2-PRICE-01 (2026-08-03, founder-approved copy) — the second touch, price-led.
+ *
+ * 884 recipients got touch-1 on the insurance/compliance angle and produced 1 human reply, hostile.
+ * This is the same list, a different argument, and it says so in the first line. The acknowledgement
+ * is not politeness: "wrong angle, and I'd rather say so than send it again" is the only honest way
+ * to re-approach someone who already ignored you once, and it is what earns the second read.
+ *
+ * The "tell me and I'll stop" close is deliberate and invites a NEGATIVE reply. Right now the queue
+ * has 0 external replies and we cannot distinguish a dead offer from a dead list. A cheap "no" is
+ * worth more than another month of silence, and every "no" also cleans the list.
+ *
+ * Prices verified against live Stripe before this shipped: Growth 299/500 = $0.598 -> 60c;
+ * Pro 749/2500 = $0.2996 -> 30c; Starter $149. Trial: TRIAL_DAYS=30, no Stripe call at signup.
+ * "Cancel anytime" is true as of 2026-08-03 (billing portal bpc_1U0EQ8..., subscription_cancel
+ * enabled=true, mode=at_period_end, verified by a live sessions.create call).
+ *
+ * Plain text, no HTML — same doctrine as touch-1. touch2Html returns '' and sendEmail omits the
+ * empty part, so this goes out as a single text/plain body.
+ */
+export const TOUCH2_SUBJECT = `Different pitch than my July email — 60¢/user`
+
+const touch2Html = (_name: string) => '' // text-only: see PS-COPY-PLAINTEXT-01
+
+const touch2Text = (name: string) => `Hi ${name},
+
+I emailed you in July about phishing simulation and compliance paperwork. Wrong angle, and I'd rather say so than send it again.
+
+Here's the actual reason an MSP switches to us:
+
+- $299/mo covers 500 users — 60¢ each. Drops to 30¢ on Pro. Flat per-MSP pricing, so adding a client grows your margin instead of shrinking it. Starts at $149 if you're smaller.
+- Live in under 10 minutes. No security engineer, no implementation call.
+- 30 days free, no credit card, full access. Cancel anytime.
+
+If phishing sim is already handled, tell me and I'll stop. If it's on the someday list, this is the cheapest way to get it off there: https://phishsimai.com/register
+
+Sarah Mitchell
+PhishSim AI
+
+${CANSPAM_TEXT}`
+
+export const TOUCH2_VARIANT: ABVariant = {
+  id: 'ctrl_t2_price',
+  subject: () => TOUCH2_SUBJECT,
+  html: (name) => touch2Html(name),
+  text: (name) => touch2Text(name),
+}
+
 // PS-COPY-PRICE-01: `test` is OPTIONAL and deliberately absent. With one honest email there is no
 // loser slot for stale or invented copy to hide in — which is what it was used for historically.
 // sequences.ts falls back to `control` whenever `active` is false or no test arm exists.
