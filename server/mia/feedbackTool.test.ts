@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import {
   classifyFeedbackContent,
+  buildHandoffTelegram,
   detectHandoffRequest,
   inferFeedbackCategory,
   buildInboxLine,
@@ -190,5 +191,119 @@ describe('the reader is actually wired into the standup', () => {
     const janet = fs.readFileSync('server/os/janet.ts', 'utf8')
     expect(janet).toContain('readMiaInbox()')
     expect(janet).toContain('CUSTOMER VOICE (Mia')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PS-MIA-REACHABLE-01 — a delivered handoff that cannot be answered.
+//
+//  0019 proved the path FIRES. Kaan then used Mia in production and found the defect one layer
+//  further out: the Telegram arrived carrying org, plan, page and the customer's words — and no
+//  name, no email, no phone. Mia had said "Kaan will email you shortly". Kaan had no address.
+//
+//  A promise that is delivered and still cannot be kept. It reads as handled, which is why no
+//  unnotified-row alarm could ever have surfaced it.
+//
+//  Every test below asserts against the MESSAGE BODY, not against the send. The old body was built
+//  inline inside an I/O function, which is precisely why nothing could see what it omitted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('PS-MIA-REACHABLE-01 — the handoff carries a way to reply', () => {
+  const base = {
+    kind: 'sales' as const,
+    orgName: 'Acme MSP',
+    plan: 'free',
+    trialDay: 3,
+    callWindowDisplay: 'not specified',
+    pathname: '/dashboard',
+    id: 42,
+    message: 'I need to talk to someone about pricing',
+  }
+
+  it('renders the account email — the field whose absence made the notification useless', () => {
+    const msg = buildHandoffTelegram({ ...base, email: 'owner@acmemsp.com' })
+    expect(msg).toContain('Email: owner@acmemsp.com')
+  })
+
+  it('puts the reply-to line ABOVE the customer message, not buried under it', () => {
+    // It is the field that decides whether this notification can result in anything.
+    const msg = buildHandoffTelegram({ ...base, email: 'owner@acmemsp.com' })
+    expect(msg.indexOf('Email: owner@acmemsp.com')).toBeLessThan(msg.indexOf(base.message))
+  })
+
+  it('when there is NO address, says so loudly instead of silently omitting the line', () => {
+    // The failure mode being pinned: a message that looks complete because the missing field simply
+    // is not rendered. NOT CHECKED never reads as clean.
+    const msg = buildHandoffTelegram({ ...base, email: null })
+    expect(msg).toContain('NO CONTACT EMAIL ON FILE')
+    expect(msg).toContain('cannot reply')
+    expect(msg).not.toContain('Email: ')
+  })
+
+  it('never invents or substitutes an address when none exists', () => {
+    const msg = buildHandoffTelegram({ ...base, email: null })
+    expect(msg).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.]+/)
+  })
+
+  it('still carries the form fields when the form eventually supplies them', () => {
+    const msg = buildHandoffTelegram({
+      ...base, email: 'owner@acmemsp.com', firstName: 'Dana', lastName: 'Reed',
+      phone: '+1 555 0100', preferredContact: 'call',
+    })
+    expect(msg).toContain('Name: Dana Reed')
+    expect(msg).toContain('Phone: +1 555 0100')
+    expect(msg).toContain('Prefers: call')
+  })
+})
+
+describe('PS-MIA-REACHABLE-01 — the address is resolved at the write point, not per caller', () => {
+  const TOOL = fs.readFileSync('server/mia/feedbackTool.ts', 'utf8')
+
+  it('the INSERT actually persists the email column', () => {
+    // The Telegram is transient. The row is what a human triages tomorrow.
+    expect(TOOL).toMatch(/INSERT INTO mia_handoff_requests[\s\S]{0,400}email/)
+  })
+
+  it('resolves from the logged-in users row rather than asking the customer', () => {
+    expect(TOOL).toContain('resolveAccountEmail')
+    expect(TOOL).toMatch(/from\(users\)/)
+  })
+
+  it('BOTH live callers get the address, because neither one passes it', () => {
+    // The composition failure this design forecloses: threading through routers.ts and forgetting
+    // http.ts would fix the call and leave the payload broken on one path.
+    const routers = fs.readFileSync('server/routers.ts', 'utf8')
+    const http = fs.readFileSync('server/mia/http.ts', 'utf8')
+    for (const [name, src] of [['routers.ts', routers], ['http.ts', http]] as const) {
+      expect(src, name).not.toContain('resolveAccountEmail')
+    }
+    // ...and the single write point they share does it for them.
+    expect(TOOL).toMatch(/const email = formEmail \?\? \(await resolveAccountEmail\(db, opts\.userId\)\)/)
+  })
+
+  it('a form-supplied address wins, so a customer can redirect the reply', () => {
+    expect(TOOL).toContain('formEmail ??')
+  })
+})
+
+describe('PS-MIA-REACHABLE-01 — Mia may not promise an email she cannot send', () => {
+  it('the email promise is gated on REACHABLE, not merely on notified', () => {
+    expect(CHAT).toContain('handoffResult.reachable === true')
+    expect(CHAT).toContain('handoffFlagged && handoffReachable')
+  })
+
+  it('flagged-but-unreachable gets an honest sentence that asks for the address', () => {
+    expect(CHAT).toContain('You may NOT say')
+    expect(CHAT).toContain('Ask them for the best address')
+  })
+
+  it('never asks a logged-in customer for an email we already stored', () => {
+    expect(CHAT).toContain('Do NOT ask them for their email address: we already have it')
+  })
+
+  it('notified and reachable remain SEPARATE outcomes', () => {
+    const TOOL = fs.readFileSync('server/mia/feedbackTool.ts', 'utf8')
+    expect(TOOL).toContain('reachable: email !== null')
+    // If these ever collapse into one boolean, the distinction that made the defect visible is gone.
+    expect(TOOL).not.toContain('notified = email !== null')
   })
 })

@@ -31,7 +31,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../db'
-import { organizations, productFeedback } from '../../drizzle/schema'
+import { organizations, productFeedback, users } from '../../drizzle/schema'
 import { sendTelegram } from '../os/telegram'
 import { resolveCallWindow, KAAN_TZ, type CallWindow } from './callWindow'
 import { rememberFact } from '../os/memory'
@@ -39,9 +39,15 @@ import { rememberFact } from '../os/memory'
 export type FeedbackCategory = 'bug' | 'ux' | 'feature' | 'praise' | 'other'
 export type HandoffKind = 'sales' | 'support' | 'callback' | 'other'
 
-/** Every action returns this. An id means it happened; a reason means it did not. */
+/**
+ * Every action returns this. An id means it happened; a reason means it did not.
+ *
+ * `notified` and `reachable` are distinct outcomes of a handoff and must not be collapsed:
+ * notified = a human was actually told; reachable = the notification carried an address that human
+ * can answer. A handoff can be delivered and unanswerable, which is what PS-MIA-REACHABLE-01 fixes.
+ */
 export type ActionResult =
-  | { ok: true; id: number; notified?: boolean }
+  | { ok: true; id: number; notified?: boolean; reachable?: boolean }
   | { ok: false; reason: string }
 
 // ─── THE CONTENT GATE ────────────────────────────────────────────────────────
@@ -223,11 +229,83 @@ export type HandoffContact = {
   firstName?: string
   lastName?: string
   phone?: string
+  /**
+   * PS-MIA-REACHABLE-01. Supplied by the contact form ONLY, for the case where a customer wants a
+   * reply somewhere other than their account address. It is not required and must not be solicited
+   * from a logged-in user by default — see resolveAccountEmail below.
+   */
+  email?: string
   preferredContact?: 'call' | 'email' | 'either'
   /** What they typed: "9am", "after 3", "mornings". */
   bestTimeRaw?: string
   /** IANA zone from the browser, user-correctable. */
   timezone?: string
+}
+
+/**
+ * PS-MIA-REACHABLE-01 — the address a human can actually reply to.
+ *
+ * Resolved HERE, at the single write point, rather than threaded in from each caller. There are two
+ * live callers (`server/routers.ts` tRPC and `server/mia/http.ts` express) and any threading change
+ * that updates one and forgets the other reproduces the composition failure exactly: the call is
+ * fixed, the payload is not. A handoff row cannot be written without passing through this function,
+ * so it cannot be written without the address when one exists.
+ *
+ * Returns null when there is genuinely nothing on file — `users.email` is nullable. Null is
+ * reported in words; it is never defaulted, guessed from the org, or filled with a placeholder.
+ */
+export async function resolveAccountEmail(db: any, userId: number): Promise<string | null> {
+  try {
+    const rows = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1)
+    const e = rows?.[0]?.email
+    return typeof e === 'string' && e.includes('@') ? e.trim() : null
+  } catch {
+    // A lookup failure is NOT an absent address, but from the notification's point of view it has
+    // the same consequence: nothing to reply to. Report it as missing rather than inventing one.
+    return null
+  }
+}
+
+/**
+ * The Telegram body for a handoff, as a pure function of the facts.
+ *
+ * Extracted so the thing that actually reaches Kaan's phone can be asserted directly, without a
+ * database and without a live send. The defect this fixes was invisible to every test precisely
+ * because the message body was built inline inside an I/O function and never inspected.
+ */
+export function buildHandoffTelegram(a: {
+  kind: HandoffKind
+  orgName: string
+  plan: string
+  trialDay?: number | null
+  email: string | null
+  firstName?: string
+  lastName?: string
+  phone?: string
+  preferredContact?: string
+  callWindowDisplay: string
+  pathname?: string
+  id: number
+  message: string
+}): string {
+  const who = [a.firstName, a.lastName].filter(Boolean).join(' ')
+  return (
+    `🙋 <b>CUSTOMER WANTS A HUMAN</b> (${a.kind})\n` +
+    `${a.orgName} · plan ${a.plan}${a.trialDay ? ` · trial day ${a.trialDay}` : ''}\n` +
+    // THE REPLY-TO LINE. First, because it is the one field that decides whether this notification
+    // can result in anything. A handoff without it is a person waiting on a promise nobody can keep.
+    (a.email
+      ? `Email: ${a.email}\n`
+      : `⚠️ NO CONTACT EMAIL ON FILE — cannot reply. Reach them in-app.\n`) +
+    (who ? `Name: ${who}\n` : '') +
+    (a.phone ? `Phone: ${a.phone}\n` : '') +
+    (a.preferredContact ? `Prefers: ${a.preferredContact}\n` : '') +
+    // BOTH zones, always — this is the line that stops a 9am Pacific call at 6am.
+    `Call window: ${a.callWindowDisplay}\n` +
+    `Page: ${a.pathname || 'n/a'} · request #${a.id}\n\n` +
+    `"${a.message.slice(0, 500)}"\n\n` +
+    `They are waiting. Nothing else contacts them.`
+  )
 }
 
 export async function requestHumanHandoff(opts: {
@@ -255,14 +333,20 @@ export async function requestHumanHandoff(opts: {
     // correct record that produces a wrong action.
     const win: CallWindow = resolveCallWindow(c.bestTimeRaw ?? '', c.timezone ?? null)
 
+    // PS-MIA-REACHABLE-01. Form-supplied address wins if the customer gave one (they may want a
+    // reply elsewhere); otherwise the account address we have held since signup. A logged-in
+    // customer is never asked for an email we already stored.
+    const formEmail = typeof c.email === 'string' && c.email.includes('@') ? c.email.trim() : null
+    const email = formEmail ?? (await resolveAccountEmail(db, opts.userId))
+
     const rows = await db.execute(sql`
       INSERT INTO mia_handoff_requests
         ("userId","orgId",kind,message,"conversationContext",page,plan,
-         "firstName","lastName",phone,"preferredContact","bestTimeRaw",timezone,
+         "firstName","lastName",email,phone,"preferredContact","bestTimeRaw",timezone,
          "callWindowAt","callWindowDisplay")
       VALUES (${opts.userId}, ${opts.orgId}, ${opts.kind}, ${opts.message.slice(0, 2000)},
               ${opts.conversationContext?.slice(0, 4000) ?? null}, ${opts.pathname?.slice(0, 255) ?? null}, ${ctx.plan},
-              ${c.firstName ?? null}, ${c.lastName ?? null}, ${c.phone ?? null},
+              ${c.firstName ?? null}, ${c.lastName ?? null}, ${email}, ${c.phone ?? null},
               ${c.preferredContact ?? null}, ${win.raw || null}, ${win.timezone ?? null},
               ${win.iso ?? null}, ${win.display})
       RETURNING id`)
@@ -280,19 +364,21 @@ export async function requestHumanHandoff(opts: {
     // the absence of an exception.
     let notified = false
     try {
-      const who = [c.firstName, c.lastName].filter(Boolean).join(' ')
-      const sent = await sendTelegram(
-        `🙋 <b>CUSTOMER WANTS A HUMAN</b> (${opts.kind})\n` +
-        `${ctx.name} · plan ${ctx.plan}${ctx.trialDay ? ` · trial day ${ctx.trialDay}` : ''}\n` +
-        (who ? `Name: ${who}\n` : '') +
-        (c.phone ? `Phone: ${c.phone}\n` : '') +
-        (c.preferredContact ? `Prefers: ${c.preferredContact}\n` : '') +
-        // BOTH zones, always — this is the line that stops a 9am Pacific call at 6am.
-        `Call window: ${win.display}\n` +
-        `Page: ${opts.pathname || 'n/a'} · request #${id}\n\n` +
-        `"${opts.message.slice(0, 500)}"\n\n` +
-        `They are waiting. Nothing else contacts them.`,
-      )
+      const sent = await sendTelegram(buildHandoffTelegram({
+        kind: opts.kind,
+        orgName: ctx.name,
+        plan: ctx.plan,
+        trialDay: ctx.trialDay,
+        email,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        phone: c.phone,
+        preferredContact: c.preferredContact,
+        callWindowDisplay: win.display,
+        pathname: opts.pathname,
+        id,
+        message: opts.message,
+      }))
       notified = sent?.ok === true
     } catch {
       notified = false
@@ -302,7 +388,10 @@ export async function requestHumanHandoff(opts: {
       await db.execute(sql`UPDATE mia_handoff_requests SET "notifiedAt" = NOW() WHERE id = ${id}`).catch(() => {})
     }
 
-    return { ok: true, id, notified }
+    // `reachable` is returned SEPARATELY from `notified` because they fail independently and mean
+    // different things: notified = a human was told, reachable = that human can answer. Mia's
+    // permission to promise an email is gated on both — see miaChat.ts.
+    return { ok: true, id, notified, reachable: email !== null }
   } catch (e: any) {
     return { ok: false, reason: String(e?.message || e).slice(0, 120) }
   }
