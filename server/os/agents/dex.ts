@@ -35,6 +35,7 @@ import { getSql } from '../conn'
 import { readSource, measureCohorts, type CohortSplit, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { reconcileBreaker, readBreakerThreshold, type BreakerRun } from '../dexBreaker'
+import { scanVerdict, scanVerdictReason } from './scanVerdict'
 
 const COMPANY = 'phishsimai'
 
@@ -505,6 +506,12 @@ export type DexReport = {
   status: 'ACTIVE' | 'INSUFFICIENT_DATA'
   pathsRegistered: number
   pathsCovered: number
+  /**
+   * PS-SCAN-VERDICT-01 — send-path coverage is a SOURCE scan, so on a serverless bundle it examines
+   * 0 paths. Dex already reported 0/6 honestly; this pins it through the shared law.
+   */
+  pathCoverage: 'COVERED' | 'GAPS' | 'NOT_CHECKED'
+  pathCoverageReason: string
   incidents: Incident[]
   bySeverity: Record<Severity, number>
   health: SendHealth
@@ -567,6 +574,10 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
     ? null
     : await runCurrencyLoop('dex', 'email deliverability, sender reputation and authentication', DEX_SOURCES, sql).catch(() => null)
 
+  const coverageInput = { unitsScanned: paths.covered + paths.incidents.length, findings: paths.incidents.length, pass: 'COVERED' as const, fail: 'GAPS' as const }
+  const pathCoverage = scanVerdict(coverageInput)
+  const pathCoverageReason = scanVerdictReason(coverageInput, 'Send-path rail coverage')
+
   const status: DexReport['status'] = readable > 0 || health.checked ? 'ACTIVE' : 'INSUFFICIENT_DATA'
   const line = buildDexLine({ status, incidents, bySeverity, covered: paths.covered, total: SEND_PATHS.length, health, auth, notChecked })
 
@@ -574,6 +585,8 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
     status,
     pathsRegistered: SEND_PATHS.length,
     pathsCovered: paths.covered,
+    pathCoverage,
+    pathCoverageReason,
     incidents,
     bySeverity,
     health,
@@ -607,7 +620,10 @@ export function buildDexLine(a: {
     : ''
   const gate = a.incidents.length
     ? `${a.incidents.length} gate/auth defect(s) (${a.bySeverity.critical} critical)`
-    : `all ${a.covered}/${a.total} send paths carry every required rail`
+    : a.covered === 0
+      // An empty path scan is NOT full coverage. Same law as Finn's guard.
+      ? `send-path coverage NOT CHECKED — 0 of ${a.total} paths were readable (serverless bundles ship no .ts sources); this is not a clean result`
+      : `all ${a.covered}/${a.total} send paths carry every required rail`
   return (
     `Dex (Deliverability): ${gate} · ${a.health.allTimeLine} ${a.health.sevenDayLine} ` +
     `Breaker ${a.health.breakerVerdict}${authLine}${nc}`
