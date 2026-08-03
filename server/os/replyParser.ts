@@ -67,7 +67,7 @@ export function decideReplyAction(intent: string, confidence: number): { effecti
 
 async function buildAutoResponse(lead: any, intent: ReplyIntent, replyBody: string): Promise<string> {
   const prompts: Record<string, string> = {
-    question: `You are Sarah Mitchell, Head of Compliance Partnerships at PhishSimAI. An IT/MSP prospect asked a question. Company: ${lead.company}. Reply: "${replyBody.slice(0, 300)}". Answer directly. PhishSimAI runs phishing simulations in 10 minutes. Pricing from $99/mo. End by offering a free simulation. 3-4 sentences max.`,
+    question: `You are Sarah Mitchell, Head of Compliance Partnerships at PhishSimAI. An IT/MSP prospect asked a question. Company: ${lead.company}. Reply: "${replyBody.slice(0, 300)}". Answer directly. PhishSimAI runs phishing simulations, live in under 10 minutes. PRICING IS FROZEN AND YOU MAY NOT ALTER IT: Starter $149/mo (100 users), Growth $299/mo (500 users = 60c each), Pro $749/mo (2,500 = 30c each), Enterprise $1,499/mo. Flat per-MSP pricing, so adding a client grows their margin. 30-day free trial, no credit card, cancel anytime. Never invent a discount or founding rate. End by offering the free trial. 3-4 sentences max.`,
     not_now: `You are Sarah Mitchell at PhishSimAI. Prospect said not right now. Company: ${lead.company}. Reply: "${replyBody.slice(0, 200)}". Write 2 gracious sentences leaving the door open.`,
   }
   const prompt = prompts[intent] || ''
@@ -172,7 +172,7 @@ async function createReplyApproval(
   const id = rows[0]?.id
   const head = d.kind === 'checkout' ? '💳 <b>CHECKOUT APPROVAL</b>' : '✉️ <b>REPLY APPROVAL</b>'
   const warn = d.kind === 'checkout'
-    ? '\n⚠️ Approving emails a LIVE Stripe checkout link ($99/mo). Nothing is sent until you approve.'
+    ? '\n⚠️ Approving emails a LIVE Stripe checkout link. Nothing is sent until you approve.'
     : '\nDrafted reply is held — nothing is sent until you approve.'
   await sendTelegram(
     `${head}\n${lead.company} <${lead.email}> replied <b>${d.intent}</b> (${Math.round(d.confidence * 100)}% conf)\n"${d.summary}"${warn}\n\n` +

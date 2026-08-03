@@ -321,7 +321,7 @@ Product map:
 - Compliance (/compliance) = HIPAA/SOC2/PCI audit reports
 - Settings (/settings) = org & billing
 
-Pricing: Starter $99/mo, Growth $249, Pro $499, Unlimited $999. 30-day free trial.
+Pricing (live Stripe, FROZEN — never alter): Starter $149/mo (100 users), Growth $299/mo (500 users), Pro $749/mo (2,500 users), Enterprise $1,499/mo (10,000 users). Annual = 10x monthly. 30-day free trial, no credit card, cancel anytime.
 
 Current page: ${pathname}. ${pageGuide}
 
