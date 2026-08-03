@@ -31,6 +31,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { getSql } from '../conn'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
+import { scanVerdict, scanVerdictReason } from './scanVerdict'
 
 const COMPANY = 'phishsimai'
 
@@ -649,6 +650,14 @@ export type RexReport = {
   resolved: number
   guardsWritten: number
   notChecked: string[]
+  /**
+   * PS-SCAN-VERDICT-01 — the STATIC half of Rex, reported separately from the DB half.
+   * On a serverless bundle no .ts source exists, so fabricated_writer and pricing_drift examine 0
+   * units. Rex already refused to call that clean; this field pins it through the shared law so it
+   * cannot regress into the false green Finn shipped.
+   */
+  staticScan: 'CLEAN' | 'DEFECTS' | 'NOT_CHECKED'
+  staticScanReason: string
   /** Which metrics the other agents may rely on this cycle, and which are suspect. */
   trustedMetrics: string[]
   suspectMetrics: string[]
@@ -735,6 +744,11 @@ export async function runRexAgent(opts: RexOptions = {}): Promise<RexReport> {
   const scannedAnything = readable > 0 || states.some((s) => s.checked) || stage.notChecked.length < STAGE_CHECKS.length
   const status: RexReport['status'] = scannedAnything ? 'ACTIVE' : 'INSUFFICIENT_DATA'
 
+  const staticFindings = fab.incidents.length + drift.incidents.length
+  const staticScanInput = { unitsScanned: readable, findings: staticFindings, pass: 'CLEAN' as const, fail: 'DEFECTS' as const }
+  const staticScan = scanVerdict(staticScanInput)
+  const staticScanReason = scanVerdictReason(staticScanInput, 'Static scan (fabricated writers, pricing literals)')
+
   const line = buildRexLine({ status, incidents, bySeverity, readable, total: SCAN_TARGETS.length, notChecked: uniqueNotChecked, resolved })
 
   return {
@@ -745,6 +759,8 @@ export async function runRexAgent(opts: RexOptions = {}): Promise<RexReport> {
     filed,
     resolved,
     guardsWritten,
+    staticScan,
+    staticScanReason,
     notChecked: uniqueNotChecked,
     trustedMetrics,
     suspectMetrics,

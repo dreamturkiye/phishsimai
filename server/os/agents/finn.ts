@@ -33,6 +33,7 @@ import { getSql } from '../conn'
 import { loadPhishSimPrices, type StripePlan } from '../../stripe/prices'
 import { readSource, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
+import { scanVerdict, scanVerdictReason } from './scanVerdict'
 
 const COMPANY = 'phishsimai'
 
@@ -321,6 +322,8 @@ export type FinnReport = {
   status: 'ACTIVE' | 'INSUFFICIENT_DATA'
   /** Pricing guard is ACTIVE today; revenue metrics are BUILT AND ARMED. */
   pricingGuard: 'GREEN' | 'DRIFT' | 'NOT_CHECKED'
+  /** Why the guard reached that verdict — an abstention with no stated cause is barely better than a false green. */
+  pricingGuardReason: string
   stripe: StripeTruth
   claims: PriceClaim[]
   incidents: Incident[]
@@ -335,12 +338,23 @@ export type FinnReport = {
 }
 
 export async function runFinnAgent(
-  opts: { sql?: any; root?: string; skipCurrency?: boolean } = {},
+  opts: {
+    sql?: any
+    root?: string
+    skipCurrency?: boolean
+    /**
+     * Injectable Stripe truth. Exists so a test can reproduce the PRODUCTION condition exactly —
+     * Stripe reachable AND repository sources absent — which is the state that produced the false
+     * GREEN. Without it a test environment lacking STRIPE_SECRET_KEY abstains via the dependency
+     * path instead, which is correct behaviour but a different code path from the one that shipped.
+     */
+    stripeOverride?: StripeTruth
+  } = {},
 ): Promise<FinnReport> {
   const sql = opts.sql ?? getSql()
   const root = opts.root ?? process.cwd()
 
-  const stripe = await readStripeTruth()
+  const stripe = opts.stripeOverride ?? (await readStripeTruth())
 
   const files: SourceFile[] = PRICE_CLAIM_SURFACES.map((p) => readSource(p, root))
   const claims = files.flatMap((f) => (f.text === null ? [] : extractPriceClaims(f.relPath, f.text)))
@@ -359,7 +373,15 @@ export async function runFinnAgent(
   const revenue = buildRevenuePack(stripe, dbCustomers)
 
   const notChecked = [...unreadable, ...(stripe.checked ? [] : ['stripe'])]
-  const pricingGuard: FinnReport['pricingGuard'] = !stripe.checked ? 'NOT_CHECKED' : incidents.length ? 'DRIFT' : 'GREEN'
+
+  // PS-SCAN-VERDICT-01. The units are PRICE CLAIMS ACTUALLY VERIFIED, not surfaces we meant to read.
+  // The shipped version asked `!stripe.checked ? NOT_CHECKED : ...`, which mistook the reachability
+  // of a dependency for evidence that the check ran — and on the serverless bundle, where no .ts
+  // source exists, it reported "GREEN — all 0 claim(s) match live Stripe" having verified nothing.
+  // GREEN now requires at least one claim genuinely compared against a live Stripe price.
+  const guardScan = { unitsScanned: claims.length, findings: incidents.length, pass: 'GREEN' as const, fail: 'DRIFT' as const, dependencyAvailable: stripe.checked }
+  const pricingGuard: FinnReport['pricingGuard'] = scanVerdict(guardScan)
+  const pricingGuardReason = scanVerdictReason(guardScan, 'Pricing guard')
 
   const currency = opts.skipCurrency
     ? null
@@ -369,7 +391,7 @@ export async function runFinnAgent(
   const line = buildFinnLine({ status, pricingGuard, stripe, claims, incidents, gaps, revenue, notChecked })
 
   return {
-    status, pricingGuard, stripe, claims, incidents, gaps, revenue, lessonsWritten,
+    status, pricingGuard, pricingGuardReason, stripe, claims, incidents, gaps, revenue, lessonsWritten,
     customers: stripe.checked ? stripe.activeSubs : 0,
     notChecked, currency,
     line: currency ? `${line} ${currency.line}` : line,
@@ -391,7 +413,9 @@ export function buildFinnLine(a: {
   }
   const guard =
     a.pricingGuard === 'NOT_CHECKED'
-      ? `pricing guard NOT CHECKED (${a.stripe.reason}) — no drift verdict this cycle`
+      ? `pricing guard NOT CHECKED — ${a.claims.length === 0
+          ? 'ZERO price claims were readable (serverless bundles ship no .ts sources), so nothing was verified'
+          : a.stripe.reason} — no drift verdict this cycle, and an empty scan is NOT a clean one`
       : a.pricingGuard === 'GREEN'
         ? `pricing guard GREEN — all ${a.claims.length} plan-price claim(s) across ${new Set(a.claims.map((c) => c.file)).size} surface(s) match live Stripe`
         : `pricing guard RED — ${a.incidents.length} claim(s) contradict live Stripe: ${a.incidents.map((i) => i.subject).join(', ')}`
