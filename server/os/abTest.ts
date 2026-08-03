@@ -135,21 +135,21 @@ ${CANSPAM_TEXT}`
  * Plain text, no HTML — same doctrine as touch-1. touch2Html returns '' and sendEmail omits the
  * empty part, so this goes out as a single text/plain body.
  */
-export const TOUCH2_SUBJECT = `Different pitch than my July email — 60¢/user`
+export const TOUCH2_SUBJECT = `60¢/user for phishing sims — 10 min, 30 days free`
 
 const touch2Html = (_name: string) => '' // text-only: see PS-COPY-PLAINTEXT-01
 
+// Founder-supplied body, 2026-08-03, sent VERBATIM. Not one figure paraphrased.
+// Verified against live Stripe before wiring: 299/500 = $0.598 -> "60¢"; 749/2500 = $0.2996 ->
+// "30¢"; Starter $149. Trial: TRIAL_DAYS=30 with no Stripe call at signup. "Full access" is true —
+// a trial resolves to tier 'trial' with FULL limits.
 const touch2Text = (name: string) => `Hi ${name},
 
-I emailed you in July about phishing simulation and compliance paperwork. Wrong angle, and I'd rather say so than send it again.
+One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Drops to 30¢ on Pro. Flat MSP pricing — every client you add widens your margin instead of eating it.
 
-Here's the actual reason an MSP switches to us:
+Live in 10 minutes, no engineer. 30-day trial, no card, full access.
 
-- $299/mo covers 500 users — 60¢ each. Drops to 30¢ on Pro. Flat per-MSP pricing, so adding a client grows your margin instead of shrinking it. Starts at $149 if you're smaller.
-- Live in under 10 minutes. No security engineer, no implementation call.
-- 30 days free, no credit card, full access. Cancel anytime.
-
-If phishing sim is already handled, tell me and I'll stop. If it's on the someday list, this is the cheapest way to get it off there: https://phishsimai.com/register
+If it's worth 10 minutes: https://phishsimai.com/register
 
 Sarah Mitchell
 PhishSim AI

@@ -145,14 +145,16 @@ export async function touch2Headroom(sql: any): Promise<{ headroom: number; sent
  * Who is eligible for touch-2. Every exclusion is in the SELECT, not applied afterwards:
  * replied / bounced / unsubscribed / suppressed / already-touched / dead / OURS / WRONG COPY ERA.
  *
- * THE COPY-ERA CUTOFF IS A CORRECTNESS CONSTRAINT, NOT A REFINEMENT. The touch-2 body opens
- * "I emailed you in July about phishing simulation and compliance paperwork." That sentence is TRUE
- * only for recipients of the compliance-led touch-1. PS-COPY-PRICE-01 deployed 2026-08-03 01:36Z,
- * and the 07:00 cron then sent 50 touch-1 emails carrying the NEW price-led copy. Sending those 50
- * a mail that apologises for a July compliance pitch they never received — hours after they got the
- * price pitch — would be visibly wrong to the reader and would burn the freshest leads on the list.
- * Caught only because the eligible count came back 847 instead of the approved 797; the 50-lead gap
- * was exactly one morning's send.
+ * THE COPY-ERA CUTOFF. PS-COPY-PRICE-01 deployed 2026-08-03 01:36Z and the 07:00 cron then sent 50
+ * touch-1 emails carrying the price-led copy. Those 50 are excluded from touch-2 because they would
+ * otherwise receive substantially the SAME price pitch twice within hours — an annoyance that costs
+ * us the freshest leads on the list for no gain. (The original rationale was stronger still: the
+ * first touch-2 draft opened by apologising for a July compliance email, which for those 50 was
+ * simply false. The approved body no longer references July, so the constraint is now
+ * double-pitching rather than untruth — but the exclusion stands either way, and it is what makes
+ * the send list exactly the 797 the founder approved.)
+ * Caught only because the eligible count came back 847 against an approved 797; the 50-lead gap was
+ * exactly one morning's send.
  *
  * Measured 2026-08-03 07:19Z: 934 touch-1 recipients -> 797 eligible
  * (-50 wrong copy era, -1 internal, -0 replied, -38 bounced, -25 unsubscribed, -16 already touch-2,
