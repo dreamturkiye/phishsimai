@@ -6,6 +6,9 @@ import { runScoutAgent } from './agents/scout'
 import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runAriaAgent } from './agents/aria'
 import { runNovaAgent } from './agents/nova'
+import { runRexAgent } from './agents/rex'
+import { runDexAgent } from './agents/dex'
+import { runMasonAgent } from './agents/mason'
 import { runVeraAgent } from './agents/vera'
 import { runEAAgent } from './agents/ea'
 import { queueJanetArchitectTask } from './selfHeal'
@@ -16,13 +19,19 @@ const FROM = 'Janet CGO <sarah@phishsimai.com>'
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
 
-  const [sales, finn, aria, nova, vera, scout] = await Promise.all([
+  const [sales, finn, aria, nova, vera, scout, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
     runFinnAgent({ skipCurrency: true }).catch(() => null),
     runAriaAgent({ skipCurrency: true }).catch(() => null),
     runNovaAgent({ skipCurrency: true }).catch(() => null),
     runVeraAgent({ skipCurrency: true }).catch(() => null),
     runScoutAgent({ skipCurrency: true }).catch(() => null),
+    // The weekly report was reading 5 of 8 — it inherited only the slots the deleted ghosts
+    // occupied, so the founder's weekly email had no funnel-trust verdict, no deliverability and no
+    // sales operator. Caught by the whole-branch composition review, not by any per-agent test.
+    runRexAgent({ skipCurrency: true }).catch(() => null),
+    runDexAgent({ skipCurrency: true, skipDns: true, skipBreakerReconcile: true }).catch(() => null),
+    runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
   const founderBrief = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memoryContext = await recallContext(companyId)
@@ -33,8 +42,17 @@ export async function runJanetReport(companyId = 'phishsimai') {
 MEMORY:
 ${memoryContext}
 
+FUNNEL TRUST (Rex — read before quoting any number below):
+${rex ? rex.line : 'NOT CHECKED — treat every figure below as unverified.'}
+
+DELIVERABILITY (Dex): ${dex ? dex.line : 'NOT CHECKED — do not assert send health.'}
+
+SALES (Mason): ${mason ? mason.line : 'NOT CHECKED — do not assert pipeline numbers.'}
+
 METRICS:
 Sales: ${sales.touched} touched, ${sales.replied} replied (${(sales.replyRate * 100).toFixed(1)}%), ${sales.customers} customers
+Messaging / channels (Aria): ${aria ? aria.line : 'NOT CHECKED — no messaging claim may be made.'}
+ICP / market (Scout): ${scout ? scout.line : 'NOT CHECKED — no targeting or competitor claim may be made.'}
 Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED — no MRR or pricing claim may be made.'}
 Product growth (Nova): ${nova ? nova.line : 'NOT CHECKED — no activation claim may be made.'}
 CS (Vera): ${vera ? vera.line : 'NOT CHECKED — no retention claim may be made.'}
@@ -88,5 +106,5 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
     (architectTasksQueued.length ? `\nArchitect tasks: ${architectTasksQueued.length}` : '')
   )
 
-  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, nova, vera, scout, founderBrief, architectTasksQueued }
+  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, nova, vera, scout, rex, dex, mason, founderBrief, architectTasksQueued }
 }
