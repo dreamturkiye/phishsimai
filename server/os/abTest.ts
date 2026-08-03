@@ -45,7 +45,7 @@ You're receiving this because we work with MSPs on phishing-simulation and compl
  * A/B is OFF: one honest email beats two, and the loser slot is where invented copy used to hide.
  * Both slots hold the identical approved copy so no stale invented text survives in this file.
  */
-const TOUCH1_SUBJECT = `60¢/user, live in 10 minutes, 30 days free`
+export const TOUCH1_SUBJECT = `60¢/user, live in 10 minutes, 30 days free`
 
 // PS-SALUTATION-01: AMF v5.1 find-email/company returns EMAILS ONLY — no name/first_name/title
 // (verified: bcainc.com returned 20 emails, zero name fields). So the greeting can never come from

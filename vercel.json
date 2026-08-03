@@ -116,6 +116,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/os/aria",
+      "schedule": "10 6 * * *"
+    },
+    {
       "path": "/api/os/escalation-notify",
       "schedule": "*/15 * * * *"
     },

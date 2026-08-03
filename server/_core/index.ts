@@ -15,7 +15,7 @@ import { scheduledCampaignHandler } from "../scheduledHandlers";
 import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
-  cronSequence, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
+  cronSequence, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronAria, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
   webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk,
   architectAutonomy, architectIncident
@@ -168,6 +168,7 @@ async function startServer() {
   app.get("/api/os/sales-replies", cronSalesReplies);
   app.get("/api/os/rex", cronRex);
   app.get("/api/os/dex", cronDex);
+  app.get("/api/os/aria", cronAria);
   app.get("/api/os/janet", cronJanet);
   app.get("/api/os/watchdog", cronWatchdog);
   app.get("/api/os/heartbeat", cronHeartbeat);

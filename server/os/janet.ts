@@ -3,13 +3,13 @@ import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
-import { runMarketingAgent } from './agents/marketing'
 import { runProductAgent } from './agents/product'
 import { runResearchAgent } from './agents/research'
 import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
 import { runRexAgent } from './agents/rex'
 import { runDexAgent } from './agents/dex'
+import { runAriaAgent } from './agents/aria'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -105,9 +105,12 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, marketing, product, research, finance, cs, rex, dex] = await Promise.all([
+  const [sales, aria, product, research, finance, cs, rex, dex] = await Promise.all([
     runSalesAgent(companyId),
-    runMarketingAgent(companyId),
+    // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
+    // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
+    // Aria measures instead. skipCurrency — that belongs to her own 06:10 cron.
+    runAriaAgent({ skipCurrency: true }).catch(() => null),
     runProductAgent(companyId),
     runResearchAgent(companyId),
     runFinanceAgent(companyId),

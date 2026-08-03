@@ -1264,3 +1264,6 @@ export { cronRex } from './agents/rex'
 // PS-DEX-01 — Deliverability & Infrastructure. 05:50 UTC, between Rex (05:45) and the metrics
 // snapshot (06:00): Rex certifies the funnel data, Dex certifies the paths that produced it.
 export { cronDex } from './agents/dex'
+
+// PS-ARIA-01 — VP Marketing. 06:10 UTC, after Rex/Dex certify the data she reasons on.
+export { cronAria } from './agents/aria'
