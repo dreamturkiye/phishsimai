@@ -71,10 +71,18 @@ async function sendEmail(
     headers['List-Unsubscribe'] = `<https://phishsimai.com/unsubscribe?e=${unsubToken}>`
     headers['List-Unsubscribe-Post'] = 'List-Unsubscribe=One-Click'
   }
+  // PS-COPY-PLAINTEXT-01: omit an EMPTY html part rather than sending it. Resend rejects a blank
+  // `html` string, and a multipart whose html half is empty renders as a blank message in clients
+  // that prefer text/html. An empty html means "this variant is text-only" — honour that by
+  // sending a single text/plain body.
+  const payload: Record<string, unknown> = { from: FROM, reply_to: REPLY_TO, to, subject, tags, headers }
+  if (html) payload.html = html
+  if (text) payload.text = text
+  if (!html && !text) throw new Error('sendEmail: refusing to send an email with no body')
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, reply_to: REPLY_TO, to, subject, html, text, tags, headers }),
+    body: JSON.stringify(payload),
   })
   return res.json()
 }
@@ -243,7 +251,9 @@ export async function runFullSequence() {
           continue
         }
         const variant = getVariant(String(lead.id), 'touch1_subject')
-        const v = exp.active ? (variant === 'control' ? exp.control : exp.test) : exp.control
+        // PS-COPY-PRICE-01: the test arm is optional and currently absent. Fall back to control
+        // whenever the experiment is off OR no test variant exists — never send `undefined`.
+        const v = (exp.active && variant === 'test' && exp.test) ? exp.test : exp.control
         const token = Buffer.from(String(lead.email)).toString('base64url')
         const ind = String(lead.industry || 'technology')
         const subject = v.subject(String(lead.name), String(lead.company))
