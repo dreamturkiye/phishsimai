@@ -1267,3 +1267,7 @@ export { cronDex } from './agents/dex'
 
 // PS-ARIA-01 — VP Marketing. 06:10 UTC, after Rex/Dex certify the data she reasons on.
 export { cronAria } from './agents/aria'
+
+// PS-MASON-01 — Sales Director, the full-operator form of the live reply agent. 06:20 UTC, after
+// Rex/Dex/Aria: he reads their verdicts and defers to them on their domains.
+export { cronMason } from './agents/mason'

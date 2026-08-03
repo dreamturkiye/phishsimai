@@ -120,6 +120,10 @@
       "schedule": "10 6 * * *"
     },
     {
+      "path": "/api/os/mason",
+      "schedule": "20 6 * * *"
+    },
+    {
       "path": "/api/os/escalation-notify",
       "schedule": "*/15 * * * *"
     },

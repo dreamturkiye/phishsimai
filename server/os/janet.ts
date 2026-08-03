@@ -10,6 +10,7 @@ import { runCSAgent } from './agents/customerSuccess'
 import { runRexAgent } from './agents/rex'
 import { runDexAgent } from './agents/dex'
 import { runAriaAgent } from './agents/aria'
+import { runMasonAgent } from './agents/mason'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -105,7 +106,7 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, aria, product, research, finance, cs, rex, dex] = await Promise.all([
+  const [sales, aria, product, research, finance, cs, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
     // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
     // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
@@ -123,6 +124,10 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // PS-DEX-01. skipCurrency/skipDns for the same reason as Rex: those belong to Dex's own 05:50
     // cron. The standup needs his gate-coverage and bounce verdict, not a second DNS sweep.
     runDexAgent({ skipCurrency: true, skipDns: true }).catch(() => null),
+    // PS-MASON-01. skipReplies: the reply sweep has its own */15 cron and an inline trigger — running
+    // it again here would re-enter the same queue for no gain. dryRun: the standup REPORTS, it does
+    // not perform retirement; that belongs to Mason's own 06:20 cron behind the crm_write gate.
+    runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
   const ea = await runEAAgent(sales, finance, product, companyId)
   const memCtx = await recallContext(companyId)
@@ -147,6 +152,9 @@ ${rexBlock}
 
 DELIVERABILITY (Dex — whether the mail physically arrives):
 ${dex ? dex.line : 'NOT CHECKED this cycle — the deliverability sweep failed to run. Do not assert send health.'}
+
+SALES (Mason — pipeline, replies, conversion; he defers to Rex and Dex on their domains):
+${mason ? mason.line : 'NOT CHECKED this cycle — the sales operator failed to run. Do not assert pipeline numbers.'}
 
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers
