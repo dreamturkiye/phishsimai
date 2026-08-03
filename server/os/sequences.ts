@@ -184,6 +184,75 @@ export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
   ).catch(() => [])) as any[]
 }
 
+
+/**
+ * PS-TOUCH2-PRICE-01 — send one touch-2 batch. Founder-gated in three independent ways:
+ *   1. touch2Headroom() caps the run at TOUCH2_BATCH1_LIMIT and returns 0 once batch 1 is spent;
+ *   2. touch2Eligible() applies every exclusion in the SELECT (replied/bounced/unsubscribed/
+ *      suppressed/already-touched/dead/ours/wrong-copy-era);
+ *   3. the per-lead MX gate, identical to touch-1 — a domain with no MX bounces 100%, and our
+ *      bounce rate (4.3%) is already above the founder's 2% line.
+ *
+ * The bounce breaker is checked BEFORE the batch, not per-send: sending 150 into a known-bad
+ * deliverability state is the failure this exists to prevent.
+ *
+ * touch2_sent_at is stamped ONLY on a confirmed provider id. A send that Resend rejected must not
+ * leave a row claiming it went out — that is PS-SEND-01's lesson, and it applies to every touch.
+ */
+export async function runTouch2Batch(sqlOverride?: any): Promise<{
+  attempted: number; sent: number; failed: number; noMx: number; headroom: number; holding: boolean; reason?: string
+}> {
+  const sql = sqlOverride ?? getSql()
+  const out = { attempted: 0, sent: 0, failed: 0, noMx: 0, headroom: 0, holding: false as boolean, reason: undefined as string | undefined }
+
+  const health = await getSequenceHealth(sql).catch(() => null)
+  if (health?.paused) {
+    out.reason = health.tripped
+      ? `bounce breaker TRIPPED (${(health.rate * 100).toFixed(1)}% over ${health.sent} sends)`
+      : 'bounce health UNMEASURED — failing closed rather than sending blind'
+    return out
+  }
+
+  const h = await touch2Headroom(sql)
+  out.headroom = h.headroom === Number.MAX_SAFE_INTEGER ? -1 : h.headroom
+  out.holding = h.holding
+  if (h.holding) {
+    out.reason = `BATCH 1 COMPLETE — ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent. Holding for founder read; ` +
+      `set janet_memory ${TOUCH2_SCALE_KEY}='1' to release the remainder.`
+    return out
+  }
+
+  const leads = await touch2Eligible(sql, h.headroom)
+  const now = new Date()
+  for (const lead of leads) {
+    out.attempted++
+    try {
+      const dom = domainOf(String(lead.email))
+      if (!dom || !(await hasMx(dom))) {
+        await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${now.toISOString()} WHERE id=${lead.id}`.catch(() => {})
+        out.noMx++
+        continue
+      }
+      const token = Buffer.from(String(lead.email)).toString('base64url')
+      const greet = deriveFirstName(String(lead.email))
+      const co = String(lead.company || '')
+      const ind = String(lead.industry || 'technology')
+      const result = await sendEmail(
+        String(lead.email),
+        TOUCH2_VARIANT.subject(greet, co),
+        TOUCH2_VARIANT.html(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
+        [{ name: 'touch', value: '2' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: TOUCH2_VARIANT.id }],
+        token,
+        TOUCH2_VARIANT.text(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
+      )
+      if (!result?.id) { out.failed++; continue }
+      await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${now.toISOString()}, stage_updated_at=${now.toISOString()} WHERE id=${lead.id}`
+      out.sent++
+    } catch { out.failed++ }
+  }
+  return out
+}
+
 // PS-BOUNCE-WINDOW-01: a breaker exists to stop a CURRENT problem, so it must measure a CURRENT
 // population. The old query counted bounced/sent over touch1_sent_at IS NOT NULL — LIFETIME. After
 // the D2 purge, 42 of 43 leads are dead (fabricated), so that rate is 46.5% over a cohort that no
