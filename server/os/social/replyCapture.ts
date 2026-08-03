@@ -54,6 +54,49 @@ function checkInboundAuth(req: any): boolean {
   return u === user && rest.join(':') === pass
 }
 
+/**
+ * PS-REPLY-TRIPWIRE-01 — the arming mechanism for reply capture.
+ *
+ * The loop cannot be proven by a fabricated event (that is the failure we are removing), so it
+ * self-verifies on the FIRST real reply instead:
+ *   • re-read the row after the UPDATE and confirm `replied` is actually true;
+ *   • success  -> record `reply_capture_verified` in janet_memory once, stay SILENT;
+ *   • failure  -> Telegram alarm, ONCE (guarded by `reply_capture_alarmed`), so a broken writer
+ *                 cannot be lost in noise and cannot spam on every subsequent reply.
+ *
+ * The alarm is deliberately not wrapped in a silenceable try/catch-and-forget: if the alarm itself
+ * fails we log loudly. A tripwire that can fail quietly is not a tripwire.
+ */
+async function assertReplyWritten(sql: any, leadId: string, fromEmail: string): Promise<void> {
+  try {
+    const back = (await sql`SELECT replied, replied_at FROM ps_outreach_leads WHERE id=${leadId} LIMIT 1`) as any[]
+    const wrote = back[0]?.replied === true && back[0]?.replied_at != null
+    if (wrote) {
+      // First verified capture ever — record it and say nothing. Silence IS the success signal.
+      await sql`INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+        VALUES (${COMPANY}, 'operating', 'reply_capture_verified',
+                ${'verified ' + new Date().toISOString() + ' via ' + fromEmail}, 1, 'tripwire')
+        ON CONFLICT DO NOTHING`.catch(() => {})
+      console.log('[reply-capture] tripwire OK — writer verified for', fromEmail)
+      return
+    }
+    const already = (await sql`SELECT 1 FROM janet_memory WHERE company_id=${COMPANY}
+      AND type='operating' AND key='reply_capture_alarmed' LIMIT 1`.catch(() => [])) as any[]
+    if (already.length) return // already alarmed once; do not repeat
+    await sql`INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+      VALUES (${COMPANY}, 'operating', 'reply_capture_alarmed',
+              ${'FAILED ' + new Date().toISOString() + ' for ' + fromEmail}, 1, 'tripwire')`.catch(() => {})
+    await sendTelegram(
+      `🚨 <b>REPLY CAPTURE WRITER FAILED</b>\nA real inbound reply from ${fromEmail} matched lead ${leadId}, ` +
+      `but ps_outreach_leads.replied did NOT persist. Every reply metric is undercounting from now on. ` +
+      `This alarm fires ONCE — check server/os/social/replyCapture.ts and the DB before the next reply.`,
+    )
+  } catch (e) {
+    // Never fail the response — but never swallow this either.
+    console.error('[reply-capture] TRIPWIRE ITSELF FAILED for', fromEmail, e)
+  }
+}
+
 function extractEmail(raw: string): string {
   const m = String(raw || '').match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)
   return m ? m[0].toLowerCase() : ''
@@ -94,6 +137,13 @@ export async function resendInbound(req: any, res: any) {
     if (lead) {
       await sql`UPDATE ps_outreach_leads SET replied=true, replied_at=NOW(), last_reply_snippet=${snippet},
         pipeline_stage='engaged', stage_updated_at=NOW() WHERE id=${lead.id}`.catch(() => {})
+      // PS-REPLY-TRIPWIRE-01: assert the writer actually ran. This handler swallows its own errors
+      // by design (a relay must never retry-storm), which is exactly how a write can fail in total
+      // silence — the same "read surface with no verified writer" pattern that produced
+      // replied_ever=0 against a real reply. So we read the row BACK and prove it changed.
+      // Silent on success. On failure, one un-silenceable alarm — the operator learns on the FIRST
+      // real reply, not the first quarterly review.
+      await assertReplyWritten(sql, lead.id, from)
     }
 
     // Surface to Kaan immediately — replies are the highest-value revenue signal.
