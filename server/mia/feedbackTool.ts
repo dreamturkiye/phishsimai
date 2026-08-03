@@ -272,10 +272,16 @@ export async function requestHumanHandoff(opts: {
 
     // Telling a human is the part that makes a callback promise true. Its success is tracked
     // separately from the row, because they fail independently.
+    // THE BUG I SHIPPED INTO THE FIX FOR THIS EXACT BUG.
+    // sendTelegram does NOT throw when unconfigured or refused — it RESOLVES with
+    // { ok:false, skipped:true } (telegram.ts:186). Catching only a throw therefore set
+    // notified = true for a message that was never sent, which is the false-confirmation defect
+    // this whole module exists to prevent, one level deeper. `ok` must be READ, not inferred from
+    // the absence of an exception.
     let notified = false
     try {
       const who = [c.firstName, c.lastName].filter(Boolean).join(' ')
-      await sendTelegram(
+      const sent = await sendTelegram(
         `🙋 <b>CUSTOMER WANTS A HUMAN</b> (${opts.kind})\n` +
         `${ctx.name} · plan ${ctx.plan}${ctx.trialDay ? ` · trial day ${ctx.trialDay}` : ''}\n` +
         (who ? `Name: ${who}\n` : '') +
@@ -287,7 +293,7 @@ export async function requestHumanHandoff(opts: {
         `"${opts.message.slice(0, 500)}"\n\n` +
         `They are waiting. Nothing else contacts them.`,
       )
-      notified = true
+      notified = sent?.ok === true
     } catch {
       notified = false
     }
