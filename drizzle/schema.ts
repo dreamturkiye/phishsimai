@@ -411,6 +411,10 @@ export const productFeedback = pgTable("product_feedback", {
   plan: varchar("plan", { length: 32 }),
   trialDay: integer("trialDay"),
   source: varchar("source", { length: 32 }).default("mia").notNull(),
+  // PS-MIA-HONEST-01. The surrounding exchange, so a bug report is actionable rather than a
+  // fragment. Nullable: rows written before 0019 predate it, and absence must read as "not
+  // captured", never as "no context".
+  conversationContext: text("conversationContext"),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index("product_feedback_orgId_idx").on(t.orgId),
