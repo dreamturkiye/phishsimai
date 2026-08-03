@@ -269,14 +269,41 @@ export function breakerVerdict(bounced: number, contacted: number, threshold: nu
 
 // ─── AUTHENTICATION / DNS ────────────────────────────────────────────────────
 
+export type DmarcState = { found: boolean; host: string; inherited: boolean; policy: string | null }
+
 export type DomainAuth = {
   domain: string
   role: 'apex_outreach' | 'sim_subdomain'
   checked: boolean
-  hasMx: boolean
-  hasSpf: boolean
-  hasDmarc: boolean
+  /** The host Resend actually provisions MX+SPF on. NOT the domain root. */
+  identityHost: string
+  hasIdentityMx: boolean
+  hasIdentitySpf: boolean
+  hasDkim: boolean
+  dmarc: DmarcState
+  /** The exchanges actually found at the identity host. Recorded so a verdict can be audited. */
+  identityMxHosts: string[]
+  /** The exchanges at the domain ROOT. Recorded ONLY to prove the verdict did not come from here. */
+  rootMxHosts: string[]
+  /** True when the identity host's MX points at an INBOUND provider rather than bounce handling. */
+  identityMxIsInbound: boolean
   detail: string
+}
+
+/**
+ * Inbound-mail providers. An MX pointing at one of these is where mail ARRIVES, which says nothing
+ * about whether we are authenticated to SEND.
+ *
+ * PS-DEX-DNS-02 — WHY THIS EXISTS. v1 read the apex as authenticated partly because it found
+ * `1 smtp.google.com` at phishsimai.com. That is Google Workspace inbound delivery and is unrelated
+ * to sending. The apex was green for the WRONG REASON, and a check that is right by luck fails
+ * silently the moment the luck changes. This list makes the distinction explicit rather than relying
+ * on the identity host happening to differ.
+ */
+const INBOUND_MX_RE = /(google\.com|googlemail\.com|outlook\.com|protection\.outlook|mimecast|proofpoint|barracuda|zoho|icloud\.com)/i
+
+export function isInboundMailHost(exchange: string): boolean {
+  return INBOUND_MX_RE.test(String(exchange || ''))
 }
 
 export const SENDING_DOMAINS: { domain: string; role: DomainAuth['role'] }[] = [
@@ -284,24 +311,98 @@ export const SENDING_DOMAINS: { domain: string; role: DomainAuth['role'] }[] = [
   { domain: 'sim.phishsimai.com', role: 'sim_subdomain' },
 ]
 
-/** Live DNS. An unreachable resolver yields checked:false — NOT CHECKED, never "missing". */
+/**
+ * Organizational domain, for the DMARC inheritance rule. Last two labels.
+ *
+ * LIMITATION, STATED: this is not Public-Suffix-List aware, so it would be wrong for a domain under
+ * a multi-label suffix (e.g. example.co.uk -> "co.uk"). Both of our sending domains sit under a
+ * single-label TLD, so it is correct HERE. If a domain on another suffix is ever added, this needs
+ * a real PSL lookup — an approximation that silently misreports DMARC coverage is precisely the
+ * class of false negative this rewrite exists to remove.
+ */
+export function organizationalDomain(domain: string): string {
+  const parts = domain.split('.').filter(Boolean)
+  return parts.length <= 2 ? domain : parts.slice(-2).join('.')
+}
+
+/**
+ * Live authentication check against the ACTUAL SENDING IDENTITY.
+ *
+ * PS-DEX-DNS-02 — THE FALSE NEGATIVE THIS FIXES.
+ *   v1 queried MX and TXT at the domain ROOT and DMARC at _dmarc.<root>. Resend does not provision
+ *   there. It provisions:
+ *       MX  + SPF  ->  send.<domain>
+ *       DKIM       ->  resend._domainkey.<domain>
+ *   So v1 reported sim.phishsimai.com as "MX=no SPF=no DMARC=no" while all three were present and
+ *   verified green in Resend. ENODATA at the root is the EXPECTED state for a Resend identity, not
+ *   a defect — v1 read an expected absence as a failure and filed an incident for it.
+ *
+ *   It also never checked DKIM at all, which is the record that actually signs the mail.
+ *
+ *   And the apex passed v1 for the WRONG REASON: the MX it found at phishsimai.com is Google
+ *   Workspace INBOUND mail, unrelated to sending, and the apex SPF happens to include amazonses.com.
+ *   A check that is right by luck fails silently the moment the luck changes.
+ *
+ * DMARC INHERITANCE (RFC 7489 §6.6.3)
+ *   A subdomain with no _dmarc record inherits the organizational domain's policy. Treating a
+ *   missing subdomain record as "no DMARC" is wrong: sim.phishsimai.com is covered by
+ *   _dmarc.phishsimai.com. Inherited coverage is recorded as inherited:true so the report can say
+ *   WHERE the policy came from rather than implying a record exists that does not.
+ */
 export async function checkDomainAuth(domain: string, role: DomainAuth['role']): Promise<DomainAuth> {
-  const base: DomainAuth = { domain, role, checked: false, hasMx: false, hasSpf: false, hasDmarc: false, detail: '' }
+  const identityHost = `send.${domain}`
+  const dkimHost = `resend._domainkey.${domain}`
+  const org = organizationalDomain(domain)
+
+  const base: DomainAuth = {
+    domain, role, checked: false, identityHost,
+    hasIdentityMx: false, hasIdentitySpf: false, hasDkim: false,
+    dmarc: { found: false, host: `_dmarc.${domain}`, inherited: false, policy: null },
+    identityMxHosts: [], rootMxHosts: [], identityMxIsInbound: false,
+    detail: '',
+  }
   const timeout = <T>(p: Promise<T>): Promise<T> =>
     Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error('dns_timeout')), 6000))])
+  const txt = async (h: string) => {
+    try { return ((await timeout(resolveTxt(h))) as string[][]).map((r) => r.join('')) } catch { return [] as string[] }
+  }
+  const mx = async (h: string) => {
+    try { return (await timeout(resolveMx(h))) as any[] } catch { return [] as any[] }
+  }
+
   try {
-    const [mx, txt, dmarc] = await Promise.all([
-      timeout(resolveMx(domain)).catch(() => [] as any[]),
-      timeout(resolveTxt(domain)).catch(() => [] as string[][]),
-      timeout(resolveTxt(`_dmarc.${domain}`)).catch(() => [] as string[][]),
+    const [idMx, idTxt, dkimTxt, dmarcSelf, dmarcOrg, rootMx] = await Promise.all([
+      mx(identityHost), txt(identityHost), txt(dkimHost),
+      txt(`_dmarc.${domain}`), org === domain ? Promise.resolve([] as string[]) : txt(`_dmarc.${org}`),
+      mx(domain),
     ])
-    const flat = (t: string[][]) => t.map((r) => r.join('')).join(' | ')
-    const hasSpf = /v=spf1/i.test(flat(txt as string[][]))
-    const hasDmarc = /v=DMARC1/i.test(flat(dmarc as string[][]))
-    const hasMxRec = Array.isArray(mx) && (mx as any[]).some((r) => r?.exchange && r.exchange !== '.')
+
+    const identityMxHosts = idMx.map((r) => String(r?.exchange || '')).filter((x) => x && x !== '.')
+    const rootMxHosts = rootMx.map((r) => String(r?.exchange || '')).filter((x) => x && x !== '.')
+
+    // The identity MX must be BOUNCE HANDLING, not inbound delivery. An identity host whose MX
+    // points at Google/Outlook is a misconfiguration, and counting it as "authenticated to send"
+    // is exactly the wrong-reason pass this rewrite removes.
+    const identityMxIsInbound = identityMxHosts.length > 0 && identityMxHosts.every(isInboundMailHost)
+    const hasIdentityMx = identityMxHosts.length > 0 && !identityMxIsInbound
+    const hasIdentitySpf = idTxt.some((t) => /v=spf1/i.test(t))
+    const hasDkim = dkimTxt.some((t) => /p=[A-Za-z0-9+/]/.test(t))
+
+    const selfRec = dmarcSelf.find((t) => /v=DMARC1/i.test(t))
+    const orgRec = dmarcOrg.find((t) => /v=DMARC1/i.test(t))
+    const dmarc: DmarcState = selfRec
+      ? { found: true, host: `_dmarc.${domain}`, inherited: false, policy: selfRec }
+      : orgRec
+        ? { found: true, host: `_dmarc.${org}`, inherited: true, policy: orgRec }
+        : { found: false, host: `_dmarc.${domain}`, inherited: false, policy: null }
+
     return {
-      domain, role, checked: true, hasMx: hasMxRec, hasSpf, hasDmarc,
-      detail: `MX=${hasMxRec ? 'yes' : 'no'} SPF=${hasSpf ? 'yes' : 'no'} DMARC=${hasDmarc ? 'yes' : 'no'}`,
+      domain, role, checked: true, identityHost,
+      hasIdentityMx, hasIdentitySpf, hasDkim, dmarc,
+      identityMxHosts, rootMxHosts, identityMxIsInbound,
+      detail:
+        `identity=${identityHost} MX=${hasIdentityMx ? 'yes' : 'no'} SPF=${hasIdentitySpf ? 'yes' : 'no'} ` +
+        `DKIM=${hasDkim ? 'yes' : 'no'} DMARC=${dmarc.found ? (dmarc.inherited ? `inherited from ${dmarc.host}` : 'yes') : 'no'}`,
     }
   } catch (e: any) {
     return { ...base, detail: `NOT CHECKED (${String(e?.message || e).slice(0, 40)})` }
@@ -313,20 +414,33 @@ export function authIncidents(auths: DomainAuth[]): Incident[] {
   for (const a of auths) {
     if (!a.checked) continue // NOT CHECKED is reported in the line, never filed as a defect
     const missing: string[] = []
-    if (!a.hasSpf) missing.push('SPF')
-    if (!a.hasDmarc) missing.push('DMARC')
+    if (!a.hasIdentitySpf) missing.push(`SPF at ${a.identityHost}`)
+    if (!a.hasDkim) missing.push(`DKIM at resend._domainkey.${a.domain}`)
+    if (!a.hasIdentityMx) {
+      missing.push(
+        a.identityMxIsInbound
+          ? `bounce-handling MX at ${a.identityHost} (found only INBOUND hosts ${a.identityMxHosts.join(', ')} — that is where mail arrives, not proof we can send)`
+          : `bounce-handling MX at ${a.identityHost}`,
+      )
+    }
+    // DMARC counts as present when INHERITED — a subdomain does not need its own record.
+    if (!a.dmarc.found) missing.push(`DMARC at _dmarc.${a.domain} (and none inherited from ${organizationalDomain(a.domain)})`)
     if (!missing.length) continue
     out.push({
       detector: 'blind_gate',
-      // The apex carries outreach reputation; a missing policy there is worse than on the sim
-      // subdomain, which sends only into our own tenant.
       severity: (a.role === 'apex_outreach' ? 'critical' : 'high') as Severity,
       subject: `dns:${a.domain}`,
       summary:
-        `Sending domain ${a.domain} (${a.role}) is missing ${missing.join(' and ')}. ` +
+        `Sending identity ${a.identityHost} is missing ${missing.join(' and ')}. ` +
         `Gmail and Outlook treat bulk mail without these as unauthenticated, which costs inbox ` +
         `placement before any copy is read.`,
-      evidence: { domain: a.domain, role: a.role, hasSpf: a.hasSpf, hasDmarc: a.hasDmarc, hasMx: a.hasMx },
+      evidence: {
+        domain: a.domain, role: a.role, identityHost: a.identityHost,
+        hasIdentityMx: a.hasIdentityMx, hasIdentitySpf: a.hasIdentitySpf, hasDkim: a.hasDkim,
+        identityMxHosts: a.identityMxHosts, rootMxHosts: a.rootMxHosts,
+        identityMxIsInbound: a.identityMxIsInbound,
+        dmarc: a.dmarc, missing,
+      },
       signature: `dns_auth_missing:${a.domain}`,
     })
   }

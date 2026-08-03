@@ -17,6 +17,9 @@ import {
   breakerVerdict,
   authIncidents,
   buildDexLine,
+  organizationalDomain,
+  isInboundMailHost,
+  checkDomainAuth,
   SEND_PATHS,
   type DomainAuth,
 } from './dex'
@@ -235,28 +238,76 @@ describe('send health is reported honestly', () => {
   })
 })
 
-describe('authentication findings', () => {
+describe('authentication findings — checked against the real sending identity', () => {
   const auth = (over: Partial<DomainAuth>): DomainAuth => ({
-    domain: 'phishsimai.com', role: 'apex_outreach', checked: true, hasMx: true, hasSpf: true, hasDmarc: true, detail: '', ...over,
+    domain: 'phishsimai.com', role: 'apex_outreach', checked: true,
+    identityHost: 'send.phishsimai.com',
+    hasIdentityMx: true, hasIdentitySpf: true, hasDkim: true,
+    dmarc: { found: true, host: '_dmarc.phishsimai.com', inherited: false, policy: 'v=DMARC1;p=none' },
+    identityMxHosts: ['feedback-smtp.us-east-1.amazonses.com'],
+    rootMxHosts: ['smtp.google.com'],
+    identityMxIsInbound: false,
+    detail: '', ...over,
   })
 
-  it('treats a missing policy on the reputation-critical apex as critical', () => {
-    const [i] = authIncidents([auth({ hasDmarc: false })])
-    expect(i.severity).toBe('critical')
+  // PS-DEX-DNS-02 regression pins. v1 checked the domain ROOT, where Resend provisions nothing, and
+  // reported sim.phishsimai.com as MX/SPF/DMARC all missing while all three were verified green.
+  it('does not report a Resend subdomain identity as unauthenticated', () => {
+    const sim = auth({
+      domain: 'sim.phishsimai.com', role: 'sim_subdomain', identityHost: 'send.sim.phishsimai.com',
+      dmarc: { found: true, host: '_dmarc.phishsimai.com', inherited: true, policy: 'v=DMARC1;p=none' },
+    })
+    expect(authIncidents([sim])).toEqual([])
+  })
+
+  it('treats an INHERITED DMARC policy as present — a subdomain needs no record of its own', () => {
+    // RFC 7489 6.6.3: absent a subdomain record, the organizational domain's policy applies.
+    const sim = auth({
+      domain: 'sim.phishsimai.com', role: 'sim_subdomain', identityHost: 'send.sim.phishsimai.com',
+      dmarc: { found: true, host: '_dmarc.phishsimai.com', inherited: true, policy: 'v=DMARC1;p=none' },
+    })
+    expect(authIncidents([sim])).toEqual([])
+  })
+
+  it('flags DMARC only when neither the subdomain NOR the org domain has a policy', () => {
+    const [i] = authIncidents([auth({ dmarc: { found: false, host: '_dmarc.phishsimai.com', inherited: false, policy: null } })])
     expect(i.summary).toContain('DMARC')
+    expect(i.severity).toBe('critical')
   })
 
-  it('rates the sim subdomain lower — it sends only into our own tenant', () => {
-    const [i] = authIncidents([auth({ domain: 'sim.phishsimai.com', role: 'sim_subdomain', hasSpf: false })])
+  it('checks DKIM, which v1 never queried at all', () => {
+    const [i] = authIncidents([auth({ hasDkim: false })])
+    expect(i.summary).toContain('DKIM at resend._domainkey.phishsimai.com')
+  })
+
+  it('names the identity host in the finding, not the domain root', () => {
+    const [i] = authIncidents([auth({ hasIdentitySpf: false })])
+    expect(i.summary).toContain('send.phishsimai.com')
+    expect(i.evidence).toMatchObject({ identityHost: 'send.phishsimai.com' })
+  })
+
+  it('rates a sim-subdomain gap lower than an apex gap', () => {
+    const [i] = authIncidents([auth({ domain: 'sim.phishsimai.com', role: 'sim_subdomain', hasDkim: false })])
     expect(i.severity).toBe('high')
   })
 
   it('files nothing for a domain that was NOT CHECKED', () => {
-    expect(authIncidents([auth({ checked: false, hasSpf: false, hasDmarc: false })])).toEqual([])
+    expect(authIncidents([auth({ checked: false, hasIdentitySpf: false, hasDkim: false })])).toEqual([])
   })
 
-  it('files nothing when authentication is complete', () => {
+  it('files nothing when the identity is fully authenticated', () => {
     expect(authIncidents([auth({})])).toEqual([])
+  })
+})
+
+describe('organizational domain resolution', () => {
+  it('reduces a subdomain to its org domain for DMARC inheritance', () => {
+    expect(organizationalDomain('sim.phishsimai.com')).toBe('phishsimai.com')
+    expect(organizationalDomain('a.b.phishsimai.com')).toBe('phishsimai.com')
+  })
+
+  it('leaves an apex unchanged', () => {
+    expect(organizationalDomain('phishsimai.com')).toBe('phishsimai.com')
   })
 })
 
@@ -275,5 +326,88 @@ describe('the report line', () => {
   it('states full coverage only when there are no defects', () => {
     const line = buildDexLine({ status: 'ACTIVE', incidents: [], bySeverity: { critical: 0, high: 0, medium: 0 }, covered: 6, total: 6, health, auth: [], notChecked: [] })
     expect(line).toContain('all 6/6 send paths carry every required rail')
+  })
+})
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PS-DEX-DNS-02 — the false negative and the false positive, both pinned.
+//
+//  These hit real DNS. They are the only tests here that do, deliberately: the defect was that the
+//  detector queried the WRONG HOSTNAMES, and no amount of mocking can catch that — a mock would have
+//  happily returned whatever v1 asked for and stayed green.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('live DNS — the sending identities read correctly (PS-DEX-DNS-02)', () => {
+  it('sim.phishsimai.com reads GREEN via the Resend identity hosts', async () => {
+    const a = await checkDomainAuth('sim.phishsimai.com', 'sim_subdomain')
+    if (!a.checked) return // resolver unavailable in this environment — NOT CHECKED, never a failure
+    expect(a.identityHost).toBe('send.sim.phishsimai.com')
+    expect(a.hasIdentitySpf, 'SPF at send.sim.phishsimai.com').toBe(true)
+    expect(a.hasIdentityMx, 'bounce MX at send.sim.phishsimai.com').toBe(true)
+    expect(a.hasDkim, 'DKIM at resend._domainkey.sim.phishsimai.com').toBe(true)
+    // v1 reported this domain as MX/SPF/DMARC all missing. It must file nothing.
+    expect(authIncidents([a])).toEqual([])
+  }, 20000)
+
+  it("sim's DMARC is INHERITED from the org domain, not its own record", async () => {
+    const a = await checkDomainAuth('sim.phishsimai.com', 'sim_subdomain')
+    if (!a.checked) return
+    expect(a.dmarc.found).toBe(true)
+    expect(a.dmarc.inherited).toBe(true)
+    expect(a.dmarc.host).toBe('_dmarc.phishsimai.com')
+  }, 20000)
+
+  it('the apex reads GREEN for the RIGHT REASON — sending identity, not inbound MX', async () => {
+    const a = await checkDomainAuth('phishsimai.com', 'apex_outreach')
+    if (!a.checked) return
+    // The verdict must come from send.phishsimai.com...
+    expect(a.identityHost).toBe('send.phishsimai.com')
+    expect(a.identityMxHosts.join(',')).toMatch(/amazonses/i)
+    expect(a.identityMxIsInbound).toBe(false)
+    // ...and NOT from the Google Workspace MX at the root, which is inbound delivery.
+    expect(a.rootMxHosts.join(',')).toMatch(/google/i)
+    expect(a.identityMxHosts.some(isInboundMailHost)).toBe(false)
+    expect(authIncidents([a])).toEqual([])
+  }, 20000)
+})
+
+describe('inbound MX can never again be read as sending authentication', () => {
+  const auth = (over: Partial<DomainAuth>): DomainAuth => ({
+    domain: 'phishsimai.com', role: 'apex_outreach', checked: true,
+    identityHost: 'send.phishsimai.com',
+    hasIdentityMx: true, hasIdentitySpf: true, hasDkim: true,
+    dmarc: { found: true, host: '_dmarc.phishsimai.com', inherited: false, policy: 'v=DMARC1;p=none' },
+    identityMxHosts: ['feedback-smtp.us-east-1.amazonses.com'],
+    rootMxHosts: ['smtp.google.com'], identityMxIsInbound: false,
+    detail: '', ...over,
+  })
+  it('classifies inbound providers correctly', () => {
+    for (const h of ['smtp.google.com', 'aspmx.l.google.com', 'phishsimai-com.mail.protection.outlook.com'])
+      expect(isInboundMailHost(h), h).toBe(true)
+    for (const h of ['feedback-smtp.us-east-1.amazonses.com', 'feedback-smtp.eu-west-1.amazonses.com'])
+      expect(isInboundMailHost(h), h).toBe(false)
+  })
+
+  it('FAILS a domain whose identity MX points only at an inbound provider', () => {
+    // The exact wrong-reason pass, reconstructed: Google MX present, no SES bounce host.
+    const [i] = authIncidents([
+      auth({
+        hasIdentityMx: false,
+        identityMxIsInbound: true,
+        identityMxHosts: ['smtp.google.com'],
+      }),
+    ])
+    expect(i, 'an inbound-only identity MX must be a finding').toBeTruthy()
+    expect(i.summary).toContain('INBOUND')
+    expect(i.summary).toContain('not proof we can send')
+    expect(i.evidence).toMatchObject({ identityMxIsInbound: true })
+  })
+
+  it('a root MX alone never satisfies the check — rootMxHosts is evidence, not a pass', () => {
+    const [i] = authIncidents([
+      auth({ hasIdentityMx: false, identityMxHosts: [], rootMxHosts: ['smtp.google.com'] }),
+    ])
+    expect(i).toBeTruthy()
+    expect(i.evidence).toMatchObject({ rootMxHosts: ['smtp.google.com'], identityMxHosts: [] })
   })
 })
