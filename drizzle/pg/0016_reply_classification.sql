@@ -1,7 +1,15 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 --  0016 — reply classification columns on outreach_reply_drafts (PS-SALES-REPLY-01)
 --
---  NOT RUN. Written for founder review; applying it to ep-spring-leaf is a hard stop.
+--  STATUS: APPLIED to ep-spring-leaf (verified 2026-08-03 against information_schema — all four
+--  columns and outreach_reply_drafts_unclassified_idx are present).
+--
+--  This header previously read "NOT RUN — applying it is a hard stop", which was true when it was
+--  written and false by the time anyone read it again. A stale status comment is worse than no
+--  status comment: it is the schema equivalent of a read surface with no live writer, and CLAUDE.md
+--  already records the same failure mode ("don't state a migration high-water mark from memory —
+--  this line read 0000-0005 for weeks while prod was at 0013"). Verify against information_schema,
+--  never against this comment.
 --
 --  WHY A MIGRATION AND NOT ensure*() ALTER TABLE
 --    The first cut of the Sales agent added these with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`

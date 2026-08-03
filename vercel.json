@@ -104,6 +104,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/os/rex",
+      "schedule": "45 5 * * *"
+    },
+    {
       "path": "/api/os/metrics-snapshot",
       "schedule": "0 6 * * *"
     },

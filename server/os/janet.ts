@@ -8,6 +8,7 @@ import { runProductAgent } from './agents/product'
 import { runResearchAgent } from './agents/research'
 import { runFinanceAgent } from './agents/finance'
 import { runCSAgent } from './agents/customerSuccess'
+import { runRexAgent } from './agents/rex'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -103,21 +104,39 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, marketing, product, research, finance, cs] = await Promise.all([
+  const [sales, marketing, product, research, finance, cs, rex] = await Promise.all([
     runSalesAgent(companyId),
     runMarketingAgent(companyId),
     runProductAgent(companyId),
     runResearchAgent(companyId),
     runFinanceAgent(companyId),
     runCSAgent(companyId),
+    // PS-REX-01. skipCurrency: the currency loop belongs to Rex's own 05:45 cron — running it again
+    // inside the standup would double the network and LLM cost to re-read pages nothing has changed.
+    // A failed sweep must not take the standup down, so a null verdict degrades to "NOT CHECKED"
+    // below rather than throwing.
+    runRexAgent({ skipCurrency: true }).catch(() => null),
   ])
   const ea = await runEAAgent(sales, finance, product, companyId)
   const memCtx = await recallContext(companyId)
+
+  // Rex's verdict leads the metrics block deliberately: it tells Janet WHICH of the numbers below
+  // she is allowed to quote. A trust verdict printed after the figures it governs gets read second
+  // and ignored first.
+  const rexBlock = rex
+    ? `FUNNEL TRUST (Rex, RevOps — read this BEFORE quoting any number below):
+${rex.line}
+Metrics you MAY rely on: ${rex.trustedMetrics.length ? rex.trustedMetrics.join('; ') : 'NONE certified this cycle'}
+Metrics that are SUSPECT — do not quote these as fact: ${rex.suspectMetrics.length ? rex.suspectMetrics.join('; ') : 'none'}`
+    : `FUNNEL TRUST (Rex, RevOps): NOT CHECKED this cycle — the integrity sweep failed to run. ` +
+      `Treat every figure below as unverified; do not present any of them as certified.`
 
   const prompt = `${JANET_SYSTEM}
 
 MEMORY:
 ${memCtx}
+
+${rexBlock}
 
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers

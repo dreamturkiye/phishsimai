@@ -1256,3 +1256,7 @@ export { cronCompetitorIntel } from './competitorIntel'
 
 // PS-SALES-REPLY-01 — 15-minute reply sweep (replyCapture also triggers it inline).
 export { cronSalesReplies } from './agents/salesReplies'
+
+// PS-REX-01 — Revenue Operations. Runs at 05:45 UTC, BEFORE the 06:00 metrics snapshot, so his
+// verdict on whether the numbers can be trusted arrives ahead of the numbers themselves.
+export { cronRex } from './agents/rex'
