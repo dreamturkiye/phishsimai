@@ -122,7 +122,9 @@ describe('topOfFunnelMetric — the constraint, stated first', () => {
 
   it('states a plain reply count once capture is provably working', () => {
     const t = topOfFunnelMetric({ ...LIVE, replied: 3, replyDraftsEver: 7 })
-    expect(t).toMatch(/Replies: 3 from 523/)
+    // PS-OUTREACH-INTERNAL-01: the count is now explicitly labelled EXTERNAL, because "3 replies"
+    // and "3 replies from people who are not us" are different facts and only the second is signal.
+    expect(t).toMatch(/Replies: 3 EXTERNAL from 523/)
     expect(t).not.toMatch(/UNVERIFIED/)
   })
 
@@ -139,5 +141,50 @@ describe('topOfFunnelMetric — the constraint, stated first', () => {
     expect(t).toMatch(/REAL prospects ever: 1/)
     expect(t).toMatch(/nobody\s+in the funnel to convert/i)
     expect(t).toMatch(/Bringing NEW real MSPs in is the priority/i)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PS-OUTREACH-INTERNAL-01 — our own addresses never count as market signal.
+//
+//  Measured 2026-08-03: kaanari@mac.com was on the cold list, received touch-1 on 07-18, and
+//  replied "TEST" to verify the Gmail capture. That one row was about to become the entire
+//  numerator of the reply metric — "1 reply from 884", where the 1 is us.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('internal addresses are excluded from the reply count and shown separately', () => {
+  const base = {
+    touchedEver: 883, touched7d: 350, touchedToday: 50, lastSendIso: new Date(Date.now() - 3e6).toISOString(),
+    touch2: 16, bounced: 38, unsubscribed: 25, readyPool: 441,
+    newRealSignups7d: 0, realLeadsTotal: 1, nowMs: Date.now(),
+  }
+
+  it('reports 0 EXTERNAL replies while naming the excluded self-test', () => {
+    const t = topOfFunnelMetric({ ...base, replied: 0, replyDraftsEver: 1, internalExcl: 1, internalReplies: 1 })
+    expect(t).toMatch(/Replies: 0 EXTERNAL from 883/)
+    expect(t).toContain('1 of our own address(es) EXCLUDED')
+    expect(t).toContain('1 self-test repl')
+  })
+
+  it('never lets a self-test read as market traction', () => {
+    const t = topOfFunnelMetric({ ...base, replied: 0, replyDraftsEver: 1, internalExcl: 1, internalReplies: 1 })
+    expect(t).not.toMatch(/Replies: 1 EXTERNAL/)
+  })
+
+  it('distinguishes a MEASURED zero from an unverified one once capture has written a row', () => {
+    const t = topOfFunnelMetric({ ...base, replied: 0, replyDraftsEver: 1, internalExcl: 1, internalReplies: 1 })
+    expect(t).toContain('capture path is PROVEN LIVE')
+    expect(t).toContain('measured zero rather than an unverified one')
+    expect(t).not.toContain('DO NOT REPORT AS "nobody replied"')
+  })
+
+  it('says nothing about exclusions when there are none', () => {
+    const t = topOfFunnelMetric({ ...base, replied: 2, replyDraftsEver: 4, internalExcl: 0, internalReplies: 0 })
+    expect(t).not.toContain('EXCLUDED')
+    expect(t).toMatch(/Replies: 2 EXTERNAL from 883/)
+  })
+
+  it('still reports the unverified-capture warning when nothing has ever been captured', () => {
+    const t = topOfFunnelMetric({ ...base, replied: 0, replyDraftsEver: 0, internalExcl: 0, internalReplies: 0 })
+    expect(t).toContain('UNVERIFIED')
   })
 })
