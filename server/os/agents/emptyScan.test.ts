@@ -88,23 +88,31 @@ describe('a scan of zero units can never be a pass', () => {
 //  THE PRODUCTION CONDITION — no mocks, real absent files
 // ─────────────────────────────────────────────────────────────────────────────
 describe('with repository sources ABSENT (the serverless bundle state)', () => {
-  it('FINN reports NOT_CHECKED, never GREEN — the exact bug that shipped', async () => {
+  // PS-PRICE-SNAPSHOT-01 changed what "sources absent" MEANS for Finn. He now falls back to a
+  // build-time claims snapshot, so prod compares real claims against live Stripe every day. These
+  // two tests cover both halves of that.
+  it('FINN uses the BUILD SNAPSHOT when sources are absent, and says so', async () => {
     const r = await runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP })
     expect(r.stripe.checked, 'the prod condition is Stripe UP with sources gone').toBe(true)
-    expect(r.claims, 'no source means no readable price claims').toHaveLength(0)
-    expect(r.pricingGuard, 'a guard that examined nothing must not say GREEN').toBe('NOT_CHECKED')
-    expect(r.pricingGuard).not.toBe('GREEN')
-    expect(r.pricingGuardReason).toContain('0 units were examined')
-    expect(r.notChecked.length).toBeGreaterThan(0)
+    expect(r.claimSource, 'no readable source -> snapshot').toBe('build-snapshot')
+    expect(r.claims.length, 'the snapshot supplies real units to compare').toBeGreaterThan(0)
+    // A real verdict is now possible in prod — which is the entire point of the snapshot.
+    expect(['GREEN', 'DRIFT']).toContain(r.pricingGuard)
+    expect(r.line).toContain('claims from the build-time snapshot')
   })
 
-  it("FINN's report line never claims coverage it does not have", async () => {
-    const r = await runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP })
+  it('FINN reports NOT_CHECKED when there is NO source AND NO snapshot — the law still governs', async () => {
+    // The only state where nothing can be compared. This is the exact bug that shipped, and the law
+    // that prevents it must survive the snapshot change.
+    const r = await runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP, snapshotOverride: [] })
+    expect(r.claimSource).toBe('none')
+    expect(r.claims).toHaveLength(0)
+    expect(r.pricingGuard, 'a guard that examined nothing must not say GREEN').toBe('NOT_CHECKED')
+    expect(r.pricingGuardReason).toContain('0 units were examined')
     expect(r.line).toContain('pricing guard NOT CHECKED')
     expect(r.line).toContain('an empty scan is NOT a clean one')
-    // The shipped string was: "pricing guard GREEN — all 0 plan-price claim(s) ... match live Stripe"
     expect(r.line).not.toMatch(/pricing guard GREEN/)
-    expect(r.line).not.toMatch(/all 0 plan-price claim/)
+    expect(r.gaps, 'coverage gaps over an empty scan are an artifact, not a finding').toEqual([])
   })
 
   it('REX reports his static dimension NOT_CHECKED and scans zero modules', async () => {
@@ -141,7 +149,7 @@ describe('with repository sources ABSENT (the serverless bundle state)', () => {
     // A regression test that cannot fail against the broken code is decoration. This reconstructs
     // the expression that shipped and asserts it produces the wrong answer on the same inputs the
     // fixed code now gets right.
-    const r = await runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP })
+    const r = await runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP, snapshotOverride: [] })
     const shipped = !r.stripe.checked ? 'NOT_CHECKED' : r.incidents.length ? 'DRIFT' : 'GREEN'
     expect(shipped, 'the old expression must be shown to be wrong here').toBe('GREEN')
     expect(r.pricingGuard, 'the fixed expression must disagree with it').toBe('NOT_CHECKED')
@@ -150,7 +158,7 @@ describe('with repository sources ABSENT (the serverless bundle state)', () => {
 
   it('NONE of the three reports a clean verdict for a dimension it could not examine', async () => {
     const [finn, rex, dex] = await Promise.all([
-      runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP }),
+      runFinnAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, stripeOverride: STRIPE_UP, snapshotOverride: [] }),
       runRexAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true }),
       runDexAgent({ sql: dbOk(), root: BUNDLE_ROOT, skipCurrency: true, skipDns: true, skipBreakerReconcile: true }),
     ])

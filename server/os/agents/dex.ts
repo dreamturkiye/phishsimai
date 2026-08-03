@@ -95,6 +95,45 @@ const REQUIRED_RAILS: { key: string; label: string; re: RegExp }[] = [
   { key: 'suppression_sql', label: 'suppression NOT EXISTS in the eligibility SELECT', re: /ps_outreach_suppression/ },
 ]
 
+/**
+ * PER-SEND-SITE rail check.
+ *
+ * PS-DEX-SITE-01 — WHY FILE-LEVEL MATCHING WAS NOT ENOUGH, found by a negative test.
+ *   The original audit asked "does this FILE contain assertSendable?". All three prospect paths live
+ *   in sequences.ts, which has three separate send sites. Deleting the gate from ONE of them left
+ *   the other two matching the regex, so the audit stayed green while a real path went unguarded.
+ *
+ *   That is the partial-gate pattern — the exact defect Dex exists to catch — sitting inside Dex's
+ *   own detector. A file-level check on a multi-path file gives false confidence, which is worse
+ *   than no check because it occupies the slot where a real one would go.
+ *
+ *   Scoped to the enclosing per-lead loop, mirroring what dexGate's structural test already did
+ *   correctly. The agent's detector should never be weaker than its own test.
+ */
+export type SendSiteGap = { index: number; missing: string[]; context: string }
+
+export function auditSendSites(text: string): SendSiteGap[] {
+  const gaps: SendSiteGap[] = []
+  const re = /await sendEmail\(/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    const loopStart = text.lastIndexOf('for (const lead of', m.index)
+    // No enclosing per-lead loop: cannot prove the gate runs once per address.
+    const body = loopStart > -1 ? text.slice(loopStart, m.index) : ''
+    const missing: string[] = []
+    if (loopStart === -1) missing.push('not inside a per-lead loop')
+    else {
+      if (!/assertSendable\s*\(/.test(body)) missing.push('assertSendable() consent gate')
+      if (!/hasMx\s*\(/.test(body)) missing.push('hasMx() pre-send MX check')
+    }
+    if (missing.length) {
+      const line = text.slice(0, m.index).split('\n').length
+      gaps.push({ index: m.index, missing, context: `line ~${line}` })
+    }
+  }
+  return gaps
+}
+
 export function auditSendPaths(files: SourceFile[]): { incidents: Incident[]; notChecked: string[]; covered: number } {
   const incidents: Incident[] = []
   const notChecked: string[] = []
@@ -130,6 +169,25 @@ export function auditSendPaths(files: SourceFile[]): { incidents: Incident[]; no
 
     if (p.cls === 'internal') {
       covered++ // exempt BY DECLARATION, with a written reason — see the registry
+      continue
+    }
+
+    // Per-SITE check first: a multi-path file can satisfy every file-level regex while one of its
+    // send sites is unguarded.
+    const siteGaps = auditSendSites(f.text)
+    if (siteGaps.length) {
+      incidents.push({
+        detector: 'blind_gate',
+        severity: 'critical',
+        subject: `${p.file}:send-site`,
+        summary:
+          `${siteGaps.length} send site(s) in this file are missing a required rail: ` +
+          siteGaps.map((g) => `${g.context} lacks ${g.missing.join(' + ')}`).join('; ') +
+          `. The file as a whole references the rails, which is why a file-level check passes — but ` +
+          `the rail must run on EVERY send, not exist somewhere in the module.`,
+        evidence: { path: p.key, siteGaps },
+        signature: `send_site_rail_missing:${p.file}`,
+      })
       continue
     }
 

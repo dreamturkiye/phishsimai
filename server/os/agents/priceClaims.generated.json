@@ -1,0 +1,84 @@
+{
+  "generatedBy": "scripts/generatePriceClaims.ts — regenerate with `pnpm run claims:generate`",
+  "surfaces": [
+    "client/src/pages/Home.tsx",
+    "server/os/agents/salesReplies.ts",
+    "server/os/janet.ts",
+    "server/os/abTest.ts"
+  ],
+  "unreadable": [],
+  "claims": [
+    {
+      "file": "client/src/pages/Home.tsx",
+      "plan": "enterprise",
+      "amountUsd": 1499,
+      "context": "Enterprise\", price: \"$1,499"
+    },
+    {
+      "file": "client/src/pages/Home.tsx",
+      "plan": "growth",
+      "amountUsd": 299,
+      "context": "Growth\", price: \"$299"
+    },
+    {
+      "file": "client/src/pages/Home.tsx",
+      "plan": "pro",
+      "amountUsd": 749,
+      "context": "Pro\", price: \"$749"
+    },
+    {
+      "file": "client/src/pages/Home.tsx",
+      "plan": "starter",
+      "amountUsd": 149,
+      "context": "Starter\", price: \"$149"
+    },
+    {
+      "file": "server/os/agents/salesReplies.ts",
+      "plan": "enterprise",
+      "amountUsd": 1499,
+      "context": "Enterprise $1,499"
+    },
+    {
+      "file": "server/os/agents/salesReplies.ts",
+      "plan": "growth",
+      "amountUsd": 299,
+      "context": "Growth $299"
+    },
+    {
+      "file": "server/os/agents/salesReplies.ts",
+      "plan": "pro",
+      "amountUsd": 749,
+      "context": "Pro $749"
+    },
+    {
+      "file": "server/os/agents/salesReplies.ts",
+      "plan": "starter",
+      "amountUsd": 149,
+      "context": "Starter $149"
+    },
+    {
+      "file": "server/os/janet.ts",
+      "plan": "enterprise",
+      "amountUsd": 1499,
+      "context": "Enterprise $1,499"
+    },
+    {
+      "file": "server/os/janet.ts",
+      "plan": "growth",
+      "amountUsd": 299,
+      "context": "Growth $299"
+    },
+    {
+      "file": "server/os/janet.ts",
+      "plan": "pro",
+      "amountUsd": 749,
+      "context": "Pro $749"
+    },
+    {
+      "file": "server/os/janet.ts",
+      "plan": "starter",
+      "amountUsd": 149,
+      "context": "Starter $149"
+    }
+  ]
+}
