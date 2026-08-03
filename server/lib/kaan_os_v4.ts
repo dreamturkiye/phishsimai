@@ -785,6 +785,23 @@ export function topOfFunnelMetric(f: {
   if (f.touchedEver > 0) {
     const r = (x: number) => ((x / f.touchedEver) * 100).toFixed(1)
     lines.push(`Deliverability: ${f.bounced} bounced (${r(f.bounced)}%) · ${f.unsubscribed} unsubscribed (${r(f.unsubscribed)}%) · ${f.readyPool} enriched lead(s) queued and not yet contacted.`)
+    // PS-BACKFILL-NOTE-01 (2026-08-03) — the bounce rate JUMPED 2.8% -> 4.3% on this date and an
+    // agent comparing week-over-week will read that as deliverability degrading and propose a
+    // sender/list remediation that is not warranted. It is the opposite: the old figure was wrong.
+    // 161 sends and 18 bounces from the 2026-07-04..07-18 era were never written to
+    // ps_outreach_leads (an earlier sender path did not persist leads; recording starts 07-11), so
+    // the denominator AND numerator were both short. Reconciled from the Resend export on
+    // 2026-08-03 — gap re-verified at 0 rows afterwards.
+    //
+    // Time-boxed deliberately: this explains a one-off step change, and a permanent disclaimer
+    // would still be here in six months explaining a discontinuity nobody can see any more.
+    if (Date.now() < Date.parse('2026-09-03T00:00:00Z')) {
+      lines.push(`   ↳ NOTE (bounce rate, expires 2026-09-03): 2.8%→4.3% is CORRECTED COUNTING, not a ` +
+        `deliverability regression — same population, finally measured. 161 sends and 18 bounces from ` +
+        `2026-07-04..07-18 were never recorded (pre-dating the current sender path) and were backfilled ` +
+        `from the Resend export on 2026-08-03. Do NOT open a deliverability investigation from this step ` +
+        `change, and do NOT read it as a week-over-week trend.`)
+    }
   }
   lines.push(`Opens on cold outreach: NOT INSTRUMENTED — ps_outreach_leads has no open-tracking column, so ` +
     `there is no external open rate and no honest way to state one. Any "open rate" figure in this brief ` +
