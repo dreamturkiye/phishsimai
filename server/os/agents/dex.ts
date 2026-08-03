@@ -32,7 +32,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { resolveTxt, resolveMx } from 'node:dns/promises'
 import { getSql } from '../conn'
-import { readSource, type SourceFile, type Incident, type Severity } from './rex'
+import { readSource, measureCohorts, type CohortSplit, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
 const COMPANY = 'phishsimai'
@@ -191,6 +191,8 @@ export type SendHealth = {
   bouncedAllTime: number
   contacted7d: number
   bounced7d: number
+  /** PS-COHORT-01: the pipeline-replacement split. `current` is the only figure to act on. */
+  cohorts: CohortSplit
   /** Rendered as integer/denominator. NEVER a bare percentage under n=30. */
   allTimeLine: string
   sevenDayLine: string
@@ -200,8 +202,14 @@ export type SendHealth = {
 
 /** Measured bounce, external sends only — the internal exclusion is Rex's predicate. */
 export async function measureSendHealth(sql: any, breakerThreshold: number): Promise<SendHealth> {
+  const emptyCohorts: CohortSplit = {
+    current: { cohort: 'current', contacted: 0, bounced: 0, line: 'NOT CHECKED' },
+    legacy: { cohort: 'legacy', contacted: 0, bounced: 0, line: 'NOT CHECKED' },
+    blended: { cohort: 'current', contacted: 0, bounced: 0, line: 'NOT CHECKED' },
+    checked: false,
+  }
   const empty: SendHealth = {
-    checked: false, contactedAllTime: 0, bouncedAllTime: 0, contacted7d: 0, bounced7d: 0,
+    checked: false, contactedAllTime: 0, bouncedAllTime: 0, contacted7d: 0, bounced7d: 0, cohorts: emptyCohorts,
     allTimeLine: 'Send health: NOT CHECKED (query failed).',
     sevenDayLine: 'Send health 7d: NOT CHECKED (query failed).',
     breakerThreshold, breakerVerdict: 'NOT CHECKED',
@@ -218,6 +226,7 @@ export async function measureSendHealth(sql: any, breakerThreshold: number): Pro
         AND lower(l.email) <> ALL (ARRAY['kaanari@mac.com','asadbek.munasar@forliion.com'])
         AND lower(split_part(l.email, '@', 2)) <> 'phishsimai.com'`)) as any[]
 
+    const cohorts = await measureCohorts(sql)
     const contactedAllTime = Number(r[0]?.contacted_all ?? 0)
     const bouncedAllTime = Number(r[0]?.bounced_all ?? 0)
     const contacted7d = Number(r[0]?.contacted_7d ?? 0)
@@ -225,11 +234,18 @@ export async function measureSendHealth(sql: any, breakerThreshold: number): Pro
 
     return {
       checked: true,
-      contactedAllTime, bouncedAllTime, contacted7d, bounced7d,
-      allTimeLine: rateLine('Bounce (all-time)', bouncedAllTime, contactedAllTime),
+      contactedAllTime, bouncedAllTime, contacted7d, bounced7d, cohorts,
+      // PS-COHORT-01: the headline is the CURRENT pipeline. The blended all-time figure is an
+      // average of a live system and a dead one and must not be quoted as send health.
+      allTimeLine: cohorts.checked
+        ? `${cohorts.current.line}  ·  ${cohorts.legacy.line} [retained, not acted on]`
+        : rateLine('Bounce (all-time)', bouncedAllTime, contactedAllTime),
       sevenDayLine: rateLine('Bounce (7d)', bounced7d, contacted7d),
       breakerThreshold,
-      breakerVerdict: breakerVerdict(bouncedAllTime, contactedAllTime, breakerThreshold),
+      // Judged against CURRENT, not blended — the breaker protects the pipeline that is running.
+      breakerVerdict: cohorts.checked
+        ? breakerVerdict(cohorts.current.bounced, cohorts.current.contacted, breakerThreshold)
+        : breakerVerdict(bouncedAllTime, contactedAllTime, breakerThreshold),
     }
   } catch {
     return empty

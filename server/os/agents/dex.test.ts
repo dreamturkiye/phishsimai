@@ -130,17 +130,23 @@ describe('every prospect send path carries the gate — no path exempt', () => {
     }
   })
 
-  it('every sendEmail call site is preceded by assertSendable', () => {
+  it('every sendEmail call site is preceded by assertSendable, inside its own loop', () => {
     // Structural guarantee that a NEW send path cannot be added without the gate.
+    //
+    // Scoped to the ENCLOSING LOOP rather than a fixed character window. The first version used
+    // `idx - 1400` and broke the moment a comment was added above a send — a test whose pass depends
+    // on how much prose sits between two statements is measuring the wrong thing. The real property
+    // is "the gate runs once per lead, in the same loop as the send".
     const idxs: number[] = []
     const re = /await sendEmail\(/g
     let m: RegExpExecArray | null
     while ((m = re.exec(SEQ))) idxs.push(m.index)
     expect(idxs.length).toBeGreaterThanOrEqual(3)
     for (const idx of idxs) {
-      // Look back over the enclosing loop body for the gate.
-      const window = SEQ.slice(Math.max(0, idx - 1400), idx)
-      expect(window, `sendEmail at offset ${idx} has no assertSendable before it`).toContain('assertSendable')
+      const loopStart = SEQ.lastIndexOf('for (const lead of', idx)
+      expect(loopStart, `sendEmail at ${idx} is not inside a per-lead loop`).toBeGreaterThan(-1)
+      const body = SEQ.slice(loopStart, idx)
+      expect(body, `sendEmail at offset ${idx} has no assertSendable in its enclosing loop`).toContain('assertSendable')
     }
   })
 

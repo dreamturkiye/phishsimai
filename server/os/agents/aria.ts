@@ -114,6 +114,15 @@ export type ChannelRow = {
   replied: number
   bounced: number
   trials: number
+  /** Sends from this source that went through the CURRENT sanitization pipeline. */
+  currentContacted: number
+  currentBounced: number
+  /**
+   * A source with zero current-pipeline sends is HISTORICAL — it fed the replaced pipeline and
+   * feeds nothing now. Derived from the data, never from a hardcoded list, so a source that resumes
+   * becomes live again on its own.
+   */
+  historical: boolean
   bounceLine: string
   replyLine: string
 }
@@ -133,7 +142,9 @@ export async function measureChannels(sql: any): Promise<{ rows: ChannelRow[]; c
              count(*) FILTER (WHERE l.touch1_sent_at IS NOT NULL)::int AS contacted,
              count(*) FILTER (WHERE l.replied)::int AS replied,
              count(*) FILTER (WHERE l.bounced)::int AS bounced,
-             count(*) FILTER (WHERE l.trial_at IS NOT NULL)::int AS trials
+             count(*) FILTER (WHERE l.trial_at IS NOT NULL)::int AS trials,
+             count(*) FILTER (WHERE l.touch1_sent_at IS NOT NULL AND l.sanitized_at IS NOT NULL)::int AS current_contacted,
+             count(*) FILTER (WHERE l.bounced AND l.sanitized_at IS NOT NULL)::int AS current_bounced
       FROM ps_outreach_leads l
       WHERE 1=1 ${EXCLUSION}
       GROUP BY 1
@@ -141,6 +152,9 @@ export async function measureChannels(sql: any): Promise<{ rows: ChannelRow[]; c
 
     const rows: ChannelRow[] = r.map((x) => {
       const contacted = Number(x.contacted)
+      const currentContacted = Number(x.current_contacted)
+      const currentBounced = Number(x.current_bounced)
+      const historical = contacted > 0 && currentContacted === 0
       return {
         source: String(x.source),
         leads: Number(x.leads),
@@ -148,7 +162,13 @@ export async function measureChannels(sql: any): Promise<{ rows: ChannelRow[]; c
         replied: Number(x.replied),
         bounced: Number(x.bounced),
         trials: Number(x.trials),
-        bounceLine: ratio('bounce', Number(x.bounced), contacted),
+        currentContacted,
+        currentBounced,
+        historical,
+        // A historical source is reported on its own terms; its rate is not the current pipeline's.
+        bounceLine: historical
+          ? `${ratio('bounce', Number(x.bounced), contacted)} [HISTORICAL — pre-pipeline-replacement, no longer feeding]`
+          : ratio('bounce', currentBounced, currentContacted),
         replyLine: ratio('reply', Number(x.replied), contacted),
       }
     })
@@ -168,23 +188,35 @@ export async function measureChannels(sql: any): Promise<{ rows: ChannelRow[]; c
  */
 export const CHANNEL_BOUNCE_ALARM = 0.15
 
+/**
+ * PS-COHORT-01 — a HISTORICAL source may never raise an alarm.
+ *
+ * lead_researcher bounced 20/43 (46.5%), which is genuinely terrible and genuinely OVER. That
+ * source fed the replaced pipeline and has sent nothing since 2026-07-13. Alarming on it every run
+ * would be an agent demanding action on a system that no longer exists — noise that trains a human
+ * to ignore the channel alarm, which is how the real one gets missed.
+ *
+ * The judgement is made on the CURRENT-pipeline sends only, so a source is judged on what it is
+ * doing now, not on what a replaced pipeline did with it.
+ */
 export function channelIncidents(rows: ChannelRow[]): Incident[] {
   const out: Incident[] = []
   for (const c of rows) {
-    if (c.contacted < MIN_N) continue
-    const rate = c.bounced / c.contacted
+    if (c.historical) continue // dead source — reported as history, never as an alarm
+    if (c.currentContacted < MIN_N) continue
+    const rate = c.currentBounced / c.currentContacted
     if (rate < CHANNEL_BOUNCE_ALARM) continue
     out.push({
       detector: 'blind_gate',
       severity: (rate >= 0.3 ? 'critical' : 'high') as Severity,
       subject: `channel:${c.source}`,
       summary:
-        `Lead source "${c.source}" is bouncing at ${c.bounced}/${c.contacted} ` +
-        `(${((rate) * 100).toFixed(1)}%) — far above the ${(CHANNEL_BOUNCE_ALARM * 100).toFixed(0)}% ` +
+        `Lead source "${c.source}" is bouncing at ${c.currentBounced}/${c.currentContacted} ` +
+        `(${((rate) * 100).toFixed(1)}%) on CURRENT-pipeline sends — far above the ${(CHANNEL_BOUNCE_ALARM * 100).toFixed(0)}% ` +
         `channel alarm. This is a LIST QUALITY problem, not a sending problem: the source is ` +
         `supplying addresses that do not exist, and every send against it costs domain reputation ` +
         `for zero chance of a reply.`,
-      evidence: { source: c.source, contacted: c.contacted, bounced: c.bounced, rate: Number(rate.toFixed(4)), alarm: CHANNEL_BOUNCE_ALARM },
+      evidence: { source: c.source, currentContacted: c.currentContacted, currentBounced: c.currentBounced, rate: Number(rate.toFixed(4)), alarm: CHANNEL_BOUNCE_ALARM, cohort: 'current' },
       signature: `channel_bounce:${c.source}`,
     })
   }
@@ -452,10 +484,13 @@ export function buildAriaLine(a: {
   const nc = a.notChecked.length ? ` · NOT CHECKED: ${a.notChecked.join(', ')}` : ''
   const worst = a.incidents.filter((i) => i.severity === 'critical' || i.severity === 'high').slice(0, 3).map((i) => i.subject)
   const defects = a.incidents.length ? ` · ${a.incidents.length} defect(s) (${a.bySeverity.critical} critical): ${worst.join(', ')}` : ''
-  const best = a.channels.filter((c) => c.contacted >= MIN_N).sort((x, y) => x.bounced / x.contacted - y.bounced / y.contacted)[0]
-  const bestLine = best ? ` · cleanest channel: ${best.source} (${best.bounceLine})` : ''
+  const live = a.channels.filter((c) => !c.historical)
+  const hist = a.channels.filter((c) => c.historical)
+  const best = live.filter((c) => c.currentContacted >= MIN_N).sort((x, y) => x.currentBounced / x.currentContacted - y.currentBounced / y.currentContacted)[0]
+  const bestLine = best ? ` · cleanest live channel: ${best.source} (${best.bounceLine})` : ''
+  const histLine = hist.length ? ` · ${hist.length} historical source(s) excluded from alarms: ${hist.map((h) => h.source).join(', ')}` : ''
   return (
-    `Aria (Marketing): ${a.totals.contacted} external sends across ${a.channels.length} channel(s), ` +
+    `Aria (Marketing): ${a.totals.contacted} external sends across ${live.length} live channel(s)${histLine}, ` +
     `${a.totals.trials} trial(s). ${a.messagePerformance}${bestLine}${defects}${nc} ` +
     `Current angle: price-led. Pricing is a HARD STOP — Aria proposes, never edits.`
   )

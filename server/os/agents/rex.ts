@@ -79,6 +79,88 @@ export const INTERNAL_EXCLUSION_SQL = `
       AND lower(l.email) <> ALL (ARRAY['kaanari@mac.com','asadbek.munasar@forliion.com'])
       AND lower(split_part(l.email, '@', 2)) <> 'phishsimai.com'`
 
+// ─── COHORTS: CURRENT PIPELINE vs LEGACY ─────────────────────────────────────
+//
+//  WHY THIS EXISTS
+//    The lead-generation and sanitization pipeline was REPLACED. Leads acquired before the
+//    replacement went out without ever passing the sanitizer, and they bounce at a completely
+//    different rate. Blending them into one number makes every deliverability metric a weighted
+//    average of a live system and a dead one:
+//
+//        CURRENT pipeline (sanitized)   11/710  =  1.55%
+//        LEGACY (pre-sanitizer)         27/223  = 12.11%
+//        BLENDED                        38/933  =  4.07%   <- what was being reported
+//
+//    4.07% is not the sending health of anything that exists. It is an artifact of averaging.
+//
+//  THE DISCRIMINATOR IS sanitized_at, NOT source. THIS MATTERS.
+//    The obvious implementation tags dead SOURCES (lead_researcher, resend_backfill) as legacy.
+//    That would be WRONG, and the data says so: google_maps — the source still running today at
+//    50/day — has 20 unsanitized rows from Jul 18, before the sanitizer covered it. A source-level
+//    tag would have silently mixed those 20 into the current cohort and mis-tagged an active
+//    source's own history.
+//
+//    sanitized_at IS NOT NULL is a per-LEAD structural fact: this address was put through the
+//    current pipeline. It needs no hardcoded date, no source list, and no maintenance. A source
+//    that resumes feeding sanitized leads rejoins the current cohort automatically.
+//
+//  LEGACY IS RETAINED, NOT DELETED
+//    Those 223 sends really happened and really bounced. They stay visible as their own cohort so
+//    the improvement is auditable — reporting only the flattering number would be its own
+//    dishonesty. What they may not do is contaminate the live figure.
+
+export type Cohort = 'current' | 'legacy'
+
+/** A lead that went through the current sanitization pipeline. */
+export const COHORT_CURRENT_SQL = `l.sanitized_at IS NOT NULL`
+/** A lead acquired before the pipeline replacement. */
+export const COHORT_LEGACY_SQL = `l.sanitized_at IS NULL`
+
+export function cohortOf(lead: { sanitized_at?: unknown }): Cohort {
+  return lead.sanitized_at ? 'current' : 'legacy'
+}
+
+export type CohortMetric = { cohort: Cohort; contacted: number; bounced: number; line: string }
+export type CohortSplit = { current: CohortMetric; legacy: CohortMetric; blended: CohortMetric; checked: boolean }
+
+/** Integer over denominator; no percentage below n=30. */
+export function cohortLine(label: string, bounced: number, contacted: number): string {
+  if (contacted === 0) return `${label}: 0/0 (N/A, n=0)`
+  if (contacted < 30) return `${label}: ${bounced}/${contacted} (counts only, n<30)`
+  return `${label}: ${bounced}/${contacted} (${((bounced / contacted) * 100).toFixed(2)}%)`
+}
+
+/**
+ * Bounce split by cohort. Every deliverability consumer should read `current` — `blended` is
+ * returned only so a report can show what the contaminated number WAS and why it differs.
+ */
+export async function measureCohorts(sql: any): Promise<CohortSplit> {
+  const empty = (c: Cohort): CohortMetric => ({ cohort: c, contacted: 0, bounced: 0, line: `${c}: NOT CHECKED` })
+  try {
+    const r = (await sql.query(`
+      SELECT (l.sanitized_at IS NOT NULL) AS is_current,
+             count(*) FILTER (WHERE l.touch1_sent_at IS NOT NULL)::int AS contacted,
+             count(*) FILTER (WHERE l.bounced)::int AS bounced
+      FROM ps_outreach_leads l
+      WHERE l.touch1_sent_at IS NOT NULL ${INTERNAL_EXCLUSION_SQL}
+      GROUP BY 1`)) as any[]
+
+    const cur = r.find((x) => x.is_current === true)
+    const leg = r.find((x) => x.is_current === false)
+    const cC = Number(cur?.contacted ?? 0), cB = Number(cur?.bounced ?? 0)
+    const lC = Number(leg?.contacted ?? 0), lB = Number(leg?.bounced ?? 0)
+
+    return {
+      current: { cohort: 'current', contacted: cC, bounced: cB, line: cohortLine('Bounce (current pipeline)', cB, cC) },
+      legacy: { cohort: 'legacy', contacted: lC, bounced: lB, line: cohortLine('Bounce (legacy, pre-sanitizer)', lB, lC) },
+      blended: { cohort: 'current', contacted: cC + lC, bounced: cB + lB, line: cohortLine('Bounce (blended — do NOT quote)', cB + lB, cC + lC) },
+      checked: true,
+    }
+  } catch {
+    return { current: empty('current'), legacy: empty('legacy'), blended: empty('current'), checked: false }
+  }
+}
+
 // ─── INCIDENT MODEL ──────────────────────────────────────────────────────────
 
 export type Detector = 'fabricated_writer' | 'pricing_drift' | 'blind_gate' | 'stage_violation'

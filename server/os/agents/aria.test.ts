@@ -23,6 +23,7 @@ import {
 
 const chan = (over: Partial<ChannelRow>): ChannelRow => ({
   source: 's', leads: 100, contacted: 100, replied: 0, bounced: 0, trials: 0,
+  currentContacted: 100, currentBounced: 0, historical: false,
   bounceLine: '', replyLine: '', ...over,
 })
 
@@ -93,26 +94,39 @@ describe('no percentage below n=30 — for any metric, ever', () => {
 })
 
 describe('channel economics', () => {
-  it('flags a source bouncing far above the alarm', () => {
-    // The real shape on 2026-08-03: lead_researcher, 20 bounced of 43 contacted.
-    const [i] = channelIncidents([chan({ source: 'lead_researcher', contacted: 43, bounced: 20 })])
+  it('flags a LIVE source bouncing far above the alarm', () => {
+    const [i] = channelIncidents([chan({ source: 'bad_live', contacted: 43, bounced: 20, currentContacted: 43, currentBounced: 20 })])
     expect(i).toBeTruthy()
     expect(i.severity).toBe('critical') // >= 30%
     expect(i.summary).toContain('LIST QUALITY problem, not a sending problem')
-    expect(i.evidence).toMatchObject({ contacted: 43, bounced: 20 })
+    expect(i.summary).toContain('CURRENT-pipeline')
+    expect(i.evidence).toMatchObject({ currentContacted: 43, currentBounced: 20, cohort: 'current' })
   })
 
-  it('does not judge a channel below n=30 — a few dead mailboxes are not a verdict', () => {
-    expect(channelIncidents([chan({ contacted: 10, bounced: 9 })])).toEqual([])
+  // PS-COHORT-01 — the founder-supplied fact: lead_researcher fed the REPLACED pipeline and has sent
+  // nothing since 2026-07-13. Alarming on it every run would demand action on a dead system, which
+  // trains a human to ignore the channel alarm — and that is how the real one gets missed.
+  it('NEVER alarms on a historical source, however bad its rate was', () => {
+    const dead = chan({
+      source: 'lead_researcher', contacted: 43, bounced: 20,
+      currentContacted: 0, currentBounced: 0, historical: true,
+    })
+    expect(channelIncidents([dead])).toEqual([])
   })
 
-  it('leaves a clean channel alone', () => {
-    // google_maps: 8 of 638.
-    expect(channelIncidents([chan({ source: 'google_maps', contacted: 638, bounced: 8 })])).toEqual([])
+  it('judges a live source on its CURRENT-pipeline sends, not its legacy history', () => {
+    // google_maps: 20 unsanitized legacy sends plus 618 current ones. The legacy tail must not
+    // drag the live verdict, and the live verdict must not hide behind the blend.
+    const mixed = chan({ source: 'google_maps', contacted: 638, bounced: 8, currentContacted: 618, currentBounced: 8 })
+    expect(channelIncidents([mixed])).toEqual([])
   })
 
-  it('rates a bad-but-not-catastrophic channel high rather than critical', () => {
-    const [i] = channelIncidents([chan({ contacted: 100, bounced: 20 })])
+  it('does not judge a channel below n=30 of CURRENT sends', () => {
+    expect(channelIncidents([chan({ contacted: 500, bounced: 400, currentContacted: 10, currentBounced: 9 })])).toEqual([])
+  })
+
+  it('rates a bad-but-not-catastrophic live channel high rather than critical', () => {
+    const [i] = channelIncidents([chan({ contacted: 100, bounced: 20, currentContacted: 100, currentBounced: 20 })])
     expect(i.severity).toBe('high')
   })
 
@@ -203,7 +217,7 @@ describe('anti-fabrication: zero replies is not a reply rate', () => {
     status: 'ACTIVE' as const,
     incidents: [],
     bySeverity: { critical: 0, high: 0, medium: 0 },
-    channels: [chan({ source: 'google_maps', contacted: 638, bounced: 8, bounceLine: 'bounce 8/638 (1.3%)' })],
+    channels: [chan({ source: 'google_maps', contacted: 638, bounced: 8, currentContacted: 618, currentBounced: 8, bounceLine: 'bounce 8/618 (1.3%)' })],
     notChecked: [],
   }
 
@@ -258,5 +272,20 @@ describe('the ghost is actually gone', () => {
     for (const f of ['server/os/janet.ts', 'server/os/janetReport.ts']) {
       expect(fs.readFileSync(f, 'utf8'), f).toContain('runAriaAgent(')
     }
+  })
+})
+
+
+describe('PS-ARIA-AB-01 — the impression generator records what was SENT', () => {
+  const SEQ = fs.readFileSync('server/os/sequences.ts', 'utf8')
+
+  it('records sentVariant, never the raw hash bucket', () => {
+    expect(SEQ).toContain("recordImpression(String(lead.id), 'touch1_subject', sentVariant)")
+    expect(SEQ).not.toContain("recordImpression(String(lead.id), 'touch1_subject', variant)")
+  })
+
+  it('derives sentVariant from the copy actually chosen', () => {
+    // The bug was that `variant` (hash) and `v` (copy sent) disagree whenever there is no test arm.
+    expect(SEQ).toContain("const sentVariant: 'control' | 'test' = v === exp.test ? 'test' : 'control'")
   })
 })

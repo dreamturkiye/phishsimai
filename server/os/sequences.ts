@@ -426,6 +426,12 @@ export async function runFullSequence() {
         // PS-COPY-PRICE-01: the test arm is optional and currently absent. Fall back to control
         // whenever the experiment is off OR no test variant exists — never send `undefined`.
         const v = (exp.active && variant === 'test' && exp.test) ? exp.test : exp.control
+        // PS-ARIA-AB-01: record what was ACTUALLY SENT, not the bucket the hash produced.
+        // `variant` is the hash assignment; `v` is the copy that goes out, and with no test arm the
+        // two disagree for every 'test'-bucketed lead. Recording `variant` wrote 413 rows claiming a
+        // test arm that has never existed, so any analysis compared control against control and
+        // credited a variant that was never sent. The impression must describe the email.
+        const sentVariant: 'control' | 'test' = v === exp.test ? 'test' : 'control'
         const token = Buffer.from(String(lead.email)).toString('base64url')
         const ind = String(lead.industry || 'technology')
         const subject = v.subject(String(lead.name), String(lead.company))
@@ -441,7 +447,7 @@ export async function runFullSequence() {
         if (!result?.id) continue
         const ts = now.toISOString()
         await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect', stage_updated_at=${ts} WHERE id=${lead.id}`
-        await recordImpression(String(lead.id), 'touch1_subject', variant)
+        await recordImpression(String(lead.id), 'touch1_subject', sentVariant)
         totalSent++
         results.push({ touch: 1, company: lead.company, email: lead.email, subject, variant })
         await new Promise(r => setTimeout(r, 2000))
