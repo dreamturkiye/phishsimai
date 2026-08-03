@@ -89,13 +89,28 @@ async function fetchPage(url: string): Promise<FetchResult> {
   }
 }
 
+export type ExtractResult =
+  | { ok: true; extracted: Extracted }
+  /** The extractor could not run or could not be parsed. NOT the same as "the page says nothing". */
+  | { ok: false; reason: string }
+
 /**
- * Pull the five fields out of fetched text. Returns EMPTY on any parse failure — a page we fetched
- * but could not read is a SUCCESS with unknown fields, never a guess. Every value must be present
- * verbatim in the page; the prompt forbids inference, because an inferred competitor price is
- * exactly the fabrication this module exists to prevent.
+ * Pull the five fields out of fetched text.
+ *
+ * PS-SCOUT-EXTRACT-01 — WHY THIS RETURNS ok/reason INSTEAD OF EMPTY.
+ *   The first version caught every error and returned EMPTY. That made an LLM outage
+ *   indistinguishable from "this pricing page states no price": both produced a row with
+ *   fetch_ok=true and five null columns, which every downstream consumer reads as "we checked and
+ *   there is no price". Proven on 2026-08-03 — a run with no LLM API keys wrote 7 successful-looking
+ *   captures carrying zero facts, and nothing in the data said extraction had failed.
+ *
+ *   That is the silent-failure shape this codebase has paid for repeatedly. An extraction that could
+ *   not run is NOT CHECKED, and the caller now writes it as such.
+ *
+ *   A page that WAS read and genuinely states nothing still returns ok:true with nulls — that is a
+ *   real, honest observation and must stay distinguishable from a failure.
  */
-export async function extractFromPage(name: string, text: string): Promise<Extracted> {
+export async function extractFromPage(name: string, text: string): Promise<ExtractResult> {
   try {
     const { text: raw } = await llmComplete({
       messages: [
@@ -119,14 +134,17 @@ export async function extractFromPage(name: string, text: string): Promise<Extra
     const j = JSON.parse(cleaned)
     const s = (v: any) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 500) : null)
     return {
-      headline_price: s(j.headline_price),
-      pricing_model: s(j.pricing_model),
-      trial_terms: s(j.trial_terms),
-      msp_features: s(j.msp_features),
-      positioning: s(j.positioning),
+      ok: true,
+      extracted: {
+        headline_price: s(j.headline_price),
+        pricing_model: s(j.pricing_model),
+        trial_terms: s(j.trial_terms),
+        msp_features: s(j.msp_features),
+        positioning: s(j.positioning),
+      },
     }
-  } catch {
-    return EMPTY
+  } catch (e: any) {
+    return { ok: false, reason: `extraction unavailable: ${String(e?.message || e).slice(0, 120)}` }
   }
 }
 
@@ -157,7 +175,7 @@ export function diffCapture(name: string, prev: Extracted | null, next: Extracte
   return out
 }
 
-export type IntelRun = { checked: number; ok: number; notChecked: string[]; changes: Change[]; unchanged: number }
+export type IntelRun = { checked: number; ok: number; notChecked: string[]; changes: Change[]; unchanged: number; baselines: number }
 
 /**
  * The weekly job. One row per competitor per run — success or failure, never a skip.
@@ -165,7 +183,7 @@ export type IntelRun = { checked: number; ok: number; notChecked: string[]; chan
  */
 export async function runCompetitorIntel(sqlOverride?: any): Promise<IntelRun> {
   const sql = sqlOverride ?? getSql()
-  const res: IntelRun = { checked: 0, ok: 0, notChecked: [], changes: [], unchanged: 0 }
+  const res: IntelRun = { checked: 0, ok: 0, notChecked: [], changes: [], unchanged: 0, baselines: 0 }
 
   for (const c of COMPETITORS) {
     res.checked++
@@ -189,7 +207,17 @@ export async function runCompetitorIntel(sqlOverride?: any): Promise<IntelRun> {
       ext = { headline_price: prev.headline_price, pricing_model: prev.pricing_model, trial_terms: prev.trial_terms, msp_features: prev.msp_features, positioning: prev.positioning }
       res.unchanged++
     } else {
-      ext = await extractFromPage(c.name, got.text)
+      const r = await extractFromPage(c.name, got.text)
+      if (!r.ok) {
+        // Fetched but UNREADABLE. Written as NOT CHECKED with the reason, never as a successful
+        // capture with null columns — see the extractFromPage header.
+        res.notChecked.push(`${c.name} (${r.reason})`)
+        await sql`INSERT INTO os_competitor_intel (product_id, competitor, source_url, fetch_ok, http_status, fail_reason)
+                  VALUES (${COMPANY}, ${c.slug}, ${c.url}, false, ${got.status}, ${r.reason})
+                  ON CONFLICT DO NOTHING`.catch(() => {})
+        continue
+      }
+      ext = r.extracted
     }
 
     await sql`INSERT INTO os_competitor_intel
@@ -199,6 +227,7 @@ export async function runCompetitorIntel(sqlOverride?: any): Promise<IntelRun> {
                       ${ext.headline_price}, ${ext.pricing_model}, ${ext.trial_terms}, ${ext.msp_features}, ${ext.positioning})
               ON CONFLICT DO NOTHING`.catch(() => {})
     res.ok++
+    if (!prev) res.baselines++ // first-ever capture: a BASELINE, not a comparison
     res.changes.push(...diffCapture(c.name, prev, ext))
   }
   return res
@@ -216,7 +245,16 @@ export function competitorIntelLine(run: IntelRun): string {
   const nc = run.notChecked.length ? ` · NOT CHECKED: ${run.notChecked.join(', ')} (unreachable — no price asserted for these)` : ''
   if (run.checked === 0) return 'Competitor intel: no competitors configured.'
   if (run.changes.length === 0) {
-    return `Competitor intel: ${run.ok}/${run.checked} pages fetched, NO CHANGES vs last capture${nc}. ` +
+    // A first capture has nothing to compare against. Reporting it as "NO CHANGES vs last capture"
+    // implies a comparison that never happened — the inverse of dressing a baseline as a change,
+    // and just as misleading.
+    if (run.baselines >= run.ok && run.ok > 0) {
+      return `Competitor intel: ${run.ok}/${run.checked} pages fetched — FIRST CAPTURE, no prior ` +
+        `snapshot to compare against, so no change can be asserted yet${nc}. Next run establishes movement. ` +
+        `PhishSim pricing is FROZEN — this line is intel, never a prompt to reprice.`
+    }
+    const bl = run.baselines ? ` (${run.baselines} first-time baseline(s), not compared)` : ''
+    return `Competitor intel: ${run.ok}/${run.checked} pages fetched, NO CHANGES vs last capture${bl}${nc}. ` +
       `Our price-led position is unchanged. PhishSim pricing is FROZEN — this line is intel, never a prompt to reprice.`
   }
   const lines = run.changes.slice(0, 8).map(c => `${c.competitor} ${c.field}: "${c.from ?? '(none)'}" → "${c.to ?? '(none)'}"`)

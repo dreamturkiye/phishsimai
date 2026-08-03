@@ -1253,3 +1253,33 @@ export { resendInbound } from './social/replyCapture'
 
 // KAAN AI OS 7.5 §5 #3 — weekly competitor intel (fetched, never recalled).
 export { cronCompetitorIntel } from './competitorIntel'
+
+// PS-SALES-REPLY-01 — 15-minute reply sweep (replyCapture also triggers it inline).
+export { cronSalesReplies } from './agents/salesReplies'
+
+// PS-REX-01 — Revenue Operations. Runs at 05:45 UTC, BEFORE the 06:00 metrics snapshot, so his
+// verdict on whether the numbers can be trusted arrives ahead of the numbers themselves.
+export { cronRex } from './agents/rex'
+
+// PS-DEX-01 — Deliverability & Infrastructure. 05:50 UTC, between Rex (05:45) and the metrics
+// snapshot (06:00): Rex certifies the funnel data, Dex certifies the paths that produced it.
+export { cronDex } from './agents/dex'
+
+// PS-ARIA-01 — VP Marketing. 06:10 UTC, after Rex/Dex certify the data she reasons on.
+export { cronAria } from './agents/aria'
+
+// PS-MASON-01 — Sales Director, the full-operator form of the live reply agent. 06:20 UTC, after
+// Rex/Dex/Aria: he reads their verdicts and defers to them on their domains.
+export { cronMason } from './agents/mason'
+
+// PS-SCOUT-01 — VP Market Intelligence. 06:30 UTC. Data-side only: never edits copy, never prices.
+export { cronScout } from './agents/scout'
+
+// PS-FINN-01 — CFO. 06:40 UTC. Pricing guard ACTIVE; revenue metrics built and armed at $0.
+export { cronFinn } from './agents/finn'
+
+// PS-VERA-01 — VP Customer Success. 06:50 UTC. BUILD-AND-ARM: machinery live, book empty, honest.
+export { cronVera } from './agents/vera'
+
+// PS-NOVA-01 — Head of Product Growth. 07:00 UTC, the last of the eight before Janet's 08:00 standup.
+export { cronNova } from './agents/nova'

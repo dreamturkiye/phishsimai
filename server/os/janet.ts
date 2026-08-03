@@ -3,11 +3,14 @@ import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
-import { runMarketingAgent } from './agents/marketing'
-import { runProductAgent } from './agents/product'
-import { runResearchAgent } from './agents/research'
-import { runFinanceAgent } from './agents/finance'
-import { runCSAgent } from './agents/customerSuccess'
+import { runRexAgent } from './agents/rex'
+import { runDexAgent } from './agents/dex'
+import { runAriaAgent } from './agents/aria'
+import { runMasonAgent } from './agents/mason'
+import { runScoutAgent } from './agents/scout'
+import { runFinnAgent, mrrDisplay } from './agents/finn'
+import { runVeraAgent } from './agents/vera'
+import { runNovaAgent } from './agents/nova'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -103,28 +106,74 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, marketing, product, research, finance, cs] = await Promise.all([
+  const [sales, aria, nova, scout, finn, vera, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
-    runMarketingAgent(companyId),
-    runProductAgent(companyId),
-    runResearchAgent(companyId),
-    runFinanceAgent(companyId),
-    runCSAgent(companyId),
+    // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
+    // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
+    // Aria measures instead. skipCurrency — that belongs to her own 06:10 cron.
+    runAriaAgent({ skipCurrency: true }).catch(() => null),
+    // PS-NOVA-01: product.ts is DELETED. It shipped a hardcoded backlog with hand-written "(HIGH)"
+    // priorities and wrote the top item to memory at confidence 0.9 — ranking by "revenue impact"
+    // with zero revenue and zero usage. Nova derives priority from measured drop-off, or ranks
+    // nothing and says why.
+    runNovaAgent({ skipCurrency: true }).catch(() => null),
+    // PS-SCOUT-01: research.ts is DELETED. It wrote four hardcoded competitor strings to memory at
+    // confidence 0.9 — including dollar figures that came from a developer's memory, not a fetch.
+    runScoutAgent({ skipCurrency: true }).catch(() => null),
+    // PS-FINN-01: finance.ts is DELETED. It computed the whole revenue picture from
+    // `const avgRevenue = 99` — a price that matches no live Stripe product — and derived a
+    // projectedMrrIn90Days from it that Janet read every morning. Finn reads Stripe.
+    runFinnAgent({ skipCurrency: true }).catch(() => null),
+    // PS-VERA-01: customerSuccess.ts is DELETED. It returned retentionScore=100 over ZERO
+    // customers, and Janet printed "100% retention" every morning with nothing to retain.
+    runVeraAgent({ skipCurrency: true }).catch(() => null),
+    // PS-REX-01. skipCurrency: the currency loop belongs to Rex's own 05:45 cron — running it again
+    // inside the standup would double the network and LLM cost to re-read pages nothing has changed.
+    // A failed sweep must not take the standup down, so a null verdict degrades to "NOT CHECKED"
+    // below rather than throwing.
+    runRexAgent({ skipCurrency: true }).catch(() => null),
+    // PS-DEX-01. skipCurrency/skipDns for the same reason as Rex: those belong to Dex's own 05:50
+    // cron. The standup needs his gate-coverage and bounce verdict, not a second DNS sweep.
+    runDexAgent({ skipCurrency: true, skipDns: true }).catch(() => null),
+    // PS-MASON-01. skipReplies: the reply sweep has its own */15 cron and an inline trigger — running
+    // it again here would re-enter the same queue for no gain. dryRun: the standup REPORTS, it does
+    // not perform retirement; that belongs to Mason's own 06:20 cron behind the crm_write gate.
+    runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
-  const ea = await runEAAgent(sales, finance, product, companyId)
+  const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
+
+  // Rex's verdict leads the metrics block deliberately: it tells Janet WHICH of the numbers below
+  // she is allowed to quote. A trust verdict printed after the figures it governs gets read second
+  // and ignored first.
+  const rexBlock = rex
+    ? `FUNNEL TRUST (Rex, RevOps — read this BEFORE quoting any number below):
+${rex.line}
+Metrics you MAY rely on: ${rex.trustedMetrics.length ? rex.trustedMetrics.join('; ') : 'NONE certified this cycle'}
+Metrics that are SUSPECT — do not quote these as fact: ${rex.suspectMetrics.length ? rex.suspectMetrics.join('; ') : 'none'}`
+    : `FUNNEL TRUST (Rex, RevOps): NOT CHECKED this cycle — the integrity sweep failed to run. ` +
+      `Treat every figure below as unverified; do not present any of them as certified.`
 
   const prompt = `${JANET_SYSTEM}
 
 MEMORY:
 ${memCtx}
 
+${rexBlock}
+
+DELIVERABILITY (Dex — whether the mail physically arrives):
+${dex ? dex.line : 'NOT CHECKED this cycle — the deliverability sweep failed to run. Do not assert send health.'}
+
+SALES (Mason — pipeline, replies, conversion; he defers to Rex and Dex on their domains):
+${mason ? mason.line : 'NOT CHECKED this cycle — the sales operator failed to run. Do not assert pipeline numbers.'}
+
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers
-Finance: $${finance.mrr} MRR, next milestone: ${finance.nextMilestone}
-Product top feature needed: ${product.topFeature}
-ICP: ${research.icpNote}
-CS: ${cs.retentionScore}% retention score
+Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED this cycle — no MRR or pricing claim may be made.'}
+Product growth (Nova): ${nova ? nova.line : 'NOT CHECKED this cycle — no activation claim may be made.'}
+ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
+CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or health claim may be made.'}
+MESSAGING / CHANNELS (Aria — she owns current best outreach; pricing is a hard stop for her): ${aria ? aria.line : 'NOT CHECKED this cycle — no messaging or channel claim may be made.'}
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 
@@ -149,18 +198,18 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
   }
 
   await learnFromOutcome(companyId, 'janet_daily_brief',
-    `MRR:$${finance.mrr} Customers:${finance.customers} ReplyRate:${(sales.replyRate*100).toFixed(1)}%`,
+    `${mrrDisplay(finn)} ReplyRate:${(sales.replyRate*100).toFixed(1)}%`,
     summary.slice(0, 200))
 
   await sendTelegram(
     'PHISHSIMAI JANET BRIEF\n' +
-    `MRR: $${finance.mrr} | Customers: ${finance.customers}\n` +
+    `${mrrDisplay(finn)}\n` +
     `Pipeline: ${sales.touched} touched | ${sales.replied} replied | ${sales.engaged} engaged\n` +
     (archTasks.length ? `Architect tasks: ${archTasks.length}\n` : '') +
     summary.slice(0, 300)
   )
 
-  return { ok: true, summary, sales, finance, product, research, cs, ea, archTasks }
+  return { ok: true, summary, sales, finn, nova, scout, aria, mason, rex, dex, vera, ea, archTasks }
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {

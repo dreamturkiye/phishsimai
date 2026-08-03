@@ -104,8 +104,40 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/os/rex",
+      "schedule": "45 5 * * *"
+    },
+    {
+      "path": "/api/os/dex",
+      "schedule": "50 5 * * *"
+    },
+    {
       "path": "/api/os/metrics-snapshot",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/os/aria",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/os/mason",
+      "schedule": "20 6 * * *"
+    },
+    {
+      "path": "/api/os/scout",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/os/finn",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/os/vera",
+      "schedule": "50 6 * * *"
+    },
+    {
+      "path": "/api/os/nova",
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/os/escalation-notify",
@@ -170,6 +202,10 @@
     {
       "path": "/api/os/competitor-intel",
       "schedule": "30 5 * * 1"
+    },
+    {
+      "path": "/api/os/sales-replies",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

@@ -25,6 +25,7 @@ export type ActionClass =
   | 'issue_agent_task'
   | 'send_simulation'
   | 'crm_write'
+  | 'deliverability_config'
   | 'deploy'
   | 'spend'
 
@@ -58,6 +59,10 @@ export const MIN_LEVEL: Partial<Record<ActionClass, AutonomyLevel>> = {
   execute_architect_task: 'l3',
   send_simulation: 'l4',
   crm_write: 'l4',
+  // PS-DEX-BREAKER-01: Dex re-deriving the bounce breaker. L4 like the other state-changing
+  // classes. Note the gate is only half the control — dexBreaker.ts refuses to LOOSEN the
+  // threshold at any level, so this permission can only ever make the guard stricter.
+  deliverability_config: 'l4',
   deploy: 'l5',
 }
 

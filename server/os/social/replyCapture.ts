@@ -171,6 +171,16 @@ export async function resendInbound(req: any, res: any) {
       }
     }
 
+    // PS-SALES-REPLY-01: classify INLINE, the moment the row exists. The 15-minute cron is the
+    // floor, not the mechanism — an MSP who asks "how much?" and hears nothing until tomorrow's
+    // standup has already moved on. Fire-and-forget: a classifier fault must never fail the webhook
+    // and cause the relay to retry-storm, and the cron will pick up anything this misses.
+    if (drafted) {
+      import('../agents/salesReplies')
+        .then(m => m.runSalesReplyAgent())
+        .catch(e => console.error('[reply-capture] inline classify failed (cron will retry):', e))
+    }
+
     return res.json({ ok: true, matched: !!lead, replied: !!lead, drafted })
   } catch (e: any) {
     return res.json({ ok: false, error: String(e?.message || e) })

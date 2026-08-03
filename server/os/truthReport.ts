@@ -18,7 +18,7 @@
  */
 
 import { getSql } from './conn'
-import { getSequenceHealth, PAUSE_ON_BOUNCE_RATE } from './sequences'
+import { getSequenceHealth } from './sequences'
 import { sendTelegram } from './telegram'
 
 /** The endpoint prod is REQUIRED to be on. A local file that says otherwise is the bug, not this. */
@@ -128,7 +128,7 @@ export async function buildTruthReport(): Promise<string> {
     `BOUNCED        ${health.bounced} of ${health.sent} lifetime (${pct(health.bounced, health.sent)})`,
   )
   L.push(
-    `BREAKER        ${health.paused ? RED + ' TRIPPED' : OK + ' armed'} — ${(health.rate * 100).toFixed(1)}% vs ${(PAUSE_ON_BOUNCE_RATE * 100).toFixed(0)}% threshold` +
+    `BREAKER        ${health.paused ? RED + ' TRIPPED' : OK + ' armed'} — ${(health.rate * 100).toFixed(1)}% vs ${(health.threshold * 100).toFixed(2)}% threshold (Dex-derived)` +
       (health.paused ? ' — OUTBOUND HALTED' : ''),
   )
 
