@@ -135,6 +135,29 @@ describe('the reality boundary — the root cause of the invented UI', () => {
   })
 })
 
+// The bug I shipped INTO the fix for this bug: sendTelegram resolves { ok:false, skipped:true }
+// when unconfigured rather than throwing, so `try { await send(); notified = true }` set true for a
+// message that was never sent. Proven live — a prod row carried notifiedAt while nothing was sent.
+describe('notified reflects the SEND RESULT, not the absence of an exception', () => {
+  const src = fs.readFileSync('server/mia/feedbackTool.ts', 'utf8')
+
+  it('reads ok from the return value', () => {
+    expect(src).toContain('notified = sent?.ok === true')
+  })
+
+  it('does not infer success from a completed await', () => {
+    // The shape that shipped: an await followed by an unconditional assignment.
+    expect(src).not.toMatch(/await sendTelegram\([\s\S]{0,600}?\)\s*\n\s*notified = true/)
+  })
+
+  it('sendTelegram genuinely returns rather than throws when unconfigured', () => {
+    // The premise the bug rested on, pinned so a future refactor of telegram.ts cannot silently
+    // invalidate this reasoning.
+    const tg = fs.readFileSync('server/os/telegram.ts', 'utf8')
+    expect(tg).toContain("return { ok: false, skipped: true, error: 'Telegram not configured")
+  })
+})
+
 describe('the reader — what the team sees', () => {
   it('states plainly when there is nothing, rather than implying silence is health', () => {
     const l = buildInboxLine({ feedback7d: 0, bugs7d: 0, openHandoffs: 0, unnotifiedHandoffs: 0, oldestOpenDays: null })
