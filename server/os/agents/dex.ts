@@ -34,6 +34,7 @@ import { resolveTxt, resolveMx } from 'node:dns/promises'
 import { getSql } from '../conn'
 import { readSource, measureCohorts, type CohortSplit, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
+import { reconcileBreaker, readBreakerThreshold, type BreakerRun } from '../dexBreaker'
 
 const COMPANY = 'phishsimai'
 
@@ -509,6 +510,7 @@ export type DexReport = {
   health: SendHealth
   auth: DomainAuth[]
   notChecked: string[]
+  breaker: BreakerRun | null
   currency: CurrencyRun | null
   line: string
 }
@@ -519,12 +521,15 @@ export type DexOptions = {
   breakerThreshold?: number
   skipCurrency?: boolean
   skipDns?: boolean
+  /** Skip the gated threshold re-derivation (tests, and the Janet standup which only reads). */
+  skipBreakerReconcile?: boolean
 }
 
 export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
   const sql = opts.sql ?? getSql()
   const root = opts.root ?? process.cwd()
-  const threshold = opts.breakerThreshold ?? 0.08 // PAUSE_ON_BOUNCE_RATE in sequences.ts
+  // PS-DEX-BREAKER-01: the live, Dex-owned, derived threshold — not a constant.
+  const threshold = opts.breakerThreshold ?? (await readBreakerThreshold(sql).catch(() => 0.03))
 
   const files = DEX_SCAN_TARGETS.map((p) => readSource(p, root))
   const readable = files.filter((f) => f.text !== null).length
@@ -549,6 +554,15 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
   const bySeverity: Record<Severity, number> = { critical: 0, high: 0, medium: 0 }
   for (const i of incidents) bySeverity[i.severity]++
 
+  // Re-derive the breaker from the CURRENT cohort only. Tightening applies behind the L4 gate;
+  // loosening never applies autonomously. See dexBreaker.ts for why that asymmetry is the point.
+  const breaker = opts.skipBreakerReconcile || !health.cohorts.checked
+    ? null
+    : await reconcileBreaker({
+        sql,
+        cohort: { bounced: health.cohorts.current.bounced, contacted: health.cohorts.current.contacted },
+      }).catch(() => null)
+
   const currency = opts.skipCurrency
     ? null
     : await runCurrencyLoop('dex', 'email deliverability, sender reputation and authentication', DEX_SOURCES, sql).catch(() => null)
@@ -565,8 +579,9 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
     health,
     auth,
     notChecked,
+    breaker,
     currency,
-    line: currency ? `${line} ${currency.line}` : line,
+    line: [line, breaker?.line, currency?.line].filter(Boolean).join(' '),
   }
 }
 

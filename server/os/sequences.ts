@@ -5,6 +5,7 @@ import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
 import { assertSendable } from './sendGate'
+import { readBreakerThreshold } from './dexBreaker'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
@@ -12,7 +13,11 @@ import { recordIncident } from './cleanDays'
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
 export const DAILY_SEND_LIMIT = 20 // starting cap / floor; effective cap is the warm-up ramp below
-export const PAUSE_ON_BOUNCE_RATE = 0.08
+// PS-DEX-BREAKER-01: this constant is now only the LAST-RESORT fallback for a DB read failure.
+// The live threshold is Dex-owned, stored in janet_memory, and re-derived daily from the
+// CURRENT-cohort measured rate — see server/os/dexBreaker.ts. It was 0.08 against a real rate of
+// 1.55%, i.e. 5.2x too loose to ever fire. Read the live value via readBreakerThreshold().
+export const PAUSE_ON_BOUNCE_RATE = 0.03
 
 // PS-RAMP-01: decided warm-up ramp 20 → 50 → 100/day. Day 1 = RAMP_START. The step cadence is
 // explicit and editable here; day 8+ holds at RAMP_MAX. Applied as the per-run cap in
@@ -281,10 +286,12 @@ export async function getSequenceHealth(sql = getSql()) {
   const sent = Number(rows[0].sent)
   const measured = sent > 0
   const rate = measured ? bounced / sent : 0
-  const tripped = measured && rate >= PAUSE_ON_BOUNCE_RATE
+  // Dex-owned, derived, stored. Falls back to the tight constant only if the read fails.
+  const threshold = await readBreakerThreshold(sql)
+  const tripped = measured && rate >= threshold
   // `paused` = do-not-send: a real trip, OR an unmeasured window (fail closed). Only `tripped`
   // (a measured break) is an autonomy_incident — an empty window is not a break, it is silence.
-  return { rate, measured, tripped, paused: tripped || !measured, bounced, sent }
+  return { rate, measured, tripped, paused: tripped || !measured, bounced, sent, threshold }
 }
 
 // PS-INCIDENT-01 (2026-07-15): HARD PAUSE. Aria sequenced leads that appear LLM-fabricated
@@ -354,7 +361,7 @@ export async function runFullSequence() {
     // funnel is not a clean day. (A deliberate OUTBOUND_HARD_PAUSED above returned already and is
     // NOT an incident; an empty window below is silence, not a break, and is NOT an incident.)
     await recordIncident(sql, COMPANY_ID, `bounce breaker tripped: ${(health.rate * 100).toFixed(1)}% over ${health.sent} live sends (7d)`, 'aria').catch(() => {})
-    await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (PAUSE_ON_BOUNCE_RATE * 100) + '% over ' + health.sent + ' live sends. Sequence halted, incident recorded.')
+    await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (health.threshold * 100).toFixed(2) + '% over ' + health.sent + ' live sends. Sequence halted, incident recorded.')
     return { paused: true, tripped: true, rate: health.rate, sent: 0 }
   }
   if (!health.measured) {
