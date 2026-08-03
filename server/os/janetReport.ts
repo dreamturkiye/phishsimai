@@ -5,7 +5,7 @@ import { runSalesAgent } from './agents/sales'
 import { runScoutAgent } from './agents/scout'
 import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runAriaAgent } from './agents/aria'
-import { runProductAgent } from './agents/product'
+import { runNovaAgent } from './agents/nova'
 import { runVeraAgent } from './agents/vera'
 import { runEAAgent } from './agents/ea'
 import { queueJanetArchitectTask } from './selfHeal'
@@ -16,15 +16,15 @@ const FROM = 'Janet CGO <sarah@phishsimai.com>'
 export async function runJanetReport(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
 
-  const [sales, finn, aria, product, vera, scout] = await Promise.all([
+  const [sales, finn, aria, nova, vera, scout] = await Promise.all([
     runSalesAgent(companyId),
     runFinnAgent({ skipCurrency: true }).catch(() => null),
     runAriaAgent({ skipCurrency: true }).catch(() => null),
-    runProductAgent(companyId),
+    runNovaAgent({ skipCurrency: true }).catch(() => null),
     runVeraAgent({ skipCurrency: true }).catch(() => null),
     runScoutAgent({ skipCurrency: true }).catch(() => null),
   ])
-  const founderBrief = await runEAAgent(sales, finn ?? { customers: 0 }, product, companyId)
+  const founderBrief = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memoryContext = await recallContext(companyId)
   const weekNumber = Math.max(1, Math.ceil((Date.now() - new Date('2026-06-01').getTime()) / (7 * 86400000)))
 
@@ -36,7 +36,7 @@ ${memoryContext}
 METRICS:
 Sales: ${sales.touched} touched, ${sales.replied} replied (${(sales.replyRate * 100).toFixed(1)}%), ${sales.customers} customers
 Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED — no MRR or pricing claim may be made.'}
-Product top: ${product.topFeature}
+Product growth (Nova): ${nova ? nova.line : 'NOT CHECKED — no activation claim may be made.'}
 CS (Vera): ${vera ? vera.line : 'NOT CHECKED — no retention claim may be made.'}
 
 Write a sharp CGO report (Week ${weekNumber}). Include top 3 actions, one founder decision, autonomous actions, one risk, 30-day revenue forecast.
@@ -88,5 +88,5 @@ ${architectTasksQueued.length ? `<p style="margin-top:16px"><strong>Architect ta
     (architectTasksQueued.length ? `\nArchitect tasks: ${architectTasksQueued.length}` : '')
   )
 
-  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, product, vera, scout, founderBrief, architectTasksQueued }
+  return { ok: true, weekNumber, executiveSummary, sales, finn, aria, nova, vera, scout, founderBrief, architectTasksQueued }
 }

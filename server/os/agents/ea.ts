@@ -13,8 +13,10 @@ export async function runEAAgent(sales:any, finance:any, product:any, companyId=
     p.push('Close the first paying MSP at list price — pricing is FROZEN (Starter $149 / Growth $299 / Pro $749 / Enterprise $1,499). No discount or founding rate may be offered.')
     d.push('Any pricing change (discounts, founding rates, trials beyond the standard 30 days) is a Kaan decision — do not propose numbers.')
   }
-  p.push('Review architect task: MSP white-label portal (unlocks entire MSP channel)')
-  d.push('Approve architect task: MSP white-label portal')
+  // PS-NOVA-01: this named a feature from the deleted hardcoded backlog and called it channel-
+  // unlocking with nothing measured. Product priority is Nova's, derived from activation drop-off.
+  p.push('Ask Nova which product work is ranked by measured activation drop-off — do not assert a priority without one')
+
   d.push('LinkedIn content cadence: weekly compliance stat posts — approve?')
   if (finance.customers===0) b.push('No paying customers — top priority this week')
   if (sales.replyRate===0 && sales.touched>=10) b.push('No replies after 10+ sends — copy or targeting needs adjustment')

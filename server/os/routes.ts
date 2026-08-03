@@ -1280,3 +1280,6 @@ export { cronFinn } from './agents/finn'
 
 // PS-VERA-01 — VP Customer Success. 06:50 UTC. BUILD-AND-ARM: machinery live, book empty, honest.
 export { cronVera } from './agents/vera'
+
+// PS-NOVA-01 — Head of Product Growth. 07:00 UTC, the last of the eight before Janet's 08:00 standup.
+export { cronNova } from './agents/nova'

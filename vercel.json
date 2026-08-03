@@ -136,6 +136,10 @@
       "schedule": "50 6 * * *"
     },
     {
+      "path": "/api/os/nova",
+      "schedule": "0 7 * * *"
+    },
+    {
       "path": "/api/os/escalation-notify",
       "schedule": "*/15 * * * *"
     },

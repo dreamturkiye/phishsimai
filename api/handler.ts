@@ -130,6 +130,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/scout") return routes.cronScout(req, res);
     if (path === "/api/os/finn") return routes.cronFinn(req, res);
     if (path === "/api/os/vera") return routes.cronVera(req, res);
+    if (path === "/api/os/nova") return routes.cronNova(req, res);
     if (path === "/api/os/aria-daily") return routes.cronAriaDaily(req, res);
     if (path === "/api/os/janet" || path === "/api/os/janet-cgo") return routes.cronJanetCgo(req, res);
     if (path === "/api/os/metrics-snapshot") return routes.cronMetricsSnapshot(req, res);

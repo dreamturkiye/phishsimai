@@ -3,7 +3,6 @@ import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
-import { runProductAgent } from './agents/product'
 import { runRexAgent } from './agents/rex'
 import { runDexAgent } from './agents/dex'
 import { runAriaAgent } from './agents/aria'
@@ -11,6 +10,7 @@ import { runMasonAgent } from './agents/mason'
 import { runScoutAgent } from './agents/scout'
 import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runVeraAgent } from './agents/vera'
+import { runNovaAgent } from './agents/nova'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -106,13 +106,17 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, aria, product, scout, finn, vera, rex, dex, mason] = await Promise.all([
+  const [sales, aria, nova, scout, finn, vera, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
     // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
     // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
     // Aria measures instead. skipCurrency — that belongs to her own 06:10 cron.
     runAriaAgent({ skipCurrency: true }).catch(() => null),
-    runProductAgent(companyId),
+    // PS-NOVA-01: product.ts is DELETED. It shipped a hardcoded backlog with hand-written "(HIGH)"
+    // priorities and wrote the top item to memory at confidence 0.9 — ranking by "revenue impact"
+    // with zero revenue and zero usage. Nova derives priority from measured drop-off, or ranks
+    // nothing and says why.
+    runNovaAgent({ skipCurrency: true }).catch(() => null),
     // PS-SCOUT-01: research.ts is DELETED. It wrote four hardcoded competitor strings to memory at
     // confidence 0.9 — including dollar figures that came from a developer's memory, not a fetch.
     runScoutAgent({ skipCurrency: true }).catch(() => null),
@@ -136,7 +140,7 @@ export async function runJanetBrief(companyId = 'phishsimai') {
     // not perform retirement; that belongs to Mason's own 06:20 cron behind the crm_write gate.
     runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
-  const ea = await runEAAgent(sales, finn ?? { customers: 0 }, product, companyId)
+  const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
 
   // Rex's verdict leads the metrics block deliberately: it tells Janet WHICH of the numbers below
@@ -166,7 +170,7 @@ ${mason ? mason.line : 'NOT CHECKED this cycle — the sales operator failed to 
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers
 Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED this cycle — no MRR or pricing claim may be made.'}
-Product top feature needed: ${product.topFeature}
+Product growth (Nova): ${nova ? nova.line : 'NOT CHECKED this cycle — no activation claim may be made.'}
 ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
 CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or health claim may be made.'} score
 
@@ -204,7 +208,7 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
     summary.slice(0, 300)
   )
 
-  return { ok: true, summary, sales, finn, product, scout, aria, mason, rex, dex, vera, ea, archTasks }
+  return { ok: true, summary, sales, finn, nova, scout, aria, mason, rex, dex, vera, ea, archTasks }
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {

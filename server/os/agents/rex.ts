@@ -659,7 +659,7 @@ export type RexReport = {
 /** The modules Rex scans. Revenue-computing and fact-asserting code only — bounded and meaningful. */
 export const SCAN_TARGETS = [
   'server/os/agents/aria.ts',
-  'server/os/agents/product.ts',
+  'server/os/agents/nova.ts',
   'server/os/agents/scout.ts',
   'server/os/agents/finn.ts',
   'server/os/agents/vera.ts',
