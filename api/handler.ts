@@ -121,6 +121,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
     if (path === "/api/os/deploy-verify") return routes.cronDeployVerify(req, res);
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
+    if (path === "/api/os/competitor-intel") return routes.cronCompetitorIntel(req, res);
     if (path === "/api/os/aria-daily") return routes.cronAriaDaily(req, res);
     if (path === "/api/os/janet" || path === "/api/os/janet-cgo") return routes.cronJanetCgo(req, res);
     if (path === "/api/os/metrics-snapshot") return routes.cronMetricsSnapshot(req, res);
