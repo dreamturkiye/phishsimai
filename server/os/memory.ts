@@ -107,6 +107,16 @@ export const PERMANENT_LESSONS: { signature: string; lesson: string }[] = [
       'margin. Compliance is a SECOND-position supporting point for larger MSPs, never the opener.',
   },
   {
+    signature: 'phishsim:competitor-pricing-study-2026',
+    lesson:
+      'THE "ONE OF THE LOWEST PER-SEAT PRICES IN THE INDUSTRY" CLAIM HAS A BASIS. Founder market ' +
+      'pricing study, conducted pre-2026-08. It is attributed research, NOT a machine-verified ' +
+      'fetch — do not cite it as if a system measured it, and do not re-flag it as unverified ' +
+      'fabrication either. Approved for outbound copy (touch-2, 2026-08-03). CROSS-CHECK when ' +
+      'os_competitor_intel populates: if a fetched competitor price contradicts it, the fetched ' +
+      'row wins and the copy changes. Never state a specific competitor price from memory.',
+  },
+  {
     signature: 'phishsim:pricing-frozen-live-stripe',
     lesson:
       'PRICING IS FROZEN AND LIVE-STRIPE-SOURCED: Starter $149 (100 users), Growth $299 (500), ' +

@@ -1,6 +1,6 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
-import { AB_EXPERIMENTS, getVariant, recordImpression, deriveFirstName } from './abTest'
+import { AB_EXPERIMENTS, TOUCH2_VARIANT, getVariant, recordImpression, deriveFirstName } from './abTest'
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
@@ -98,6 +98,160 @@ const SEQUENCE: {
   subject: (n: string, co: string) => string
   html: (name: string, co: string, ind: string, token: string) => string
 }[] = []
+
+
+// ─── PS-TOUCH2-PRICE-01 — the price-led second touch, released 150 at a time ──────────────────
+//
+// FOUNDER DIRECTIVE 2026-08-03: do NOT spend the whole 797-lead list on an unproven message.
+// Send BATCH 1 = 150, then HOLD for a human read of the result.
+//
+// The reasoning is the point, so it is written down rather than assumed: 884 compliance-led sends
+// produced 1 reply, and it was hostile. If 150 price-led sends produce replies, the message was the
+// constraint and we scale to the rest. If 150 produce the same silence, the constraint is the LIST
+// or the CHANNEL, not the copy — and we learned that for 150 sends instead of 797, having saved 647.
+// A batch that cannot stop is not a test, it is just a slower send.
+export const TOUCH2_BATCH1_LIMIT = 150
+/** Sends at or after this instant count against the batch. Set when the batch was armed. */
+export const TOUCH2_EPOCH = '2026-08-03T00:00:00Z'
+/** Founder unlock. Scaling past batch 1 is a HUMAN decision, never an autonomous one. */
+const TOUCH2_SCALE_KEY = 'touch2_scale_approved'
+
+async function isTouch2ScaleApproved(sql: any): Promise<boolean> {
+  const r = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY_ID}
+    AND type='operating' AND key=${TOUCH2_SCALE_KEY} LIMIT 1`.catch(() => [])
+  return String((r as any[])[0]?.value ?? '') === '1'
+}
+
+/** How many of batch 1 have gone out. Counted from the DB, never from a local tally. */
+export async function touch2SentInBatch(sql: any): Promise<number> {
+  const r = await sql`SELECT count(*)::int AS n FROM ps_outreach_leads
+    WHERE touch2_sent_at IS NOT NULL AND touch2_sent_at >= ${TOUCH2_EPOCH}::timestamptz`.catch(() => [])
+  return Number((r as any[])[0]?.n ?? 0)
+}
+
+/**
+ * Remaining touch-2 headroom for this run. Returns 0 when batch 1 is complete and the founder has
+ * not unlocked scaling — a hard stop, not a warning. Exported so the caller can report the hold
+ * rather than silently sending nothing.
+ */
+export async function touch2Headroom(sql: any): Promise<{ headroom: number; sentInBatch: number; holding: boolean }> {
+  const sentInBatch = await touch2SentInBatch(sql)
+  if (await isTouch2ScaleApproved(sql)) return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch, holding: false }
+  const headroom = Math.max(0, TOUCH2_BATCH1_LIMIT - sentInBatch)
+  return { headroom, sentInBatch, holding: headroom === 0 }
+}
+
+/**
+ * Who is eligible for touch-2. Every exclusion is in the SELECT, not applied afterwards:
+ * replied / bounced / unsubscribed / suppressed / already-touched / dead / OURS / WRONG COPY ERA.
+ *
+ * THE COPY-ERA CUTOFF. PS-COPY-PRICE-01 deployed 2026-08-03 01:36Z and the 07:00 cron then sent 50
+ * touch-1 emails carrying the price-led copy. Those 50 are excluded from touch-2 because they would
+ * otherwise receive substantially the SAME price pitch twice within hours — an annoyance that costs
+ * us the freshest leads on the list for no gain. (The original rationale was stronger still: the
+ * first touch-2 draft opened by apologising for a July compliance email, which for those 50 was
+ * simply false. The approved body no longer references July, so the constraint is now
+ * double-pitching rather than untruth — but the exclusion stands either way, and it is what makes
+ * the send list exactly the 797 the founder approved.)
+ * Caught only because the eligible count came back 847 against an approved 797; the 50-lead gap was
+ * exactly one morning's send.
+ *
+ * Measured 2026-08-03 07:19Z: 934 touch-1 recipients -> 797 eligible
+ * (-50 wrong copy era, -1 internal, -0 replied, -38 bounced, -25 unsubscribed, -16 already touch-2,
+ *  -dead/customer). 797 matches the founder-approved count exactly.
+ */
+/** Instant PS-COPY-PRICE-01 (price-led touch-1) reached production. Only recipients BEFORE this
+ *  point received the compliance pitch that touch-2's opening line refers to. */
+export const TOUCH2_COPY_ERA_CUTOFF = '2026-08-03T01:36:00Z'
+
+export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
+  if (limit <= 0) return []
+  return (await sql.query(
+    `SELECT l.id, l.name, l.company, l.email, l.industry
+     FROM ps_outreach_leads l
+     WHERE l.touch1_sent_at IS NOT NULL
+       AND l.touch1_sent_at < '${TOUCH2_COPY_ERA_CUTOFF}'::timestamptz
+       AND l.touch2_sent_at IS NULL
+       AND l.replied = false
+       AND l.bounced = false
+       AND l.unsubscribed = false
+       AND l.pipeline_stage NOT IN ('dead','customer','internal_test')
+       AND lower(l.email) <> ALL (ARRAY['kaanari@mac.com','asadbek.munasar@forliion.com'])
+       AND lower(split_part(l.email, '@', 2)) <> 'phishsimai.com'
+       AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+     ORDER BY l.touch1_sent_at ASC
+     LIMIT ${Math.floor(limit)}`,
+  ).catch(() => [])) as any[]
+}
+
+
+/**
+ * PS-TOUCH2-PRICE-01 — send one touch-2 batch. Founder-gated in three independent ways:
+ *   1. touch2Headroom() caps the run at TOUCH2_BATCH1_LIMIT and returns 0 once batch 1 is spent;
+ *   2. touch2Eligible() applies every exclusion in the SELECT (replied/bounced/unsubscribed/
+ *      suppressed/already-touched/dead/ours/wrong-copy-era);
+ *   3. the per-lead MX gate, identical to touch-1 — a domain with no MX bounces 100%, and our
+ *      bounce rate (4.3%) is already above the founder's 2% line.
+ *
+ * The bounce breaker is checked BEFORE the batch, not per-send: sending 150 into a known-bad
+ * deliverability state is the failure this exists to prevent.
+ *
+ * touch2_sent_at is stamped ONLY on a confirmed provider id. A send that Resend rejected must not
+ * leave a row claiming it went out — that is PS-SEND-01's lesson, and it applies to every touch.
+ */
+export async function runTouch2Batch(sqlOverride?: any): Promise<{
+  attempted: number; sent: number; failed: number; noMx: number; headroom: number; holding: boolean; reason?: string
+}> {
+  const sql = sqlOverride ?? getSql()
+  const out = { attempted: 0, sent: 0, failed: 0, noMx: 0, headroom: 0, holding: false as boolean, reason: undefined as string | undefined }
+
+  const health = await getSequenceHealth(sql).catch(() => null)
+  if (health?.paused) {
+    out.reason = health.tripped
+      ? `bounce breaker TRIPPED (${(health.rate * 100).toFixed(1)}% over ${health.sent} sends)`
+      : 'bounce health UNMEASURED — failing closed rather than sending blind'
+    return out
+  }
+
+  const h = await touch2Headroom(sql)
+  out.headroom = h.headroom === Number.MAX_SAFE_INTEGER ? -1 : h.headroom
+  out.holding = h.holding
+  if (h.holding) {
+    out.reason = `BATCH 1 COMPLETE — ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent. Holding for founder read; ` +
+      `set janet_memory ${TOUCH2_SCALE_KEY}='1' to release the remainder.`
+    return out
+  }
+
+  const leads = await touch2Eligible(sql, h.headroom)
+  const now = new Date()
+  for (const lead of leads) {
+    out.attempted++
+    try {
+      const dom = domainOf(String(lead.email))
+      if (!dom || !(await hasMx(dom))) {
+        await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${now.toISOString()} WHERE id=${lead.id}`.catch(() => {})
+        out.noMx++
+        continue
+      }
+      const token = Buffer.from(String(lead.email)).toString('base64url')
+      const greet = deriveFirstName(String(lead.email))
+      const co = String(lead.company || '')
+      const ind = String(lead.industry || 'technology')
+      const result = await sendEmail(
+        String(lead.email),
+        TOUCH2_VARIANT.subject(greet, co),
+        TOUCH2_VARIANT.html(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
+        [{ name: 'touch', value: '2' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: TOUCH2_VARIANT.id }],
+        token,
+        TOUCH2_VARIANT.text(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
+      )
+      if (!result?.id) { out.failed++; continue }
+      await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${now.toISOString()}, stage_updated_at=${now.toISOString()} WHERE id=${lead.id}`
+      out.sent++
+    } catch { out.failed++ }
+  }
+  return out
+}
 
 // PS-BOUNCE-WINDOW-01: a breaker exists to stop a CURRENT problem, so it must measure a CURRENT
 // population. The old query counted bounced/sent over touch1_sent_at IS NOT NULL — LIFETIME. After
