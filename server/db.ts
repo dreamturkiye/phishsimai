@@ -829,3 +829,35 @@ export async function getTrainingAssignmentStats(orgId: number): Promise<{ assig
     return { assigned: 0, completed: 0 };
   }
 }
+
+// ─── PS-DECOMMISSION-01 — daily KPI verdict history ──────────────────────────
+
+/** Write today's KPI verdict for an agent (one row per agent per UTC day). Best-effort. */
+export async function writeAgentKpiVerdict(agentId: string, kpi: string, verdict: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.execute(sql`
+      INSERT INTO os_agent_kpi_daily (product_id, agent_id, kpi, verdict)
+      VALUES ('phishsimai', ${agentId}, ${kpi}, ${verdict})
+      ON CONFLICT (product_id, agent_id, day) DO UPDATE SET verdict = ${verdict}, kpi = ${kpi}
+    `);
+  } catch { /* history write is best-effort; never break the brief */ }
+}
+
+/** Read an agent's verdict history, most-recent day FIRST, up to `days` rows. */
+export async function readAgentKpiHistory(agentId: string, days: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const rows = (await db.execute(sql`
+      SELECT verdict FROM os_agent_kpi_daily
+      WHERE product_id='phishsimai' AND agent_id=${agentId}
+      ORDER BY day DESC LIMIT ${days}
+    `)) as any;
+    const list = rows?.rows ?? rows ?? [];
+    return list.map((r: any) => String(r.verdict));
+  } catch {
+    return [];
+  }
+}
