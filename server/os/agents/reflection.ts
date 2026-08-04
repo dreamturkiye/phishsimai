@@ -388,3 +388,28 @@ export async function runWeeklyReflection(sql: any, now: Date, agents: readonly 
 
   return { weekKey, reflected, insufficient, adjustments, line }
 }
+
+/**
+ * GET /api/os/reflection — the weekly cron entry.
+ *
+ * PS-REFLECT-01 shipped the judgement with NO CALLER: reflection.ts was merged, fully tested, and
+ * imported by nothing. By this codebase's own 7-point bar that is a ghost — code with no execution
+ * loop — and it would have sat there producing nothing while reading as "built". This is the loop.
+ *
+ * Cadence 30 9 * * 1 (Mondays). Deliberately outside the 05:45→08:00 daily chain that
+ * cronOrdering.test.ts pins, and off 09:00 to avoid trial-nudges.
+ */
+export async function cronReflection(req: any, res: any) {
+  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
+  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
+  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
+  const viaVercel = !!req.headers?.['x-vercel-cron']
+  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  try {
+    const { getSql } = await import('../conn')
+    const run = await runWeeklyReflection(getSql(), new Date())
+    return res.json({ success: true, ...run })
+  } catch (e: any) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) })
+  }
+}
