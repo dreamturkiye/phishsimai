@@ -10,10 +10,12 @@ import { toast } from "sonner";
 import { Plug, CheckCircle2, AlertTriangle, Trash2, Ticket } from "lucide-react";
 
 /**
- * PS-PSA-01 — the minimal MSP admin surface for PSA ticketing. ConnectWise Manage ships now; Halo
- * is a disabled tile until PR2. The honesty rule holds in the UI: we render "Connected" ONLY when a
- * real test succeeded (lastTestOk === true), show the last error verbatim otherwise, and never
- * invent a ticket count — ticketsCreated is the real running total from the server.
+ * PS-PSA-01 — the MSP admin surface for PSA ticketing. ConnectWise Manage and Halo PSA are both
+ * generally available for self-serve configuration here. The honesty rule holds in the UI: we render
+ * "Connected" ONLY when a real test succeeded (lastTestOk === true), show the last error verbatim
+ * otherwise, and never invent a ticket count — ticketsCreated is the real running total from the
+ * server. A connection stays disabled until the MSP adds credentials, maps the client org, and
+ * enables it — we never default a connection to enabled.
  */
 type Customer = { customer: { orgId: number }; org: { id: number; name: string } | null };
 
@@ -26,6 +28,24 @@ export default function PsaIntegrations({ customers }: { customers: Customer[] }
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-border/60 bg-card p-4">
+        <div className="flex items-center gap-2 mb-1.5">
+          <Ticket className="w-4 h-4 text-primary" />
+          <h3 className="font-semibold text-sm">PSA ticketing — ConnectWise Manage &amp; Halo</h3>
+        </div>
+        <p className="text-[13px] text-muted-foreground leading-relaxed">
+          Connect PhishSim to <strong>ConnectWise Manage</strong> or <strong>Halo PSA</strong>. When a user reports a
+          <strong> real</strong> suspicious email, PhishSim can open a service-desk ticket with the details your team
+          needs. <strong>Simulation reports are scored only and never create tickets</strong>, so training noise stays
+          out of your queue.
+        </p>
+        <div className="mt-2.5 text-[12px] text-muted-foreground">
+          To turn it on for a client: <strong className="text-foreground">1.</strong> add and test the connection ·
+          <strong className="text-foreground"> 2.</strong> map each client org to a PSA company ·
+          <strong className="text-foreground"> 3.</strong> enable the connection. Tickets flow only once all three are done.
+        </div>
+      </div>
+
       {!data?.secretKeyConfigured && (
         <div className="rounded-lg border border-amber-600/30 bg-amber-600/10 p-3 text-[13px] text-amber-300 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
