@@ -10,7 +10,7 @@ import { checkSendAllowed, type SendVerdict } from "./complianceGuard";
 import type { Target } from "../../drizzle/schema";
 
 /** Best-effort append to audit_log. A failed audit never changes the compliance verdict. */
-async function audit(actor: string, action: string, target: string, detail: unknown): Promise<void> {
+export async function audit(actor: string, action: string, target: string, detail: unknown): Promise<void> {
   try {
     const db = await getDb();
     if (!db) return;
