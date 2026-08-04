@@ -505,6 +505,25 @@ export async function createCampaignResult(data: Omit<CampaignResult, "id" | "cr
  * null when it cannot be resolved — the caller MUST treat null as "go to training", because a
  * lookup failure is not a reason to show a recipient a login form.
  */
+export async function getLessonContextForToken(token: string): Promise<{ attackType: string | null; senderName: string | null; subject: string | null }> {
+  const db = await getDb();
+  if (!db) return { attackType: null, senderName: null, subject: null };
+  try {
+    const rows = await db
+      .select({ attackType: templates.attackType, subject: templates.subject, tSender: templates.senderName, cSender: campaigns.senderName })
+      .from(campaignResults)
+      .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
+      .innerJoin(templates, eq(templates.id, campaigns.templateId))
+      .where(eq(campaignResults.trackingToken, token))
+      .limit(1);
+    const r = rows[0];
+    if (!r) return { attackType: null, senderName: null, subject: null };
+    return { attackType: r.attackType ?? null, senderName: (r.cSender ?? r.tSender) ?? null, subject: r.subject ?? null };
+  } catch {
+    return { attackType: null, senderName: null, subject: null };
+  }
+}
+
 export async function getAttackTypeForToken(token: string): Promise<string | null> {
   const db = await getDb();
   if (!db) return null;
