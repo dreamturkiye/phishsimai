@@ -56,19 +56,21 @@ describe('the create handler actually wires the inheritance', () => {
   })
 })
 
-describe('the four families carry their display-name defaults in the seed', () => {
+describe('the seed library carries a display-name default on every template', () => {
   const templates = JSON.parse(fs.readFileSync('server/seed_templates.json', 'utf8')) as Array<{ name: string; senderName?: string }>
-  const want: Record<string, string> = {
-    'Rewards — 25% Off Ends Tonight': 'Rewards Team',
-    'Delivery On Hold — Confirm Details': 'Shipping Notifications',
-    'Payment Failed — Review Required': 'Billing',
-    'HR — Document Awaiting Acknowledgement': 'HR',
-  }
 
-  it.each(Object.entries(want))('%s seeds senderName "%s"', (name, sender) => {
-    const t = templates.find((x) => x.name === name)
-    expect(t, `${name} missing from seed`).toBeTruthy()
-    expect(t!.senderName).toBe(sender)
+  // PS-TEMPLATE-100 replaced the old 4-fixture library with a 100-template one; senderName is now
+  // set on EVERY template, so the guarantee (the seed carries a display-name default) is checked
+  // across the whole library rather than 4 named fixtures.
+  it('every seeded template has a non-empty senderName', () => {
+    const missing = templates.filter((t) => !t.senderName || !t.senderName.trim()).map((t) => t.name)
+    expect(missing, `templates missing senderName: ${missing.join(', ')}`).toEqual([])
+  })
+
+  it('senderNames are realistic display names, not raw domains', () => {
+    for (const t of templates) {
+      expect(t.senderName, t.name).not.toMatch(/@|https?:\/\//)
+    }
   })
 
   it('the migration adding the column is additive and comment-safe', () => {
