@@ -51,12 +51,11 @@ export type StripeTruth = {
   trialingSubs: number
   mrrUsd: number
   arrUsd: number
-  planMix: Partial<Record<StripePlan, number>>
   reason: string
 }
 
 const EMPTY_TRUTH: StripeTruth = {
-  checked: false, monthlyUsd: {}, activeSubs: 0, trialingSubs: 0, mrrUsd: 0, arrUsd: 0, planMix: {},
+  checked: false, monthlyUsd: {}, activeSubs: 0, trialingSubs: 0, mrrUsd: 0, arrUsd: 0,
   reason: 'Stripe NOT CHECKED',
 }
 
@@ -89,7 +88,6 @@ export async function readStripeTruth(): Promise<StripeTruth> {
     let activeSubs = 0
     let trialingSubs = 0
     let mrrCents = 0
-    const planMix: Partial<Record<StripePlan, number>> = {}
 
     for (const s of subs.data) {
       if (s.status === 'trialing') trialingSubs++
@@ -113,7 +111,6 @@ export async function readStripeTruth(): Promise<StripeTruth> {
       trialingSubs,
       mrrUsd,
       arrUsd: Math.round(mrrUsd * 12 * 100) / 100,
-      planMix,
       reason: 'read live from Stripe',
     }
   } catch (e: any) {

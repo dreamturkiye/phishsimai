@@ -220,3 +220,12 @@ describe('the report line', () => {
     expect(line).toContain('No revenue or pricing claim is possible')
   })
 })
+
+describe('PS-FINN-PLANMIX-KILL-01 — no dead empty-field that looks populated', () => {
+  const SRC = require('node:fs').readFileSync('server/os/agents/finn.ts', 'utf8')
+  it('planMix is gone — a returned-but-never-populated field is a latent fabrication', () => {
+    // It was declared in StripeTruth, set to {} in EMPTY_TRUTH, and returned, but the loop never
+    // filled it and nothing downstream read it. Removed rather than left looking populated.
+    expect(SRC).not.toContain('planMix')
+  })
+})
