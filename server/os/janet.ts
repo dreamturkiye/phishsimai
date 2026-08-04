@@ -14,6 +14,8 @@ import { runNovaAgent } from './agents/nova'
 import { readMiaInbox } from '../mia/feedbackTool'
 import { collectInvariants } from './invariantsCollect'
 import { scoreAgentKpi, summariseKpiOwnership, type AgentId as KpiAgentId } from './kpiOwnership'
+import { evaluateDecommission, summariseDecommission, DECOMMISSION_DAYS } from './agentDecommission'
+import { writeAgentKpiVerdict, readAgentKpiHistory } from '../db'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -189,6 +191,20 @@ export async function runJanetBrief(companyId = 'phishsimai') {
   })
   const kpiOwnership = summariseKpiOwnership(kpiScores)
 
+  // PS-DECOMMISSION-01 — persist today's verdicts, then propose decommission for any owner that has
+  // produced NO verdict (DEGRADED) for the whole 90-day window. AWAITING_DATA breaks the streak, so
+  // an empty funnel never fires an agent. DETECT + PROPOSE only — the pause is Kaan's call.
+  const decomm = await (async () => {
+    try {
+      const verdicts = await Promise.all(kpiScores.map(async (sc) => {
+        await writeAgentKpiVerdict(sc.agentId, sc.kpi, sc.verdict)
+        const history = await readAgentKpiHistory(sc.agentId, DECOMMISSION_DAYS)
+        return evaluateDecommission(sc.agentId, history as any)
+      }))
+      return summariseDecommission(verdicts)
+    } catch { return null }
+  })()
+
   const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
 
@@ -226,6 +242,7 @@ MESSAGING / CHANNELS (Aria — she owns current best outreach; pricing is a hard
 CUSTOMER VOICE (Mia — trial feedback, bugs, and customers waiting on a human): ${miaInbox ? miaInbox.line : 'NOT CHECKED this cycle — no feedback or handoff claim may be made.'}
 BUSINESS INVARIANTS (crown jewels — a VIOLATION halts and must be escalated, not narrated away): ${invariants ? invariants.line : 'NOT CHECKED this cycle — the invariant sweep failed to run. Do not assert the invariants hold.'}
 KPI OWNERSHIP (each agent owns ONE KPI; AWAITING_DATA over an empty funnel is honest, not failure): ${kpiOwnership.line}
+AGENT CONTRIBUTION (90-day decommission — DEGRADED all window = propose retire; empty funnel is NOT a firing offence): ${decomm ? decomm.line : 'NOT CHECKED this cycle.'}
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 
