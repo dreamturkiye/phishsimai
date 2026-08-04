@@ -20,6 +20,7 @@ type Customer = { customer: { orgId: number }; org: { id: number; name: string }
 export default function PsaIntegrations({ customers }: { customers: Customer[] }) {
   const { data, isLoading, refetch } = trpc.psa.getConnections.useQuery();
   const cw = data?.connections.find((c) => c.provider === "connectwise_manage");
+  const halo = data?.connections.find((c) => c.provider === "halo");
 
   if (isLoading) return null;
 
@@ -36,18 +37,7 @@ export default function PsaIntegrations({ customers }: { customers: Customer[] }
       )}
 
       <ConnectwiseCard conn={cw} customers={customers} onChanged={refetch} disabled={!data?.secretKeyConfigured} />
-
-      <Card className="border-border/60 opacity-70">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Plug className="w-4 h-4 text-muted-foreground" /> Halo PSA
-            <Badge variant="secondary" className="ml-auto">Coming in PR2</Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Halo PSA ticketing (cloud tenants) ships in the next release. On-prem Halo is not supported.
-        </CardContent>
-      </Card>
+      <HaloCard conn={halo} customers={customers} onChanged={refetch} disabled={!data?.secretKeyConfigured} />
     </div>
   );
 }
@@ -147,13 +137,93 @@ function ConnectwiseCard({ conn, customers, onChanged, disabled }: { conn: any; 
   );
 }
 
-function MappingTable({ connectionId, customers, onChanged }: { connectionId: number; customers: Customer[]; onChanged: () => void }) {
+function HaloCard({ conn, customers, onChanged, disabled }: { conn: any; customers: Customer[]; onChanged: () => void; disabled: boolean }) {
+  const cfg = (conn?.config ?? {}) as any;
+  const [baseUrl, setBaseUrl] = useState(cfg.baseUrl ?? "");
+  const [ticketTypeId, setTicketTypeId] = useState(cfg.ticketTypeId != null ? String(cfg.ticketTypeId) : "");
+  const [teamId, setTeamId] = useState(cfg.teamId != null ? String(cfg.teamId) : "");
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [enabled, setEnabled] = useState(!!conn?.enabled);
+
+  const buildConfig = () => ({
+    baseUrl: baseUrl.trim(),
+    ...(ticketTypeId ? { ticketTypeId: Number(ticketTypeId) } : {}),
+    ...(teamId ? { teamId: Number(teamId) } : {}),
+  });
+  const buildSecret = () => (clientId || clientSecret ? { clientId, clientSecret } : undefined);
+
+  const upsert = trpc.psa.upsertConnection.useMutation({
+    onSuccess: () => { toast.success("Halo connection saved"); setClientId(""); setClientSecret(""); onChanged(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const test = trpc.psa.testConnection.useMutation({
+    onSuccess: (r) => { r.ok ? toast.success(r.detail ?? "Connected") : toast.error(r.detail ?? "Test failed"); onChanged(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Card className="border-border/60">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Plug className="w-4 h-4 text-primary" /> Halo PSA
+          <span className="ml-auto flex items-center gap-2">
+            {conn?.ticketsCreated > 0 && (
+              <span className="text-[12px] text-muted-foreground flex items-center gap-1">
+                <Ticket className="w-3.5 h-3.5" /> {conn.ticketsCreated} tickets
+              </span>
+            )}
+            <StatusBadge conn={conn} />
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm">
+        <p className="text-[12px] text-muted-foreground">Cloud Halo tenants only. On-prem Halo is not supported.</p>
+        {conn?.lastError && conn?.lastTestOk !== true && (
+          <p className="text-[12px] text-red-400/90 flex items-start gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {conn.lastError}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Halo base URL"><Input placeholder="https://your-tenant.halopsa.com" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} /></Field>
+          <Field label="Ticket Type ID (optional)"><Input placeholder="21" value={ticketTypeId} onChange={(e) => setTicketTypeId(e.target.value)} /></Field>
+          <Field label="Team ID (optional)"><Input placeholder="4" value={teamId} onChange={(e) => setTeamId(e.target.value)} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Client ID"><Input type="password" placeholder={conn?.hasCredentials ? "•••• stored" : ""} value={clientId} onChange={(e) => setClientId(e.target.value)} /></Field>
+          <Field label="Client Secret"><Input type="password" placeholder={conn?.hasCredentials ? "•••• stored" : ""} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} /></Field>
+        </div>
+        <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Enable Halo ticketing for non-simulation reports
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={disabled || upsert.isPending}
+            onClick={() => upsert.mutate({ provider: "halo", enabled, config: buildConfig(), secret: buildSecret() })}>
+            Save
+          </Button>
+          <Button size="sm" variant="outline" disabled={test.isPending}
+            onClick={() => test.mutate({ provider: "halo", config: buildConfig(), secret: buildSecret() })}>
+            <CheckCircle2 className="w-4 h-4 mr-1" /> Test connection
+          </Button>
+        </div>
+        {conn?.hasCredentials && <MappingTable connectionId={conn.id} provider="halo" customers={customers} onChanged={onChanged} />}
+      </CardContent>
+    </Card>
+  );
+}
+
+function MappingTable({ connectionId, provider = "connectwise_manage", customers, onChanged }: { connectionId: number; provider?: "connectwise_manage" | "halo"; customers: Customer[]; onChanged: () => void }) {
   const { data: mappings = [], refetch } = trpc.psa.getMappings.useQuery();
   const companies = trpc.psa.listExternalCompanies.useMutation();
   const [orgId, setOrgId] = useState<string>("");
   const [companyId, setCompanyId] = useState<string>("");
 
   const list = (companies.data ?? []) as Array<{ id: string; name: string }>;
+  // Each provider card owns its own mappings — filter by this connection so the two cards never
+  // show each other's rows.
+  const rows = (mappings as any[]).filter((m) => m.connectionId === connectionId);
+  const label = provider === "halo" ? "Halo client" : "ConnectWise company";
   const upsert = trpc.psa.upsertMapping.useMutation({
     onSuccess: () => { toast.success("Mapping saved"); setOrgId(""); setCompanyId(""); refetch(); onChanged(); },
     onError: (e) => toast.error(e.message),
@@ -162,12 +232,12 @@ function MappingTable({ connectionId, customers, onChanged }: { connectionId: nu
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-primary">Company mapping (PhishSim org ↔ CW company)</div>
-      <p className="text-[12px] text-muted-foreground">A client's reports create tickets only after its org is mapped to a ConnectWise company.</p>
+      <div className="text-xs font-semibold uppercase tracking-wide text-primary">Company mapping (PhishSim org ↔ {label})</div>
+      <p className="text-[12px] text-muted-foreground">A client's reports create tickets only after its org is mapped to a {label}.</p>
 
-      {mappings.length > 0 && (
+      {rows.length > 0 && (
         <div className="space-y-1">
-          {mappings.map((m: any) => (
+          {rows.map((m: any) => (
             <div key={m.id} className="flex items-center gap-2 text-[13px]">
               <span className="flex-1 truncate">{customers.find((c) => c.org?.id === m.orgId)?.org?.name ?? `Org #${m.orgId}`}</span>
               <span className="text-muted-foreground">→</span>
@@ -193,7 +263,7 @@ function MappingTable({ connectionId, customers, onChanged }: { connectionId: nu
           </Select>
         </div>
         <div className="min-w-[180px]">
-          <Label className="text-[11px] text-muted-foreground">ConnectWise company</Label>
+          <Label className="text-[11px] text-muted-foreground">{label}</Label>
           <Select value={companyId} onValueChange={setCompanyId} disabled={!list.length}>
             <SelectTrigger className="h-8"><SelectValue placeholder={list.length ? "Select company" : "Load companies →"} /></SelectTrigger>
             <SelectContent>
@@ -202,7 +272,7 @@ function MappingTable({ connectionId, customers, onChanged }: { connectionId: nu
           </Select>
         </div>
         <Button size="sm" variant="outline" disabled={companies.isPending}
-          onClick={() => companies.mutate({ provider: "connectwise_manage" })}>
+          onClick={() => companies.mutate({ provider })}>
           {companies.isPending ? "Loading…" : "Load companies"}
         </Button>
         <Button size="sm" disabled={!orgId || !companyId || upsert.isPending}
