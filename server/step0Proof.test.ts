@@ -6,7 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import express from 'express'
 import type { Server } from 'node:http'
 
-vi.mock('./db', () => ({ trackEvent: vi.fn(async () => {}) }))
+vi.mock('./db', () => ({ trackEvent: vi.fn(async () => {}), assignTrainingForToken: async () => null }))
 
 import { registerTrackingRoutes } from './email/tracker'
 import { verifyDomainTxt, buildVerificationToken, txtMatches, flattenTxt } from './lib/domainVerify'

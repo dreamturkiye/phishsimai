@@ -264,6 +264,21 @@ export const trainingCompletions = pgTable("training_completions", {
   index("training_completions_moduleId_idx").on(t.moduleId),
 ]);
 
+export const trainingAssignments = pgTable("training_assignments", {
+  id: serial("id").primaryKey(),
+  orgId: integer("orgId").notNull(),
+  targetId: integer("targetId").notNull(),
+  moduleId: integer("moduleId").notNull(),
+  attackType: text("attackType"),
+  source: text("source").notNull(),                 // 'sim_click' | 'sim_submit'
+  campaignResultId: integer("campaignResultId"),
+  assignedAt: timestamp("assignedAt", { withTimezone: true }).defaultNow().notNull(),
+  completedAt: timestamp("completedAt", { withTimezone: true }),  // NULL = enrolled, not completed
+}, (t) => [
+  index("training_assignments_org_idx").on(t.orgId, t.assignedAt),
+]);
+export type TrainingAssignment = typeof trainingAssignments.$inferSelect;
+
 export type TrainingCompletion = typeof trainingCompletions.$inferSelect;
 
 // ─── Gamification Scores ──────────────────────────────────────────────────────
