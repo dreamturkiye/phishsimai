@@ -1,3 +1,4 @@
+import type { AllowlistState } from "./lib/allowlistGate";
 import { neon } from "@neondatabase/serverless";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
@@ -661,4 +662,59 @@ export async function updateOrgStripeSubscription(
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(organizations).set(data).where(eq(organizations.id, orgId));
+}
+
+// ─── PS-DELIVER-ALLOWLIST-01 — allowlist onboarding state ────────────────────
+
+/**
+ * Read an org's allowlist state. Returns null when there is no row, which the gate treats as
+ * not_started — the correct default, since an org that has never seen the step has not completed it.
+ *
+ * A read FAILURE also returns null and therefore blocks. Fail closed: an unreadable state is not
+ * evidence of consent, and the cost of a wrong block (one extra click) is far below the cost of a
+ * wrong pass (an invisible first campaign, which is the activation leak this exists to close).
+ */
+export async function getOrgAllowlistState(orgId: number): Promise<{ state: AllowlistState; skipAckText: string | null } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rows = (await db.execute(
+      sql`SELECT state, skip_ack_text FROM org_allowlist_state WHERE "orgId" = ${orgId} LIMIT 1`,
+    )) as any;
+    const r = rows?.rows?.[0] ?? rows?.[0];
+    if (!r) return null;
+    return { state: r.state as AllowlistState, skipAckText: r.skip_ack_text ?? null };
+  } catch {
+    return null; // fail closed
+  }
+}
+
+/** Record that the admin says they configured allowlisting. Never a claim that we verified it. */
+export async function confirmOrgAllowlist(orgId: number, userId: number, platform: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("database unavailable");
+  await db.execute(sql`
+    INSERT INTO org_allowlist_state ("orgId", state, platform, "confirmedAt", "confirmedBy", "updatedAt")
+    VALUES (${orgId}, 'confirmed_by_admin', ${platform}, NOW(), ${userId}, NOW())
+    ON CONFLICT ("orgId") DO UPDATE SET
+      state = 'confirmed_by_admin', platform = ${platform},
+      "confirmedAt" = NOW(), "confirmedBy" = ${userId},
+      "skippedAt" = NULL, skip_ack_text = NULL, "updatedAt" = NOW()
+  `);
+}
+
+/**
+ * Record a knowing skip. `ackText` is the warning the admin actually agreed to, stored verbatim —
+ * the 0021 CHECK constraint rejects a skip without it, so an unrecorded skip cannot be written.
+ */
+export async function skipOrgAllowlist(orgId: number, ackText: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("database unavailable");
+  await db.execute(sql`
+    INSERT INTO org_allowlist_state ("orgId", state, "skippedAt", skip_ack_text, "updatedAt")
+    VALUES (${orgId}, 'skipped', NOW(), ${ackText}, NOW())
+    ON CONFLICT ("orgId") DO UPDATE SET
+      state = 'skipped', "skippedAt" = NOW(), skip_ack_text = ${ackText},
+      "confirmedAt" = NULL, "confirmedBy" = NULL, "updatedAt" = NOW()
+  `);
 }

@@ -3,6 +3,8 @@ import { TRPCError } from "@trpc/server";
 import { parse as parseCookie } from "cookie";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { checkAllowlistGate } from "./lib/allowlistGate";
+import { audit } from "./lib/campaignSend";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createHeartbeatJob, deleteHeartbeatJob, listHeartbeatJobs, updateHeartbeatJob } from "./_core/heartbeat";
 import { llmComplete } from "./os/llmChat";
@@ -30,6 +32,7 @@ import {
   deleteTarget,
   deleteTemplate,
   getCampaignById,
+  getOrgAllowlistState,
   getCampaignByTaskUid,
   getCampaignResults,
   getCampaigns,
@@ -824,6 +827,22 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const campaign = await getCampaignById(input.campaignId, input.orgId);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
         if (!campaign.templateId) throw new TRPCError({ code: "BAD_REQUEST", message: "No template assigned to campaign" });
+
+        // PS-DELIVER-ALLOWLIST-01 — ALLOWLIST GATE. Before a single email leaves: a check that runs
+        // after the send loop is not a gate (mail already gone, only the status update refused).
+        // Passing requires the admin to have CONFIRMED allowlisting or KNOWINGLY skipped it. We never
+        // verify the tenant policy ourselves — no vendor API exposes it — so the audit records the
+        // admin's claim as a claim, never as a verification.
+        {
+          const allowlistRow = await getOrgAllowlistState(input.orgId);
+          const gate = checkAllowlistGate(allowlistRow);
+          if (!gate.allowed) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Allowlist step incomplete — ${gate.detail}` });
+          }
+          await audit("allowlist_gate", "campaign_launch_allowed", `campaign:${input.campaignId}`, {
+            orgId: input.orgId, state: gate.state, note: gate.note,
+          });
+        }
         const template = await getTemplateById(campaign.templateId, input.orgId);
         if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
         const allTargets = await getTargets(input.orgId);
