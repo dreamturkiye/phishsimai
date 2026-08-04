@@ -122,6 +122,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/deploy-verify") return routes.cronDeployVerify(req, res);
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
     if (path === "/api/os/competitor-intel") return routes.cronCompetitorIntel(req, res);
+    if (path === "/api/os/reflection") return routes.cronReflection(req, res);
     if (path === "/api/os/sales-replies") return routes.cronSalesReplies(req, res);
     if (path === "/api/os/rex") return routes.cronRex(req, res);
     if (path === "/api/os/dex") return routes.cronDex(req, res);
