@@ -69,3 +69,15 @@ describe('PROTECTED topics are never adopted from an external source', () => {
     expect(isProtectedTopic('NIST updated its awareness-training control guidance')).toBe(false)
   })
 })
+
+describe('PS-SCOUT-EXTRACT-WINDOW-01 — the extraction window fits the free tier', () => {
+  it('EXTRACT_MAX_CHARS gives the large content-rich sources room, but stays under the Cerebras cap', async () => {
+    const { EXTRACT_MAX_CHARS } = await import('./scoutLandscape')
+    // Big enough that NAIC/PCI substantive text (past 6000) reaches the model:
+    expect(EXTRACT_MAX_CHARS).toBeGreaterThanOrEqual(12_000)
+    // Small enough to stay on Cerebras free tier (8192 tokens ≈ ~24k chars incl. system+output).
+    // 14k chars ≈ 3.5k tokens — comfortable. This ceiling prevents a silent raise past the cap that
+    // would skip every extraction to paid DeepInfra.
+    expect(EXTRACT_MAX_CHARS).toBeLessThanOrEqual(18_000)
+  })
+})
