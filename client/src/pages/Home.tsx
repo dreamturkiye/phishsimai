@@ -7,10 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLoginUrl, getSignupUrl } from "@/const";
 import {
-  Shield, Zap, BarChart3, Users, Brain, CheckCircle2,
+  Shield, Zap, BarChart3, Users, CheckCircle2,
   ChevronRight, Star, Building2, Globe, Mail, Phone,
   Lock, AlertTriangle, FileText, Award, Clock, Target,
-  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu, Ticket
+  ArrowRight, X, Check, BookOpen, Palette, Menu, Ticket
 } from "lucide-react";
 
 const MANDATORY_FRAMEWORKS = [
@@ -29,14 +29,18 @@ const RECOMMENDED_FRAMEWORKS = [
   { name: "SEC Cybersecurity Rules (2023)", note: "Requires disclosure of risk management programs; phishing training is a common cited control" },
 ];
 
+// PS-HOMEPAGE-VERIFIED: every card below maps to a feature verified as built, on, and functional
+// (see the pre-homepage verification). Deliberately NO "unlimited AI" framing, NO "live-verified"
+// PSA claim, NO custom-domain white-label (that field is stored but not yet served).
 const FEATURES = [
-  { icon: Brain, title: "AI-Powered Template Engine", description: "Generate unlimited realistic phishing templates in English, Spanish, and Turkish. Industry-specific attack types across Finance, Healthcare, HR, and more.", color: "text-violet-400", bg: "bg-violet-500/10" },
-  { icon: Target, title: "Department-Based Targeting", description: "Organize employees by Finance, Sales, Management, Operations, Warehouse, or custom departments. Run targeted campaigns that mirror real-world attack patterns.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
-  { icon: BarChart3, title: "Real-Time Analytics", description: "Track open rates, click rates, credential submission rates, and improvement trends per department. Identify your highest-risk employees instantly.", color: "text-emerald-400", bg: "bg-emerald-500/10" },
-  { icon: BookOpen, title: "15+ Training Modules", description: "Short-form security awareness courses (90% under 5 minutes) covering HIPAA, PCI DSS, GDPR, password hygiene, social engineering, and more.", color: "text-amber-400", bg: "bg-amber-500/10" },
-  { icon: Award, title: "Compliance Certificates", description: "Auto-generate regulatory compliance certificates for HIPAA, GLBA, NERC CIP, CMMC, NY DFS, SOC 2, and 5 more frameworks with specific legal citations.", color: "text-rose-400", bg: "bg-rose-500/10" },
-  { icon: Layers, title: "MSP White Label Portal", description: "Manage multiple customer organizations from a single dashboard. Full white-label branding with your logo, colors, and custom domain.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
-  { icon: Ticket, title: "PSA ticketing (ConnectWise Manage & Halo)", description: "Connect PhishSim to ConnectWise Manage or Halo PSA. When a user reports a real suspicious email, PhishSim can open a service-desk ticket with the details your team needs. Simulation reports are scored only and never create tickets, so training noise stays out of your queue. Configured in the MSP admin area, with a per-client company mapping.", color: "text-sky-400", bg: "bg-sky-500/10" },
+  { icon: Building2, title: "Set-and-forget for MSPs", description: "Run every client from one multi-tenant dashboard. Provision a new customer org in under a minute and send the first simulation the same afternoon — no onboarding call, no implementation project.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+  { icon: BookOpen, title: "Learning Moments on click", description: "The moment someone clicks a simulated lure, they get a short micro-lesson tied to that exact attack — the specific red flags they missed. Reviewing it can count toward their training record.", color: "text-amber-400", bg: "bg-amber-500/10" },
+  { icon: Shield, title: "Report Phish without ticket noise", description: "Give staff a one-click way to report suspicious mail. Simulation reports are scored only and never open a ticket, so your service desk sees real threats, not training noise. (Outlook add-in available; deployed by your Microsoft 365 admin.)", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  { icon: Ticket, title: "ConnectWise Manage & Halo PSA", description: "ConnectWise Manage and Halo PSA integrations are available: reported real phishing can open a ticket in your PSA — when connected and mapped — while simulation reports are scored only and do not create tickets.", color: "text-sky-400", bg: "bg-sky-500/10" },
+  { icon: Mail, title: "Allowlist wizard", description: "A guided wizard walks admins through inbox allowlisting before the first campaign, so your simulations land in the inbox instead of the spam folder.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
+  { icon: Zap, title: "Auto-remediation", description: "When an employee fails a simulation, PhishSim automatically enrolls them in the training module that matches the attack they fell for — no manual follow-up.", color: "text-violet-400", bg: "bg-violet-500/10" },
+  { icon: BarChart3, title: "Human Risk Score", description: "One QBR-ready risk number per organization, built from real behavior. When the data is still thin, it says so honestly instead of inventing a score.", color: "text-rose-400", bg: "bg-rose-500/10" },
+  { icon: FileText, title: "Insurance evidence pack", description: "Generate a carrier-style evidence PDF for cyber-insurance renewals — campaign history, click-rate trends, and training records — white-labeled under your MSP brand.", color: "text-teal-400", bg: "bg-teal-500/10" },
 ];
 
 // PS-PRICE-05: the KnowBe4/Proofpoint/Cofense comparison table was REMOVED (founder decision
@@ -414,10 +418,10 @@ export default function Home() {
           </div>
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { step: "01", icon: Users, title: "Import Your Team", desc: "Upload a CSV or add employees manually. Organize by department — Finance, Sales, Management, Operations, Warehouse, or custom.", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20" },
-              { step: "02", icon: Brain, title: "Launch AI Campaigns", desc: "Choose from 100+ built-in templates or generate new ones with AI. Schedule recurring campaigns with automatic target rotation.", color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
-              { step: "03", icon: TrendingUp, title: "Track and Train", desc: "See who clicked, who submitted credentials, and who reported the email. Auto-enroll at-risk employees in targeted training modules.", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-              { step: "04", icon: Award, title: "Prove Compliance", desc: "Generate compliance reports and certificates for HIPAA, GLBA, NERC CIP, CMMC, NY DFS, SOC 2, and more with one click.", color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+              { step: "01", icon: Mail, title: "Allowlist & import", desc: "The guided wizard walks you through inbox allowlisting, then import your team by CSV or by hand — organized by department.", color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
+              { step: "02", icon: Target, title: "Launch a campaign", desc: "Pick from 100 realistic built-in templates and schedule recurring sends with automatic target rotation.", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20" },
+              { step: "03", icon: BookOpen, title: "Learning Moment & report", desc: "Anyone who clicks gets an instant per-lure micro-lesson and is auto-enrolled in matching training. Staff can report suspicious mail in one click.", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+              { step: "04", icon: Award, title: "Risk score + evidence", desc: "A QBR-ready Human Risk Score, compliance certificates, and a carrier-ready cyber-insurance evidence pack — generated in one click.", color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
             ].map(({ step, icon: Icon, title, desc, color, bg }) => (
               <div key={step} className="text-center">
                 <div className={"w-16 h-16 rounded-2xl border " + bg + " flex items-center justify-center mx-auto mb-4"}>
@@ -436,8 +440,8 @@ export default function Home() {
       <section id="features" className="py-20 border-t border-border/40 bg-secondary/10">
         <div className="container">
           <div className="text-center mb-14">
-            <h2 className="text-4xl font-black mb-4">The complete phishing simulation platform</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Every feature you need to run a world-class security awareness program — all in one place, at a fraction of the cost.</p>
+            <h2 className="text-4xl font-black mb-4">Built for the MSP service desk</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">From guided allowlisting to per-lure Learning Moments, PSA ticketing, and carrier-ready insurance evidence — plus 100 realistic built-in simulation templates, all in one place.</p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
             {FEATURES.map((f) => (
@@ -568,7 +572,7 @@ export default function Home() {
               </p>
               <div className="space-y-3 mb-8">
                 {[
-                  "Full white-label branding — your logo, colors, and custom domain",
+                  "Full white-label branding — your logo, colors, and support email",
                   "Provision unlimited customer organizations with one click",
                   "Consolidated compliance reporting across all customers",
                   "Suspend, activate, or upgrade customers instantly",
@@ -592,7 +596,7 @@ export default function Home() {
             <div className="space-y-4">
               {[
                 { icon: Users, title: "Multi-Tenant Management", desc: "Manage 10 to 1,000+ customer organizations from a single login with full isolation between tenants.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
-                { icon: Palette, title: "White-Label Branding", desc: "Your customers see your brand, not ours. Custom logo, colors, support email, and domain.", color: "text-violet-400", bg: "bg-violet-500/10" },
+                { icon: Palette, title: "White-Label Branding", desc: "Your customers see your brand, not ours. Custom logo, colors, and support email across the portal and reports.", color: "text-violet-400", bg: "bg-violet-500/10" },
                 { icon: BarChart3, title: "Consolidated Reporting", desc: "See compliance scores, campaign performance, and risk levels across all customers at a glance.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
                 { icon: Zap, title: "Instant Provisioning", desc: "Create a new customer org in under 60 seconds. No waiting, no tickets, no back-and-forth.", color: "text-amber-400", bg: "bg-amber-500/10" },
               ].map(({ icon: Icon, title, desc, color, bg }) => (
