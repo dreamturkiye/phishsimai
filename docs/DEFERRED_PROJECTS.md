@@ -65,3 +65,27 @@ Two architectures, materially different in cost and risk:
 - (b) confirmation the plan tier permits per-tenant custom domains;
 - (c) a chosen architecture (per-domain vs wildcard/proxy), designed to leave `sim.phishsimai.com`
   sending-auth untouched.
+
+---
+
+## Follow-ups & calendar (tracked, not tonight)
+
+### SCOUT-RACE-01 — make a Scout landscape run single-writer / atomic
+**Not urgent — the gate held and both structural invariants passed under a concurrent run.** But the
+first live run (2026-08-04) raced a manual fire against the scheduled cron, and with
+`ON CONFLICT DO NOTHING` on the `one-per-day` index the persisted rows became a MIX of two runs
+(first-writer-wins per source). Benign, but a single run's results can be half-overwritten.
+
+Fix options (pick one when picked up):
+- Add a `run_id` (uuid per invocation) to `os_market_intel` so one run's findings are attributable
+  and atomic — a reader can select the latest complete run rather than a per-source mix; **or**
+- Confirm the weekly cron is the SOLE writer (no manual fires racing it) — operational discipline,
+  no code.
+
+The LLM extractor is non-deterministic (same source verifies on one run, yields nothing on
+another), so run attribution is the honest way to read results, not assuming one clean set.
+
+### CALENDAR — verify Scout Monday 07:00 UTC cron landed clean, single-writer
+Next scheduled `0 7 * * 1` run. Confirm: it fired, findings passed the `verifyFinding` gate,
+`os_market_intel` rows for that day are from a single run (no race), and both invariants still hold
+(no verified row without a quote; no failed row with a claim).
