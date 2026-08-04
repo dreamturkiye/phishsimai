@@ -615,11 +615,26 @@ export async function updateGamificationOnTraining(orgId: number, targetId: numb
   await db.update(gamificationScores).set({ riskScore: newRisk, trainingCount: score.trainingCount + 1 }).where(and(eq(gamificationScores.orgId, orgId), eq(gamificationScores.targetId, targetId)));
 }
 
-export async function getOrgPostureScore(orgId: number): Promise<number> {
+/**
+ * PS-POSTURE-HONEST-01 — a posture score over zero data is NOT 50.
+ *
+ * This returned a hardcoded 50 both when the database was unreachable and when the org had no
+ * scored targets at all. A brand-new trial — the exact account we most need to tell the truth to —
+ * was shown "Security Score 50/100" as though something had been measured. Nothing had.
+ *
+ * That is the same defect class as a rate over an empty denominator (truthReport.ts:36
+ * NOT_MEASURED) and as a scan verdict over zero units (scanVerdict.ts), except pointed at a
+ * customer instead of at an internal brief. INV-3 exists to halt exactly this shape; it was living
+ * in the analytics dashboard the whole time.
+ *
+ * NULL means "we have not measured this yet" and the UI must say so in words. It must never be
+ * coalesced to 0 either — 0/100 reads as catastrophic security, which is a worse lie than 50.
+ */
+export async function getOrgPostureScore(orgId: number): Promise<number | null> {
   const db = await getDb();
-  if (!db) return 50;
+  if (!db) return null; // unreachable DB is not a posture of 50
   const scores = await db.select().from(gamificationScores).where(eq(gamificationScores.orgId, orgId));
-  if (scores.length === 0) return 50;
+  if (scores.length === 0) return null; // no scored targets: nothing has been measured
   const avg = scores.reduce((sum, s) => sum + s.riskScore, 0) / scores.length;
   return Math.round(100 - avg); // posture = inverse of risk
 }
