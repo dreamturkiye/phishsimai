@@ -54,16 +54,21 @@ function loginHtml(token: string): string {
 // Confirmation page after the report form posts. `ok=false` says so plainly rather than
 // thanking the user for something we failed to record.
 function simplePage(icon: string, title: string, body: string): string {
-  return simplePage(icon, title, body);
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card{background:#1e293b;border-radius:16px;padding:40px;max-width:540px;width:100%;border:1px solid #334155;text-align:center}.icon{font-size:64px;margin-bottom:16px}h1{font-size:24px;font-weight:700;color:#f8fafc;margin-bottom:12px}p{font-size:15px;line-height:1.7;color:#94a3b8}.footer{margin-top:24px;font-size:12px;color:#475569}</style></head><body><div class="card"><div class="icon">${icon}</div><h1>${title}</h1><p>${body}</p><p class="footer">Powered by <a href="https://phishsimai.com" style="color:#6366f1">PhishSim AI</a></p></div></body></html>`;
 }
 
-function reportHtml(ok: boolean): string {
-  const icon = ok ? "✅" : "⚠️";
-  const title = ok ? "Thank You — Report Received" : "We Could Not Record Your Report";
-  const body = ok
-    ? "You correctly identified a simulated phishing email and reported it. That is exactly the right response — doing the same with a real attack protects your whole organization."
-    : "Something went wrong saving your report. You did the right thing by reporting it — please tell your security team directly so it still gets logged.";
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card{background:#1e293b;border-radius:16px;padding:40px;max-width:540px;width:100%;border:1px solid #334155;text-align:center}.icon{font-size:64px;margin-bottom:16px}h1{font-size:24px;font-weight:700;color:#f8fafc;margin-bottom:12px}p{font-size:15px;line-height:1.7;color:#94a3b8}.footer{margin-top:24px;font-size:12px;color:#475569}</style></head><body><div class="card"><div class="icon">${icon}</div><h1>${title}</h1><p>${body}</p><p class="footer">Powered by <a href="https://phishsimai.com" style="color:#6366f1">PhishSim AI</a></p></div></body></html>`;
+function reportHtml(ok: boolean, reportCount?: number | null): string {
+  if (!ok) {
+    return simplePage("\u26a0\ufe0f", "We Could Not Record Your Report",
+      "Something went wrong saving your report. You did the right thing by reporting it — please tell your security team directly so it still gets logged.");
+  }
+  // PS-REPORT-UX-01 — positive reinforcement. Reporting is the ONE behaviour the product exists to
+  // build, so the success page celebrates it. The count shown is the REAL running reportCount from
+  // gamification, never a fabricated points number; it is omitted when not resolvable.
+  const streak = typeof reportCount === "number" && reportCount > 0
+    ? `<div class="rp-count">\ud83c\udfc5 That's <strong>${reportCount}</strong> phishing ${reportCount === 1 ? "email" : "emails"} you've reported</div>`
+    : "";
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nice catch!</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden}.card{background:#1e293b;border-radius:16px;padding:44px 40px;max-width:520px;width:100%;border:1px solid #334155;text-align:center;position:relative}.pop{font-size:72px;margin-bottom:8px;animation:pop .5s ease-out}@keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.2)}100%{transform:scale(1)}}h1{font-size:26px;font-weight:800;color:#f8fafc;margin-bottom:10px}.sub{font-size:15px;line-height:1.7;color:#cbd5e1;margin-bottom:18px}.rp-count{display:inline-block;background:#065f46;color:#d1fae5;padding:10px 20px;border-radius:9999px;font-size:14px;margin:6px 0 4px}.why{border-top:1px solid #334155;margin-top:22px;padding-top:16px;font-size:13px;color:#94a3b8;line-height:1.6}.footer{margin-top:18px;font-size:12px;color:#475569}.confetti{position:absolute;top:-10px;width:8px;height:8px;opacity:.9;animation:fall 2.2s linear forwards}@keyframes fall{to{transform:translateY(320px) rotate(360deg);opacity:0}}</style></head><body><div class="card">${[..."0123456789"].map((n,i)=>`<span class="confetti" style="left:${8+i*9}%;background:${["#6366f1","#22c55e","#f59e0b","#ec4899"][i%4]};animation-delay:${i*0.12}s"></span>`).join("")}<div class="pop">\ud83c\udf89</div><h1>Nice catch!</h1><p class="sub">You reported a simulated phishing email — <strong style="color:#f8fafc">exactly the right move</strong>. Doing this with a real attack protects your whole organization.</p>${streak}<div class="why">Reporting is the single most valuable habit in security awareness. Every report you send helps your security team spot real attacks faster.</div><p class="footer">Powered by <a href="https://phishsimai.com" style="color:#6366f1">PhishSim AI</a></p></div></body></html>`;
 }
 
 export function registerTrackingRoutes(app: Express): void {
@@ -148,7 +153,17 @@ export function registerTrackingRoutes(app: Express): void {
   app.post("/api/report/:token", async (req, res) => {
     if (!TOKEN_RE.test(req.params.token)) { res.status(400).send(reportHtml(false)); return; }
     let ok = true;
+    let reportCount: number | null = null;
+    // The report SUCCEEDS on trackEvent alone. ok reflects only whether the report was recorded.
     try { await trackEvent(req.params.token,"report"); } catch(e){ ok = false; trackFailed("report", req.params.token, e); }
+    // The gamification credit + the celebration count are a best-effort BONUS — a failure here must
+    // never turn a recorded report into a failure, and never blocks the response.
+    if (ok) {
+      try {
+        const { creditReportForToken } = await import("../db");
+        reportCount = (await creditReportForToken(req.params.token))?.reportCount ?? null;
+      } catch { /* count omitted; the report still stands */ }
+    }
     // Answer in the content type the caller asked for: a browser form post wants a page,
     // an API/XHR caller wants JSON. Never report success when the write failed.
     if ((req.headers.accept ?? "").includes("application/json")) {
@@ -157,6 +172,6 @@ export function registerTrackingRoutes(app: Express): void {
         : { success: false, message: "We could not record your report. Please tell your security team directly." });
       return;
     }
-    res.status(ok ? 200 : 500).set("Content-Type","text/html").send(reportHtml(ok));
+    res.status(ok ? 200 : 500).set("Content-Type","text/html").send(reportHtml(ok, reportCount));
   });
 }

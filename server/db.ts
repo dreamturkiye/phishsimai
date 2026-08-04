@@ -895,3 +895,20 @@ export async function getPendingCommunityTemplates() {
   if (!db) return [];
   return db.select().from(templates).where(and(eq(templates.isShared, true), eq(templates.moderationStatus, 'pending'))).orderBy(desc(templates.createdAt));
 }
+
+/** PS-REPORT-UX-01 — award the real gamification credit for a phish report and return the true
+ *  running count for the celebration page. Null when the token has no resolvable target. */
+export async function creditReportForToken(token: string): Promise<{ reportCount: number } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const [res] = await db.select({ orgId: campaignResults.orgId, targetId: campaignResults.targetId })
+      .from(campaignResults).where(eq(campaignResults.trackingToken, token)).limit(1);
+    if (!res) return null;
+    await updateGamificationOnEvent(res.orgId, res.targetId, "report"); // real: reportCount++, risk down
+    const score = await getOrCreateGamificationScore(res.orgId, res.targetId);
+    return { reportCount: score.reportCount };
+  } catch {
+    return null;
+  }
+}
