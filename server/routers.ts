@@ -979,6 +979,21 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const baselineClickRate = sorted[0]?.clickRate ?? 0;
         const currentClickRate = sorted[sorted.length - 1]?.clickRate ?? 0;
         const { generateInsurancePack } = await import("./reports/insurancePack");
+        // PS-WHITELABEL-CERT-01: the cert presents under the RESELLER's brand. Resolve the MSP tenant
+        // owned by the requesting user; its brandName/brandLogoUrl white-label the certificate. No
+        // tenant -> brand stays undefined and generateInsurancePack falls back to "PhishSim AI".
+        // The org's own logo is a secondary fallback for the mark. The FACTS are unchanged either way.
+        let brandName: string | null = null;
+        let logoUrl: string | null = org.logoUrl ?? null;
+        try {
+          const { mspTenants } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const db3 = await getDb();
+          if (db3) {
+            const [tenant] = await db3.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+            if (tenant) { brandName = tenant.brandName ?? null; logoUrl = tenant.brandLogoUrl ?? logoUrl; }
+          }
+        } catch { /* no tenant / lookup failed -> PhishSim AI fallback, never a broken brand */ }
         const pdfBuffer = await generateInsurancePack({
           orgName: org.name,
           campaigns: campaignStats,
@@ -988,6 +1003,8 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           trainingModulesCount: 20,
           reportPeriodStart: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
           reportPeriodEnd: new Date(),
+          brandName,
+          logoUrl,
         });
         return { pdf: pdfBuffer.toString("base64"), filename: `${org.name.replace(/\s+/g, "-")}-Insurance-Readiness-Pack.pdf` };
       }),
