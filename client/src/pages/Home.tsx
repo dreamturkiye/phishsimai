@@ -10,7 +10,7 @@ import {
   Shield, Zap, BarChart3, Users, Brain, CheckCircle2,
   ChevronRight, Star, Building2, Globe, Mail, Phone,
   Lock, AlertTriangle, FileText, Award, Clock, Target,
-  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu
+  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu, Ticket
 } from "lucide-react";
 
 const MANDATORY_FRAMEWORKS = [
@@ -36,6 +36,7 @@ const FEATURES = [
   { icon: BookOpen, title: "15+ Training Modules", description: "Short-form security awareness courses (90% under 5 minutes) covering HIPAA, PCI DSS, GDPR, password hygiene, social engineering, and more.", color: "text-amber-400", bg: "bg-amber-500/10" },
   { icon: Award, title: "Compliance Certificates", description: "Auto-generate regulatory compliance certificates for HIPAA, GLBA, NERC CIP, CMMC, NY DFS, SOC 2, and 5 more frameworks with specific legal citations.", color: "text-rose-400", bg: "bg-rose-500/10" },
   { icon: Layers, title: "MSP White Label Portal", description: "Manage multiple customer organizations from a single dashboard. Full white-label branding with your logo, colors, and custom domain.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+  { icon: Ticket, title: "PSA ticketing (ConnectWise Manage & Halo)", description: "Connect PhishSim to ConnectWise Manage or Halo PSA. When a user reports a real suspicious email, PhishSim can open a service-desk ticket with the details your team needs. Simulation reports are scored only and never create tickets, so training noise stays out of your queue. Configured in the MSP admin area, with a per-client company mapping.", color: "text-sky-400", bg: "bg-sky-500/10" },
 ];
 
 // PS-PRICE-05: the KnowBe4/Proofpoint/Cofense comparison table was REMOVED (founder decision
@@ -572,6 +573,7 @@ export default function Home() {
                   "Consolidated compliance reporting across all customers",
                   "Suspend, activate, or upgrade customers instantly",
                   "Complete audit trail of all MSP actions",
+                  "PSA ticketing for ConnectWise Manage & Halo — a reported real phishing email can open a ticket in your service desk when the integration is enabled and each client org is mapped; simulation reports are scored only and never create tickets",
                   "MSP volume pricing available — contact us",
                 ].map((item) => (
                   <div key={item} className="flex items-start gap-2.5 text-sm">
