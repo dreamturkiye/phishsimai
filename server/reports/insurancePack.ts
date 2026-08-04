@@ -17,6 +17,32 @@ interface InsurancePackParams {
   trainingModulesCount: number;
   reportPeriodStart: Date;
   reportPeriodEnd: Date;
+  // PS-WHITELABEL-CERT-01. The reseller brand the cert presents under. When an MSP resells PhishSim
+  // to their client, the compliance cert they hand over must carry the MSP's name, not their
+  // vendor's. Absent -> falls back to "PhishSim AI". The BRAND changes; the FACTS below never do.
+  brandName?: string | null;
+  logoUrl?: string | null;
+}
+
+/**
+ * Best-effort fetch of the reseller logo as a buffer for embedding. Returns null on anything —
+ * absent URL, timeout, non-image, error — so a broken or missing logo never breaks the cert or
+ * renders a broken box. The text brand always carries the identity; the logo is additive.
+ */
+async function fetchLogo(url: string | null | undefined): Promise<Buffer | null> {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch(url, { signal: ctl.signal }).finally(() => clearTimeout(timer));
+    if (!res.ok) return null;
+    const type = res.headers.get("content-type") || "";
+    if (!/^image\/(png|jpe?g)/i.test(type)) return null; // pdfkit embeds PNG/JPEG only
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length > 0 ? buf : null;
+  } catch {
+    return null;
+  }
 }
 
 const NAVY = "#0f172a";
@@ -98,6 +124,12 @@ function campaignTable(doc: PDFKit.PDFDocument, campaigns: CampaignStat[]) {
 
 export async function generateInsurancePack(params: InsurancePackParams): Promise<Buffer> {
   const { orgName, campaigns, totalEmployeesTrained, baselineClickRate, currentClickRate, trainingModulesCount, reportPeriodStart, reportPeriodEnd } = params;
+  // PS-WHITELABEL-CERT-01: the brand the cert presents under. Fallback ONLY when unset — never a
+  // blank or a broken brand. Every factual claim (rates, counts, attestation, audit availability)
+  // is preserved verbatim regardless of whose name is on it.
+  const brand = (params.brandName || "").trim() || "PhishSim AI";
+  const isDefaultBrand = brand === "PhishSim AI";
+  const logo = await fetchLogo(params.logoUrl); // best-effort; null -> text brand only
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "LETTER", margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN }, autoFirstPage: true });
     const chunks: Buffer[] = [];
@@ -109,14 +141,17 @@ export async function generateInsurancePack(params: InsurancePackParams): Promis
     // PAGE 1: COVER
     doc.rect(0, 0, W, 200).fill(NAVY);
     doc.fillColor(WHITE).fontSize(28).font("Helvetica-Bold").text("Cyber Insurance", MARGIN, 50, { width: W - MARGIN * 2 });
-    doc.fontSize(28).text("Readiness Pack™", MARGIN, 84, { width: W - MARGIN * 2 });
+    doc.fontSize(28).text(isDefaultBrand ? "Readiness Pack\u2122" : "Readiness Pack", MARGIN, 84, { width: W - MARGIN * 2 });
     doc.fontSize(13).font("Helvetica").fillColor("#94a3b8").text("Security Awareness Training — Evidence Report", MARGIN, 126, { width: W - MARGIN * 2 });
     doc.rect(0, 200, W, 4).fill(VIOLET); doc.y = 224;
+    // PS-WHITELABEL-CERT-01: reseller logo, top-right of the cover band, best-effort. On any failure
+    // fetchLogo returned null and we render nothing — never a broken image.
+    if (logo) { try { doc.image(logo, W - MARGIN - 120, 40, { fit: [120, 120], align: "right" }); } catch { /* text brand carries it */ } }
     doc.fillColor(NAVY).fontSize(22).font("Helvetica-Bold").text(orgName, MARGIN, doc.y, { width: W - MARGIN * 2 });
     doc.moveDown(0.5);
     doc.fillColor(GRAY).fontSize(11).font("Helvetica").text(`Report generated: ${fmt(today)}`, MARGIN);
     doc.text(`Report period: ${fmt(reportPeriodStart)} – ${fmt(reportPeriodEnd)}`, MARGIN);
-    doc.text(`Prepared by: PhishSim AI (phishsimai.com)`, MARGIN);
+    doc.text(`Prepared by: ${brand}${isDefaultBrand ? " (phishsimai.com)" : ""}`, MARGIN);
     doc.moveDown(1.5);
     doc.rect(MARGIN, doc.y, W - MARGIN * 2, 1).fill("#e2e8f0"); doc.moveDown(1);
     doc.fillColor(NAVY).fontSize(12).font("Helvetica-Bold").text("This document satisfies carrier supplemental requirements from:", MARGIN);
@@ -133,7 +168,7 @@ export async function generateInsurancePack(params: InsurancePackParams): Promis
     doc.y += 56;
     // PAGE 2
     doc.addPage(); headerBar(doc, "  Carrier Supplemental — Control Evidence Summary"); doc.moveDown(0.5);
-    doc.fillColor(GRAY).fontSize(9).font("Helvetica").text("The following controls are verified by PhishSim AI platform data and satisfy supplemental questionnaire requirements from all major cyber insurance carriers.", MARGIN, doc.y, { width: W - MARGIN * 2 }); doc.moveDown(1);
+    doc.fillColor(GRAY).fontSize(9).font("Helvetica").text(`The following controls are verified by ${brand} platform data and satisfy supplemental questionnaire requirements from all major cyber insurance carriers.`, MARGIN, doc.y, { width: W - MARGIN * 2 }); doc.moveDown(1);
     checklistTable(doc, [
       { control: "Security Awareness Training Program", requirement: "Active, documented SAT program in place", status: "✓ PASS" },
       { control: "Phishing Simulation Active", requirement: "Quarterly+ phishing simulations running", status: "✓ PASS" },
@@ -164,17 +199,17 @@ export async function generateInsurancePack(params: InsurancePackParams): Promis
       { label: "Improvement Delta", value: `${improvement >= 0 ? "-" : "+"}${Math.abs(improvement)}pp`, sub: improvement >= 0 ? "Risk reduction demonstrated" : "Program maturing" },
     ]);
     doc.moveDown(0.5); sectionLabel(doc, "Carrier Narrative");
-    doc.fillColor(GRAY).fontSize(9).font("Helvetica").text(`${orgName} operates an active, continuous phishing simulation and security awareness training program through PhishSim AI. The program has run ${campaigns.length} phishing simulation campaign(s) covering ${totalEmployeesTrained} employees. The organization's phishing click-through rate ${improvement >= 0 ? `has decreased from ${baselineClickRate}% to ${currentClickRate}%, demonstrating a ${improvement} percentage-point risk reduction` : `is being actively tracked at ${currentClickRate}%`}. Training modules covering HIPAA, PCI DSS, CMMC, GDPR, password hygiene, and social engineering are available to all employees. This constitutes an active, documented security awareness training program as required by cyber insurance carriers.`, MARGIN, doc.y, { width: W - MARGIN * 2 });
+    doc.fillColor(GRAY).fontSize(9).font("Helvetica").text(`${orgName} operates an active, continuous phishing simulation and security awareness training program through ${brand}. The program has run ${campaigns.length} phishing simulation campaign(s) covering ${totalEmployeesTrained} employees. The organization's phishing click-through rate ${improvement >= 0 ? `has decreased from ${baselineClickRate}% to ${currentClickRate}%, demonstrating a ${improvement} percentage-point risk reduction` : `is being actively tracked at ${currentClickRate}%`}. Training modules covering HIPAA, PCI DSS, CMMC, GDPR, password hygiene, and social engineering are available to all employees. This constitutes an active, documented security awareness training program as required by cyber insurance carriers.`, MARGIN, doc.y, { width: W - MARGIN * 2 });
     // PAGE 4
     doc.addPage(); headerBar(doc, "  Phishing Simulation Campaign History — Timestamped Record"); doc.moveDown(0.3);
     doc.fillColor(GRAY).fontSize(8).font("Helvetica").text("The following log constitutes documented evidence of an active phishing simulation program as required by cyber insurance carriers. Click rate color coding: Green <10%, Amber 10-20%, Red >20%.", MARGIN, doc.y, { width: W - MARGIN * 2 }); doc.moveDown(0.8);
     if (campaigns.length === 0) { doc.fillColor(GRAY).fontSize(10).text("No campaigns have been run yet. Launch your first campaign to populate this record.", MARGIN); }
     else { campaignTable(doc, campaigns); }
     doc.moveDown(0.5);
-    doc.fillColor(GRAY).fontSize(8).font("Helvetica-Oblique").text("This log is generated from live PhishSim AI platform data and represents actual campaign activity. Available for carrier audit upon request.", MARGIN, doc.y, { width: W - MARGIN * 2 });
+    doc.fillColor(GRAY).fontSize(8).font("Helvetica-Oblique").text(`This log is generated from live ${brand} platform data and represents actual campaign activity. Available for carrier audit upon request.`, MARGIN, doc.y, { width: W - MARGIN * 2 });
     // PAGE 5
     doc.addPage(); headerBar(doc, "  Attestation & Signature"); doc.moveDown(1);
-    doc.fillColor(NAVY).fontSize(11).font("Helvetica").text(`This Cyber Insurance Readiness Pack was generated by PhishSim AI on ${fmt(today)}. The data contained herein represents actual platform activity for ${orgName} and is available for carrier verification upon request. This document may be submitted directly to cyber insurance carriers, brokers, or auditors as evidence of an active security awareness training and phishing simulation program.`, MARGIN, doc.y, { width: W - MARGIN * 2 });
+    doc.fillColor(NAVY).fontSize(11).font("Helvetica").text(`This Cyber Insurance Readiness Pack was generated by ${brand} on ${fmt(today)}. The data contained herein represents actual platform activity for ${orgName} and is available for carrier verification upon request. This document may be submitted directly to cyber insurance carriers, brokers, or auditors as evidence of an active security awareness training and phishing simulation program.`, MARGIN, doc.y, { width: W - MARGIN * 2 });
     doc.moveDown(1.5);
     doc.rect(MARGIN, doc.y, W - MARGIN * 2, 1).fill("#e2e8f0"); doc.moveDown(1);
     sectionLabel(doc, "MSP / IT Administrator Signature");
@@ -192,7 +227,7 @@ export async function generateInsurancePack(params: InsurancePackParams): Promis
     doc.fillColor(GRAY).text("phishsimai.com/verify", MARGIN);
     doc.moveDown(2);
     doc.rect(0, doc.page.height - 40, W, 40).fill(NAVY);
-    doc.fillColor(WHITE).fontSize(8).font("Helvetica").text(`PhishSim AI — Cyber Insurance Readiness Pack™ — Generated ${fmt(today)} — ${orgName}`, MARGIN, doc.page.height - 26, { width: W - MARGIN * 2, align: "center" });
+    doc.fillColor(WHITE).fontSize(8).font("Helvetica").text(`${brand} — Cyber Insurance Readiness Pack${isDefaultBrand ? "\u2122" : ""} — Generated ${fmt(today)} — ${orgName}`, MARGIN, doc.page.height - 26, { width: W - MARGIN * 2, align: "center" });
     doc.end();
   });
 }
