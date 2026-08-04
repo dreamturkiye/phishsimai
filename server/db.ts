@@ -376,12 +376,13 @@ export async function removeVerifiedDomain(orgId: number, domain: string): Promi
     .where(and(eq(orgVerifiedDomains.orgId, orgId), eq(orgVerifiedDomains.domain, clean)));
 }
 
-export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; language?: string; attackType?: string; difficulty?: string; industry?: string }) {
+export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; moderationStatus?: string; language?: string; attackType?: string; difficulty?: string; industry?: string }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
   if (opts.isBuiltIn !== undefined) conditions.push(eq(templates.isBuiltIn, opts.isBuiltIn));
   if (opts.isShared !== undefined) conditions.push(eq(templates.isShared, opts.isShared));
+  if (opts.moderationStatus !== undefined) conditions.push(eq(templates.moderationStatus, opts.moderationStatus));
   if (opts.orgId !== undefined) conditions.push(eq(templates.orgId, opts.orgId));
   if (opts.language) conditions.push(eq(templates.language, opts.language as any));
   if (opts.attackType) conditions.push(eq(templates.attackType, opts.attackType as any));
@@ -405,7 +406,7 @@ export async function getTemplateById(id: number, requestingOrgId?: number): Pro
   return t;
 }
 
-export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount" | "senderName"> & { senderName?: string | null }): Promise<Template> {
+export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount" | "senderName" | "moderationStatus"> & { senderName?: string | null; moderationStatus?: string }): Promise<Template> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const [row] = await db.insert(templates).values({ ...data, usageCount: 0 }).returning({ id: templates.id });
@@ -860,4 +861,18 @@ export async function readAgentKpiHistory(agentId: string, days: number): Promis
   } catch {
     return [];
   }
+}
+
+/** PS-MARKETPLACE-GATE-01 — admin sets a shared template's moderation state. */
+export async function moderateTemplate(templateId: number, status: 'approved' | 'rejected'): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(templates).set({ moderationStatus: status }).where(eq(templates.id, templateId));
+}
+
+/** Pending community submissions awaiting review. */
+export async function getPendingCommunityTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(templates).where(and(eq(templates.isShared, true), eq(templates.moderationStatus, 'pending'))).orderBy(desc(templates.createdAt));
 }

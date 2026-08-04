@@ -145,6 +145,7 @@ export const templates = pgTable("templates", {
   mspTenantId: integer("mspTenantId"),                        // null = not MSP template; set = MSP private template
   isBuiltIn: boolean("isBuiltIn").default(false).notNull(),
   isShared: boolean("isShared").default(false).notNull(),   // shared to community
+  moderationStatus: text("moderationStatus").default("pending").notNull(), // PS-MARKETPLACE-GATE-01: pending|approved|rejected — community-visible only when approved
   isMspTemplate: boolean("isMspTemplate").default(false).notNull(), // MSP private template
   tags: jsonb("tags").$type<string[]>().default([]),
   usageCount: integer("usageCount").default(0).notNull(),
