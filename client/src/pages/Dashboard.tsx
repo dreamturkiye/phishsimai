@@ -87,7 +87,7 @@ export default function Dashboard() {
             { label: "Emails Sent", value: sent.toLocaleString(), icon: Mail, color: "text-blue-400", bg: "bg-blue-500/10" },
             { label: "Avg Click Rate", value: `${clickRate}%`, icon: MousePointer, color: "text-amber-400", bg: "bg-amber-500/10" },
             { label: "Cred Submissions", value: `${submitRate}%`, icon: KeyRound, color: "text-red-400", bg: "bg-red-500/10" },
-            { label: "Security Score", value: `${analytics?.postureScore ?? 0}`, icon: Shield, color: "text-primary", bg: "bg-primary/10", suffix: "/100" },
+            { label: "Security Score", value: analytics?.postureScore == null ? "Not enough data yet" : `${analytics.postureScore}`, icon: Shield, color: "text-primary", bg: "bg-primary/10", suffix: analytics?.postureScore == null ? "" : "/100" },
           ].map((s) => (
             <Card key={s.label} className="border-border/60">
               <CardContent className="p-5">
