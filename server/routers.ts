@@ -1605,7 +1605,9 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       // Seed templates
       type TemplateInsert = Parameters<typeof createTemplate>[0];
       for (const t of BUILT_IN_TEMPLATES) {
-        await createTemplate({ ...t, isBuiltIn: true, isShared: false, orgId: null, createdByUserId: null } as TemplateInsert);
+        // PS-TEMPLATE-100: learningMoment has no column yet — strip it so the insert only carries real columns.
+        const { learningMoment: _lm, ...tCols } = t as any;
+        await createTemplate({ ...tCols, isBuiltIn: true, isShared: false, orgId: null, createdByUserId: null, moderationStatus: 'approved' } as TemplateInsert);
       }
       // Seed training modules
       const db2 = await getDb();

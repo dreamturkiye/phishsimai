@@ -10,7 +10,7 @@ export async function seedDatabase() {
   // ─── Templates ───────────────────────────────────────────────────────────────
   const existing = await db.select().from(templates).limit(1);
   if (existing.length === 0) {
-    console.log("[Seed] Seeding 100 phishing templates...");
+    console.log(`[Seed] Seeding ${(templateData as any[]).length} phishing templates...`);
 
     // Explicitly map each template to match the exact schema columns
     const mapped = (templateData as any[]).map((t) => ({
@@ -29,6 +29,14 @@ export async function seedDatabase() {
         | "pretexting",
       industry: (t.industry ?? null) as string | null,
       difficulty: (t.difficulty ?? "medium") as "easy" | "medium" | "hard",
+      // PS-TEMPLATE-100: senderName is a real column (0022) — map it so the display name is stored.
+      senderName: (t.senderName ?? null) as string | null,
+      // Built-in library templates are ours and trusted -> approved (community gate, 0026).
+      moderationStatus: "approved" as string,
+      // TODO(PS-TEMPLATE-100): learningMoment has NO column yet. The per-lure content lives in
+      // seed_templates.json and is intentionally NOT inserted here. When a learningMoment column is
+      // added via an additive migration, map t.learningMoment through and drop this note. Do not
+      // drop the JSON content in the meantime.
       mspTenantId: null,
       isBuiltIn: true,
       isShared: false,
