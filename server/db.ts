@@ -779,3 +779,19 @@ export async function skipOrgAllowlist(orgId: number, ackText: string): Promise<
       "confirmedAt" = NULL, "confirmedBy" = NULL, "updatedAt" = NOW()
   `);
 }
+
+/** PS-HUMAN-RISK-01 — org training-assignment counts for the risk composite's training dimension. */
+export async function getTrainingAssignmentStats(orgId: number): Promise<{ assigned: number; completed: number }> {
+  const db = await getDb();
+  if (!db) return { assigned: 0, completed: 0 };
+  try {
+    const rows = (await db.execute(
+      sql`SELECT count(*)::int AS assigned, count("completedAt")::int AS completed
+          FROM training_assignments WHERE "orgId" = ${orgId}`,
+    )) as any;
+    const r = rows?.rows?.[0] ?? rows?.[0] ?? {};
+    return { assigned: Number(r.assigned ?? 0), completed: Number(r.completed ?? 0) };
+  } catch {
+    return { assigned: 0, completed: 0 };
+  }
+}
