@@ -16,7 +16,11 @@ const DB = fs.readFileSync('server/db.ts', 'utf8')
 describe('viewed != completed', () => {
   it('the GET landing route does NOT complete training — it only renders', () => {
     // Isolate the /landing/:token GET handler and assert it never calls the completion path.
-    const g = TRACKER.slice(TRACKER.indexOf('app.get("/landing/:token"'), TRACKER.indexOf('app.get("/landing/:token"') + 300)
+    // Slice the ACTUAL handler block (to its closing), not a fixed window — the handler grew when it
+    // began rendering the per-lure lesson (PS-LEARNING-CONTENT-01), and a fixed window would bleed
+    // into the adjacent /api/training-complete handler.
+    const start = TRACKER.indexOf('app.get("/landing/:token"')
+    const g = TRACKER.slice(start, TRACKER.indexOf('app.get("/c/:token"', start) > -1 ? TRACKER.indexOf('app.post("/api/training-complete', start) : start + 900)
     expect(g).not.toContain('completeTrainingForToken')
     expect(g).toContain('landingHtml')
   })
