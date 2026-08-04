@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import VerifiedDomainsSection from "@/components/VerifiedDomainsSection";
+import AllowlistWizard from "@/components/AllowlistWizard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -347,7 +348,10 @@ export default function OrgSettings() {
           </TabsContent>
           <TabsContent value="domains" className="mt-4 space-y-4">
             {orgId ? (
-              <VerifiedDomainsSection orgId={orgId} isAdmin={myRole === "admin"} />
+              <>
+                <VerifiedDomainsSection orgId={orgId} isAdmin={myRole === "admin"} />
+                <AllowlistWizard orgId={orgId} />
+              </>
             ) : (
               <div className="text-xs text-muted-foreground">Loading…</div>
             )}
