@@ -174,4 +174,66 @@ export function registerTrackingRoutes(app: Express): void {
     }
     res.status(ok ? 200 : 500).set("Content-Type","text/html").send(reportHtml(ok, reportCount));
   });
+
+  // PS-PSA-01: the Outlook add-in / API report entry point. This endpoint was referenced by the
+  // add-in (report.html POSTs here) but never existed server-side — the add-in report went nowhere.
+  // It now runs the report router: persist the report ALWAYS, classify sim vs non-sim server-side,
+  // and for a non-sim create a PSA ticket when the org's MSP has an enabled + mapped connection.
+  //
+  // The end-user-facing response is deliberately generic and truthful ("report received"): the row
+  // is saved and visible to their security team. We never tell the reporter a ticket number the PSA
+  // did not return — the ticket status is an MSP-admin concern surfaced in the dashboard.
+  app.post("/api/phish-report", async (req, res) => {
+    try {
+      const b = (req.body ?? {}) as Record<string, unknown>;
+      const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+      // Accept structured fields; fall back to parsing the legacy combined "Display <addr>" sender.
+      let senderDisplay = str(b.senderDisplay);
+      let senderAddress = str(b.senderAddress);
+      const combined = str(b.sender);
+      if ((!senderDisplay || !senderAddress) && combined) {
+        const m = combined.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+        if (m) { senderDisplay = senderDisplay ?? (m[1] || null); senderAddress = senderAddress ?? (m[2] || null); }
+        else { senderAddress = senderAddress ?? combined; }
+      }
+      // Size caps protect us and the PSA API (spec: 256KB–1MB). Body excerpt is trimmed hard here.
+      const bodyExcerpt = str(b.bodyExcerpt);
+      let headers: Record<string, string> | null = null;
+      if (b.headers && typeof b.headers === "object" && !Array.isArray(b.headers)) {
+        headers = {};
+        for (const [k, v] of Object.entries(b.headers as Record<string, unknown>)) {
+          if (typeof v === "string") headers[k.slice(0, 128)] = v.slice(0, 2000);
+          if (Object.keys(headers).length >= 40) break;
+        }
+      }
+      let receivedAt: Date | null = null;
+      const ra = str(b.receivedAt);
+      if (ra) { const d = new Date(ra); if (!isNaN(d.getTime())) receivedAt = d; }
+
+      const input = {
+        token: str(b.token),
+        messageId: str(b.messageId),
+        subject: str(b.subject),
+        senderDisplay, senderAddress,
+        reporterEmail: str(b.reporterEmail),
+        reporterName: str(b.reporterName),
+        receivedAt,
+        bodyExcerpt: bodyExcerpt ? bodyExcerpt.slice(0, 256 * 1024) : null,
+        headers,
+        source: str(b.source) ?? "outlook-addin",
+      };
+
+      const { routePhishReport } = await import("../psa/reportRouting");
+      const { liveReportDeps } = await import("../psa/db");
+      const result = await routePhishReport(input, liveReportDeps());
+      // Truthful to the reporter: the report was received. ticket carries the real, honest status
+      // (never a fabricated id) for the admin UI / logs.
+      res.json({ success: true, message: "Report received. Your security team has been notified.", classification: result.classification, ticket: result.ticket });
+    } catch (e) {
+      // A failure here means we could NOT save the report — say so honestly, do not thank the user
+      // for something that did not happen.
+      trackFailed("phish_report", "-", e);
+      res.status(500).json({ success: false, message: "We could not record your report. Please tell your security team directly." });
+    }
+  });
 }

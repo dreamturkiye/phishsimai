@@ -439,3 +439,96 @@ export const productFeedback = pgTable("product_feedback", {
 ]);
 
 export type ProductFeedback = typeof productFeedback.$inferSelect;
+
+// ─── PSA ticketing integrations (PS-PSA-01) ──────────────────────────────────
+//
+//  MSP sales parity with Phin: a non-simulation phishing report routes to a real PSA ticket
+//  (ConnectWise Manage, Halo) in the reporting org's PSA. A SIMULATION report never creates a
+//  ticket — it scores as today. Integrations are configured at the MSP/partner level
+//  (msp_tenants), and a per-org company mapping (psa_company_mappings) is REQUIRED before any
+//  ticket flows for that client. Every ticket create is scoped to the mapped external company —
+//  no cross-tenant leakage.
+
+export const psaProvider = pgEnum("psa_provider", ["connectwise_manage", "halo"]);
+
+// One connection per (MSP tenant, provider). Credentials are stored ENCRYPTED (AES-256-GCM,
+// server/psa/crypto.ts) in secretEnc and are NEVER returned to the client. Non-secret config
+// (base URL, board id, defaults) lives in config as JSON. lastError/lastSuccessAt make the
+// honesty state visible to the MSP admin: we record what actually happened, never an optimistic
+// "connected".
+export const psaConnections = pgTable("psa_connections", {
+  id: serial("id").primaryKey(),
+  mspTenantId: integer("mspTenantId").notNull(),          // FK → msp_tenants.id (partner scope)
+  provider: psaProvider("provider").notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  // Non-secret provider config, provider-shaped. CW: { baseUrl, companyId, serviceBoardId, priorityId?, ticketType? }
+  // Halo: { baseUrl, tenant?, ticketTypeId?, teamId? }
+  config: jsonb("config").notNull().default({}),
+  // AES-256-GCM ciphertext of the credential JSON. Never selected into any client response.
+  secretEnc: text("secretEnc"),
+  // Last connection-test / ticket outcome. Null lastTestOk = never tested. These are the ONLY
+  // signals the admin UI trusts — we never claim connected without a real test.
+  lastTestOk: boolean("lastTestOk"),
+  lastTestAt: timestamp("lastTestAt", { withTimezone: true }),
+  lastError: text("lastError"),
+  lastSuccessAt: timestamp("lastSuccessAt", { withTimezone: true }),
+  ticketsCreated: integer("ticketsCreated").default(0).notNull(),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (t) => [
+  index("psa_connections_mspTenantId_idx").on(t.mspTenantId),
+  uniqueIndex("psa_connections_msp_provider_uniq").on(t.mspTenantId, t.provider),
+]);
+export type PsaConnection = typeof psaConnections.$inferSelect;
+
+// PhishSim org ↔ external PSA company. Required before tickets flow for that org. Unique per
+// (connection, org) so an org maps to exactly one external company per provider. The mspTenantId
+// is denormalised here so every ticket-create lookup is partner-scoped in one query.
+export const psaCompanyMappings = pgTable("psa_company_mappings", {
+  id: serial("id").primaryKey(),
+  connectionId: integer("connectionId").notNull(),        // FK → psa_connections.id
+  mspTenantId: integer("mspTenantId").notNull(),          // partner scope (matches the connection's)
+  orgId: integer("orgId").notNull(),                      // FK → organizations.id (PhishSim client)
+  externalCompanyId: varchar("externalCompanyId", { length: 128 }).notNull(),
+  externalCompanyName: varchar("externalCompanyName", { length: 255 }),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
+}, (t) => [
+  index("psa_company_mappings_orgId_idx").on(t.orgId),
+  uniqueIndex("psa_company_mappings_conn_org_uniq").on(t.connectionId, t.orgId),
+]);
+export type PsaCompanyMapping = typeof psaCompanyMappings.$inferSelect;
+
+// Every report from the Outlook add-in / API is persisted here FIRST, always, before any
+// classification or ticket attempt — so a PSA outage never loses the report. classification is
+// 'sim' or 'non_sim'. psaTicketId is set ONLY when the PSA API returned a real id; psaError holds
+// the honest failure reason otherwise. idempotencyKey (messageId+reporter+org) dedupes retries.
+export const phishReports = pgTable("phish_reports", {
+  id: serial("id").primaryKey(),
+  // Nullable on purpose: a report we cannot attribute to an org (no verified-domain match, no sim
+  // token) is STILL persisted so it is never lost — it simply cannot be ticketed until attributed.
+  orgId: integer("orgId"),
+  mspTenantId: integer("mspTenantId"),                    // resolved from the org's MSP, null if none
+  reporterEmail: varchar("reporterEmail", { length: 320 }),
+  reporterName: varchar("reporterName", { length: 255 }),
+  subject: text("subject"),
+  senderDisplay: varchar("senderDisplay", { length: 320 }),
+  senderAddress: varchar("senderAddress", { length: 320 }),
+  receivedAt: timestamp("receivedAt", { withTimezone: true }),
+  bodyExcerpt: text("bodyExcerpt"),                       // truncated, size-capped upstream
+  headers: jsonb("headers"),                              // key headers or full set, when supplied
+  classification: varchar("classification", { length: 16 }).notNull(),  // 'sim' | 'non_sim'
+  simToken: varchar("simToken", { length: 64 }),          // the tracking token when it was a sim
+  source: varchar("source", { length: 32 }).default("api").notNull(),   // 'outlook-addin' | 'api'
+  idempotencyKey: varchar("idempotencyKey", { length: 512 }),
+  psaProvider: psaProvider("psaProvider"),
+  psaTicketId: varchar("psaTicketId", { length: 128 }),
+  psaTicketUrl: text("psaTicketUrl"),
+  psaError: text("psaError"),
+  createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index("phish_reports_orgId_idx").on(t.orgId),
+  index("phish_reports_createdAt_idx").on(t.createdAt),
+  uniqueIndex("phish_reports_idempotency_uniq").on(t.idempotencyKey),
+]);
+export type PhishReport = typeof phishReports.$inferSelect;
