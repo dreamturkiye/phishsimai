@@ -59,53 +59,51 @@ function resolve(
 // ─── INV-1 — no fabricated MRR ───────────────────────────────────────────────
 
 /**
- * Stripe exposes no "reported MRR" endpoint on the API `finn.ts` uses (`subscriptions.list`); the
- * Dashboard figure is not retrievable that way. So this reconciles TWO INDEPENDENT DERIVATIONS over
- * the same subscription objects, which catches the failure that actually happens: one path drifting
- * (a hardcoded price creeping back, an annual plan not normalised, quantity ignored).
+ * STRUCTURAL-ONLY, and honestly so (PS-INV1-STRUCTURAL-01).
  *
- * It also asserts the structural rule that no derivation can rescue — MONEY MAY NOT EXIST WITHOUT A
- * SUBSCRIPTION BEHIND IT. `mrr > 0 && activeSubs === 0` is the exact shape of the $99/$249/$499/$999
- * phantom ladder and of every fabricated-MRR path this codebase has removed.
+ * The live guarantee is: MONEY MAY NOT EXIST WITHOUT A SUBSCRIPTION BEHIND IT. `mrr > 0 &&
+ * activeSubs === 0` is the exact shape of the $99/$249/$499/$999 phantom ladder and of every
+ * fabricated-MRR path this codebase has removed; the mirror (`mrr === 0 && activeSubs > 0`) is a
+ * broken read. Both are checked here.
+ *
+ * DRIFT RECONCILIATION IS NOT IMPLEMENTED — and this says so rather than faking it. A genuine
+ * second, INDEPENDENT MRR derivation would let us catch one path silently drifting (a hardcoded
+ * price creeping back). None exists on the Stripe API `finn.ts` uses:
+ *   · `subscriptions.list` exposes no "reported MRR" figure to reconcile against;
+ *   · a plan-price x count second path FALSE-FIRES on annual subs — annual is 10x monthly here,
+ *     not 12x — so it would halt the business on healthy annual customers;
+ *   · upcoming-invoice `amount_due` carries proration, tax and discounts and the annual billing
+ *     amount, so it does not match list-price MRR either.
+ * Feeding the same read in as a fake "independent" value (which the collector used to do) makes an
+ * inert comparison read as a working reconciliation guard — the latent-fabrication shape. Removed.
+ * If a real second source is ever added, reinstate the drift check with THAT source.
  */
 export type MrrInput = {
-  /** Finn's per-subscription computation (finn.ts:88-108). */
+  /** Finn's per-subscription computation (finn.ts). */
   computedMrrUsd: number
-  /** An independent recomputation over the same subscriptions. */
-  independentMrrUsd: number
   activeSubs: number
   /** False when Stripe was unreachable — verdict must be NOT_CHECKED, never HOLDS. */
   stripeChecked: boolean
 }
 
-/** Cents of tolerance. Two derivations of the same money should agree exactly; rounding is the only slack. */
-export const MRR_TOLERANCE_USD = 0.01
-
 export function checkMrrInvariant(i: MrrInput): InvariantResult {
   if (!i.stripeChecked) {
-    return resolve('INV-1', 'no fabricated MRR', 0, 0, 'Stripe NOT CHECKED — no MRR asserted', false)
+    return resolve('INV-1', 'no fabricated MRR (structural)', 0, 0, 'Stripe NOT CHECKED — no MRR asserted', false)
   }
-  // Rounded to cents BEFORE comparing. Money in floats does not subtract cleanly:
-  // |100 - 100.01| evaluates to 0.010000000000005, which a bare `> 0.01` reads as drift and would
-  // halt the business on a rounding artefact. Caught by the tolerance test.
-  const drift = Math.round(Math.abs(i.computedMrrUsd - i.independentMrrUsd) * 100) / 100
   const findings: string[] = []
-  if (drift > MRR_TOLERANCE_USD) {
-    findings.push(`derivations disagree by $${drift.toFixed(2)} (computed $${i.computedMrrUsd.toFixed(2)} vs independent $${i.independentMrrUsd.toFixed(2)})`)
-  }
-  // Money without a subscription is fabrication regardless of how the two paths agree.
+  // Money without a subscription is fabrication — the phantom-ladder signature.
   if (i.computedMrrUsd > 0 && i.activeSubs === 0) {
     findings.push(`MRR $${i.computedMrrUsd.toFixed(2)} reported over ZERO active subscriptions`)
   }
-  // ...and the mirror: subscriptions that produce no money is equally a broken read.
+  // ...and the mirror: subscriptions that produce no money is a broken read.
   if (i.computedMrrUsd === 0 && i.activeSubs > 0) {
     findings.push(`${i.activeSubs} active subscription(s) but MRR computed as $0`)
   }
   const evidence = findings.length
     ? findings.join(' · ')
-    : `computed $${i.computedMrrUsd.toFixed(2)} == independent $${i.independentMrrUsd.toFixed(2)} over ${i.activeSubs} active sub(s)`
-  // 1 unit = the reconciliation itself, and it only exists when Stripe answered.
-  return resolve('INV-1', 'no fabricated MRR', 1, findings.length, evidence)
+    : `structural OK: MRR $${i.computedMrrUsd.toFixed(2)} consistent with ${i.activeSubs} active sub(s) ` +
+      `(structural check only — drift reconciliation INERT: no independent MRR source on the Stripe API)`
+  return resolve('INV-1', 'no fabricated MRR (structural)', 1, findings.length, evidence)
 }
 
 // ─── INV-2 — the suppression rails may not be silently removed ───────────────

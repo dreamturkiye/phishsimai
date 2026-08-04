@@ -15,58 +15,58 @@ import {
   summariseInvariants,
   OUTREACH_SEND_PATHS,
   REQUIRED_SUPPRESSION_RAILS,
-  MRR_TOLERANCE_USD,
 } from './invariants'
 import { NOT_CHECKED } from './agents/scanVerdict'
 
-describe('INV-1 — no fabricated MRR', () => {
-  it('HOLDS when both derivations agree over real subscriptions', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 897, independentMrrUsd: 897, activeSubs: 3, stripeChecked: true })
+describe('INV-1 — no fabricated MRR (STRUCTURAL only)', () => {
+  it('HOLDS at $0 over zero subs — the true state today', () => {
+    const r = checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 0, stripeChecked: true })
     expect(r.status).toBe('HOLDS')
     expect(r.halt).toBe(false)
   })
 
-  it('HOLDS at $0 over zero subs — the true state today', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 0, stripeChecked: true })
+  it('HOLDS with real MRR over real subs', () => {
+    const r = checkMrrInvariant({ computedMrrUsd: 897, activeSubs: 3, stripeChecked: true })
     expect(r.status).toBe('HOLDS')
-    expect(r.evidence).toContain('$0.00')
   })
 
-  // REINTRODUCTION 1: the two paths drift — a hardcoded price creeping back into one of them, or an
-  // annual plan not normalised to monthly in one path but not the other.
-  it('HALTS when the two derivations disagree', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 897, independentMrrUsd: 747, activeSubs: 3, stripeChecked: true })
-    expect(r.status).toBe('VIOLATED')
-    expect(r.halt).toBe(true)
-    expect(r.evidence).toContain('disagree by $150.00')
-  })
-
-  // REINTRODUCTION 2: THE JULY PHANTOM. Nonzero MRR over zero subscriptions — the exact shape of the
-  // $99/$249/$499/$999 ladder that reported revenue no customer had ever paid.
+  // THE JULY PHANTOM: nonzero MRR over zero subscriptions — the $99/$249/$499/$999 signature.
   it('HALTS on nonzero MRR over ZERO active subscriptions', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 249, independentMrrUsd: 249, activeSubs: 0, stripeChecked: true })
+    const r = checkMrrInvariant({ computedMrrUsd: 249, activeSubs: 0, stripeChecked: true })
     expect(r.status).toBe('VIOLATED')
     expect(r.halt).toBe(true)
     expect(r.evidence).toContain('ZERO active subscriptions')
   })
 
-  // The mirror: subs exist but MRR reads zero — a broken read, not a free customer.
+  // The mirror: subs exist but MRR reads zero — a broken read.
   it('HALTS on zero MRR while subscriptions are active', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 2, stripeChecked: true })
+    const r = checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 2, stripeChecked: true })
     expect(r.status).toBe('VIOLATED')
     expect(r.evidence).toContain('but MRR computed as $0')
   })
 
   it('is NOT_CHECKED — never HOLDS — when Stripe was unreachable', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 0, stripeChecked: false })
+    const r = checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 0, stripeChecked: false })
     expect(r.status).toBe(NOT_CHECKED)
-    expect(r.halt).toBe(false)
     expect(r.unitsScanned).toBe(0)
   })
 
-  it('tolerates only rounding, not drift', () => {
-    expect(checkMrrInvariant({ computedMrrUsd: 100, independentMrrUsd: 100 + MRR_TOLERANCE_USD, activeSubs: 1, stripeChecked: true }).status).toBe('HOLDS')
-    expect(checkMrrInvariant({ computedMrrUsd: 100, independentMrrUsd: 100.5, activeSubs: 1, stripeChecked: true }).status).toBe('VIOLATED')
+  // PS-INV1-STRUCTURAL-01: the output must MARK ITSELF structural-only, so it never reads as a
+  // working drift-reconciliation guard it isn't.
+  it('the HOLDS evidence declares itself structural-only / drift INERT', () => {
+    const r = checkMrrInvariant({ computedMrrUsd: 149, activeSubs: 1, stripeChecked: true })
+    expect(r.evidence.toLowerCase()).toContain('structural check only')
+    expect(r.evidence.toLowerCase()).toContain('inert')
+    expect(r.name).toContain('structural')
+  })
+
+  it('the fake independent-derivation input is gone — no drift reconciliation is implied', () => {
+    const SRC = require('node:fs').readFileSync('server/os/invariants.ts', 'utf8')
+    expect(SRC).not.toContain('independentMrrUsd')
+    expect(SRC).not.toContain('MRR_TOLERANCE_USD')
+    // the collector must not feed a fake same-read second value
+    const COL = require('node:fs').readFileSync('server/os/invariantsCollect.ts', 'utf8')
+    expect(COL).not.toContain('independentMrrUsd')
   })
 })
 

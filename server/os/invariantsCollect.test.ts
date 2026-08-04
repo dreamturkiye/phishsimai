@@ -17,7 +17,7 @@ import { NOT_CHECKED } from './agents/scanVerdict'
 
 describe('unmeasurable inputs render NOT_CHECKED, never a false HOLDS', () => {
   it('INV-1 with no Stripe read is NOT_CHECKED, not HOLDS', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 0, stripeChecked: false })
+    const r = checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 0, stripeChecked: false })
     expect(r.status).toBe(NOT_CHECKED)
     expect(r.status).not.toBe('HOLDS')
     expect(r.halt).toBe(false)
@@ -39,13 +39,13 @@ describe('unmeasurable inputs render NOT_CHECKED, never a false HOLDS', () => {
 describe('INV-1 satisfied over an empty funnel reads HOLDS, honestly', () => {
   it('mrr $0 with 0 subs is the invariant SATISFIED, not violated', () => {
     // The user-stated case: mrr $0 iff 0 subs = HOLDS, not VIOLATED.
-    const r = checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 0, stripeChecked: true })
+    const r = checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 0, stripeChecked: true })
     expect(r.status).toBe('HOLDS')
     expect(r.halt).toBe(false)
   })
 
   it('but mrr > 0 over 0 subs still HALTS even when Stripe was read', () => {
-    const r = checkMrrInvariant({ computedMrrUsd: 249, independentMrrUsd: 249, activeSubs: 0, stripeChecked: true })
+    const r = checkMrrInvariant({ computedMrrUsd: 249, activeSubs: 0, stripeChecked: true })
     expect(r.status).toBe('VIOLATED')
     expect(r.halt).toBe(true)
   })
@@ -54,7 +54,7 @@ describe('INV-1 satisfied over an empty funnel reads HOLDS, honestly', () => {
 describe('the summary line never overstates', () => {
   it('does NOT say "all hold" when any invariant is unmeasured', () => {
     const s = summariseInvariants([
-      checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 0, stripeChecked: false }), // NOT_CHECKED
+      checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 0, stripeChecked: false }), // NOT_CHECKED
       checkPricingFrozen([], 12, true), // HOLDS
     ])
     expect(s.halt).toBe(false)
@@ -70,7 +70,7 @@ describe('the summary line never overstates', () => {
 
   it('a real violation produces a HALT line, not a soft note', () => {
     const s = summariseInvariants([
-      checkMrrInvariant({ computedMrrUsd: 249, independentMrrUsd: 249, activeSubs: 0, stripeChecked: true }),
+      checkMrrInvariant({ computedMrrUsd: 249, activeSubs: 0, stripeChecked: true }),
     ])
     expect(s.halt).toBe(true)
     expect(s.line).toContain('INVARIANT VIOLATION')
