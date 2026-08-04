@@ -6,7 +6,7 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import express from 'express'
 import type { Server } from 'node:http'
 
-vi.mock('./db', () => ({ trackEvent: vi.fn(async () => {}), assignTrainingForToken: async () => null }))
+vi.mock('./db', () => ({ trackEvent: vi.fn(async () => {}), assignTrainingForToken: async () => null, creditReportForToken: async () => null, getLessonContextForToken: async () => ({ attackType: null, senderName: null, subject: null }) }))
 
 import { registerTrackingRoutes } from './email/tracker'
 import { verifyDomainTxt, buildVerificationToken, txtMatches, flattenTxt } from './lib/domainVerify'
@@ -59,7 +59,7 @@ describe('tracking routes (never executed in prod — 0 campaign_results rows ev
     expect(html).not.toMatch(/href="\/api\/report\//)
     const r = await fetch(`${base}${action}`, { method: 'POST' })
     expect(r.status).toBe(200)
-    expect(await r.text()).toContain('Thank You')
+    expect(await r.text()).toContain('Nice catch!')
   })
 
   it('report endpoint reports FAILURE when the write fails — never a false thank-you', async () => {
