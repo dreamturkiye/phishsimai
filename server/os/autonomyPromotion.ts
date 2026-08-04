@@ -35,11 +35,26 @@ export const CLEAN_DAYS_PER_RUNG = 1 // the ladder's criterion: 1 consecutive cl
 const TRUST_STEP = 0.2
 const rankOf = (l: string): number => Math.max(0, (ORDER as readonly string[]).indexOf(l))
 
+// PS-MARCUS-WATCHERGATE-01 — the first ACTING level. At l3 architectPending stops handing the
+// external watcher an empty queue and starts giving it real tasks to apply, so l3 is the rung where
+// generated code can actually reach production. The gate binds on LEVEL, not on SENTRY_DSN:
+// queueJanetArchitectTask has multiple callers that fill the queue at l3 with Sentry off entirely.
+// No number of clean days may carry Marcus into an acting level while the external watcher — the
+// component with real hands — has not been audited. Clean days can still earn him to l2.
+export const FIRST_ACTING_LEVEL: EnfLevel = 'l3'
+
 export interface DecisionInput {
   level: EnfLevel
   cleanSinceLastGrant: number // consecutive clean days earned SINCE the last grant (the cycle)
   breakerOpen: boolean
   trust: number
+  /**
+   * Has the external Marcus watcher been audited? FAIL CLOSED — an absent/unknown audit record must
+   * arrive here as false. Blocks promotion into FIRST_ACTING_LEVEL and above; has NO effect on
+   * demotion, which must always run. Optional in the type only so existing callers keep compiling;
+   * `undefined` is treated as NOT audited.
+   */
+  watcherAudited?: boolean
 }
 export interface AutonomyDecision extends DecisionInput {
   action: 'promote' | 'demote' | 'hold'
@@ -65,7 +80,16 @@ export function decidePromotion(input: DecisionInput): AutonomyDecision {
   // PROMOTE: breaker closed, below cap, and a FRESH full clean cycle earned. Exactly one rung.
   // cleanSinceLastGrant resets to 0 after every grant, so this cannot fire twice on one cycle.
   if (!breakerOpen && r < rankOf('l5') && cleanSinceLastGrant >= CLEAN_DAYS_PER_RUNG) {
-    return { ...base, action: 'promote', to: ORDER[r + 1], reason: `earned_${cleanSinceLastGrant}_clean_days` }
+    const target = ORDER[r + 1]
+    // PS-MARCUS-WATCHERGATE-01 — WATCHER-AUDIT HARD GATE. Inside the pure decision so it is
+    // unit-testable and covers EVERY promotion path. `>= rank(FIRST_ACTING_LEVEL)` (not
+    // `target==='l3'`) so it still holds under the multi-rung catch-up loop and if the rung
+    // vocabulary changes. This composes with PS-AUTONOMY-RATE-01: a catch-up run climbs to l2 then
+    // this returns hold, so the loop stops before any acting level while the watcher is unaudited.
+    if (rankOf(target) >= rankOf(FIRST_ACTING_LEVEL) && input.watcherAudited !== true) {
+      return { ...base, action: 'hold', to: level, reason: `watcher_audit_required_for_${target}` }
+    }
+    return { ...base, action: 'promote', to: target, reason: `earned_${cleanSinceLastGrant}_clean_days` }
   }
   // HOLD — with an explicit reason (never a silent no-op).
   const reason = breakerOpen
@@ -161,16 +185,36 @@ async function breakerOpen(sql: any, companyId: string): Promise<boolean> {
   return r.length > 0
 }
 
+// PS-MARCUS-WATCHERGATE-01 — has the external Marcus watcher been audited? FAIL CLOSED: returns
+// false when the row is absent, when the value is anything but the literal 'passed', or when the
+// query throws. Stored in janet_memory (operating state, leaves an audit trail) rather than an env
+// var, because a level-changing control that leaves no record is the failure 0012 closed.
+//   INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+//   VALUES ('phishsimai', 'operating', 'watcher_audit', 'passed', 1, 'founder');
+export const WATCHER_AUDIT_KEY = 'watcher_audit'
+
+export async function isWatcherAudited(sql: any, companyId: string): Promise<boolean> {
+  try {
+    const rows = (await sql`SELECT value FROM janet_memory
+                            WHERE company_id=${companyId} AND type='operating' AND key=${WATCHER_AUDIT_KEY}
+                            LIMIT 1`) as any[]
+    return String(rows?.[0]?.value ?? '').trim().toLowerCase() === 'passed'
+  } catch {
+    return false // unreadable audit record is NOT an audit
+  }
+}
+
 export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverride?: any): Promise<AutonomyDecision> {
   const sql = sqlOverride ?? getSql()
   const { level, trust } = await readState(sql, companyId)
-  const [cleanSinceLastGrant, open, streak] = await Promise.all([
+  const [cleanSinceLastGrant, open, streak, watcherAudited] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
     v2Streak(sql, companyId),
+    isWatcherAudited(sql, companyId),
   ])
   return {
-    ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust }),
+    ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust, watcherAudited }),
     cleanStreak: streak.days,
     cleanStreakCriteria: streak.criteria,
   }
@@ -191,10 +235,11 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
 export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?: any) {
   const sql = sqlOverride ?? getSql()
   const { level, trust, storedStreak } = await readState(sql, companyId)
-  const [budget0, open, streak] = await Promise.all([
+  const [budget0, open, streak, watcherAudited] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
     v2Streak(sql, companyId),
+    isWatcherAudited(sql, companyId),
   ])
 
   let curLevel = level
@@ -207,7 +252,7 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
   // earned level / l5 cap); a demote fires once and breaks. The pure decidePromotion still enforces
   // the l4 failure-mode guard (budget 0 → hold), the floor, and the cap on every iteration.
   while (true) {
-    const d = decidePromotion({ level: curLevel, cleanSinceLastGrant: budget, breakerOpen: open, trust: curTrust })
+    const d = decidePromotion({ level: curLevel, cleanSinceLastGrant: budget, breakerOpen: open, trust: curTrust, watcherAudited })
     if (d.action === 'hold') break
 
     await sql`INSERT INTO autonomy_grants (company_id, from_level, to_level, direction, reason, clean_days, trust, created_by)
@@ -243,7 +288,7 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
     trail.length === 0 ? 'hold' : trail[trail.length - 1].action === 'demote' ? 'demote' : 'promote'
   const reason =
     trail.length === 0
-      ? decidePromotion({ level, cleanSinceLastGrant: budget0, breakerOpen: open, trust }).reason
+      ? decidePromotion({ level, cleanSinceLastGrant: budget0, breakerOpen: open, trust, watcherAudited }).reason
       : netAction === 'demote'
         ? trail[trail.length - 1].reason
         : `earned_${trail.length}_rung${trail.length === 1 ? '' : 's'}_from_${budget0}_clean_days`
