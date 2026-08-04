@@ -210,6 +210,10 @@
     {
       "path": "/api/os/reflection",
       "schedule": "30 9 * * 1"
+    },
+    {
+      "path": "/api/os/scout-landscape",
+      "schedule": "0 7 * * 1"
     }
   ]
 }
