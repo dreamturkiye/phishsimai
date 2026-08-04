@@ -13,6 +13,7 @@ import { runVeraAgent } from './agents/vera'
 import { runNovaAgent } from './agents/nova'
 import { readMiaInbox } from '../mia/feedbackTool'
 import { collectInvariants } from './invariantsCollect'
+import { scoreAgentKpi, summariseKpiOwnership, type AgentId as KpiAgentId } from './kpiOwnership'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -175,6 +176,19 @@ export async function runJanetBrief(companyId = 'phishsimai') {
   const miaInbox = await readMiaInbox().catch(() => null)
   const invariants = await collectInvariants().catch(() => null)
 
+  // PS-KPI-OWNERSHIP-01 — each agent owns ONE primary KPI, scored on the honest verdict "did owned
+  // work run and produce a verdict", never "did a number move". status==='ACTIVE' = real data;
+  // BUILT_AND_ARMED / INSUFFICIENT_DATA = honest empty-funnel AWAITING_DATA (not failing); null = DEGRADED.
+  const kpiReports: Record<KpiAgentId, any> = { rex, dex, aria, mason, finn, vera, nova, scout }
+  const kpiScores = (Object.keys(kpiReports) as KpiAgentId[]).map((id) => {
+    const r = kpiReports[id]
+    const ran = r != null
+    const producedVerdict = ran && typeof r.status === 'string'
+    const hasRealData = producedVerdict && r.status === 'ACTIVE'
+    return scoreAgentKpi(id, { ran, producedVerdict, hasRealData })
+  })
+  const kpiOwnership = summariseKpiOwnership(kpiScores)
+
   const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
 
@@ -211,6 +225,7 @@ CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or heal
 MESSAGING / CHANNELS (Aria — she owns current best outreach; pricing is a hard stop for her): ${aria ? aria.line : 'NOT CHECKED this cycle — no messaging or channel claim may be made.'}
 CUSTOMER VOICE (Mia — trial feedback, bugs, and customers waiting on a human): ${miaInbox ? miaInbox.line : 'NOT CHECKED this cycle — no feedback or handoff claim may be made.'}
 BUSINESS INVARIANTS (crown jewels — a VIOLATION halts and must be escalated, not narrated away): ${invariants ? invariants.line : 'NOT CHECKED this cycle — the invariant sweep failed to run. Do not assert the invariants hold.'}
+KPI OWNERSHIP (each agent owns ONE KPI; AWAITING_DATA over an empty funnel is honest, not failure): ${kpiOwnership.line}
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 
