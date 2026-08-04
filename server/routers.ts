@@ -700,6 +700,11 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
             throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("campaign", `Your free plan includes ${campEnt.limits.campaigns} campaign. Upgrade to launch more.`) });
           }
         }
+        // PS-TEMPLATE-SENDER-01: inherit the template's default From display name unless the
+        // campaign overrides it. Makes display-name spoofing the default realism lever rather than
+        // a per-campaign manual step. Display name only — the sending address is unchanged.
+        const seedTemplate = await getTemplateById(input.templateId, input.orgId);
+        const inheritedSenderName = input.senderName ?? seedTemplate?.senderName ?? null;
         return createCampaign({
           orgId: input.orgId,
           createdByUserId: ctx.user.id,
@@ -714,7 +719,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           isRecurring: false,
           cronExpression: null,
           scheduleCronTaskUid: null,
-          senderName: input.senderName ?? null,
+          senderName: inheritedSenderName,
           senderEmail: input.senderEmail ?? null,
           trackingDomain: null,
           notes: input.notes ?? null,

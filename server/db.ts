@@ -404,7 +404,7 @@ export async function getTemplateById(id: number, requestingOrgId?: number): Pro
   return t;
 }
 
-export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount">): Promise<Template> {
+export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount" | "senderName"> & { senderName?: string | null }): Promise<Template> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const [row] = await db.insert(templates).values({ ...data, usageCount: 0 }).returning({ id: templates.id });

@@ -1815,7 +1815,8 @@
     "isBuiltIn": true,
     "isShared": false,
     "orgId": null,
-    "createdByUserId": null
+    "createdByUserId": null,
+    "senderName": "Rewards Team"
   },
   {
     "name": "Delivery On Hold — Confirm Details",
@@ -1833,7 +1834,8 @@
     "isBuiltIn": true,
     "isShared": false,
     "orgId": null,
-    "createdByUserId": null
+    "createdByUserId": null,
+    "senderName": "Shipping Notifications"
   },
   {
     "name": "Payment Failed — Review Required",
@@ -1851,7 +1853,8 @@
     "isBuiltIn": true,
     "isShared": false,
     "orgId": null,
-    "createdByUserId": null
+    "createdByUserId": null,
+    "senderName": "Billing"
   },
   {
     "name": "HR — Document Awaiting Acknowledgement",
@@ -1869,6 +1872,7 @@
     "isBuiltIn": true,
     "isShared": false,
     "orgId": null,
-    "createdByUserId": null
+    "createdByUserId": null,
+    "senderName": "HR"
   }
 ]
