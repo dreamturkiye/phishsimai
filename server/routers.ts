@@ -859,7 +859,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           // reputation-isolated sim subdomain WITHOUT a code deploy. Falls back to the apex only
           // until that subdomain is provisioned. A per-campaign senderEmail still overrides.
           const defaultSender = process.env.CAMPAIGN_DEFAULT_SENDER ?? "security@phishsimai.com";
-          const result = await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? defaultSender, subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
+          const result = await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? defaultSender, subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl, firstName: target.firstName });
           if (!result.ok) {
             failed.push(`${target.email} (${result.error})`);
             continue; // row stays with emailSentAt NULL — it was authorised, not delivered
