@@ -12,6 +12,7 @@ import { runFinnAgent, mrrDisplay } from './agents/finn'
 import { runVeraAgent } from './agents/vera'
 import { runNovaAgent } from './agents/nova'
 import { readMiaInbox } from '../mia/feedbackTool'
+import { collectInvariants } from './invariantsCollect'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -172,6 +173,7 @@ export async function runJanetBrief(companyId = 'phishsimai') {
   // DAILY surface, and it exists mainly for unnotifiedHandoffs: a customer who asked for a human and
   // whose notification failed is invisible in every other channel.
   const miaInbox = await readMiaInbox().catch(() => null)
+  const invariants = await collectInvariants().catch(() => null)
 
   const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
@@ -208,6 +210,7 @@ ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or
 CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or health claim may be made.'}
 MESSAGING / CHANNELS (Aria — she owns current best outreach; pricing is a hard stop for her): ${aria ? aria.line : 'NOT CHECKED this cycle — no messaging or channel claim may be made.'}
 CUSTOMER VOICE (Mia — trial feedback, bugs, and customers waiting on a human): ${miaInbox ? miaInbox.line : 'NOT CHECKED this cycle — no feedback or handoff claim may be made.'}
+BUSINESS INVARIANTS (crown jewels — a VIOLATION halts and must be escalated, not narrated away): ${invariants ? invariants.line : 'NOT CHECKED this cycle — the invariant sweep failed to run. Do not assert the invariants hold.'}
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 
