@@ -67,53 +67,108 @@
   </div>
 
   <script>
-    var emailSubject = '';
-    var emailFrom = '';
-    var emailId = '';
+    // PS-PSA-01: the add-in now sends a structured payload so the server can classify (sim vs
+    // non-sim) and, for a non-sim, open a real PSA ticket with the sender, reporter, received time,
+    // a body excerpt, and key headers. Everything is best-effort with graceful degradation — a
+    // missing field never blocks the report.
+    var report = {
+      messageId: '', subject: '', senderDisplay: '', senderAddress: '',
+      reporterEmail: '', reporterName: '', receivedAt: '', bodyExcerpt: '',
+      headers: null, token: '', source: 'outlook-addin'
+    };
+
+    // A PhishSim tracking token appears in our sim emails as a link to our tracking domain. Finding
+    // one here lets the SERVER confirm it maps to a real campaign (it never trusts this alone), so a
+    // reported SIMULATION scores as training and never spams the PSA with a ticket.
+    var TOKEN_LINK_RE = /phishsimai\.com\/(?:c|t|landing|api\/report)\/([A-Za-z0-9_-]{16,64})/i;
+    // Key headers worth forwarding to the analyst. We parse only these from the raw header blob.
+    var KEY_HEADERS = ['From','Reply-To','Return-Path','Message-ID','Authentication-Results','Received','Received-SPF','DKIM-Signature'];
+
+    function parseHeaders(raw) {
+      var out = {}, lines = (raw || '').split(/\r?\n/), cur = null;
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (/^\s/.test(line) && cur) { out[cur] += ' ' + line.trim(); continue; }
+        var idx = line.indexOf(':');
+        if (idx > 0) {
+          var name = line.slice(0, idx).trim();
+          var match = KEY_HEADERS.filter(function(h){ return h.toLowerCase() === name.toLowerCase(); })[0];
+          if (match && out[match] === undefined) { cur = match; out[match] = line.slice(idx + 1).trim(); }
+          else cur = null;
+        }
+      }
+      return out;
+    }
 
     Office.onReady(function(info) {
-      if (info.host === Office.HostType.Outlook) {
-        document.getElementById('spinner').style.display = 'block';
+      if (info.host !== Office.HostType.Outlook) return;
+      document.getElementById('spinner').style.display = 'block';
+      try {
+        var item = Office.context.mailbox.item;
+        report.subject = item.subject || '';
+        report.messageId = (item.internetMessageId || item.itemId || '');
+        if (item.from) { report.senderDisplay = item.from.displayName || ''; report.senderAddress = item.from.emailAddress || ''; }
+        try { report.receivedAt = (item.dateTimeCreated ? new Date(item.dateTimeCreated).toISOString() : ''); } catch(e) {}
+        var prof = Office.context.mailbox.userProfile || {};
+        report.reporterEmail = prof.emailAddress || '';
+        report.reporterName = prof.displayName || '';
+
+        document.getElementById('emailSubject').textContent = report.subject || '(no subject)';
+        document.getElementById('emailFrom').textContent =
+          (report.senderDisplay ? report.senderDisplay + ' ' : '') + (report.senderAddress ? '<' + report.senderAddress + '>' : '') || '(unknown sender)';
+        document.getElementById('emailInfo').style.display = 'block';
+
+        // Body excerpt (capped) — also scanned for a PhishSim tracking token.
         try {
-          var item = Office.context.mailbox.item;
-          emailSubject = item.subject || '';
-          emailId = item.itemId || '';
-          if (item.from) {
-            emailFrom = (item.from.displayName || '') + ' <' + (item.from.emailAddress || '') + '>';
+          item.body.getAsync(Office.CoercionType.Text, function(res) {
+            if (res.status === Office.AsyncResultStatus.Succeeded && res.value) {
+              report.bodyExcerpt = String(res.value).slice(0, 4000);
+              var m = String(res.value).match(TOKEN_LINK_RE);
+              if (m) report.token = m[1];
+            }
+          });
+        } catch(e) {}
+
+        // Full internet headers, when the mailbox API supports it (requirement set 1.9+).
+        try {
+          if (item.getAllInternetHeadersAsync) {
+            item.getAllInternetHeadersAsync(function(res) {
+              if (res.status === Office.AsyncResultStatus.Succeeded) {
+                report.headers = parseHeaders(res.value);
+                if (!report.token) { var mm = (res.value || '').match(TOKEN_LINK_RE); if (mm) report.token = mm[1]; }
+              }
+            });
           }
-          document.getElementById('emailSubject').textContent = emailSubject || '(no subject)';
-          document.getElementById('emailFrom').textContent = emailFrom || '(unknown sender)';
-          document.getElementById('emailInfo').style.display = 'block';
-        } catch(e) {
-          document.getElementById('notReady').style.display = 'block';
-        }
-        document.getElementById('spinner').style.display = 'none';
+        } catch(e) {}
+      } catch(e) {
+        document.getElementById('notReady').style.display = 'block';
       }
+      document.getElementById('spinner').style.display = 'none';
     });
 
     function submitReport() {
       var btn = document.getElementById('reportBtn');
-      var notes = document.getElementById('notes').value;
+      report.notes = document.getElementById('notes').value;
       btn.disabled = true;
       btn.textContent = 'Submitting...';
 
       fetch('https://phishsimai.com/api/phish-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messageId: emailId,
-          subject: emailSubject,
-          sender: emailFrom,
-          notes: notes,
-          source: 'outlook-addin'
-        })
+        body: JSON.stringify(report)
       }).then(function(r) { return r.json(); }).then(function(data) {
+        // We show a single honest confirmation: the report was received. We deliberately do NOT
+        // render a PSA ticket number here — whether a ticket was created is an admin-side detail,
+        // and we never surface an id the PSA did not actually return.
         document.getElementById('mainView').style.display = 'none';
         document.getElementById('successView').style.display = 'block';
       }).catch(function(err) {
         btn.disabled = false;
         btn.textContent = '🚨 Report as Phishing';
-        alert('Could not submit report. Please try again or contact your IT team.');
+        // No JS alert/confirm (they block the add-in runtime); show an inline message instead.
+        var nr = document.getElementById('notReady');
+        nr.textContent = 'Could not submit the report. Please try again or contact your IT team.';
+        nr.style.display = 'block';
       });
     }
   </script>

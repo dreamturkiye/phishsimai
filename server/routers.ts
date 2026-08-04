@@ -99,6 +99,19 @@ async function requireOrgMember(orgId: number, userId: number, requireAdmin = fa
   return member;
 }
 
+// ─── Helper: resolve the caller's OWN MSP tenant (PS-PSA-01) ──────────────────
+// PSA integrations are partner-scoped. The mspTenantId is ALWAYS derived from ctx.user here, never
+// accepted from the client — so a partner can only touch its own connections and mappings.
+async function requireMspTenant(userId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const { mspTenants } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const [tenant] = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, userId)).limit(1);
+  if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "Not registered as an MSP partner" });
+  return tenant;
+}
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1580,6 +1593,127 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         .orderBy(desc(mspActivityLog.createdAt))
         .limit(100);
     }),
+  }),
+
+  // ─── PSA ticketing integrations (PS-PSA-01) ──────────────────────────────────
+  //  MSP/partner-scoped. Every procedure resolves the caller's OWN mspTenant from ctx.user — the
+  //  client never supplies an mspTenantId, so a partner can only ever read/write its own connections
+  //  and mappings. Secrets are encrypted at rest and never returned to the client.
+  psa: router({
+    // List this MSP's PSA connections, SECRETS MASKED (secretEnc is never selected into the response;
+    // hasCredentials tells the UI whether keys are stored without revealing them).
+    getConnections: protectedProcedure.query(async ({ ctx }) => {
+      const tenant = await requireMspTenant(ctx.user.id);
+      const { getConnections } = await import("./psa/db");
+      const { psaSecretKeyConfigured } = await import("./psa/crypto");
+      const rows = await getConnections(tenant.id);
+      return {
+        secretKeyConfigured: psaSecretKeyConfigured(),
+        connections: rows.map((c) => ({
+          id: c.id, provider: c.provider, enabled: c.enabled, config: c.config,
+          hasCredentials: !!c.secretEnc,
+          lastTestOk: c.lastTestOk, lastTestAt: c.lastTestAt, lastError: c.lastError,
+          lastSuccessAt: c.lastSuccessAt, ticketsCreated: c.ticketsCreated,
+        })),
+      };
+    }),
+
+    // Save a connection. `secret` (the credential object) is optional: omit it to edit config
+    // without re-entering keys. When present it is encrypted before storage.
+    upsertConnection: protectedProcedure
+      .input(z.object({
+        provider: z.enum(["connectwise_manage", "halo"]),
+        enabled: z.boolean().default(false),
+        config: z.record(z.string(), z.any()),
+        secret: z.record(z.string(), z.any()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { upsertConnection } = await import("./psa/db");
+        let secretEnc: string | undefined;
+        if (input.secret && Object.keys(input.secret).length) {
+          const { encryptSecret } = await import("./psa/crypto");
+          try { secretEnc = encryptSecret(JSON.stringify(input.secret)); }
+          catch (e) { throw new TRPCError({ code: "PRECONDITION_FAILED", message: (e as Error).message }); }
+        }
+        await upsertConnection({ mspTenantId: tenant.id, provider: input.provider, enabled: input.enabled, config: input.config, secretEnc });
+        return { success: true };
+      }),
+
+    // Test a connection. Tests unsaved config+secret when supplied (so the admin can verify before
+    // enabling); otherwise tests the stored connection. Never returns the secret.
+    testConnection: protectedProcedure
+      .input(z.object({
+        provider: z.enum(["connectwise_manage", "halo"]),
+        config: z.record(z.string(), z.any()).optional(),
+        secret: z.record(z.string(), z.any()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { getConnection, recordConnectionTest } = await import("./psa/db");
+        const stored = await getConnection(tenant.id, input.provider);
+        let adapter;
+        try {
+          if (input.config && input.secret) {
+            const { buildAdapterFromPlain } = await import("./psa");
+            adapter = buildAdapterFromPlain(input.provider, input.config, input.secret);
+          } else if (stored) {
+            const { buildAdapter } = await import("./psa");
+            adapter = buildAdapter(stored);
+          } else {
+            return { ok: false, detail: "No stored connection and no config/secret supplied to test." };
+          }
+        } catch (e) { return { ok: false, detail: (e as Error).message }; }
+        const result = await adapter.testConnection();
+        if (stored) await recordConnectionTest(stored.id, result.ok, result.detail);
+        return result;
+      }),
+
+    // List companies from the PSA for the mapping UI.
+    listExternalCompanies: protectedProcedure
+      .input(z.object({ provider: z.enum(["connectwise_manage", "halo"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { getConnection } = await import("./psa/db");
+        const stored = await getConnection(tenant.id, input.provider);
+        if (!stored) throw new TRPCError({ code: "NOT_FOUND", message: "Configure and save the connection first." });
+        const { buildAdapter } = await import("./psa");
+        try {
+          const adapter = buildAdapter(stored);
+          return await adapter.listCompanies();
+        } catch (e) { throw new TRPCError({ code: "BAD_REQUEST", message: (e as Error).message }); }
+      }),
+
+    getMappings: protectedProcedure.query(async ({ ctx }) => {
+      const tenant = await requireMspTenant(ctx.user.id);
+      const { getMappings } = await import("./psa/db");
+      return getMappings(tenant.id);
+    }),
+
+    upsertMapping: protectedProcedure
+      .input(z.object({
+        connectionId: z.number(),
+        orgId: z.number(),
+        externalCompanyId: z.string().min(1),
+        externalCompanyName: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { upsertMapping } = await import("./psa/db");
+        try {
+          await upsertMapping({ mspTenantId: tenant.id, connectionId: input.connectionId, orgId: input.orgId, externalCompanyId: input.externalCompanyId, externalCompanyName: input.externalCompanyName ?? null });
+        } catch (e) { throw new TRPCError({ code: "FORBIDDEN", message: (e as Error).message }); }
+        return { success: true };
+      }),
+
+    deleteMapping: protectedProcedure
+      .input(z.object({ mappingId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { deleteMapping } = await import("./psa/db");
+        await deleteMapping(tenant.id, input.mappingId);
+        return { success: true };
+      }),
   }),
 
   // ─── Seed ───────────────────────────────────────────────────────────────────
