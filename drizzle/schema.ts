@@ -136,6 +136,7 @@ export const templates = pgTable("templates", {
   createdByUserId: integer("createdByUserId"),
   name: varchar("name", { length: 255 }).notNull(),
   subject: varchar("subject", { length: 500 }).notNull(),
+  senderName: varchar("senderName", { length: 150 }),   // PS-TEMPLATE-SENDER-01: default From display name; campaign inherits it unless overridden
   htmlBody: text("htmlBody").notNull(),
   language: language("language").default("en").notNull(),
   attackType: attackType("attackType").default("credential_harvest").notNull(),
