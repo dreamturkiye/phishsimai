@@ -915,6 +915,14 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
 
   // ─── Analytics ──────────────────────────────────────────────────────────────
   analytics: router({
+    humanRisk: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const { collectHumanRisk } = await import("./os/humanRiskCollect");
+        return collectHumanRisk(input.orgId);
+      }),
+
     overview: protectedProcedure
       .input(z.object({ orgId: z.number() }))
       .query(async ({ ctx, input }) => {
