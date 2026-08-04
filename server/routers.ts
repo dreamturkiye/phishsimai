@@ -449,7 +449,9 @@ export const appRouter = router({
           results.push(...builtIn.map(t => ({ ...t, source: "built-in" })));
         }
         if (input.includeCommunity) {
-          const community = await getTemplates({ isShared: true, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
+          // PS-MARKETPLACE-GATE-01: only APPROVED shared templates reach the community pool — a bare
+          // isShared flag no longer publishes with zero review.
+          const community = await getTemplates({ isShared: true, moderationStatus: "approved", language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
           results.push(...community.filter(t => !t.isBuiltIn).map(t => ({ ...t, source: "community" })));
         }
         const orgTemplates = await getTemplates({ orgId: input.orgId, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
@@ -599,7 +601,11 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         await requireOrgMember(input.orgId, ctx.user.id);
         const { orgId, templateId, ...data } = input;
         // SECURITY: Sanitize htmlBody if provided
-        const sanitizedData = { ...data, ...(data.htmlBody ? { htmlBody: sanitizeEmailHtml(data.htmlBody) } : {}) };
+        // PS-MARKETPLACE-GATE-01: sharing a template SUBMITS it for review — moderationStatus goes
+        // to 'pending', it does NOT reach the community pool until an admin approves it. Un-sharing
+        // resets to 'pending' too, so a re-share is re-reviewed.
+        const moderation = data.isShared !== undefined ? { moderationStatus: 'pending' } : {};
+        const sanitizedData = { ...data, ...moderation, ...(data.htmlBody ? { htmlBody: sanitizeEmailHtml(data.htmlBody) } : {}) };
         await updateTemplate(templateId, orgId, sanitizedData);
         return { success: true };
       }),
@@ -1578,6 +1584,22 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
 
   // ─── Seed ───────────────────────────────────────────────────────────────────
   seed: router({
+    // PS-MARKETPLACE-GATE-01 — the review queue + the approve/reject action. A shared template is
+    // NOT in the community pool until an admin approves it here.
+    pendingCommunity: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      const { getPendingCommunityTemplates } = await import("./db");
+      return getPendingCommunityTemplates();
+    }),
+    moderate: protectedProcedure
+      .input(z.object({ templateId: z.number(), status: z.enum(["approved", "rejected"]) }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+        const { moderateTemplate } = await import("./db");
+        await moderateTemplate(input.templateId, input.status);
+        return { ok: true, templateId: input.templateId, status: input.status };
+      }),
+
     seedBuiltIns: protectedProcedure.mutation(async ({ ctx }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
       // Seed templates
