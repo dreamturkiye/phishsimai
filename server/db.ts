@@ -780,6 +780,40 @@ export async function skipOrgAllowlist(orgId: number, ackText: string): Promise<
   `);
 }
 
+/**
+ * PS-LEARNING-COMPLETE-01 — mark the on-click micro-lesson complete for the target behind a token.
+ *
+ * "Complete" is a DELIBERATE acknowledgement, never a page-view: the caller is the landing page's
+ * POST-only acknowledgement button, mirroring the report control (a GET would be prefetched by mail
+ * scanners and would fabricate completions for people who never finished).
+ *
+ * Stamps the target's OPEN training_assignment (the one auto-created on their click by
+ * PS-REMEDIATION-01) via recordTrainingCompletion. Returns false and records NOTHING when there is
+ * no open assignment — no assignment means nothing was owed, and inventing a completion would be the
+ * exact fabrication this loop guards against.
+ */
+export async function completeTrainingForToken(token: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    const [res] = await db.select({ orgId: campaignResults.orgId, targetId: campaignResults.targetId })
+      .from(campaignResults).where(eq(campaignResults.trackingToken, token)).limit(1);
+    if (!res) return false;
+    const [open] = await db.select({ moduleId: trainingAssignments.moduleId })
+      .from(trainingAssignments)
+      .where(and(
+        eq(trainingAssignments.targetId, res.targetId),
+        isNull(trainingAssignments.completedAt),
+      ))
+      .orderBy(trainingAssignments.assignedAt).limit(1);
+    if (!open) return false; // nothing owed -> record nothing, never a phantom completion
+    await recordTrainingCompletion({ orgId: res.orgId, targetId: res.targetId, moduleId: open.moduleId, userId: null, score: null, timeSpentSeconds: null } as any);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** PS-HUMAN-RISK-01 — org training-assignment counts for the risk composite's training dimension. */
 export async function getTrainingAssignmentStats(orgId: number): Promise<{ assigned: number; completed: number }> {
   const db = await getDb();
