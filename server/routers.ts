@@ -1681,6 +1681,43 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }),
   }),
 
+  // ─── Allowlist onboarding wizard (PS-DELIVER-ALLOWLIST-01 UI surface) ────────
+  allowlist: router({
+    // Current state + the pre-filled M365 instructions the wizard renders.
+    state: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id)
+        const { microsoft365Instructions, googleWorkspaceInstructions, SKIP_WARNING } = await import('./lib/allowlistGate')
+        const row = await getOrgAllowlistState(input.orgId)
+        return {
+          state: row?.state ?? 'not_started',
+          microsoft365: microsoft365Instructions(),
+          googleWorkspace: googleWorkspaceInstructions(),
+          skipWarning: SKIP_WARNING,
+        }
+      }),
+    // The admin states they configured allowlisting. NEVER a claim we verified it.
+    confirm: protectedProcedure
+      .input(z.object({ orgId: z.number(), platform: z.enum(['microsoft365', 'google_workspace']) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true)
+        const { confirmOrgAllowlist } = await import('./db')
+        await confirmOrgAllowlist(input.orgId, ctx.user.id, input.platform)
+        return { ok: true, state: 'confirmed_by_admin' as const }
+      }),
+    // Knowingly skip. The exact warning acknowledged is stored verbatim (the gate rejects a skip
+    // without it, so the client must send SKIP_WARNING).
+    skip: protectedProcedure
+      .input(z.object({ orgId: z.number(), ack: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true)
+        const { skipOrgAllowlist } = await import('./db')
+        await skipOrgAllowlist(input.orgId, input.ack)
+        return { ok: true, state: 'skipped' as const }
+      }),
+  }),
+
   // ─── Billing ──────────────────────────────────────────────────────────────────
   billing: router({
     createCheckoutSession: protectedProcedure
