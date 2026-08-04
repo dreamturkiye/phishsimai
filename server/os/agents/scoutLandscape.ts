@@ -20,6 +20,16 @@ import {
 const COMPANY = 'phishsimai'
 const FETCH_TIMEOUT_MS = 20_000
 
+// PS-SCOUT-EXTRACT-WINDOW-01. Chars of page text handed to the extractor. Was 6000 (inherited from
+// competitorIntel), which truncated the substantive regulatory text off the LARGE, content-rich
+// sources (NAIC ~17k, FTC ~37k, PCI ~14k) whose first 6000 chars are nav/chrome — they went
+// NOT_CHECKED not because they are weak but because their content was cut before the model saw it.
+// 14000 chars is ~3500 tokens: well under Cerebras's 8192-token free-tier cap even with the system
+// prompt + 400-token output, so it stays on the free tier and does not skip to DeepInfra. The
+// provenance gate is unchanged — a larger window only gives the model more REAL page to quote from;
+// nothing fabricated can pass verifyFinding.
+export const EXTRACT_MAX_CHARS = 14_000
+
 type FetchResult = { ok: true; status: number; text: string } | { ok: false; status: number | null; reason: string }
 
 async function fetchSource(url: string): Promise<FetchResult> {
@@ -66,7 +76,7 @@ async function extractFinding(src: RegistrySource, text: string): Promise<Extrac
             '(4) if the page contains nothing relevant, return {"claim":null,"quote":null,"source_date":null}. ' +
             'A quote that is not on the page is a defect.',
         },
-        { role: 'user', content: `Source: ${src.name} (${src.topic})\n\nPage text (truncated):\n${text.slice(0, 6000)}` },
+        { role: 'user', content: `Source: ${src.name} (${src.topic})\n\nPage text (truncated):\n${text.slice(0, EXTRACT_MAX_CHARS)}` },
       ],
       max_tokens: 400,
       response_format: { type: 'json_object' },
