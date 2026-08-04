@@ -23,24 +23,21 @@ import {
 import { readStripeTruth, auditPriceClaims, type PriceClaim } from './agents/finn'
 
 /**
- * INV-1 — no fabricated MRR, from the live Stripe read.
+ * INV-1 — no fabricated MRR (STRUCTURAL), from the live Stripe read.
  *
- * KNOWN LIMIT, stated not hidden: the two independent derivations are the SAME read today. A
- * genuinely separate second source needs either Stripe's reported total (not exposed on the API
- * finn.ts uses) or annual-aware plan mapping (the naive plan-price x count path FALSE-fires on
- * annual subs, since annual = 10x monthly here, not 12x). So the drift half is inert; the STRUCTURAL
- * guarantee — mrr>0 iff activeSubs>0, the phantom-MRR signature — is the live check, and it is the
- * half that has actually cost money. At 0 subs / $0 this reads HOLDS honestly (invariant satisfied),
- * exactly as the empty funnel should.
+ * The live guarantee is the structural one: mrr>0 iff activeSubs>0 (the phantom-MRR signature),
+ * the half that has actually cost money. Drift reconciliation is NOT implemented and is not faked —
+ * no independent MRR source exists on the Stripe API (see checkMrrInvariant's header). The former
+ * fake second-derivation same-read feed is removed. At 0 subs / $0 this reads HOLDS
+ * honestly (invariant satisfied), exactly as the empty funnel should.
  */
 async function inv1(): Promise<InvariantResult> {
   const truth = await readStripeTruth().catch(() => null)
   if (!truth) {
-    return checkMrrInvariant({ computedMrrUsd: 0, independentMrrUsd: 0, activeSubs: 0, stripeChecked: false })
+    return checkMrrInvariant({ computedMrrUsd: 0, activeSubs: 0, stripeChecked: false })
   }
   return checkMrrInvariant({
     computedMrrUsd: truth.mrrUsd,
-    independentMrrUsd: truth.mrrUsd, // same read — see KNOWN LIMIT above
     activeSubs: truth.activeSubs,
     stripeChecked: truth.checked,
   })
