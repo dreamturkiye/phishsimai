@@ -143,3 +143,59 @@ describe('the cron chain covers every agent exactly once', () => {
     }
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PS-JANET-DEPTH-01 — the team block must be GROUNDED and BEHAVIOURAL.
+//
+//  Gap 3 arrived as "deepen the 8 agents' prompts". Checked first: the eight agents call
+//  llmComplete ZERO times — they are deterministic analysts, and there is no prompt to deepen.
+//  Janet is the only agent that reasons from a prompt, so she is the only place where depth can
+//  change an output at all.
+//
+//  The bar these tests hold: every element must trace to something REAL in this business (an
+//  agent's actual ownership, an actual deferral rule, an actual report shape) and must change what
+//  Janet DOES — not read richer. Generic domain expertise in a prompt is persona-as-theater.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('PS-JANET-DEPTH-01 — grounded ownership, not generic role names', () => {
+  const SYSTEM = read(DAILY)
+  it('names all eight specialists by name, not by generic department', () => {
+    for (const n of ['Rex', 'Dex', 'Aria', 'Mason', 'Finn', 'Vera', 'Nova', 'Scout']) {
+      expect(SYSTEM, `${n} missing from the team block`).toContain(n)
+    }
+  })
+
+  it('states the ownership rule that changes what Janet may quote', () => {
+    expect(SYSTEM).toContain('quote a number ONLY from the agent that owns it')
+  })
+
+  it('encodes foundation-first fail-closed as CORRECT behaviour, not breakage', () => {
+    // Without this Janet reports a stood-down dependent as a failure and escalates the wrong thing.
+    expect(SYSTEM).toContain('FOUNDATION FIRST')
+    expect(SYSTEM).toContain('FAIL CLOSED')
+  })
+
+  it('distinguishes a deferral from silence — mason.ts:23-24 made this real', () => {
+    expect(SYSTEM).toContain('DEFERRAL IS A REPORT, NOT SILENCE')
+    expect(SYSTEM).toContain('Escalate the')
+  })
+
+  it('forbids filling a NOT CHECKED gap with a prior figure or an inference', () => {
+    expect(SYSTEM).toContain('NOT CHECKED IS NOT ZERO AND NOT CLEAN')
+    expect(SYSTEM).toMatch(/may not fill that gap/i)
+  })
+
+  it("carries Rex's veto — a suspect metric may not be quoted however confident another agent is", () => {
+    expect(SYSTEM).toMatch(/if rex says a metric is suspect/i)
+  })
+
+  it('does NOT recite generic domain expertise (the eloquent-hollow failure)', () => {
+    // Named frameworks the agents do not actually implement would be recited authority, not reasoning.
+    for (const generic of ['MEDDIC', 'BANT', 'SPIN selling', 'AIDA', 'best practice']) {
+      expect(SYSTEM.toLowerCase(), `generic expertise leaked in: ${generic}`).not.toContain(generic.toLowerCase())
+    }
+  })
+
+  it('drops the stale generic list that named departments the roster does not have', () => {
+    expect(SYSTEM).not.toContain('Sales, Marketing, Product, Research, Finance, CS, EA')
+  })
+})
