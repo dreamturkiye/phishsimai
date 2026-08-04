@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { trackEvent, getAttackTypeForToken } from "../db";
+import { trackEvent, getAttackTypeForToken, assignTrainingForToken } from "../db";
 import { captureServerError } from "../os/sentryServer";
 
 // PS-TRACK-01 (2026-07-22): these writes were wrapped in `catch(e){}` — a failed open/click
@@ -69,6 +69,9 @@ export function registerTrackingRoutes(app: Express): void {
   app.get("/c/:token", async (req, res) => {
     if (!TOKEN_RE.test(req.params.token)) { res.status(404).send("Not found"); return; }
     try { await trackEvent(req.params.token,"click",{ip:req.ip??"" ,ua:req.headers["user-agent"]??""}); } catch(e){ trackFailed("click", req.params.token, e); }
+    // PS-REMEDIATION-01: a click IS the failure — auto-enroll the target in the matching module.
+    // Best-effort: assignTrainingForToken never throws and never blocks the recipient response.
+    assignTrainingForToken(req.params.token, "sim_click").catch(() => {});
     // PS-CREDPAGE-01: a credential_harvest simulation shows the fake login page — the behaviour
     // this product measures. Everything else (link_click, attachment, …) goes straight to
     // training, exactly as before. A lookup failure defaults to training: we never show a
@@ -97,6 +100,9 @@ export function registerTrackingRoutes(app: Express): void {
   app.post("/submit/:token", async (req, res) => {
     if (!TOKEN_RE.test(req.params.token)) { res.status(404).send("Not found"); return; }
     try { await trackEvent(req.params.token,"submit",{ip:req.ip??"" ,ua:req.headers["user-agent"]??""}); } catch(e){ trackFailed("submit", req.params.token, e); }
+    // PS-REMEDIATION-01: a credential submit is the worst failure — enroll (idempotent with the
+    // click enroll: the 0023 open-unique index makes the second call inert).
+    assignTrainingForToken(req.params.token, "sim_submit").catch(() => {});
     // A GET would be prefetched by mail scanners; this is only ever reached by a real form POST,
     // and it redirects to training so the recipient lands where a clicker lands.
     res.redirect(302, "/landing/"+req.params.token);

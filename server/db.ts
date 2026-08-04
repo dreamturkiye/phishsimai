@@ -27,6 +27,7 @@ import {
   targets,
   templates,
   trainingCompletions,
+  trainingAssignments,
   trainingModules,
   users,
 } from "../drizzle/schema";
@@ -563,9 +564,69 @@ export async function recordTrainingCompletion(data: Omit<TrainingCompletion, "i
   const db = await getDb();
   if (!db) return;
   await db.insert(trainingCompletions).values({ ...data, completedAt: new Date() });
-  // Update gamification if targetId provided
+  // PS-REMEDIATION-01: close the loop. If this completion matches an OPEN auto-assignment for the
+  // same target+module, stamp it completed. No open assignment (a self-serve completion) simply
+  // records the completion — it does not invent an assignment.
   if (data.targetId) {
+    await db.update(trainingAssignments)
+      .set({ completedAt: new Date() })
+      .where(and(
+        eq(trainingAssignments.targetId, data.targetId),
+        eq(trainingAssignments.moduleId, data.moduleId),
+        isNull(trainingAssignments.completedAt),
+      ));
     await updateGamificationOnTraining(data.orgId, data.targetId);
+  }
+}
+
+/**
+ * PS-REMEDIATION-01 — the ENROLL step. Curated, deterministic attack-type -> module-category map.
+ * Not guessed per run: a fixed table so the same failure always assigns the same kind of training.
+ */
+export const ATTACK_TYPE_TO_CATEGORY: Record<string, string> = {
+  credential_harvest: 'Social Engineering',
+  link_click: 'Threat Awareness',
+  attachment: 'Threat Awareness',
+  vishing: 'Social Engineering',
+  smishing: 'Social Engineering',
+  pretexting: 'Social Engineering',
+};
+/** Fallback when no module exists in the mapped category — a general module always seeded. */
+export const FALLBACK_CATEGORY = 'Security Fundamentals';
+
+/**
+ * Auto-enroll the target behind a tracking token into the module matching the simulation's attack
+ * type. Best-effort and idempotent: returns null (never throws) so a failure here can never break
+ * the tracker's response to the recipient. One OPEN assignment per (target, module) — the 0023
+ * partial unique index enforces it, and ON CONFLICT DO NOTHING makes a repeat failure inert.
+ *
+ * Returns the assignment id on a fresh enroll, or null when there was nothing to assign (no result
+ * row, no module) or the open assignment already existed. Never fabricates: no module -> no row.
+ */
+export async function assignTrainingForToken(token: string, source: 'sim_click' | 'sim_submit'): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const [res] = await db.select({ id: campaignResults.id, orgId: campaignResults.orgId, targetId: campaignResults.targetId })
+      .from(campaignResults).where(eq(campaignResults.trackingToken, token)).limit(1);
+    if (!res) return null; // no result row -> nothing to enroll
+    const attackType = await getAttackTypeForToken(token);
+    const category = (attackType && ATTACK_TYPE_TO_CATEGORY[attackType]) || FALLBACK_CATEGORY;
+    // Pick the module: matching category first, else the fallback category, else nothing.
+    let [mod] = await db.select({ id: trainingModules.id }).from(trainingModules)
+      .where(eq(trainingModules.category, category)).orderBy(trainingModules.id).limit(1);
+    if (!mod && category !== FALLBACK_CATEGORY) {
+      [mod] = await db.select({ id: trainingModules.id }).from(trainingModules)
+        .where(eq(trainingModules.category, FALLBACK_CATEGORY)).orderBy(trainingModules.id).limit(1);
+    }
+    if (!mod) return null; // no module exists -> assign nothing, never a phantom row
+    const rows = await db.insert(trainingAssignments).values({
+      orgId: res.orgId, targetId: res.targetId, moduleId: mod.id,
+      attackType: attackType ?? null, source, campaignResultId: res.id,
+    }).onConflictDoNothing().returning({ id: trainingAssignments.id });
+    return rows[0]?.id ?? null; // null when an open assignment already existed
+  } catch {
+    return null; // never break the tracker
   }
 }
 

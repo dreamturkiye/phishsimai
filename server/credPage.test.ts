@@ -25,6 +25,7 @@ let attackType: string | null = 'credential_harvest'
 vi.mock('./db', () => ({
   trackEvent: (...args: any[]) => trackEvent(...args),
   getAttackTypeForToken: async () => attackType,
+  assignTrainingForToken: async () => null,
 }))
 
 import { registerTrackingRoutes } from './email/tracker'
