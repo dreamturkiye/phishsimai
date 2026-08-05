@@ -177,3 +177,11 @@
     }
   }
 }
+/* PS-HOMEPAGE-REDESIGN: subtle, SSR-safe scroll reveal. Content is fully visible in the
+   prerendered HTML (no-JS / SEO). The .reveal-init hiding class is only ever added client-side,
+   and above-the-fold elements are never hidden — so there is no first-paint flash. */
+[data-reveal].reveal-init { opacity: 0; transform: translateY(16px); }
+[data-reveal].reveal-init.reveal-in { opacity: 1; transform: none; transition: opacity .7s ease, transform .7s ease; }
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal].reveal-init, [data-reveal].reveal-init.reveal-in { opacity: 1 !important; transform: none !important; transition: none !important; }
+}

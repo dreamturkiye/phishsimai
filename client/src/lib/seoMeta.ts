@@ -45,8 +45,8 @@ export function seoForPath(pathname: string): RouteMeta {
     };
   }
   return {
-    title: "PhishSim AI — AI Phishing Simulation & Security Awareness for MSPs",
-    description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 30-day free trial.",
+    title: "PhishSim AI — Phishing Simulation & Awareness Training for MSPs",
+    description: "Multi-tenant phishing simulations, Learning Moments, and desk-friendly reporting into ConnectWise Manage and Halo — with QBR risk scores and cyber-insurance evidence under your brand. Flat MSP pricing. 30-day free trial, no credit card.",
     path: "/",
   };
 }
