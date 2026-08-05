@@ -1696,13 +1696,20 @@ standup to the CEO as fact, and a fabricated line becomes a real incident.
  *
  * Pure and exported so this cannot silently regress the way the original did.
  */
-export function parseStandupAssignments(response: string): { agentId: AgentId; title: string }[] {
-  const CANONICAL = /^\s*(?:[-*]\s*)?(?:\*\*)?assign\s+(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*[:—–-]\s+(.+?)\s*$/i
+// PS-SUPERSEDE-01: a directive that PAUSES/PIVOTS/STOPS an agent's current work is a REPLACEMENT,
+// not an addition. Detected here so the consumer can cancel the agent's prior open tasks before
+// issuing this one — otherwise the old, now-contradicted task lingers (Vera ran "define cadence" and
+// "pause the cadence, pivot" simultaneously because nothing cancelled the first). Matches the
+// natural language Janet actually writes ("Pause X and pivot to Y") plus an explicit SUPERSEDE verb.
+const SUPERSEDE_RE = /^(?:pause|stop|drop|halt|supersede|pivot|replace|abandon)\b|\bpivot\s+to\b|\bstop\s+work(?:ing)?\s+on\b/i
+
+export function parseStandupAssignments(response: string): { agentId: AgentId; title: string; supersede: boolean }[] {
+  const CANONICAL = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:assign|supersede)\s+(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*[:—–-]\s+(.+?)\s*$/i
   const TABLE_ROW = /^\s*\|\s*(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*\|\s*(.+?)\s*\|/
   const LIST_ITEM = /^\s*[-*]\s+(?:\*\*)?([A-Za-z]+)(?:\*\*)?\s*[:—–]\s+(.+?)\s*$/i
 
   const collect = (re: RegExp) => {
-    const out: { agentId: AgentId; title: string }[] = []
+    const out: { agentId: AgentId; title: string; supersede: boolean }[] = []
     const seen = new Set<string>()
     for (const rawLine of response.split('\n')) {
       const m = rawLine.match(re)
@@ -1718,7 +1725,9 @@ export function parseStandupAssignments(response: string): { agentId: AgentId; t
       const key = `${agentId}:${title.slice(0, 80).toLowerCase()}`
       if (seen.has(key)) continue
       seen.add(key)
-      out.push({ agentId: agentId as AgentId, title: title.slice(0, 300) })
+      // A directive that opens by pausing/pivoting/replacing is a supersession of prior work.
+      const supersede = SUPERSEDE_RE.test(title) || /^\s*supersede\b/i.test(rawLine)
+      out.push({ agentId: agentId as AgentId, title: title.slice(0, 300), supersede })
     }
     return out
   }
@@ -1894,7 +1903,22 @@ Distinguish, in your own output, "X reported that..." from "X did...". Only writ
 system record backs it.
 
 `
-  const janetResponse = await llm(janetSystem, `${janetGrounding}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+  // PS-GOAL-ALIGN-01: the founder's real_pipeline fact is the binding constraint on WHAT to assign.
+  // It lived in memory but the standup ignored it and kept assigning conversion work over a
+  // 1-prospect funnel. Read it and turn it into a hard gate on task generation, so the standup
+  // proposes ACQUISITION work (fill the funnel) instead of conversion work (a denominator of 1).
+  const pipelineFact = (await sql`SELECT value FROM janet_memory
+    WHERE company_id=${companyId} AND type='company' AND key='real_pipeline' LIMIT 1`.catch(() => [])) as any[]
+  const acquisitionGate = pipelineFact[0]?.value
+    ? `TODAY'S BINDING CONSTRAINT — founder directive, and it OVERRIDES any instinct to work the existing funnel:\n${pipelineFact[0].value}\n\n` +
+      `THEREFORE every task you assign must aim at ACQUISITION / TOP OF FUNNEL: contacting more MSPs, ` +
+      `expanding and enriching the lead list, opening new outreach channels, discovery of new prospects. ` +
+      `Do NOT assign conversion, follow-up-copy, re-engagement, lead-scoring, or CRM/free-tier-cadence ` +
+      `work over this near-empty funnel — it cannot move revenue when the denominator is 1. Assign work ` +
+      `that FILLS the funnel.\n\n`
+    : ''
+
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. To REPLACE an agent's current task (redirect them), begin the task with "Pause ... and pivot to ..." — that cancels their prior open task instead of leaving a contradictory one running.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
@@ -1903,9 +1927,19 @@ system record backs it.
   // os6Autonomy, intelligenceFinance, janetProactive — obeys one rule. Here we only need to
   // read back which calls were absorbed as duplicates so the footer can say so.
   const newTasks: any[] = []
-  let skippedDuplicate = 0, deniedByGate = 0, refusedVoid = 0
-  for (const { agentId, title } of parsed) {
+  let skippedDuplicate = 0, deniedByGate = 0, refusedVoid = 0, supersededTasks = 0
+  for (const { agentId, title, supersede } of parsed) {
     try {
+      // PS-SUPERSEDE-01: a pause/pivot/replace directive CANCELS this agent's currently-open work
+      // before the new task is issued — one directive supersedes, not both live. This is the fix for
+      // the lingering-contradicted-task defect (Vera's "define cadence" stayed in_progress after a
+      // "pause and pivot" directive). Cancel BEFORE issueTask so the new task lands clean.
+      if (supersede) {
+        const cancelled = (await sql`UPDATE agent_tasks SET status='cancelled', updated_at=NOW()
+          WHERE company_id=${companyId} AND agent_id=${agentId} AND status IN ('assigned','in_progress')
+          RETURNING id`) as any[]
+        supersededTasks += cancelled.length
+      }
       const t = await issueTask(agentId, {
         title: title.slice(0, 100),
         description: `Issued during daily standup: ${title}`,
@@ -1924,7 +1958,7 @@ system record backs it.
   }
   console.log(
     `[kaan_os_v4] standup task issuance: parsed=${parsed.length} issued=${newTasks.length} ` +
-    `duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
+    `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
   if (parsed.length === 0 && /\bassign|assignment\b/i.test(janetResponse)) {
     console.warn('[kaan_os_v4] standup: Janet named assignments but NONE parsed — parser/prompt drift, not an empty agenda')
