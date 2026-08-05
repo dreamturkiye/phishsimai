@@ -100,6 +100,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/os/sequence-touch2",
+      "schedule": "0 13-21/2 * * *"
+    },
+    {
       "path": "/api/os/janet",
       "schedule": "0 8 * * *"
     },
