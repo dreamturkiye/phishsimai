@@ -110,7 +110,8 @@ class Product:
     vercel_team: str = 'getvelacom'
     dev_branch: str = 'dev'
     prod_branch: str = 'master'
-    github_repo: str = ''  # PS-MARCUS-GATES-01: owner/name for the CI check-runs poll (M.2)
+    github_repo: str = ''      # PS-MARCUS-GATES-01: owner/name for the CI check-runs poll (M.2)
+    code_secret: str = ''      # ARCHITECT_SECRET for /architect/code (okSecret); HQ for everything else
 
 
 PRODUCTS = [
@@ -136,8 +137,20 @@ PRODUCTS = [
         qa_path='/api/os/qa-smoke',
         vercel_project='phishsimai',
         github_repo='dreamturkiye/phishsimai',
+        prod_branch='main',   # PS-MARCUS-GATES-01 fix: the real deploy branch (master does not exist)
     ),
 ]
+
+# PS-MARCUS-GATES-01 auth fix: the hardcoded 'ps-hq-2026' was rotated out (~07-10) and 401s on every
+# endpoint. Read the REAL secrets from the watcher's env (loaded above): HQ_SECRET authenticates
+# pending/complete/qa/breaker/gate/deploy-verify (okHQ / okCronOrHq); ARCHITECT_SECRET authenticates
+# /architect/code (okSecret). Applied to the active product(s); ARCHITECT_PRODUCT selects which runs.
+_HQ = os.environ.get('HQ_SECRET', '')
+_ARCH = os.environ.get('ARCHITECT_SECRET', '')
+for _p in PRODUCTS:
+    if _HQ:
+        _p.secret = _HQ
+    _p.code_secret = _ARCH or _p.secret
 
 
 def load_env_file(path: str = ARCHITECT_ENV_FILE):
@@ -330,7 +343,7 @@ def run_groq_for_diff(product: Product, task_description: str, task_id: str = No
         if repo_files:
             payload['repo_files'] = repo_files
             print(f'[{product.name}] Pre-injected {len(repo_files)} repo file(s): {list(repo_files.keys())}')
-        url = f"{product.base_url}{product.code_path}?secret={product.secret}"
+        url = f"{product.base_url}{product.code_path}?secret={product.code_secret}"  # /code uses ARCHITECT_SECRET (okSecret)
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
             headers={'Content-Type': 'application/json'}, method='POST',
@@ -463,9 +476,9 @@ def poll_ci_check_runs(product: Product, ref: str, timeout: int = 900) -> tuple:
     completed with a success conclusion AND the required 'verify' check is present. Fails closed on a
     missing token, a timeout, or persistent transient errors — a change no CI could confirm green
     does not reach prod."""
-    token = os.environ.get('GITHUB_TOKEN', '')
+    token = os.environ.get('MARCUS_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN', '')  # PS-MARCUS-GATES-01 fix
     if not product.github_repo or not token:
-        return False, 'no GITHUB_TOKEN/github_repo — cannot verify CI (fail closed)'
+        return False, 'no MARCUS_GITHUB_TOKEN/github_repo — cannot verify CI (fail closed)'
     url = f'{GITHUB_API}/repos/{product.github_repo}/commits/{ref}/check-runs'
     headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json', 'User-Agent': 'marcus-watcher'}
     deadline = time.time() + timeout
