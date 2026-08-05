@@ -9,6 +9,7 @@ import { readBreakerThreshold } from './dexBreaker'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
+import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_SPACING_MS } from './outreachThrottle'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -220,17 +221,31 @@ export async function runTouch2Batch(sqlOverride?: any): Promise<{
   }
 
   const h = await touch2Headroom(sql)
-  out.headroom = h.headroom === Number.MAX_SAFE_INTEGER ? -1 : h.headroom
   out.holding = h.holding
   if (h.holding) {
+    out.headroom = 0
     out.reason = `BATCH 1 COMPLETE — ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent. Holding for founder read; ` +
       `set janet_memory ${TOUCH2_SCALE_KEY}='1' to release the remainder.`
     return out
   }
 
-  const leads = await touch2Eligible(sql, h.headroom)
+  // PS-OUTREACH-THROTTLE-01: the HARD daily cap. Even once the founder unlocks scaling
+  // (touch2Headroom returns MAX_SAFE_INTEGER), a single run may never exceed the throttle:
+  // 50 second-touch/day, 100 combined/day (counting touch-1 already sent today), a small per-run
+  // batch, and inter-send spacing. This is what turns "unlock" from a 647-burst into 50/day spread.
+  const counts = await sentTodayCounts(sql)
+  const runLimit = Math.min(h.headroom, secondTouchAllowance(counts))
+  out.headroom = runLimit
+  if (runLimit <= 0) {
+    out.reason = `daily cap reached — ${counts.secondSentToday}/50 second-touch and ` +
+      `${counts.newSentToday + counts.secondSentToday}/100 combined already sent today. Overflow queues to tomorrow.`
+    return out
+  }
+
+  const leads = await touch2Eligible(sql, runLimit)
   const now = new Date()
   for (const lead of leads) {
+    if (out.sent > 0) await sleep(SEND_SPACING_MS) // spread the run; never a burst
     out.attempted++
     try {
       const dom = domainOf(String(lead.email))
@@ -393,7 +408,10 @@ export async function runFullSequence() {
   }
 
   const now = new Date()
-  const cap = dailySendCap(now) // PS-RAMP-01: today's warm-up cap (20 → 50 → 100)
+  // PS-OUTREACH-THROTTLE-01: touch-1 obeys the SAME combined 100/day ceiling as touch-2, so new +
+  // second-touch can never exceed 100 on the domain in a day. Its own type cap stays 50 (the ramp).
+  const throttleCounts = await sentTodayCounts(sql)
+  const cap = Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
   let totalSent = 0
   const results: any[] = []
 

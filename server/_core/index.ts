@@ -15,7 +15,7 @@ import { scheduledCampaignHandler } from "../scheduledHandlers";
 import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
-  cronSequence, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronAria, cronMason, cronScout, cronFinn, cronVera, cronNova, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
+  cronSequence, cronSequenceTouch2, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronAria, cronMason, cronScout, cronFinn, cronVera, cronNova, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
   webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk,
   architectAutonomy, architectIncident
@@ -164,6 +164,7 @@ async function startServer() {
   app.get("/api/architect/autonomy", architectAutonomy);
   app.post("/api/architect/incident", architectIncident);
   app.get("/api/os/sequence", cronSequence);
+  app.get("/api/os/sequence-touch2", cronSequenceTouch2); // PS-OUTREACH-THROTTLE-01: throttled second-touch tick
   app.get("/api/os/competitor-intel", cronCompetitorIntel);
   app.get("/api/os/sales-replies", cronSalesReplies);
   app.get("/api/os/rex", cronRex);
