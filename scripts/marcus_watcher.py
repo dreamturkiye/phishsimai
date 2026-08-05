@@ -13,17 +13,22 @@ import time
 import sys
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
+
+# PS-MARCUS-GATES-01: the five deploy safety gates. Pure decisions in marcus_gates, breaker/gate I/O
+# in breaker_client. sys.path so the sibling imports resolve regardless of launchd's cwd.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import marcus_gates as gates
+import breaker_client
 
 GROQ_MODEL = os.environ.get('GROQ_ARCHITECT_MODEL', 'llama-3.3-70b-versatile')
 GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 ARCHITECT_ENV_FILE = os.environ.get('ARCHITECT_ENV_FILE', '/Users/kaan/HQ/.architect.env')
+GITHUB_API = 'https://api.github.com'
 
-PROTECTED_PATTERNS = [
-    'stripe', 'payment', 'billing/checkout', '.env', 'vercel.json',
-    'package.json', 'auth/options', 'middleware', 'webhook'
-]
+# PS-MARCUS-GATES-01: protected paths now include CI workflows, pricing bands, and escalations (O.5).
+PROTECTED_PATTERNS = gates.PROTECTED_PATTERNS
 
 SCROLLFUEL_PROBE_FIX = """'use client'
 
@@ -105,6 +110,7 @@ class Product:
     vercel_team: str = 'getvelacom'
     dev_branch: str = 'dev'
     prod_branch: str = 'master'
+    github_repo: str = ''  # PS-MARCUS-GATES-01: owner/name for the CI check-runs poll (M.2)
 
 
 PRODUCTS = [
@@ -129,6 +135,7 @@ PRODUCTS = [
         complete_path='/api/os/architect/complete',
         qa_path='/api/os/qa-smoke',
         vercel_project='phishsimai',
+        github_repo='dreamturkiye/phishsimai',
     ),
 ]
 
@@ -393,10 +400,22 @@ def is_protected(path: str) -> bool:
 
 
 def apply_on_dev(product: Product, files: dict, task_description: str) -> dict:
+    # Gate 4: protected paths (incl. .github/workflows, pricing, escalation) — refuse at apply.
     for path in files:
         if is_protected(path):
-            return {'ok': False, 'error': f'Protected path: {path}'}
+            return {'ok': False, 'error': f'Protected path: {path}', 'protected': True}
     sync_branch(product, product.dev_branch)
+    # Gate 1: destructive-diff tripwire. >10 files OR >500 net lines (outside generated/vendored) →
+    # refuse and discard; the caller records a breaker failure so a repeat opens the breaker.
+    def _old(rel):
+        try:
+            with open(os.path.join(product.repo_path, rel), encoding='utf-8') as fh:
+                return fh.read()
+        except Exception:
+            return ''
+    destructive, reason, stats = gates.is_destructive_diff(files, old_getter=_old)
+    if destructive:
+        return {'ok': False, 'error': f'Destructive diff refused ({reason}) — discarded', 'destructive': True, 'stats': stats}
     changed = []
     for rel_path, content in files.items():
         full_path = os.path.join(product.repo_path, rel_path)
@@ -439,11 +458,58 @@ def rollback_prod(product: Product, prod_before: str):
     git_run(product, ['push', 'origin', product.prod_branch, '--force-with-lease'], check=False)
 
 
+def poll_ci_check_runs(product: Product, ref: str, timeout: int = 900) -> tuple:
+    """Gate 2 (M.2): poll GitHub check-runs for `ref` (the dev commit). Green ONLY when every run is
+    completed with a success conclusion AND the required 'verify' check is present. Fails closed on a
+    missing token, a timeout, or persistent transient errors — a change no CI could confirm green
+    does not reach prod."""
+    token = os.environ.get('GITHUB_TOKEN', '')
+    if not product.github_repo or not token:
+        return False, 'no GITHUB_TOKEN/github_repo — cannot verify CI (fail closed)'
+    url = f'{GITHUB_API}/repos/{product.github_repo}/commits/{ref}/check-runs'
+    headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json', 'User-Agent': 'marcus-watcher'}
+    deadline = time.time() + timeout
+    last = 'no check-runs yet'
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as r:
+                data = json.loads(r.read().decode('utf-8'))
+            runs = [{'name': c.get('name'), 'status': c.get('status'), 'conclusion': c.get('conclusion')}
+                    for c in data.get('check_runs', [])]
+            green, why = gates.ci_is_green(runs, required=['verify'])
+            last = why
+            if 'still running' not in why and 'no check-runs' not in why:
+                return green, why  # a settled verdict (green, or a real failure)
+        except Exception as e:
+            last = f'poll error: {e}'
+        time.sleep(15)
+    return False, f'CI poll timed out — fail closed (last: {last})'
+
+
+def deploy_verify_probe(product: Product) -> dict:
+    """Gate 3 (M.4): ask the server whether the running prod origin is OUR app (project↔domain).
+    Normalised to {measured, match} for the pure gate. A transient/unreadable probe is NOT measured
+    (so it is neither an OK nor a mismatch)."""
+    try:
+        url = f"{product.base_url}/api/os/deploy-verify?secret={product.secret}"
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=30) as r:
+            j = json.loads(r.read().decode('utf-8'))
+        m = j.get('match', None)
+        return {'measured': m is not None, 'match': m, 'reason': j.get('reason', '')}
+    except Exception as e:
+        return {'measured': False, 'match': None, 'reason': f'probe error: {e}'}
+
+
 def process_task(product: Product, task: dict):
     task_id, description = task['id'], task['task']
     print(f'[{product.name}] Processing {task_id[:8]}: {description[:80]}')
     if len(description.strip()) < 12:
         report_completion(product, task_id, False, error='Malformed task — skipped')
+        return
+    # Gate 1 (M.1): circuit breaker — a fingerprint quarantined by 3 consecutive failures is skipped.
+    state, _bk = breaker_client.breaker_state(product.base_url, product.secret, product.name, task_id)
+    if state == 'open':
+        report_completion(product, task_id, False, error='Circuit breaker OPEN for this task — skipped (quarantined)')
         return
     try:
         diff = try_known_fix(description, product) or run_groq_for_diff(product, description, task_id)
@@ -452,6 +518,10 @@ def process_task(product: Product, task: dict):
             return
         dev = apply_on_dev(product, diff['files'], description)
         if not dev['ok']:
+            # A destructive-diff refusal is a breaker-worthy failure (opens on repeat). Protected-path
+            # and other apply refusals are reported but not counted against the breaker.
+            if dev.get('destructive'):
+                breaker_client.breaker_record(product.base_url, product.secret, task_id, False, dev['error'])
             report_completion(product, task_id, False, error=dev['error'], qwen_output=diff.get('raw', ''))
             return
         if dev.get('no_changes'):
@@ -463,19 +533,49 @@ def process_task(product: Product, task: dict):
         preview = dev['preview_url']
         preview_ready = wait_for_deploy(preview, timeout=120)
         qa_preview = run_qa_smoke(product, preview, f'architect-preview-{task_id[:8]}') if preview_ready else {'passed': 0, 'failed': 0}
+
+        # ── DEPLOY GATES — all must pass before dev may reach prod. Dev commit stands either way. ──
+        # Gate 5 (autonomy): the HANDS are gated. No deploy unless the external watcher audit PASSED
+        # and the earned level is at the deploy floor. watcher_audit='outstanding' blocks here.
+        g = breaker_client.gate_state(product.base_url, product.secret)
+        if not gates.deploy_allowed(g.get('watcher_audit'), g.get('level')):
+            report_completion(product, task_id, False, preview_url=preview, deploy_branch=product.dev_branch,
+                              error=f"DEPLOY BLOCKED by autonomy gate (watcher_audit={g.get('watcher_audit')!r}, level={g.get('level')!r}) — prod untouched")
+            print(f'[{product.name}] autonomy gate blocked deploy — dev only')
+            return
+        # Gate 2 (CI): the dev commit must be green (tsc + full suite) before it can be promoted.
+        ci_green, ci_reason = poll_ci_check_runs(product, dev['commit_sha'])
+        if not ci_green:
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, f'CI red: {ci_reason}')
+            report_completion(product, task_id, False, preview_url=preview, deploy_branch=product.dev_branch,
+                              error=f'CI NOT GREEN — blocked from prod: {ci_reason}')
+            return
+        # Gate 3 (deploy-verify): the running prod origin must be OUR app (project↔domain). Mismatch
+        # aborts the promote and records a breaker failure.
+        dv = deploy_verify_probe(product)
+        if gates.deploy_verify_is_mismatch(dv):
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, f"deploy_mismatch: {dv.get('reason')}")
+            report_completion(product, task_id, False, preview_url=preview,
+                              error=f"DEPLOY-VERIFY MISMATCH — promote aborted: {dv.get('reason')}")
+            return
+
         promote = promote_dev_to_prod(product)
         if not promote['ok']:
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, promote['error'])
             report_completion(product, task_id, False, error=promote['error'], preview_url=preview)
             return
         if not wait_for_deploy(product.base_url, timeout=180):
             rollback_prod(product, promote['prod_before'])
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, 'prod deploy timeout — rolled back')
             report_completion(product, task_id, False, error='Prod deploy timeout — rolled back', preview_url=preview)
             return
         qa_prod = run_qa_smoke(product, product.base_url, f'architect-prod-{task_id[:8]}')
         if qa_prod.get('failed', 1) > 0:
             rollback_prod(product, promote['prod_before'])
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, 'prod QA failed — rolled back')
             report_completion(product, task_id, False, error='Prod QA failed — rolled back', files_changed=dev['files'])
             return
+        breaker_client.breaker_record(product.base_url, product.secret, task_id, True, '')
         print(f'[{product.name}] DONE — prod @ {promote["commit_sha"]}')
         report_completion(product, task_id, True, qwen_output=diff.get('raw', ''), files_changed=dev['files'],
                           commit_sha=promote['commit_sha'], preview_url=preview, prod_url=product.base_url,

@@ -232,6 +232,24 @@ export async function breakerEndpoint(req: Request, res: Response) {
   }
 }
 
+// PS-MARCUS-GATES-01 — the autonomy gate the Marcus watcher reads BEFORE it deploys. Returns the
+// raw watcher_audit record + the earned enforcement level, so the watcher fails closed unless the
+// external watcher audit is a genuine 'passed'. This is what makes Kaan's watcher_audit record gate
+// the HANDS (the deploy), not just the promotion ladder. Secret-gated, read-only.
+export async function architectGateEndpoint(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const sql = getSql()
+    const w = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY} AND key='watcher_audit' ORDER BY updated_at DESC LIMIT 1`.catch(() => [] as any[])
+    const a = await sql`SELECT level FROM os_autonomy_state WHERE company_id=${COMPANY} LIMIT 1`.catch(() => [] as any[])
+    const watcher_audit = String((w as any[])[0]?.value ?? 'outstanding')
+    const level = String((a as any[])[0]?.level ?? 'manual')
+    res.json({ watcher_audit, watcher_passed: watcher_audit.trim().toLowerCase() === 'passed', level })
+  } catch (e: any) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
 export async function cronWatchdog(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
   try { res.json({ ok: true, ...(await runWatchdog()) }) } catch(e:any) { res.status(500).json({error:e.message}) }
