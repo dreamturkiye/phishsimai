@@ -121,6 +121,8 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
     if (path === "/api/os/deploy-verify") return routes.cronDeployVerify(req, res);
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
+    if (path === "/api/os/sequence-touch2") return routes.cronSequenceTouch2(req, res); // PS-OUTREACH-THROTTLE-01: was mounted only in _core (dev server) → 404'd in prod
+
     if (path === "/api/os/competitor-intel") return routes.cronCompetitorIntel(req, res);
     if (path === "/api/os/reflection") return routes.cronReflection(req, res);
     if (path === "/api/os/scout-landscape") return routes.cronScoutLandscape(req, res);
