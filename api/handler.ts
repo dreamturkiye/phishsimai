@@ -172,6 +172,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/bug-report" && method === "post") return routes.bugReport(req, res);
     if (path === "/api/os/janet/report" && method === "get") return routes.janetReport(req, res);
     if (path === "/api/os/architect/breaker") return routes.breakerEndpoint(req, res);
+    if (path === "/api/os/architect/gate") return routes.architectGateEndpoint(req, res); // PS-MARCUS-GATES-01
     if (path === "/api/os/architect/pending" && method === "get") return routes.architectPending(req, res);
     // PS-LADDER-01: clean-day ladder. Mounted HERE, not in server/_core/index.ts -- that
     // Express app is the LOCAL dev server and never runs on Vercel. Production enters via
