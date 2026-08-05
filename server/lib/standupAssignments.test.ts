@@ -20,9 +20,9 @@ describe('parseStandupAssignments — tier 1 (canonical)', () => {
       `ASSIGN Finn: Model runway at current burn`,
     )
     expect(out).toEqual([
-      { agentId: 'marcus', title: 'Audit the trial funnel instrumentation end to end' },
-      { agentId: 'aria', title: 'Draft 3 MSP-channel landing page variants' },
-      { agentId: 'finn', title: 'Model runway at current burn' },
+      { agentId: 'marcus', title: 'Audit the trial funnel instrumentation end to end', supersede: false },
+      { agentId: 'aria', title: 'Draft 3 MSP-channel landing page variants', supersede: false },
+      { agentId: 'finn', title: 'Model runway at current burn', supersede: false },
     ])
   })
 
@@ -37,7 +37,7 @@ describe('parseStandupAssignments — tier 1 (canonical)', () => {
       `Aria: reporting discipline. Report recommendations, not actions.`,
     )
     expect(out).toEqual([
-      { agentId: 'vera', title: 'Draft the first-value activation sequence for the 3 free orgs' },
+      { agentId: 'vera', title: 'Draft the first-value activation sequence for the 3 free orgs', supersede: false },
     ])
   })
 })
@@ -82,9 +82,9 @@ describe('parseStandupAssignments — tier 3 (markdown list fallback)', () => {
       `* Finn: Update the LTV/CAC model`,
     )
     expect(out).toEqual([
-      { agentId: 'marcus', title: 'Fix the signup redirect' },
-      { agentId: 'aria', title: 'Write the pricing page copy' },
-      { agentId: 'finn', title: 'Update the LTV/CAC model' },
+      { agentId: 'marcus', title: 'Fix the signup redirect', supersede: false },
+      { agentId: 'aria', title: 'Write the pricing page copy', supersede: false },
+      { agentId: 'finn', title: 'Update the LTV/CAC model', supersede: false },
     ])
   })
 
@@ -125,5 +125,36 @@ describe('parseStandupAssignments — rejections', () => {
     expect(parseStandupAssignments(
       'ASSIGN Finn: Model runway at current burn\nASSIGN Finn: model runway at current burn',
     )).toHaveLength(1)
+  })
+})
+
+// PS-SUPERSEDE-01 — a pause/pivot/replace directive is flagged supersede:true so the consumer
+// cancels the agent's prior open task instead of stacking a contradictory one (the Vera defect).
+describe('parseStandupAssignments — supersession', () => {
+  it('flags the exact "Pause X and pivot to Y" directive that left Vera with two live tasks', () => {
+    const out = parseStandupAssignments(
+      'ASSIGN Vera: Pause the Vulnerability Alert Follow-up Cadence work and pivot to auditing our lead list',
+    )
+    expect(out).toEqual([{
+      agentId: 'vera',
+      title: 'Pause the Vulnerability Alert Follow-up Cadence work and pivot to auditing our lead list',
+      supersede: true,
+    }])
+  })
+
+  it('flags stop/drop/replace/pivot-to openers, not ordinary new work', () => {
+    const flag = (t: string) => parseStandupAssignments(`ASSIGN Aria: ${t}`)[0]?.supersede
+    expect(flag('Stop working on the touch-2 copy and expand the lead list')).toBe(true)
+    expect(flag('Drop the free-tier cadence, move to new-channel discovery')).toBe(true)
+    expect(flag('Pivot to sourcing 200 new MSP domains')).toBe(true)
+    expect(flag('Replace the lead-scoring task with outreach to 50 new MSPs')).toBe(true)
+    // ordinary additive work is NOT a supersession
+    expect(flag('Draft 3 MSP-channel landing page variants')).toBe(false)
+    expect(flag('Source 100 new MSP contacts from the mymsphub directory')).toBe(false)
+  })
+
+  it('an explicit SUPERSEDE verb is honoured too', () => {
+    const out = parseStandupAssignments('SUPERSEDE Vera: Audit the lead list for real prospects')
+    expect(out).toEqual([{ agentId: 'vera', title: 'Audit the lead list for real prospects', supersede: true }])
   })
 })

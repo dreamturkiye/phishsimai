@@ -25,7 +25,12 @@ export const KPI_REGISTRY: Record<AgentId, { kpi: string; description: string }>
   rex:   { kpi: 'funnel_integrity',        description: 'integrity incidents caught before they entered a reported metric' },
   dex:   { kpi: 'deliverability',          description: 'true bounce rate + send-path gate coverage (no path exempt)' },
   aria:  { kpi: 'message_performance',     description: 'positive reply rate by message/channel variant' },
-  mason: { kpi: 'pipeline_conversion',     description: 'reply -> trial conversion on worked pipeline' },
+  // PS-GOAL-ALIGN-01: the binding constraint is TOP OF FUNNEL, not conversion (real_pipeline
+  // founder fact: the denominator is 1). Mason now OWNS acquisition so the incentive map rewards
+  // filling the funnel — nobody optimised that before. Conversion is intentionally unowned while
+  // the funnel is near-empty; it cannot move revenue at a denominator of 1 and returns as an owned
+  // KPI only when acquisition has produced a pipeline worth converting.
+  mason: { kpi: 'msp_acquisition',         description: 'new qualified MSPs contacted into the top of the funnel (funnel growth)' },
   finn:  { kpi: 'revenue_truth',           description: 'MRR reconciled to live Stripe, never a constant' },
   vera:  { kpi: 'activation_retention',    description: 'trial activation rate and time-to-first-campaign' },
   nova:  { kpi: 'product_activation',      description: 'in-product activation funnel drop-off' },
