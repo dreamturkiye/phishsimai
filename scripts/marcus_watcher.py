@@ -141,18 +141,6 @@ PRODUCTS = [
     ),
 ]
 
-# PS-MARCUS-GATES-01 auth fix: the hardcoded 'ps-hq-2026' was rotated out (~07-10) and 401s on every
-# endpoint. Read the REAL secrets from the watcher's env (loaded above): HQ_SECRET authenticates
-# pending/complete/qa/breaker/gate/deploy-verify (okHQ / okCronOrHq); ARCHITECT_SECRET authenticates
-# /architect/code (okSecret). Applied to the active product(s); ARCHITECT_PRODUCT selects which runs.
-_HQ = os.environ.get('HQ_SECRET', '')
-_ARCH = os.environ.get('ARCHITECT_SECRET', '')
-for _p in PRODUCTS:
-    if _HQ:
-        _p.secret = _HQ
-    _p.code_secret = _ARCH or _p.secret
-
-
 def load_env_file(path: str = ARCHITECT_ENV_FILE):
     if not path or not os.path.isfile(path):
         return
@@ -169,6 +157,18 @@ def load_env_file(path: str = ARCHITECT_ENV_FILE):
 
 
 load_env_file()
+
+# PS-MARCUS-GATES-01 auth fix: the hardcoded 'ps-hq-2026' was rotated out (~07-10) and 401s on every
+# endpoint. Read the REAL secrets from the watcher's env (loaded ABOVE — this MUST run after
+# load_env_file() or _HQ is empty and the stale hardcode survives). HQ_SECRET authenticates
+# pending/complete/qa/breaker/gate/deploy-verify (okHQ / okCronOrHq); ARCHITECT_SECRET authenticates
+# /architect/code (okSecret). Applied to the active product(s); ARCHITECT_PRODUCT selects which runs.
+_HQ = os.environ.get('HQ_SECRET', '')
+_ARCH = os.environ.get('ARCHITECT_SECRET', '')
+for _p in PRODUCTS:
+    if _HQ:
+        _p.secret = _HQ
+    _p.code_secret = _ARCH or _p.secret
 
 
 def try_known_fix(task_description: str, product: Product) -> Optional[dict]:
