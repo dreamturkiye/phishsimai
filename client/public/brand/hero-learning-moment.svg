@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" width="1200" height="760" role="img" aria-label="A phishing email with an instant Learning Moment tip card, floating on a dark canvas">
+  <defs>
+    <radialGradient id="hlmGlow" cx="66%" cy="34%" r="52%">
+      <stop offset="0" stop-color="#7c5cff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#7c5cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hlmCard" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#171426"/>
+      <stop offset="1" stop-color="#100d1c"/>
+    </linearGradient>
+    <filter id="hlmShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="30" stdDeviation="40" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+  <style>text{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif}</style>
+
+  <!-- transparent canvas: only a soft violet glow, no backdrop mat -->
+  <ellipse cx="760" cy="250" rx="520" ry="360" fill="url(#hlmGlow)"/>
+
+  <!-- Mail window -->
+  <g filter="url(#hlmShadow)">
+    <rect x="70" y="150" width="700" height="470" rx="24" fill="#0f0c1a" stroke="#241f3a" stroke-width="1.5"/>
+    <circle cx="108" cy="188" r="6" fill="#3a3352"/><circle cx="130" cy="188" r="6" fill="#3a3352"/><circle cx="152" cy="188" r="6" fill="#3a3352"/>
+    <rect x="70" y="216" width="700" height="1.5" fill="#221d38"/>
+    <text x="102" y="272" fill="#e8e5f4" font-size="22" font-weight="600">John Doe &lt;john.doe@company.com&gt;</text>
+    <text x="102" y="312" fill="#c9b8ff" font-size="19" font-weight="600">Urgent: Action Required</text>
+    <rect x="102" y="348" width="470" height="12" rx="6" fill="#1d1830"/>
+    <rect x="102" y="378" width="540" height="12" rx="6" fill="#1d1830"/>
+    <rect x="102" y="408" width="500" height="12" rx="6" fill="#1d1830"/>
+    <rect x="102" y="438" width="420" height="12" rx="6" fill="#1d1830"/>
+    <rect x="102" y="512" width="176" height="52" rx="10" fill="#7c5cff"/>
+    <text x="190" y="545" fill="#ffffff" font-size="19" font-weight="600" text-anchor="middle">Review Now</text>
+  </g>
+
+  <!-- Learning Moment tip card -->
+  <g filter="url(#hlmShadow)">
+    <rect x="600" y="250" width="500" height="340" rx="24" fill="url(#hlmCard)" stroke="#3a2f66" stroke-width="1.5"/>
+    <text x="642" y="322" fill="#f4f2fb" font-size="28" font-weight="700">Spotting Phishing Emails</text>
+    <g>
+      <rect x="642" y="358" width="26" height="26" rx="7" fill="#7c5cff"/>
+      <path d="M648 371 l5 5 l9 -10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="684" y="378" fill="#d8d3ea" font-size="20">Check the sender's email address</text>
+    </g>
+    <g>
+      <rect x="642" y="420" width="26" height="26" rx="7" fill="#7c5cff"/>
+      <path d="M648 433 l5 5 l9 -10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="684" y="440" fill="#d8d3ea" font-size="20">Look for urgent language</text>
+    </g>
+    <g>
+      <rect x="642" y="482" width="26" height="26" rx="7" fill="#7c5cff"/>
+      <path d="M648 495 l5 5 l9 -10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="684" y="502" fill="#d8d3ea" font-size="20">Verify unexpected attachments</text>
+    </g>
+    <rect x="642" y="544" width="180" height="4" rx="2" fill="#2c2547"/>
+  </g>
+</svg>

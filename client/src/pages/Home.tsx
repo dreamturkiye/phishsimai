@@ -8,9 +8,10 @@ import { ArrowRight, Check, ChevronRight, Menu, X } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Agency visual redesign — MSP/MSSP only. Sparse, visual, product-site restraint.
-//  Structure: Nav → Hero → Three outcomes → 3 visual bands → Integrations strip →
-//  Pricing → Final CTA → Footer. Deliberately NO feature-card grid, NO compliance essay,
-//  NO FAQ wall.
+//  Structure: Nav → Hero (Learning Moment visual) → Three outcomes → 2 visual bands →
+//  Integrations strip → Pricing → Final CTA → Footer. Near-black page; all product visuals
+//  are transparent SVGs that float (no studio mats) and mask-fade into the page.
+//  Deliberately NO feature-card grid, NO compliance essay, NO FAQ wall.
 //
 //  HONESTY (preserved): no fabricated testimonials / customer counts; no "cancel anytime"
 //  (no live Stripe billing portal); no custom-domain white-label (deferred); CW/Halo are
@@ -24,21 +25,16 @@ const OUTCOMES = [
   { title: "Ready for QBRs & insurers", line: "Human Risk Score and evidence pack under your brand." },
 ];
 
+// Learning Moments is the hero visual, so the bands below are the other two product chapters.
 const BANDS = [
   {
-    img: "/brand/hp-panel-learning-moment.svg",
-    alt: "A phishing email with an instant Learning Moment tip card",
-    title: "Training at the moment of failure",
-    copy: "When someone clicks a simulation, they get a short lesson on that exact lure — then auto-remediation enrolls them in the matching training if they need it.",
-  },
-  {
-    img: "/brand/hp-panel-msp-clients.svg",
+    img: "/brand/panel-msp-clients.svg",
     alt: "A multi-tenant console managing many client organizations",
     title: "Every client, one practice",
     copy: "A multi-tenant console, an allowlist wizard, and ~100 realistic templates. Run the same playbook across your entire book of business.",
   },
   {
-    img: "/brand/hp-panel-evidence.svg",
+    img: "/brand/panel-evidence.svg",
     alt: "A cyber-insurance evidence report with a compliance seal",
     title: "Proof carriers and clients want",
     copy: "One-click, insurance-style evidence and compliance certificates — white-labeled and ready to put in front of a client or broker.",
@@ -93,11 +89,11 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased">
+    <div className="min-h-screen text-foreground antialiased" style={{ backgroundColor: "#050505" }}>
       <Seo title={seo.title} description={seo.description} path={seo.path} />
 
       {/* 0 — Nav */}
-      <header className="border-b border-border/40 bg-background/70 backdrop-blur-xl sticky top-0 z-50">
+      <header className="border-b border-white/5 bg-[#050505]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container flex items-center justify-between h-16">
           <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-8 w-auto" />
           <nav className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
@@ -116,9 +112,9 @@ export default function Home() {
           </div>
         </div>
         {menu && (
-          <div className="md:hidden border-t border-border bg-background/95 backdrop-blur-sm px-4 py-4 flex flex-col gap-1">
+          <div className="md:hidden border-t border-white/5 bg-[#050505]/95 backdrop-blur-sm px-4 py-4 flex flex-col gap-1">
             {NAV.map(({ label, href }) => (
-              <a key={label} href={href} onClick={() => setMenu(false)} className="text-sm text-muted-foreground hover:text-foreground py-3 border-b border-border/40 last:border-0">{label}</a>
+              <a key={label} href={href} onClick={() => setMenu(false)} className="text-sm text-muted-foreground hover:text-foreground py-3 border-b border-white/5 last:border-0">{label}</a>
             ))}
             <div className="flex flex-col gap-2 pt-3">
               <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => (window.location.href = getLoginUrl())}>Sign in</Button>
@@ -129,7 +125,7 @@ export default function Home() {
       </header>
 
       {/* 1 — Hero */}
-      <section id="product" className="relative overflow-hidden border-b border-border/40">
+      <section id="product" className="relative overflow-hidden border-b border-white/5">
         {/* Atmosphere: a single restrained violet glow, no gradient soup */}
         <div className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(60rem 40rem at 78% -10%, rgba(124,92,255,0.16), transparent 60%)" }} />
         <div className="container relative py-20 md:py-28 lg:py-32">
@@ -142,19 +138,18 @@ export default function Home() {
               <p className="text-lg text-muted-foreground leading-relaxed mb-8 max-w-xl">
                 Multi-tenant campaigns, Learning Moments, and desk-friendly reporting into ConnectWise &amp; Halo. Flat pricing built for margin.
               </p>
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div>
                 <Button size="lg" className="text-base px-7 h-12" onClick={signup}>Start free 30-day trial <ArrowRight className="w-4 h-4 ml-2" /></Button>
-                <Button size="lg" variant="ghost" className="text-base px-6 h-12" onClick={() => { window.location.hash = "#pricing"; }}>View pricing</Button>
               </div>
               <p className="text-xs text-muted-foreground mt-5">No credit card · About 10 minutes to first campaign</p>
             </div>
             <div className="relative">
               <img
-                src="/brand/hero-learning-moment.png"
+                src="/brand/hero-learning-moment.svg"
                 alt="Phishing simulation email with an instant Learning Moment tip card"
-                className="w-full rounded-2xl border border-white/5 shadow-2xl shadow-violet-950/50"
-                width={1200} height={800} loading="eager" decoding="async"
-                style={{ WebkitMaskImage: "radial-gradient(120% 120% at 50% 40%, #000 70%, transparent 100%)", maskImage: "radial-gradient(120% 120% at 50% 40%, #000 70%, transparent 100%)" }}
+                className="w-full"
+                width={1200} height={760} loading="eager" decoding="async"
+                style={{ WebkitMaskImage: "linear-gradient(to bottom, #000 74%, transparent 100%)", maskImage: "linear-gradient(to bottom, #000 74%, transparent 100%)" }}
               />
             </div>
           </div>
@@ -162,11 +157,11 @@ export default function Home() {
       </section>
 
       {/* 2 — Three outcomes */}
-      <section className="border-b border-border/40">
+      <section className="border-b border-white/5">
         <div className="container py-16 md:py-20">
           <div className="grid md:grid-cols-3 gap-10 md:gap-14">
             {OUTCOMES.map((o) => (
-              <div key={o.title} data-reveal className="border-t border-border/60 pt-5">
+              <div key={o.title} data-reveal className="border-t border-white/10 pt-5">
                 <h3 className="text-lg font-semibold mb-1.5">{o.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">{o.line}</p>
               </div>
@@ -180,8 +175,9 @@ export default function Home() {
         {BANDS.map((b, i) => (
           <div key={b.title} data-reveal className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center py-16 md:py-24">
             <div className={"relative " + (i % 2 ? "lg:order-2" : "")}>
-              <img src={b.img} alt={b.alt} loading="lazy" decoding="async" width={1200} height={750}
-                className="w-full aspect-[16/10] object-cover rounded-2xl border border-white/5 shadow-2xl shadow-violet-950/40" />
+              <img src={b.img} alt={b.alt} loading="lazy" decoding="async" width={1200} height={760}
+                className="w-full aspect-[16/10] object-contain"
+                style={{ WebkitMaskImage: "linear-gradient(to bottom, #000 76%, transparent 100%)", maskImage: "linear-gradient(to bottom, #000 76%, transparent 100%)" }} />
             </div>
             <div className={"max-w-md " + (i % 2 ? "lg:order-1" : "")}>
               <h2 className="text-2xl md:text-3xl font-bold tracking-tight mb-4">{b.title}</h2>
@@ -192,11 +188,11 @@ export default function Home() {
       </section>
 
       {/* 4 — Integrations strip */}
-      <section className="border-y border-border/40 bg-secondary/20">
+      <section className="border-y border-white/5">
         <div className="container py-10 md:py-12">
           <div data-reveal className="flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
             <div className="text-sm font-semibold whitespace-nowrap">ConnectWise Manage · Halo PSA</div>
-            <div className="hidden md:block h-4 w-px bg-border/60" />
+            <div className="hidden md:block h-4 w-px bg-white/10" />
             <p className="text-sm text-muted-foreground leading-relaxed">
               Real phishing reports can open tickets when connected and mapped. Simulation reports are scored only.
             </p>
@@ -205,7 +201,7 @@ export default function Home() {
       </section>
 
       {/* 5 — Pricing */}
-      <section id="pricing" className="border-b border-border/40">
+      <section id="pricing" className="border-b border-white/5">
         <div className="container py-20 md:py-28">
           <div className="max-w-xl mb-12">
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-3">Flat pricing, built for margin.</h2>
@@ -213,7 +209,7 @@ export default function Home() {
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
             {PLANS.map((p) => (
-              <div key={p.name} className={"rounded-2xl border p-6 flex flex-col relative " + (p.highlight ? "border-violet-500/50 bg-violet-500/[0.04]" : "border-border/60 bg-card")}>
+              <div key={p.name} className={"rounded-2xl border p-6 flex flex-col relative " + (p.highlight ? "border-violet-500/40 bg-violet-500/[0.05]" : "border-white/10 bg-white/[0.02]")}>
                 {p.badge && <div className="absolute -top-3 left-6 text-[11px] font-semibold uppercase tracking-wide bg-violet-600 text-white rounded-full px-3 py-1">{p.badge}</div>}
                 <div className="font-semibold text-lg">{p.name}</div>
                 <div className="mt-2 flex items-baseline gap-1">
@@ -237,10 +233,10 @@ export default function Home() {
             <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 select-none">
               <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" /> Compare all plans
             </summary>
-            <div className="overflow-x-auto rounded-2xl border border-border/60 mt-4">
+            <div className="overflow-x-auto rounded-2xl border border-white/10 mt-4">
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
-                  <tr className="border-b border-border/60 bg-secondary/30">
+                  <tr className="border-b border-white/10 bg-secondary/30">
                     <th className="text-left p-4 font-semibold">Feature</th>
                     <th className="p-4 font-semibold">Starter</th>
                     <th className="p-4 font-semibold text-violet-400">Growth</th>
@@ -250,7 +246,7 @@ export default function Home() {
                 </thead>
                 <tbody>
                   {COMPARE.map((row, i) => (
-                    <tr key={row.feature} className={"border-b border-border/40 last:border-0 " + (i % 2 ? "bg-secondary/10" : "")}>
+                    <tr key={row.feature} className={"border-b border-white/5 last:border-0 " + (i % 2 ? "bg-secondary/10" : "")}>
                       <td className="p-4 text-muted-foreground">{row.feature}</td>
                       {([row.starter, row.growth, row.pro, row.enterprise] as (string | boolean)[]).map((cell, j) => (
                         <td key={j} className={"p-4 text-center " + (j === 1 ? "bg-violet-500/5" : "")}>
@@ -277,7 +273,7 @@ export default function Home() {
       </section>
 
       {/* 7 — Footer */}
-      <footer className="border-t border-border/40">
+      <footer className="border-t border-white/5">
         <div className="container py-10 flex flex-col md:flex-row items-center justify-between gap-6">
           <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-6 w-auto" />
           <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
