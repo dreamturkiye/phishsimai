@@ -7,86 +7,120 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getLoginUrl, getSignupUrl } from "@/const";
 import {
-  Shield, Zap, BarChart3, Building2, CheckCircle2,
-  ChevronRight, Globe, Mail, Phone, FileText, Award, Target,
-  ArrowRight, X, Check, BookOpen, Menu, Ticket, Users,
+  Shield, Zap, BarChart3, Users, Brain, CheckCircle2,
+  ChevronRight, Star, Building2, Globe, Mail, Phone,
+  Lock, AlertTriangle, FileText, Award, Clock, Target,
+  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu, Ticket
 } from "lucide-react";
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  MSP/MSSP-facing homepage. Audience = MSP owner, vCIO, service-desk lead, security
-//  practice lead — not a single end-company. Every claim below maps to a feature verified
-//  as built, on, and functional (pre-homepage verification).
-//
-//  HONESTY GUARDS PRESERVED (do not reintroduce):
-//   • No fabricated testimonials / customer counts (PS-NOFAKE-01) — 0 paying customers.
-//   • No "cancel anytime" — there is no Stripe billing-portal config live, so a customer
-//     cannot self-cancel in-product yet. Restore only once the portal exists.
-//   • No custom-domain white-label — that field is stored but not served (deferred).
-//   • CW/Halo: "available … when connected and mapped", never "live-verified".
-//   • Template library is ~100 curated built-ins, NOT "unlimited AI-generated".
-// ─────────────────────────────────────────────────────────────────────────────
+const MANDATORY_FRAMEWORKS = [
+  { name: "HIPAA", citation: "45 CFR §164.308(a)(5)", sector: "Healthcare", description: "Requires covered entities to implement security awareness and training programs for all workforce members. Phishing simulations are the industry-standard method to demonstrate active compliance.", penalty: "Up to $1.9M per violation category annually" },
+  { name: "GLBA", citation: "16 CFR Part 314", sector: "Financial Services", description: "Financial institutions must implement comprehensive safeguards including employee training on phishing and social engineering attacks targeting customer financial data.", penalty: "Up to $100,000 per violation + criminal liability" },
+  { name: "NERC CIP", citation: "NERC CIP-004-7", sector: "Energy / Utilities", description: "Mandates cybersecurity awareness training for all personnel with access to critical infrastructure systems. Non-compliance threatens grid reliability and national security.", penalty: "Up to $1M per violation per day" },
+  { name: "CMMC / DFARS", citation: "NIST SP 800-171 §3.2", sector: "Defense Contractors", description: "CMMC Level 2+ explicitly references NIST 800-171, which mandates security awareness training. Failure to comply disqualifies contractors from DoD contracts.", penalty: "Loss of DoD contract eligibility" },
+  { name: "NY DFS Part 500", citation: "23 NYCRR §500.14", sector: "NY-Licensed Financial Entities", description: "New York\'s cybersecurity regulation explicitly requires annual phishing awareness training for all personnel at covered financial institutions.", penalty: "Up to $250,000 per violation" },
+];
 
-// The MSP-weighted feature grid. Order = buyer priority.
+const RECOMMENDED_FRAMEWORKS = [
+  { name: "NIST CSF / SP 800-53", note: "Explicitly calls out phishing simulation as a training mechanism" },
+  { name: "SOC 2", note: "Auditors routinely look for phishing simulation programs as evidence of security awareness controls" },
+  { name: "FTC Safeguards Rule (2023)", note: "Requires a written information security program including employee training" },
+  { name: "PCI DSS v4.0", note: "Requirement 12.6.3 specifically addresses phishing awareness training" },
+  { name: "SEC Cybersecurity Rules (2023)", note: "Requires disclosure of risk management programs; phishing training is a common cited control" },
+];
+
 const FEATURES = [
-  { icon: Building2, title: "Set-and-forget, multi-client", description: "Run every client from one multi-tenant console. Provision a customer org in under a minute and send the first simulation the same afternoon — no onboarding call, no implementation project.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
-  { icon: BookOpen, title: "Learning Moments on click", description: "The moment a user clicks a simulated lure, they get a short micro-lesson tied to that exact attack — the specific red flags they missed. Reviewing it can count toward their training record.", color: "text-amber-400", bg: "bg-amber-500/10" },
-  { icon: Shield, title: "Report Phish without ticket noise", description: "Give your clients' staff a one-click way to report suspicious mail. Simulation reports are scored only and never open a ticket, so the service desk sees real threats, not training noise. (Outlook add-in available; deployed by the client's Microsoft 365 admin.)", color: "text-emerald-400", bg: "bg-emerald-500/10" },
-  { icon: Ticket, title: "ConnectWise Manage & Halo PSA", description: "ConnectWise Manage and Halo PSA integrations are available: reported real phishing can open a ticket in your PSA — when connected and mapped — while simulation reports are scored only and do not create tickets.", color: "text-sky-400", bg: "bg-sky-500/10" },
-  { icon: Mail, title: "Allowlist wizard", description: "A guided wizard walks each client's admin through inbox allowlisting before the first campaign, so simulations land in the inbox instead of the spam folder.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
-  { icon: Zap, title: "Auto-remediation", description: "When an employee fails a simulation, PhishSim automatically enrolls them in the training module that matches the attack they fell for — no manual follow-up.", color: "text-violet-400", bg: "bg-violet-500/10" },
-  { icon: BarChart3, title: "Human Risk Score for QBRs", description: "One QBR-ready risk number per client, built from real behavior. When the data is still thin, it says so honestly instead of inventing a score.", color: "text-rose-400", bg: "bg-rose-500/10" },
-  { icon: FileText, title: "Insurance evidence pack", description: "Generate a carrier-style evidence PDF for cyber-insurance renewals — campaign history, click-rate trends, and training records — white-labeled under your MSP brand.", color: "text-teal-400", bg: "bg-teal-500/10" },
+  { icon: Brain, title: "AI-Powered Template Engine", description: "Generate unlimited realistic phishing templates in English, Spanish, and Turkish. Industry-specific attack types across Finance, Healthcare, HR, and more.", color: "text-violet-400", bg: "bg-violet-500/10" },
+  { icon: Target, title: "Department-Based Targeting", description: "Organize employees by Finance, Sales, Management, Operations, Warehouse, or custom departments. Run targeted campaigns that mirror real-world attack patterns.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
+  { icon: BarChart3, title: "Real-Time Analytics", description: "Track open rates, click rates, credential submission rates, and improvement trends per department. Identify your highest-risk employees instantly.", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+  { icon: BookOpen, title: "15+ Training Modules", description: "Short-form security awareness courses (90% under 5 minutes) covering HIPAA, PCI DSS, GDPR, password hygiene, social engineering, and more.", color: "text-amber-400", bg: "bg-amber-500/10" },
+  { icon: Award, title: "Compliance Certificates", description: "Auto-generate regulatory compliance certificates for HIPAA, GLBA, NERC CIP, CMMC, NY DFS, SOC 2, and 5 more frameworks with specific legal citations.", color: "text-rose-400", bg: "bg-rose-500/10" },
+  { icon: Layers, title: "MSP White Label Portal", description: "Manage multiple customer organizations from a single dashboard. Full white-label branding with your logo, colors, and custom domain.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+  { icon: Ticket, title: "PSA ticketing (ConnectWise Manage & Halo)", description: "Connect PhishSim to ConnectWise Manage or Halo PSA. When a user reports a real suspicious email, PhishSim can open a service-desk ticket with the details your team needs. Simulation reports are scored only and never create tickets, so training noise stays out of your queue. Configured in the MSP admin area, with a per-client company mapping.", color: "text-sky-400", bg: "bg-sky-500/10" },
 ];
 
-// "Built for the MSP desk" strip — 4 outcomes, no hype.
-const MSP_STRIP = [
-  { icon: Building2, text: "Run every client from one multi-tenant console" },
-  { icon: Ticket, text: "Real reports can ticket to ConnectWise & Halo — simulations never flood the board" },
-  { icon: FileText, text: "QBR risk scores and insurance evidence under your brand" },
-  { icon: BarChart3, text: "Flat MSP pricing, so margin grows with every seat" },
+// PS-PRICE-05: the KnowBe4/Proofpoint/Cofense comparison table was REMOVED (founder decision
+// 2026-07-16). Naming competitors on your own pricing page fights on their axis and dates the
+// moment any of them discounts. What replaced it is the claim they structurally cannot match:
+// setup measured in minutes, not weeks.
+const SPEED_PROOF = [
+  { stat: "10 min", label: "from signup to first simulation sent" },
+  { stat: "0", label: "onboarding calls, demos, or sales gates required" },
+  { stat: "30 days", label: "free trial, no credit card" },
 ];
 
-// How it works — 4 steps, one sentence each.
-const HOW = [
-  { n: "01", icon: Mail, title: "Add a client org & allowlist", desc: "Provision a client in the portal and run the guided allowlist wizard so simulations reach the inbox." },
-  { n: "02", icon: Target, title: "Launch realistic simulations", desc: "Send from a library of ~100 realistic templates, scheduled with automatic target rotation." },
-  { n: "03", icon: BookOpen, title: "Learning Moments + auto-remediation", desc: "Anyone who clicks gets a per-lure micro-lesson and is auto-enrolled in the matching training." },
-  { n: "04", icon: Award, title: "Report risk & evidence to the client", desc: "Hand over a QBR-ready Human Risk Score and a white-label cyber-insurance evidence pack." },
+// PS-NOFAKE-01 (2026-08-02, founder directive) — the three testimonials that stood here were
+// INVENTED. "Director of IT, Regional Healthcare Network, 340 employees", "VP of Managed Services,
+// Mid-Atlantic MSP, 47 client organizations" and "IT Manager, Manufacturing Company" are not
+// anonymised real customers; they are fictional people attributed with fictional outcomes
+// ("passed our audit with zero findings", "$4,200/mo in recurring revenue"). PhishSim has 0 paying
+// customers and 0 orgs that have ever activated a paid plan — so there is nobody these could be.
+//
+// This is the same fabrication class removed from the backend today (invented MRR, a 0% credential
+// rate reported as a failure, a "43% -> 4%" case study deleted from the outreach copy), sitting on
+// the most public surface we own. A prospect who verifies one of these names finds nothing.
+//
+// Replaced with claims that are TRUE and independently checkable, not with softer fiction:
+//   • the price and seat count are read from live Stripe (Growth $299 / 500 users);
+//   • the 10-minute setup is the product's actual first-campaign path;
+//   • the trial is TRIAL_DAYS=30 with no Stripe call at signup (server/db.ts:118).
+// When a real customer says something quotable and agrees to be named, it goes here. Not before.
+const VALUE_PROPS = [
+  {
+    title: "60¢ per user, not per seat",
+    body: "Most phishing platforms bill per seat. $299/mo covers 500 users, and drops to 30¢ on Pro. Add a client and your margin grows instead of shrinking.",
+  },
+  {
+    title: "Live in under 10 minutes",
+    body: "No security engineer, no procurement review, no implementation call. Import your list and your first campaign runs the same afternoon.",
+  },
+  {
+    title: "30 days free, no card",
+    body: "Full access for the whole trial — every simulation, every report, every compliance certificate. We ask for a card when you decide to keep it, not before.",
+  },
 ];
-
-// Compliance proof — compact chips, no wall of CFR text. Specific citations live in-app.
-const FRAMEWORK_CHIPS = ["HIPAA", "GLBA", "NERC CIP", "CMMC / DFARS", "NY DFS Part 500", "SOC 2", "PCI DSS v4.0", "NIST CSF"];
 
 const PLANS = [
-  // PS-PRICE-05: prices are Stripe's and unchanged ($149/$299/$749/$1499). SEATS are the founder
-  // matrix of 2026-07-16: 100/500/2500/10000. perUser is DERIVED (price / seats), never typed.
+  // PS-PRICE-05: prices are Stripe's and unchanged ($149/$299/$749/$1499, live price_1Tner
+  // IDs in OrgSettings.tsx). SEATS are the founder matrix of 2026-07-16: 100/500/2500/10000,
+  // a 4x increase at the same price. perUser is DERIVED (price / seats), never typed -- the
+  // reason this page advertised $2/user for months is that a claim was asserted and never
+  // checked against the thing it described.
+  //
+  // Competitor names deliberately absent. A page that argues on price invites a price war it
+  // cannot win against a funded incumbent; setup speed is the wedge nobody can copy quickly.
   { name: "Starter", price: "$149", period: "/mo", perUser: "$1.49/user", description: "Your first managed client, live this afternoon.", features: ["1 client organization", "100 users", "100 phishing simulations/mo", "Basic training modules", "Basic compliance reporting", "Email support"], cta: "Start Free Trial", highlight: false },
   { name: "Growth", price: "$299", period: "/mo", perUser: "$0.60/user", description: "Five clients, one dashboard, zero spreadsheets.", features: ["5 client organizations", "500 users", "500 phishing simulations/mo", "Standard training modules", "Full compliance reporting", "Risk scoring & analytics", "Multi-framework (NIST, ISO)"], cta: "Start Free Trial", highlight: true, badge: "Most Popular" },
-  { name: "Pro", price: "$749", period: "/mo", perUser: "$0.30/user", description: "Run 20 clients without adding headcount.", features: ["20 client organizations", "2,500 users", "Unlimited simulations", "Advanced training + risk scoring", "ConnectWise & Halo PSA ticketing", "MSP multi-tenant dashboard", "Custom branding + API access", "Chat + email support"], cta: "Start Free Trial", highlight: false },
+  { name: "Pro", price: "$749", period: "/mo", perUser: "$0.30/user", description: "Run 20 clients without adding headcount.", features: ["20 client organizations", "2,500 users", "Unlimited simulations", "Advanced training + risk scoring", "Compliance automation", "MSP multi-tenant dashboard", "Custom branding + API access", "Chat + email support"], cta: "Start Free Trial", highlight: false },
   { name: "Enterprise", price: "$1,499", period: "/mo", perUser: "$0.15/user", description: "Ten thousand seats, under your own brand.", features: ["Unlimited client organizations", "10,000 users", "All + custom training modules", "White-label compliance reporting", "Enterprise risk scoring", "Custom frameworks", "Dedicated account manager", "24/7 phone + chat support"], cta: "Contact Sales", highlight: false },
 ];
 
+// PS-PRICE-04: founder feature matrix, 2026-07-16. Seat counts are NOT from this matrix --
+// they stay as Stripe sells them (25/100/500/unlimited), because pricing is a section-5
+// hard stop and Stripe is the source of truth. Everything below is capability, not quantity
+// of seats, so the two do not collide.
 const FEATURE_MATRIX = [
   { feature: "Phishing simulations", starter: "100/mo", growth: "500/mo", pro: "Unlimited", enterprise: "Unlimited" },
   { feature: "Client organizations", starter: "1", growth: "5", pro: "20", enterprise: "Unlimited" },
   { feature: "Users included", starter: "100", growth: "500", pro: "2,500", enterprise: "10,000" },
-  { feature: "Learning Moments + auto-remediation", starter: true, growth: true, pro: true, enterprise: true },
-  { feature: "ConnectWise & Halo PSA ticketing", starter: false, growth: false, pro: true, enterprise: true },
-  { feature: "Human Risk Score (QBR)", starter: false, growth: "Basic", pro: "Advanced", enterprise: "Enterprise" },
-  { feature: "Insurance evidence pack", starter: false, growth: true, pro: true, enterprise: "White Label" },
+  { feature: "Training modules", starter: "Basic", growth: "Standard", pro: "Advanced", enterprise: "All + Custom" },
+  { feature: "Compliance reporting", starter: "Basic", growth: "Full", pro: "Full + Automation", enterprise: "Full + White Label" },
+  { feature: "Risk scoring & analytics", starter: false, growth: "Basic", pro: "Advanced", enterprise: "Enterprise" },
+  { feature: "Multi-framework (NIST, ISO, etc.)", starter: false, growth: true, pro: true, enterprise: "Yes + Custom" },
   { feature: "MSP / multi-tenant dashboard", starter: false, growth: false, pro: true, enterprise: true },
-  { feature: "White-label branding", starter: false, growth: false, pro: true, enterprise: true },
+  { feature: "Custom branding", starter: false, growth: false, pro: true, enterprise: true },
   { feature: "API access", starter: false, growth: false, pro: true, enterprise: true },
+  { feature: "Dedicated account manager", starter: false, growth: false, pro: false, enterprise: true },
   { feature: "Priority support", starter: "Email", growth: "Email", pro: "Chat + Email", enterprise: "24/7 Phone + Chat" },
-];
+]
 
 const FAQS = [
-  { q: "How quickly can we stand this up for a client?", a: "Most MSPs run a client's first phishing campaign within about 10 minutes: create the client org, run the allowlist wizard, import the employee list (CSV or manual), pick a template, and launch." },
-  { q: "Do simulation reports create PSA tickets?", a: "No. Simulation reports are scored only and never open a ticket, so training noise stays off the board. A reported REAL (non-simulation) email can open a ticket in ConnectWise Manage or Halo — but only when that client's connection is configured, mapped, and enabled by the MSP." },
-  { q: "Will the phishing emails actually reach inboxes?", a: "Simulated phishing looks like phishing by design, so it can land in spam even with SPF/DKIM/DMARC passing. The guided allowlist wizard walks each client's admin through inbox allowlisting before the first campaign so simulations reach the inbox." },
-  { q: "Can we use our own templates or share them?", a: "Yes. You get ~100 realistic built-in templates and can create your own. Templates shared to the community library are reviewed and approved before they publish." },
-  { q: "How do the compliance and insurance artifacts work?", a: "Generate dated compliance certificates for frameworks like HIPAA, GLBA, CMMC, NY DFS and SOC 2, plus a carrier-style cyber-insurance evidence pack — timestamped campaign history, click-rate trends, and training records — white-labeled under your MSP brand." },
-  { q: "Is there a free trial?", a: "Yes — every plan includes a 30-day free trial with no credit card required, and full access to features during the trial." },
+  { q: "How quickly can we get started?", a: "Most organizations are running their first phishing campaign within 10 minutes of signing up. Create your org, import your employee list (CSV or manual), pick an AI-generated template, and launch." },
+  { q: "Do we need technical expertise to use PhishSim AI?", a: "No. The platform is designed for IT generalists and HR teams, not security engineers. The AI handles template creation, scheduling is automated, and reports are generated with one click." },
+  { q: "Will the phishing emails actually be delivered to inboxes?", a: "Yes. We provide SPF/DKIM/DMARC configuration guidance to whitelist our sending infrastructure. Most organizations achieve 95%+ inbox delivery rates." },
+  { q: "Can we use our own phishing templates?", a: "Absolutely. You can create custom templates, import from real phishing emails you have received, and share templates with other organizations in the community library." },
+  { q: "How do the compliance certificates work?", a: "After completing the required checklist items for a framework (e.g., HIPAA), you can generate a dated compliance certificate with your organization name, completion percentage, and the specific regulatory citation. These are accepted by most auditors as evidence of a phishing awareness program." },
+  { q: "Is there a free trial?", a: "Yes — all plans include a 30-day free trial with no credit card required. You get full access to all features during the trial." },
 ];
 
 export default function Home() {
@@ -95,26 +129,21 @@ export default function Home() {
   const [location] = useLocation();
   const seo = seoForPath(location); // PS-SEO-02: shared with the prerender so raw HTML == hydrated
 
-  const NAV = [
-    { label: "How it works", href: "#how" },
-    { label: "Features", href: "#features" },
-    { label: "For MSPs", href: "#for-msps" },
-    { label: "Pricing", href: "#pricing" },
-    { label: "Partner Portal", href: "/msp" },
-  ];
-
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Seo title={seo.title} description={seo.description} path={seo.path} />
-
       {/* Navigation */}
       <header className="border-b border-border/40 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container flex items-center justify-between h-16">
-          <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-8 w-auto" />
+          <div className="flex items-center gap-2.5">
+            <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-8 w-auto" />
+          </div>
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
-            {NAV.map(({ label, href }) => (
-              <a key={label} href={href} className="hover:text-foreground transition-colors">{label}</a>
-            ))}
+            <a href="#features" className="hover:text-foreground transition-colors">Features</a>
+            <a href="#compliance" className="hover:text-foreground transition-colors">Compliance</a>
+            <a href="#msp" className="hover:text-foreground transition-colors">MSP / Partners</a>
+            <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="/msp" className="hover:text-foreground transition-colors">Partner Portal</a>
           </nav>
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-3">
@@ -128,15 +157,22 @@ export default function Home() {
             </Button>
           </div>
         </div>
+        {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div className="md:hidden border-t border-border bg-background/95 backdrop-blur-sm px-4 py-4 flex flex-col gap-1">
-            {NAV.map(({ label, href }) => (
+            {[
+              { label: "Features", href: "#features" },
+              { label: "Compliance", href: "#compliance" },
+              { label: "MSP / Partners", href: "#msp" },
+              { label: "Pricing", href: "#pricing" },
+              { label: "Partner Portal", href: "/msp" },
+            ].map(({ label, href }) => (
               <a key={label} href={href} className="text-sm text-muted-foreground hover:text-foreground transition-colors py-3 border-b border-border/40 last:border-0"
                 onClick={() => setMobileMenuOpen(false)}>{label}</a>
             ))}
             <div className="flex flex-col gap-2 pt-3">
               <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
-              <Button size="sm" className="w-full" onClick={() => window.location.href = getSignupUrl()}>
+              <Button size="sm" className="w-full bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
                 Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
               </Button>
             </div>
@@ -144,161 +180,95 @@ export default function Home() {
         )}
       </header>
 
-      {/* Hero — MSP/MSSP buyer, operator tone */}
-      <section className="relative border-b border-border/40">
-        <div className="absolute inset-0 bg-gradient-to-b from-violet-950/20 to-background pointer-events-none" />
-        <div className="container relative py-20 md:py-28">
-          <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
-          <div className="max-w-3xl">
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-950/30 via-background to-background pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-violet-500/5 rounded-full blur-3xl pointer-events-none" />
+        <div className="container relative py-24 md:py-32">
+          <div className="max-w-4xl mx-auto text-center">
             <Badge variant="outline" className="mb-6 border-violet-500/30 bg-violet-500/10 text-violet-300 text-xs px-3 py-1">
-              For MSPs &amp; MSSPs · 30-day free trial, no credit card
+              <Zap className="w-3 h-3 mr-1.5" />
+              {/* PS-NOFAKE-01: "Trusted by MSPs" removed — 0 paying customers, so it is untrue on
+                  the most prominent line of the page. "Cancel Anytime" removed separately: there
+                  are ZERO Stripe billing-portal configurations in the live account, so
+                  billingPortal.sessions.create() throws and a customer currently CANNOT cancel
+                  in-product. Restore that phrase only once the portal is configured. The two
+                  remaining claims are verified: 10-minute setup, and TRIAL_DAYS=30 with no Stripe
+                  call at signup. */}
+              30-Day Free Trial · No Credit Card · Launch in 10 Min
             </Badge>
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight mb-5 leading-[1.08]">
-              Phishing simulations &amp; awareness training for{" "}
-              <span className="text-violet-400">every client</span>, from one console.
+            <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6 leading-[1.05]">
+              Your clients are{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">one click away</span>{" "}
+              from a breach.
             </h1>
-            <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl leading-relaxed">
-              PhishSim gives MSPs multi-tenant simulations, per-lure Learning Moments, and desk-friendly reporting
-              into ConnectWise Manage and Halo — plus QBR risk scores and cyber-insurance evidence under your brand.
-              Flat MSP pricing, so your margin grows with every seat.
+            <p className="text-xl text-muted-foreground mb-4 max-w-2xl mx-auto leading-relaxed">
+              PhishSim AI finds your clients' vulnerable employees before attackers do — then fixes the problem automatically. Add a recurring compliance revenue line. Retain clients who ask about security. Set up in 10 minutes.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <Button size="lg" className="text-base px-7 h-12" onClick={() => window.location.href = getSignupUrl()}>
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-10 text-sm">
+              {["HIPAA Required", "GLBA Required", "CMMC Required", "NY DFS Required"].map(label => (
+                <Badge key={label} variant="outline" className="border-red-500/30 bg-red-500/10 text-red-400">
+                  <AlertTriangle className="w-3 h-3 mr-1" />{label}
+                </Badge>
+              ))}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
+              <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
                 Start Free 30-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
-              <Button size="lg" variant="outline" className="text-base px-7 h-12" onClick={() => { window.location.hash = "#how"; }}>
-                See how it works
-              </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground">
-              {["No credit card required", "30-day free trial", "Built for multi-tenant MSPs"].map(t => (
+            <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
+              {["No credit card required", "Setup in under 10 minutes", "30-day free trial"].map(t => (
                 <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />{t}</span>
               ))}
             </div>
           </div>
-
-          {/* RIGHT: hero visual — desktop only, so the phone CTA stack stays clean */}
-          <div className="hidden lg:flex justify-center lg:justify-end">
-            <img
-              src="/brand/hero-learning-moment.png"
-              alt="Phishing simulation email with an instant Learning Moment tip card"
-              className="w-full max-w-lg xl:max-w-xl rounded-2xl border border-border/40 shadow-2xl shadow-violet-950/40"
-              width={1200}
-              height={800}
-              loading="eager"
-              decoding="async"
-            />
-          </div>
-          </div>
         </div>
       </section>
 
-      {/* Built for the MSP desk — strip */}
-      <section id="for-msps" className="border-b border-border/40 bg-secondary/20">
-        <div className="container py-10">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {MSP_STRIP.map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                  <Icon className="w-4 h-4 text-violet-400" />
-                </div>
-                <span className="text-sm text-muted-foreground leading-relaxed pt-1.5">{text}</span>
+      {/* Stats bar */}
+      <section className="border-y border-border/40 bg-secondary/20">
+        <div className="container py-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            {[
+              { value: "10 min", label: "from signup to first campaign live" },
+              { value: "$4.9M", label: "average cost of a phishing breach" },
+              { value: "3×", label: "client retention uplift vs no program" },
+              { value: "67%", label: "of employees click without training" },
+            ].map(({ value, label }) => (
+              <div key={label}>
+                <div className="text-3xl font-black text-foreground mb-1">{value}</div>
+                <div className="text-xs text-muted-foreground">{label}</div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* How it works */}
-      <section id="how" className="py-20 border-b border-border/40">
-        <div className="container">
-          <div className="max-w-2xl mb-14">
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Stand up a client in about 10 minutes</h2>
-            <p className="text-muted-foreground text-lg">No implementation project, no security engineer required — the same path your techs run for every new client.</p>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {HOW.map(({ n, icon: Icon, title, desc }) => (
-              <div key={n}>
-                <div className="w-12 h-12 rounded-xl border border-border/60 bg-card flex items-center justify-center mb-4">
-                  <Icon className="w-5 h-5 text-violet-400" />
-                </div>
-                <div className="text-xs font-mono text-muted-foreground mb-2">{n}</div>
-                <h3 className="font-bold mb-2">{title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Feature grid — MSP-weighted */}
-      <section id="features" className="py-20 border-b border-border/40 bg-secondary/10">
-        <div className="container">
-          <div className="max-w-2xl mb-14">
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Built for the MSP service desk</h2>
-            <p className="text-muted-foreground text-lg">From guided allowlisting to per-lure Learning Moments, PSA ticketing, and carrier-ready insurance evidence — plus ~100 realistic built-in simulation templates, all in one place.</p>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {FEATURES.map((f) => (
-              <Card key={f.title} className="border-border/60 bg-card hover:border-border transition-colors">
-                <CardContent className="p-6">
-                  <div className={"w-10 h-10 rounded-xl " + f.bg + " flex items-center justify-center mb-4"}>
-                    <f.icon className={"w-5 h-5 " + f.color} />
-                  </div>
-                  <h3 className="font-bold mb-2">{f.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <p className="text-sm text-muted-foreground mt-6 flex items-start gap-2">
-            <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-            Shared community templates are reviewed and approved before they publish.
+      {/* PS-NOFAKE-01: this slot held an invented "Real MSP Result" — a fictional VP claiming
+          $4,200/mo, 3 retained clients and a passed HIPAA audit. We have 0 paying customers, so no
+          such result exists. Replaced with the pricing comparison, which is checkable against live
+          Stripe (Growth = $299/mo, 500 users). No competitor is named and no savings figure or
+          "MSPs who switched" claim appears — nobody has switched from anything. */}
+      <section className="bg-violet-950/30 border-y border-violet-500/20 py-10">
+        <div className="container max-w-4xl mx-auto text-center">
+          <p className="text-sm text-violet-300 font-semibold uppercase tracking-widest mb-4">How our pricing works</p>
+          <p className="text-xl md:text-2xl font-medium text-foreground leading-relaxed">
+            {"Most phishing platforms bill per seat. We don't. "}
+            <span className="text-violet-400 font-bold">$299 covers 500 users — 60¢ each.</span>
+            {" Add a client, your margin grows instead of shrinking."}
           </p>
         </div>
       </section>
 
-      {/* Proof band — compliance chips + insurance one-liner (compact, no CFR wall) */}
-      <section id="compliance" className="py-16 border-b border-border/40">
-        <div className="container">
-          <div className="grid md:grid-cols-2 gap-10 items-center">
-            <div>
-              <h2 className="text-2xl md:text-3xl font-black mb-3">Evidence your clients' auditors and insurers accept</h2>
-              <p className="text-muted-foreground mb-5 leading-relaxed">
-                Generate dated compliance certificates and a carrier-style cyber-insurance evidence PDF —
-                timestamped campaign history, click-rate trends, and training records — white-labeled under your MSP brand.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {FRAMEWORK_CHIPS.map((c) => (
-                  <span key={c} className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-3 py-1 text-xs text-muted-foreground">
-                    <Shield className="w-3 h-3 text-violet-400" />{c}
-                  </span>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">Specific regulatory citations are shown in the in-app Compliance Center.</p>
-            </div>
-            <div className="rounded-2xl border border-border/60 bg-card p-6">
-              <div className="flex items-center gap-2 mb-4 text-sm font-semibold"><FileText className="w-4 h-4 text-violet-400" /> Cyber-insurance evidence pack</div>
-              <ul className="space-y-2.5">
-                {["Timestamped campaign history", "Click-rate improvement trend", "Training completion records", "White-labeled under your MSP brand"].map(item => (
-                  <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />{item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Pricing */}
-      <section id="pricing" className="py-20 border-b border-border/40 bg-secondary/10">
+      <section id="pricing" className="py-20 border-t border-border/40 bg-secondary/10">
         <div className="container">
-          <div className="max-w-2xl mb-12">
-            <h2 className="text-3xl md:text-4xl font-black mb-3">Priced for MSP margin, not enterprise procurement</h2>
-            <p className="text-muted-foreground text-lg">Flat monthly pricing per MSP — never per seat — so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>; Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan includes a 30-day free trial with no credit card. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">15 cents per user</span>.</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 30-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
             {PLANS.map((plan) => (
               <div key={plan.name} className={"rounded-2xl border p-7 flex flex-col relative " + (plan.highlight ? "border-violet-500/50 bg-violet-500/5 shadow-lg shadow-violet-500/10" : "border-border/60 bg-card")}>
                 {plan.badge && (
@@ -308,11 +278,11 @@ export default function Home() {
                 )}
                 <div className="mb-6">
                   <div className="font-bold text-lg mb-1">{plan.name}</div>
-                  <div className="flex items-baseline gap-1 mb-1">
+                  <div className="flex items-baseline gap-1 mb-2">
                     <span className="text-4xl font-black">{plan.price}</span>
                     <span className="text-muted-foreground text-sm">{plan.period}</span>
+                  <div className="text-xs text-violet-400 font-semibold mt-1">{plan.perUser}</div>
                   </div>
-                  <div className="text-xs text-violet-400 font-semibold mb-2">{plan.perUser}</div>
                   <p className="text-sm text-muted-foreground">{plan.description}</p>
                 </div>
                 <ul className="space-y-2.5 mb-8 flex-1">
@@ -323,15 +293,17 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                <Button className="w-full" variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
+                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
                   {plan.cta}
                 </Button>
               </div>
             ))}
           </div>
-
-          <div className="max-w-6xl mt-14">
-            <h3 className="text-lg font-bold mb-6">Compare every plan</h3>
+          {/* PS-PRICE-04: full capability matrix. The cards carry the 6-8 differentiators a
+              buyer scans; this is the row-by-row for the buyer who is comparing seriously.
+              Same data source either way -- a card and this table can never disagree. */}
+          <div className="max-w-6xl mx-auto mt-14">
+            <h3 className="text-center text-lg font-bold mb-6">Compare every feature</h3>
             <div className="overflow-x-auto rounded-2xl border border-border/60">
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
@@ -365,17 +337,308 @@ export default function Home() {
             </div>
           </div>
 
-          <p className="text-xs text-muted-foreground mt-6">
+          <p className="text-center text-xs text-muted-foreground mt-6">
             Managing more than 20 client organizations?{" "}
             <a href="mailto:sales@phishsimai.com" className="text-violet-400 hover:underline">Contact our sales team</a>
           </p>
         </div>
       </section>
 
+      {/* Mandatory Compliance */}
+      <section id="compliance" className="py-20 bg-red-950/10">
+        <div className="container">
+          <div className="max-w-3xl mx-auto text-center mb-12">
+            <Badge variant="outline" className="mb-4 border-red-500/40 bg-red-500/10 text-red-400 text-xs px-3 py-1">
+              <AlertTriangle className="w-3 h-3 mr-1.5" /> Federal and State Legal Requirements
+            </Badge>
+            <h2 className="text-4xl font-black mb-4">
+              Phishing training is not optional —{" "}
+              <span className="text-red-400">it is the law.</span>
+            </h2>
+            <p className="text-muted-foreground text-lg">
+              Five federal and state regulations <strong className="text-foreground">legally require</strong> your organization to conduct phishing awareness training. Non-compliance carries penalties up to <strong className="text-red-400">$1.9 million per year</strong>. PhishSim AI gives you the documentation, training records, and compliance certificates to satisfy every audit.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+            {MANDATORY_FRAMEWORKS.map((fw) => (
+              <div key={fw.name} className="rounded-xl border border-red-500/40 bg-red-500/5 p-5">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="font-bold text-lg">{fw.name}</div>
+                    <code className="text-xs text-muted-foreground font-mono">{fw.citation}</code>
+                  </div>
+                  <Badge variant="outline" className="text-xs border border-red-500/30 bg-red-500/15 text-red-400 flex-shrink-0 ml-2">
+                    <Lock className="w-2.5 h-2.5 mr-1" /> Required
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground mb-3 leading-relaxed">{fw.description}</p>
+                <div className="text-xs text-red-400 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                  <span><strong>Penalty:</strong> {fw.penalty}</span>
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground"><strong className="text-foreground">Sector:</strong> {fw.sector}</div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-6 mb-8">
+            <div className="flex items-center gap-2 mb-4">
+              <Shield className="w-4 h-4 text-amber-400" />
+              <span className="font-semibold text-amber-400">Strongly Recommended / Best Practice</span>
+            </div>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {RECOMMENDED_FRAMEWORKS.map((fw) => (
+                <div key={fw.name} className="flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-sm font-medium">{fw.name}</div>
+                    <div className="text-xs text-muted-foreground">{fw.note}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="text-center">
+            <Button size="lg" className="bg-red-600 hover:bg-red-500 text-white" onClick={() => window.location.href = getSignupUrl()}>
+              <Shield className="w-4 h-4 mr-2" /> Get Compliant Today — Free Trial
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* How It Works */}
+      <section className="py-20 border-t border-border/40">
+        <div className="container">
+          <div className="text-center mb-14">
+            <h2 className="text-4xl font-black mb-4">Up and running in under 10 minutes</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">No IT team required. No weeks of onboarding. Sign up, import your team, and launch your first campaign.</p>
+          </div>
+          <div className="grid md:grid-cols-4 gap-8">
+            {[
+              { step: "01", icon: Users, title: "Import Your Team", desc: "Upload a CSV or add employees manually. Organize by department — Finance, Sales, Management, Operations, Warehouse, or custom.", color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20" },
+              { step: "02", icon: Brain, title: "Launch AI Campaigns", desc: "Choose from 100+ built-in templates or generate new ones with AI. Schedule recurring campaigns with automatic target rotation.", color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
+              { step: "03", icon: TrendingUp, title: "Track and Train", desc: "See who clicked, who submitted credentials, and who reported the email. Auto-enroll at-risk employees in targeted training modules.", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+              { step: "04", icon: Award, title: "Prove Compliance", desc: "Generate compliance reports and certificates for HIPAA, GLBA, NERC CIP, CMMC, NY DFS, SOC 2, and more with one click.", color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+            ].map(({ step, icon: Icon, title, desc, color, bg }) => (
+              <div key={step} className="text-center">
+                <div className={"w-16 h-16 rounded-2xl border " + bg + " flex items-center justify-center mx-auto mb-4"}>
+                  <Icon className={"w-7 h-7 " + color} />
+                </div>
+                <div className="text-xs font-mono text-muted-foreground mb-2">{step}</div>
+                <h3 className="font-bold mb-2">{title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="features" className="py-20 border-t border-border/40 bg-secondary/10">
+        <div className="container">
+          <div className="text-center mb-14">
+            <h2 className="text-4xl font-black mb-4">The complete phishing simulation platform</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Every feature you need to run a world-class security awareness program — all in one place, at a fraction of the cost.</p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {FEATURES.map((f) => (
+              <Card key={f.title} className="border-border/60 bg-card hover:border-border transition-colors">
+                <CardContent className="p-6">
+                  <div className={"w-10 h-10 rounded-xl " + f.bg + " flex items-center justify-center mb-4"}>
+                    <f.icon className={"w-5 h-5 " + f.color} />
+                  </div>
+                  <h3 className="font-bold mb-2">{f.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Speed — replaces the competitor comparison (PS-PRICE-05). */}
+      <section className="py-20 border-t border-border/40">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-black mb-4">Live in <span className="text-violet-400">10 minutes</span>. Not three weeks.</h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              Legacy awareness platforms sell you a demo, a procurement cycle, and an onboarding project.
+              You sign up, import a CSV, and your first simulation is in inboxes before the coffee goes cold.
+            </p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {SPEED_PROOF.map((s) => (
+              <div key={s.label} className="rounded-2xl border border-border/60 bg-card p-8 text-center">
+                <div className="text-4xl font-black text-violet-400 mb-2">{s.stat}</div>
+                <div className="text-sm text-muted-foreground leading-relaxed">{s.label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-sm text-muted-foreground mt-8 max-w-2xl mx-auto">
+            No sales call. No implementation fee. No annual lock-in.
+            If it takes longer than 10 minutes to send your first simulation, we want to hear about it.
+          </p>
+        </div>
+      </section>
+
+      {/* Cyber Insurance Readiness Pack — Game Changer Feature */}
+      <section className="bg-gradient-to-br from-violet-950/40 via-background to-background py-20 border-y border-violet-500/20">
+        <div className="container max-w-5xl mx-auto">
+          <div className="flex flex-col md:flex-row gap-12 items-center">
+            <div className="flex-1">
+              <div className="inline-flex items-center gap-2 bg-violet-500/10 border border-violet-500/30 rounded-full px-4 py-1.5 mb-6">
+                <span className="text-violet-400 font-bold text-xs uppercase tracking-widest">Industry First</span>
+              </div>
+              <h2 className="text-4xl font-black mb-4 leading-tight">
+                One click.<br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">Broker-ready evidence package.</span>
+              </h2>
+              <p className="text-lg text-muted-foreground mb-6 leading-relaxed">
+                Coalition, At-Bay, Travelers, Chubb, and Beazley now require documented phishing simulation data at renewal. Most MSPs cannot produce it. <strong className="text-foreground">PhishSim AI generates the complete carrier supplemental evidence PDF automatically</strong> — timestamped campaign history, click-rate trends, training completion records, and an attestation signature page.
+              </p>
+              <div className="space-y-3 mb-8">
+                {[
+                  "Satisfies all 5 carrier supplemental security awareness questions",
+                  "Timestamped campaign log accepted by Coalition, At-Bay, Travelers, Chubb and Beazley",
+                  "Demonstrates click-rate improvement trend — lower premiums for your clients",
+                  "White-labeled under your MSP brand",
+                  "Generated in 60 seconds. No manual export, no Word docs",
+                ].map(item => (
+                  <div key={item} className="flex items-start gap-3">
+                    <div className="w-5 h-5 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-3 h-3 text-green-400" />
+                    </div>
+                    <span className="text-sm text-muted-foreground">{item}</span>
+                  </div>
+                ))}
+              </div>
+              <Button size="lg" className="bg-violet-600 hover:bg-violet-500 text-base px-8 h-12" onClick={() => window.location.href = getSignupUrl()}>
+                Generate Your First Evidence Pack <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+            <div className="flex-shrink-0 w-full md:w-80">
+              <div className="bg-card border border-border rounded-2xl p-6 shadow-2xl">
+                <div className="bg-slate-900 rounded-xl p-4 mb-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs text-slate-400 font-mono">ACME Corp — Insurance Pack</span>
+                    <span className="text-xs text-green-400 font-bold">PDF</span>
+                  </div>
+                  {[
+                    { page: "Cover", desc: "Carrier-addressed evidence header" },
+                    { page: "Controls", desc: "All 5 checkpoints: PASS" },
+                    { page: "Summary", desc: "Click rate: 34% to 8% improvement" },
+                    { page: "Campaign Log", desc: "12 campaigns, timestamped" },
+                    { page: "Attestation", desc: "Signature-ready for broker" },
+                  ].map(({ page, desc }) => (
+                    <div key={page} className="flex items-center gap-3 py-2 border-b border-slate-700/50 last:border-0">
+                      <div className="w-6 h-6 rounded bg-violet-500/20 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-3 h-3 text-violet-400" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-slate-200">{page}</div>
+                        <div className="text-xs text-slate-500">{desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-2">Generated in</p>
+                  <p className="text-2xl font-black text-violet-400">60 sec</p>
+                  <p className="text-xs text-muted-foreground">vs. hours of manual work</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* MSP Section */}
+      <section id="msp" className="py-20 border-t border-border/40 bg-secondary/10">
+        <div className="container">
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            <div>
+              <Badge variant="outline" className="mb-4 border-indigo-500/30 bg-indigo-500/10 text-indigo-300 text-xs">
+                MSP / Partner Program
+              </Badge>
+              <h2 className="text-4xl font-black mb-4">
+                Manage all your customers from{" "}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-violet-400">one white-label portal</span>
+              </h2>
+              <p className="text-muted-foreground text-lg mb-6 leading-relaxed">
+                PhishSim AI is built for MSPs. Provision new customer organizations in seconds, manage their campaigns and compliance from a single dashboard, and present everything under your own brand.
+              </p>
+              <div className="space-y-3 mb-8">
+                {[
+                  "Full white-label branding — your logo, colors, and custom domain",
+                  "Provision unlimited customer organizations with one click",
+                  "Consolidated compliance reporting across all customers",
+                  "Suspend, activate, or upgrade customers instantly",
+                  "Complete audit trail of all MSP actions",
+                  "PSA ticketing for ConnectWise Manage & Halo — a reported real phishing email can open a ticket in your service desk when the integration is enabled and each client org is mapped; simulation reports are scored only and never create tickets",
+                  "MSP volume pricing available — contact us",
+                ].map((item) => (
+                  <div key={item} className="flex items-start gap-2.5 text-sm">
+                    <CheckCircle2 className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+                    <span className="text-muted-foreground">{item}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <Button onClick={() => window.location.href = "/msp"} className="bg-indigo-600 hover:bg-indigo-500">
+                  <Building2 className="w-4 h-4 mr-2" /> Access MSP Portal
+                </Button>
+                <Button variant="outline" onClick={() => window.location.href = getLoginUrl()}>Learn More</Button>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {[
+                { icon: Users, title: "Multi-Tenant Management", desc: "Manage 10 to 1,000+ customer organizations from a single login with full isolation between tenants.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+                { icon: Palette, title: "White-Label Branding", desc: "Your customers see your brand, not ours. Custom logo, colors, support email, and domain.", color: "text-violet-400", bg: "bg-violet-500/10" },
+                { icon: BarChart3, title: "Consolidated Reporting", desc: "See compliance scores, campaign performance, and risk levels across all customers at a glance.", color: "text-cyan-400", bg: "bg-cyan-500/10" },
+                { icon: Zap, title: "Instant Provisioning", desc: "Create a new customer org in under 60 seconds. No waiting, no tickets, no back-and-forth.", color: "text-amber-400", bg: "bg-amber-500/10" },
+              ].map(({ icon: Icon, title, desc, color, bg }) => (
+                <div key={title} className="flex items-start gap-4 p-4 rounded-xl border border-border/60 bg-card">
+                  <div className={"w-9 h-9 rounded-lg " + bg + " flex items-center justify-center flex-shrink-0"}>
+                    <Icon className={"w-4 h-4 " + color} />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm mb-1">{title}</div>
+                    <div className="text-xs text-muted-foreground leading-relaxed">{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PS-NOFAKE-01: was "Trusted by security-conscious teams" over three invented testimonials.
+          The heading was itself a claim we cannot support at 0 customers, so it went with them.
+          Same layout, same components — only the content changed. Star ratings are gone: a rating
+          with no rater is the fabrication in its purest form. */}
+      <section className="py-20 border-t border-border/40">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-black mb-4">Why MSPs pick us</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {VALUE_PROPS.map((v) => (
+              <Card key={v.title} className="border-border/60 bg-card">
+                <CardContent className="p-6">
+                  <div className="font-semibold text-base mb-3">{v.title}</div>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{v.body}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* FAQ */}
-      <section className="py-20 border-b border-border/40">
+      <section className="py-20 border-t border-border/40">
         <div className="container max-w-3xl">
-          <h2 className="text-3xl md:text-4xl font-black mb-10">Frequently asked questions</h2>
+          <div className="text-center mb-12">
+            <h2 className="text-4xl font-black mb-4">Frequently Asked Questions</h2>
+          </div>
           <div className="space-y-3">
             {FAQS.map((faq, i) => (
               <div key={i} className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -393,19 +656,17 @@ export default function Home() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 bg-gradient-to-b from-background to-violet-950/20">
-        <div className="container max-w-3xl">
-          <h2 className="text-4xl md:text-5xl font-black mb-4">Stand up phishing + awareness for your clients this week.</h2>
-          <p className="text-lg text-muted-foreground mb-8">Launch your first multi-tenant campaign in about 10 minutes. Free for 30 days, no credit card.</p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button size="lg" className="text-base px-8 h-12" onClick={() => window.location.href = getSignupUrl()}>
-              Start Free 30-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-            <Button size="lg" variant="outline" className="text-base px-8 h-12" onClick={() => window.location.href = "/msp"}>
-              <Users className="w-4 h-4 mr-2" /> Open the Partner Portal
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial</p>
+      <section className="py-24 border-t border-border/40 bg-gradient-to-br from-violet-950/30 via-background to-background">
+        <div className="container text-center max-w-3xl">
+          <h2 className="text-5xl font-black mb-4">
+            Stop waiting for a breach{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">to happen.</span>
+          </h2>
+          <p className="text-xl text-muted-foreground mb-8">Every day without a phishing training program is a day your clients are exposed. Launch PhishSim AI in 10 minutes — free trial, no credit card.</p>
+          <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
+            Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+          <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial · Cancel anytime</p>
         </div>
       </section>
 
@@ -414,8 +675,10 @@ export default function Home() {
         <div className="container py-12">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-10">
             <div className="col-span-2">
-              <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-6 w-auto mb-4" />
-              <p className="text-sm text-muted-foreground mb-4 leading-relaxed max-w-xs">Multi-tenant phishing simulation and security awareness training, built for MSPs and MSSPs.</p>
+              <div className="flex items-center gap-2.5 mb-4">
+                <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-6 w-auto" />
+              </div>
+              <p className="text-sm text-muted-foreground mb-4 leading-relaxed max-w-xs">The AI-powered phishing simulation platform that keeps your organization secure and compliant.</p>
               <div className="space-y-1.5 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2"><Globe className="w-3.5 h-3.5" /><a href="https://www.phishsimai.com" className="hover:text-foreground transition-colors">www.phishsimai.com</a></div>
                 <div className="flex items-center gap-2"><Phone className="w-3.5 h-3.5" /><a href="tel:4435941184" className="hover:text-foreground transition-colors">443-594-1184</a></div>
@@ -426,11 +689,12 @@ export default function Home() {
               <div className="font-semibold text-sm mb-3">Product</div>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 {[
-                  { label: "How it works", href: "#how" },
                   { label: "Features", href: "#features" },
-                  { label: "For MSPs", href: "#for-msps" },
                   { label: "Pricing", href: "#pricing" },
-                  { label: "Compliance", href: "#compliance" },
+                  { label: "Compliance Center", href: "#compliance" },
+                  { label: "Training Modules", href: "#features" },
+                  { label: "Template Library", href: "#features" },
+                  { label: "Analytics", href: "#features" },
                 ].map(({ label, href }) => (
                   <li key={label}><a href={href} className="hover:text-foreground transition-colors">{label}</a></li>
                 ))}
@@ -439,7 +703,7 @@ export default function Home() {
             <div>
               <div className="font-semibold text-sm mb-3">Compliance</div>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                {FRAMEWORK_CHIPS.map(item => (
+                {["HIPAA", "GLBA", "NERC CIP", "CMMC / DFARS", "NY DFS Part 500", "SOC 2", "PCI DSS", "NIST CSF"].map(item => (
                   <li key={item}><a href="#compliance" className="hover:text-foreground transition-colors">{item}</a></li>
                 ))}
               </ul>
@@ -449,6 +713,7 @@ export default function Home() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 {[
                   { label: "MSP Partner Portal", href: "/msp" },
+                  { label: "About Us", href: "mailto:info@phishsimai.com" },
                   { label: "Contact Sales", href: "mailto:sales@phishsimai.com" },
                   { label: "Support", href: "mailto:support@phishsimai.com" },
                   { label: "Privacy Policy", href: "/privacy" },
