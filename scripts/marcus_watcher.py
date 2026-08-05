@@ -7,6 +7,7 @@ Runs every 10 min via launchd (com.kaanos.architect).
 """
 import urllib.request
 import urllib.parse
+import urllib.error
 import json
 import subprocess
 import time
@@ -412,63 +413,107 @@ def is_protected(path: str) -> bool:
     return any(p in path.lower() for p in PROTECTED_PATTERNS)
 
 
-def apply_on_dev(product: Product, files: dict, task_description: str) -> dict:
-    # Gate 4: protected paths (incl. .github/workflows, pricing, escalation) — refuse at apply.
+def gh_api(product: Product, method: str, path: str, body=None, timeout: int = 30):
+    """GitHub API with Marcus's token — used to open + merge PRs (works WITH branch protection)."""
+    token = os.environ.get('MARCUS_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN', '')
+    req = urllib.request.Request(
+        f'{GITHUB_API}{path}',
+        data=(json.dumps(body).encode() if body is not None else None),
+        headers={'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json', 'User-Agent': 'marcus-watcher'},
+        method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().decode('utf-8')
+            return json.loads(raw) if raw.strip() else {}
+    except urllib.error.HTTPError as e:
+        return {'error': f'{e.code} {e.read().decode("utf-8")[:200]}'}
+
+
+def apply_on_fresh_branch(product: Product, files: dict, task_description: str, task_id: str) -> dict:
+    """BLOCKER 1 FIX: branch off the CURRENT origin/<prod_branch>, never a stale 'dev' — so a promote
+    can only ever carry the current base + this one change (never July code over current main). Gates
+    4 (protected) and 1 (destructive) fire here, before anything is pushed."""
     for path in files:
         if is_protected(path):
             return {'ok': False, 'error': f'Protected path: {path}', 'protected': True}
-    sync_branch(product, product.dev_branch)
-    # Gate 1: destructive-diff tripwire. >10 files OR >500 net lines (outside generated/vendored) →
-    # refuse and discard; the caller records a breaker failure so a repeat opens the breaker.
+    git_run(product, ['fetch', 'origin', product.prod_branch])
+    branch = f'marcus/{task_id[:8]}-{int(time.time())}'
+    git_run(product, ['checkout', '-B', branch, f'origin/{product.prod_branch}'])  # CURRENT base, verified
+    base_sha = git_run(product, ['rev-parse', 'HEAD']).stdout.strip()
+
     def _old(rel):
         try:
             with open(os.path.join(product.repo_path, rel), encoding='utf-8') as fh:
                 return fh.read()
         except Exception:
             return ''
-    destructive, reason, stats = gates.is_destructive_diff(files, old_getter=_old)
+    destructive, reason, _ = gates.is_destructive_diff(files, old_getter=_old)
     if destructive:
-        return {'ok': False, 'error': f'Destructive diff refused ({reason}) — discarded', 'destructive': True, 'stats': stats}
+        return {'ok': False, 'error': f'Destructive diff refused ({reason}) — discarded', 'destructive': True}
     changed = []
     for rel_path, content in files.items():
-        full_path = os.path.join(product.repo_path, rel_path)
-        os.makedirs(os.path.dirname(full_path), exist_ok=True)
-        with open(full_path, 'w', encoding='utf-8') as f:
+        fp = os.path.join(product.repo_path, rel_path)
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        with open(fp, 'w', encoding='utf-8') as f:
             f.write(content)
         changed.append(rel_path)
     git_run(product, ['add'] + changed)
-    commit_result = git_run(product, ['commit', '-m', f"architect(dev): {task_description[:72]} [Marcus]"], check=False)
-    combined = (commit_result.stdout or '') + (commit_result.stderr or '')
-    if 'nothing to commit' in combined or 'nothing added to commit' in combined:
-        return {'ok': True, 'files': [], 'commit_sha': git_run(product, ['rev-parse', '--short', 'HEAD']).stdout.strip(),
-                'preview_url': preview_url_for_branch(product, product.dev_branch), 'no_changes': True}
-    push = git_run(product, ['push', 'origin', product.dev_branch], check=False)
+    c = git_run(product, ['commit', '-m', f'architect: {task_description[:72]} [Marcus]'], check=False)
+    if 'nothing to commit' in ((c.stdout or '') + (c.stderr or '')):
+        return {'ok': True, 'files': [], 'no_changes': True, 'branch': branch, 'base_sha': base_sha}
+    sha = git_run(product, ['rev-parse', 'HEAD']).stdout.strip()
+    push = git_run(product, ['push', '-u', 'origin', branch], check=False)
     if push.returncode != 0:
-        sync_branch(product, product.dev_branch)
-        return {'ok': False, 'error': f'Dev push failed: {(push.stderr or push.stdout)[:300]}'}
-    return {'ok': True, 'files': changed, 'commit_sha': git_run(product, ['rev-parse', '--short', 'HEAD']).stdout.strip(),
-            'preview_url': preview_url_for_branch(product, product.dev_branch)}
+        return {'ok': False, 'error': f'branch push failed: {(push.stderr or push.stdout)[:200]}'}
+    return {'ok': True, 'branch': branch, 'commit_sha': sha, 'base_sha': base_sha, 'files': changed,
+            'preview_url': preview_url_for_branch(product, branch)}
 
 
-def promote_dev_to_prod(product: Product) -> dict:
-    sync_branch(product, product.prod_branch)
-    prod_before = git_run(product, ['rev-parse', 'HEAD']).stdout.strip()
-    merge = git_run(product, ['merge', f'origin/{product.dev_branch}',
-                              '-m', f'promote: Marcus {product.dev_branch} → {product.prod_branch}'], check=False)
-    if merge.returncode != 0:
-        git_run(product, ['merge', '--abort'], check=False)
-        return {'ok': False, 'error': 'Merge conflict — prod not touched', 'prod_before': prod_before}
-    push = git_run(product, ['push', 'origin', product.prod_branch], check=False)
+def open_pr(product: Product, branch: str, title: str, body: str) -> dict:
+    """Open a PR head→prod_branch. Opening the PR is what triggers the `verify` CI (pull_request
+    event) — so this MUST happen before Gate 2 polls check-runs, or verify never runs."""
+    pr = gh_api(product, 'POST', f'/repos/{product.github_repo}/pulls',
+                {'title': title, 'head': branch, 'base': product.prod_branch, 'body': body})
+    n = pr.get('number')
+    if not n:
+        return {'ok': False, 'error': 'PR open failed: ' + str(pr)[:200]}
+    return {'ok': True, 'pr': n}
+
+
+def merge_pr(product: Product, pr_number: int) -> dict:
+    """BLOCKER 2 FIX: land on prod by MERGING the (already green) PR — works WITH branch protection,
+    no force-push, no admin bypass. The merged squash commit is the Marcus-authored prod commit."""
+    m = gh_api(product, 'PUT', f'/repos/{product.github_repo}/pulls/{pr_number}/merge', {'merge_method': 'squash'})
+    if not m.get('merged'):
+        return {'ok': False, 'error': 'merge rejected (protection?): ' + str(m)[:200], 'pr': pr_number}
+    return {'ok': True, 'pr': pr_number, 'merged_sha': m.get('sha')}
+
+
+def rollback_via_revert(product: Product, bad_sha: str, task_id: str) -> dict:
+    """BLOCKER 3 FIX: undo a bad deploy with a FORWARD `git revert` commit, merged through a PR on
+    green — no force-push, so it lands UNDER branch protection (unlike the old reset+force-push)."""
+    git_run(product, ['fetch', 'origin', product.prod_branch])
+    rb = f'marcus-rollback/{task_id[:8]}-{int(time.time())}'
+    git_run(product, ['checkout', '-B', rb, f'origin/{product.prod_branch}'])
+    rev = git_run(product, ['revert', '--no-edit', bad_sha], check=False)
+    if rev.returncode != 0:
+        git_run(product, ['revert', '--abort'], check=False)
+        return {'ok': False, 'error': f'revert failed: {(rev.stderr or rev.stdout)[:200]}'}
+    rb_sha = git_run(product, ['rev-parse', 'HEAD']).stdout.strip()
+    push = git_run(product, ['push', '-u', 'origin', rb], check=False)
     if push.returncode != 0:
-        git_run(product, ['reset', '--hard', prod_before])
-        return {'ok': False, 'error': 'Prod push failed', 'prod_before': prod_before}
-    return {'ok': True, 'commit_sha': git_run(product, ['rev-parse', '--short', 'HEAD']).stdout.strip(), 'prod_before': prod_before}
-
-
-def rollback_prod(product: Product, prod_before: str):
-    sync_branch(product, product.prod_branch)
-    git_run(product, ['reset', '--hard', prod_before])
-    git_run(product, ['push', 'origin', product.prod_branch, '--force-with-lease'], check=False)
+        return {'ok': False, 'error': f'revert push failed: {(push.stderr or push.stdout)[:200]}'}
+    pr = open_pr(product, rb, f'rollback: revert {bad_sha[:8]} [Marcus]', 'Auto-rollback — forward revert commit, no force-push.')
+    if not pr['ok']:
+        return {'ok': False, 'error': 'rollback ' + pr['error']}
+    n = pr['pr']
+    green, why = poll_ci_check_runs(product, rb_sha, timeout=600)
+    if not green:
+        return {'ok': False, 'error': f'rollback CI not green: {why}', 'pr': n}
+    m = gh_api(product, 'PUT', f'/repos/{product.github_repo}/pulls/{n}/merge', {'merge_method': 'squash'})
+    if not m.get('merged'):
+        return {'ok': False, 'error': 'rollback merge rejected: ' + str(m)[:200], 'pr': n}
+    return {'ok': True, 'pr': n, 'revert_sha': m.get('sha')}
 
 
 def poll_ci_check_runs(product: Product, ref: str, timeout: int = 900) -> tuple:
@@ -529,7 +574,8 @@ def process_task(product: Product, task: dict):
         if not diff['ok']:
             report_completion(product, task_id, False, qwen_output=diff.get('reason', ''), error=diff.get('reason', 'Cannot auto-apply'))
             return
-        dev = apply_on_dev(product, diff['files'], description)
+        # Blocker 1 fix: branch off the CURRENT origin/main, not a stale 'dev'. Gates 4 & 1 fire here.
+        dev = apply_on_fresh_branch(product, diff['files'], description, task_id)
         if not dev['ok']:
             # A destructive-diff refusal is a breaker-worthy failure (opens on repeat). Protected-path
             # and other apply refusals are reported but not counted against the breaker.
@@ -539,28 +585,40 @@ def process_task(product: Product, task: dict):
             return
         if dev.get('no_changes'):
             report_completion(product, task_id, True, qwen_output=diff.get('raw', ''), files_changed=[],
-                              commit_sha=dev.get('commit_sha', ''), prod_url=product.base_url,
-                              deploy_branch=f'{product.dev_branch} (no changes — already fixed)')
+                              commit_sha=dev.get('base_sha', ''), prod_url=product.base_url,
+                              deploy_branch=f"{dev.get('branch','')} (no changes — already fixed)")
             print(f'[{product.name}] DONE (no changes needed)')
             return
+        # ── DEPLOY GATES — all must pass before the branch may reach prod. ──
+        # Gate 5 (autonomy) FIRST: the HANDS are gated. If blocked, the change stays on the branch (the
+        # dev-equivalent) and prod is never touched. Checked before opening a PR so a blocked autonomy
+        # state never leaves an un-mergeable PR open. watcher_audit='outstanding' blocks here.
+        g = breaker_client.gate_state(product.base_url, product.secret)
+        if not gates.deploy_allowed(g.get('watcher_audit'), g.get('level')):
+            report_completion(product, task_id, False, preview_url=dev['preview_url'], deploy_branch=dev['branch'],
+                              error=f"DEPLOY BLOCKED by autonomy gate (watcher_audit={g.get('watcher_audit')!r}, level={g.get('level')!r}) — prod untouched")
+            print(f'[{product.name}] autonomy gate blocked deploy — branch only')
+            return
+
+        # Open the PR head→prod NOW — opening it is what triggers the `verify` CI (pull_request event)
+        # and a Vercel preview. Gate 2 below cannot observe a green check until the PR exists.
+        pr = open_pr(product, dev['branch'], f'architect: {description[:64]} [Marcus]',
+                     'Autonomous architect change — merged on green CI, under branch protection.')
+        if not pr['ok']:
+            report_completion(product, task_id, False, deploy_branch=dev['branch'], error=pr['error'])
+            return
+        pr_num = pr['pr']
+
         preview = dev['preview_url']
         preview_ready = wait_for_deploy(preview, timeout=120)
         qa_preview = run_qa_smoke(product, preview, f'architect-preview-{task_id[:8]}') if preview_ready else {'passed': 0, 'failed': 0}
 
-        # ── DEPLOY GATES — all must pass before dev may reach prod. Dev commit stands either way. ──
-        # Gate 5 (autonomy): the HANDS are gated. No deploy unless the external watcher audit PASSED
-        # and the earned level is at the deploy floor. watcher_audit='outstanding' blocks here.
-        g = breaker_client.gate_state(product.base_url, product.secret)
-        if not gates.deploy_allowed(g.get('watcher_audit'), g.get('level')):
-            report_completion(product, task_id, False, preview_url=preview, deploy_branch=product.dev_branch,
-                              error=f"DEPLOY BLOCKED by autonomy gate (watcher_audit={g.get('watcher_audit')!r}, level={g.get('level')!r}) — prod untouched")
-            print(f'[{product.name}] autonomy gate blocked deploy — dev only')
-            return
-        # Gate 2 (CI): the dev commit must be green (tsc + full suite) before it can be promoted.
+        # Gate 2 (CI): the branch commit must be green (tsc + full suite) — the SAME 'verify' check
+        # main's protection requires, so a green poll here means the merge below will be ALLOWED.
         ci_green, ci_reason = poll_ci_check_runs(product, dev['commit_sha'])
         if not ci_green:
             breaker_client.breaker_record(product.base_url, product.secret, task_id, False, f'CI red: {ci_reason}')
-            report_completion(product, task_id, False, preview_url=preview, deploy_branch=product.dev_branch,
+            report_completion(product, task_id, False, preview_url=preview, deploy_branch=dev['branch'],
                               error=f'CI NOT GREEN — blocked from prod: {ci_reason}')
             return
         # Gate 3 (deploy-verify): the running prod origin must be OUR app (project↔domain). Mismatch
@@ -572,28 +630,34 @@ def process_task(product: Product, task: dict):
                               error=f"DEPLOY-VERIFY MISMATCH — promote aborted: {dv.get('reason')}")
             return
 
-        promote = promote_dev_to_prod(product)
+        # Blocker 2 fix: land on prod by MERGING the (green) PR — no push to a protected branch, no
+        # force. The merged squash commit IS the Marcus-authored prod commit.
+        promote = merge_pr(product, pr_num)
         if not promote['ok']:
             breaker_client.breaker_record(product.base_url, product.secret, task_id, False, promote['error'])
             report_completion(product, task_id, False, error=promote['error'], preview_url=preview)
             return
+        merged_sha = promote['merged_sha']
+        # Blocker 3 fix: rollback is a FORWARD revert merged through a PR — never reset+force-push.
         if not wait_for_deploy(product.base_url, timeout=180):
-            rollback_prod(product, promote['prod_before'])
-            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, 'prod deploy timeout — rolled back')
-            report_completion(product, task_id, False, error='Prod deploy timeout — rolled back', preview_url=preview)
+            rb = rollback_via_revert(product, merged_sha, task_id)
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, 'prod deploy timeout — reverted')
+            report_completion(product, task_id, False, preview_url=preview,
+                              error=f"Prod deploy timeout — revert {'OK' if rb['ok'] else 'FAILED: '+rb.get('error','')}")
             return
         qa_prod = run_qa_smoke(product, product.base_url, f'architect-prod-{task_id[:8]}')
         if qa_prod.get('failed', 1) > 0:
-            rollback_prod(product, promote['prod_before'])
-            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, 'prod QA failed — rolled back')
-            report_completion(product, task_id, False, error='Prod QA failed — rolled back', files_changed=dev['files'])
+            rb = rollback_via_revert(product, merged_sha, task_id)
+            breaker_client.breaker_record(product.base_url, product.secret, task_id, False, 'prod QA failed — reverted')
+            report_completion(product, task_id, False, files_changed=dev['files'],
+                              error=f"Prod QA failed — revert {'OK' if rb['ok'] else 'FAILED: '+rb.get('error','')}")
             return
         breaker_client.breaker_record(product.base_url, product.secret, task_id, True, '')
-        print(f'[{product.name}] DONE — prod @ {promote["commit_sha"]}')
+        print(f'[{product.name}] DONE — prod @ {merged_sha}')
         report_completion(product, task_id, True, qwen_output=diff.get('raw', ''), files_changed=dev['files'],
-                          commit_sha=promote['commit_sha'], preview_url=preview, prod_url=product.base_url,
+                          commit_sha=merged_sha, preview_url=preview, prod_url=product.base_url,
                           qa_preview=f"{qa_preview.get('passed', 0)} passed", qa_prod=f"{qa_prod.get('passed', 0)} passed",
-                          deploy_branch=f'{product.dev_branch} → {product.prod_branch}')
+                          deploy_branch=f"{dev['branch']} → {product.prod_branch} (PR #{promote['pr']})")
     except Exception as e:
         print(f'[{product.name}] FAILED: {e}')
         report_completion(product, task_id, False, error=str(e))
