@@ -148,6 +148,7 @@ export default function Home() {
       <section className="relative border-b border-border/40">
         <div className="absolute inset-0 bg-gradient-to-b from-violet-950/20 to-background pointer-events-none" />
         <div className="container relative py-20 md:py-28">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
           <div className="max-w-3xl">
             <Badge variant="outline" className="mb-6 border-violet-500/30 bg-violet-500/10 text-violet-300 text-xs px-3 py-1">
               For MSPs &amp; MSSPs · 30-day free trial, no credit card
@@ -174,6 +175,20 @@ export default function Home() {
                 <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />{t}</span>
               ))}
             </div>
+          </div>
+
+          {/* RIGHT: hero visual — desktop only, so the phone CTA stack stays clean */}
+          <div className="hidden lg:flex justify-center lg:justify-end">
+            <img
+              src="/brand/hero-learning-moment.png"
+              alt="Phishing simulation email with an instant Learning Moment tip card"
+              className="w-full max-w-lg xl:max-w-xl rounded-2xl border border-border/40 shadow-2xl shadow-violet-950/40"
+              width={1200}
+              height={800}
+              loading="eager"
+              decoding="async"
+            />
+          </div>
           </div>
         </div>
       </section>
