@@ -1312,3 +1312,7 @@ export { cronVera } from './agents/vera'
 
 // PS-NOVA-01 — Head of Product Growth. 07:00 UTC, the last of the eight before Janet's 08:00 standup.
 export { cronNova } from './agents/nova'
+
+// PS-DIGEST-01 — daily signup digest to Telegram. 21:00 UTC. Header auth only
+// (Bearer CRON_SECRET); deliberately does not use okCronOrHq. See dailyReport.ts.
+export { cronDailyReport } from './dailyReport'
