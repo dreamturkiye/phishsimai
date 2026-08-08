@@ -18,7 +18,8 @@ import {
   cronSequence, cronSequenceTouch2, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronAria, cronMason, cronScout, cronFinn, cronVera, cronNova, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
   webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk,
-  architectAutonomy, architectIncident
+  architectAutonomy, architectIncident,
+  cronDailyReport
 } from '../os/routes';
 import { miaSpeak, miaFeedbackDigest } from '../mia/routes';
 import { mountMiaApi } from '../mia/vercelMount';
@@ -163,6 +164,8 @@ async function startServer() {
   // POST an incident to void a day. Both gated by okCronOrHq (CRON_SECRET or HQ_SECRET).
   app.get("/api/architect/autonomy", architectAutonomy);
   app.post("/api/architect/incident", architectIncident);
+  // PS-DIGEST-01: header auth only (Bearer CRON_SECRET), NOT okCronOrHq.
+  app.get("/api/os/daily-report", cronDailyReport);
   app.get("/api/os/sequence", cronSequence);
   app.get("/api/os/sequence-touch2", cronSequenceTouch2); // PS-OUTREACH-THROTTLE-01: throttled second-touch tick
   app.get("/api/os/competitor-intel", cronCompetitorIntel);

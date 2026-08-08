@@ -218,6 +218,10 @@
     {
       "path": "/api/os/scout-landscape",
       "schedule": "0 7 * * 1"
+    },
+    {
+      "path": "/api/os/daily-report",
+      "schedule": "0 21 * * *"
     }
   ]
 }
