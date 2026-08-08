@@ -79,17 +79,37 @@ export async function cronDailyReport(req: Request, res: Response) {
       '_Visitors: not tracked — @vercel/analytics not installed._',
     ].filter(Boolean) as string[]
 
-    await sendTelegram(lines.join('\n'))
+    // sendTelegram RETURNS {ok:false, skipped:true} on a missing-creds or
+    // failed-identity send — it does NOT throw. Discarding that return value
+    // is what made a dead digest look like a healthy one: the try/catch below
+    // only fires on a THROWN error, which this path never produces. Check it,
+    // or the endpoint reports success for a message nobody received.
+    const tg = await sendTelegram(lines.join('\n'))
 
-    res.json({
-      ok: true,
+    const payload = {
       today: Number(s.today ?? 0),
       yesterday: Number(s.yesterday ?? 0),
       last_7d: Number(s.last_7d ?? 0),
       total: Number(s.total ?? 0),
       paid,
       members,
-    })
+      telegram_ok: tg.ok,
+      telegram_skipped: tg.skipped ?? false,
+      telegram_error: tg.error ?? null,
+    }
+
+    if (!tg.ok) {
+      // Non-200 so the run is marked FAILED in Vercel's cron history. The
+      // query succeeded, so the numbers still ship — but a digest that never
+      // arrived must not be recorded as a success anywhere.
+      console.error(
+        `[daily-report] Telegram send failed (skipped=${tg.skipped ?? false}): ${tg.error ?? 'unknown'}`,
+      )
+      res.status(500).json({ ok: false, error: tg.error ?? 'telegram send failed', ...payload })
+      return
+    }
+
+    res.json({ ok: true, ...payload })
   } catch (e: any) {
     // Announce the failure. A digest that silently stops arriving is
     // indistinguishable from a quiet day, and that hides for weeks.
