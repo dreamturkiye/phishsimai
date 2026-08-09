@@ -29,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import fs from 'node:fs'
 import path from 'node:path'
-import { getSql } from '../conn'
+import { getSql } from '../conn'; import { withHealth } from './withHealth'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { scanVerdict, scanVerdictReason } from './scanVerdict'
 
@@ -836,7 +836,7 @@ export async function cronRex(req: any, res: any) {
       livePricesUsd = null // NOT CHECKED — the detector still fires on the hardcoding itself
     }
 
-    const report = await runRexAgent({ livePricesUsd })
+    const report = await withHealth('rex', () => runRexAgent({ livePricesUsd }))
     return res.json({ success: true, ...report })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
