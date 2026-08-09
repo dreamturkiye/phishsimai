@@ -837,7 +837,7 @@ export async function cronRex(req: any, res: any) {
     }
 
     const report = await withHealth('rex', () => runRexAgent({ livePricesUsd }))
-    return res.json({ success: true, ...report })
+    return res.json({ success: true, ...report, reasoning: await (await import('./reason')).reasonAndAct('rex', report, `You are Rex, Revenue Operations for PhishSim AI -- the agent that makes the other seven trustworthy by catching fabricated values before they reach the founder's standup. Given today's real detector results, decide the single most useful data-integrity action, or state plainly that no incidents were found and the funnel data is clean.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
