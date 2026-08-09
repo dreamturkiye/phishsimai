@@ -107,7 +107,7 @@ PhishSim AI:
 
 Built for MSPs who want a recurring revenue line without the complexity.
 
-Reply "trial" or start here — you'll be live today: https://phishsimai.com/register
+Reply "trial" or start here — you'll be live today: https://phishsimai.com/login?mode=register
 
 Sarah Mitchell
 PhishSim AI
@@ -149,7 +149,7 @@ One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. D
 
 Live in 10 minutes, no engineer. 30-day trial, no card, full access.
 
-If it's worth 10 minutes: https://phishsimai.com/register
+If it's worth 10 minutes: https://phishsimai.com/login?mode=register
 
 Sarah Mitchell
 PhishSim AI
