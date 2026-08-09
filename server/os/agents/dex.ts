@@ -702,7 +702,7 @@ export async function cronDex(req: any, res: any) {
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
     const report = await withHealth('dex', () => runDexAgent())
-    return res.json({ success: true, ...report })
+    return res.json({ success: true, ...report, reasoning: await (await import('./reason')).reasonAndAct('dex', report, `You are Dex, Deliverability and Infrastructure for PhishSim AI, a phishing-simulation SaaS for MSPs. You flag ANY send path that is missing a required gate -- MX check, suppression list, consent -- rather than assuming a gate exists because it exists elsewhere. Given today's real deliverability data, decide the single most useful infrastructure action, or state plainly that all gates are verified present.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
