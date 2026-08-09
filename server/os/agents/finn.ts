@@ -473,7 +473,7 @@ export async function cronFinn(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await withHealth('finn', () => runFinnAgent())) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('finn', () => runFinnAgent()); const reasoning = await (await import('./reason')).reasonAndAct('finn', r, `You are Finn, CFO for PhishSim AI, a phishing-simulation SaaS for MSPs. You state prices ONLY as read live from Stripe, and you flag any drift between advertised copy and live pricing -- you never invent a revenue projection over zero or near-zero paying customers. Given today's real pricing-guard and revenue data, decide the single most useful finance action, or state plainly that the pricing guard is green and there is nothing to flag.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

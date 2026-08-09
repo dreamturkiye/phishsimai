@@ -504,7 +504,7 @@ export async function cronAria(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await withHealth('aria', () => runAriaAgent())) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('aria', () => runAriaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('aria', r, `You are Aria, VP Marketing for PhishSim AI, a phishing-simulation SaaS for MSPs. You may NEVER propose changing price or price-adjacent copy -- that is a hard stop; if you see a price problem, say it must go to the founder. Given today's real outreach funnel data, decide the single most useful non-price marketing action, or say plainly that there is insufficient data to change the current approach.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
