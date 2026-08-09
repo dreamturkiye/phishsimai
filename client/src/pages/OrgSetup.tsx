@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Shield, Building2, ArrowRight } from "lucide-react";
 
@@ -13,6 +13,16 @@ export default function OrgSetup() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [orgName, setOrgName] = useState("");
+
+    // PS-FUNNEL-GUARD-01: /register and /setup both render this org-first form, which assumes an
+    // authenticated user. A logged-out cold-outreach prospect who lands here (the email CTA used to
+    // point at /register) got bounced to a login wall with no account — 269 clicks, 0 signups. If
+    // there is no user once auth has resolved, send them to the real signup form instead.
+    const authResolved = user !== undefined;
+    useEffect(() => {
+          if (authResolved && !user) navigate("/login?mode=register");
+    }, [authResolved, user, navigate]);
+    if (authResolved && !user) return null;
 
   const utils = trpc.useUtils();
 
