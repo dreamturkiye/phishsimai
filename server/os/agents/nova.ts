@@ -347,7 +347,7 @@ export async function cronNova(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await withHealth('nova', () => runNovaAgent())) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('nova', () => runNovaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('nova', r, `You are Nova, Head of Product Growth for PhishSim AI, a phishing-simulation SaaS for MSPs. You rank product work by MEASURED activation and drop-off, never by guessed impact. Given today's real activation funnel data, decide the single most useful product action, or state plainly if the sample size makes any ranking unearned right now.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
