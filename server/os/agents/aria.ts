@@ -29,7 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
 import { AB_EXPERIMENTS, TOUCH1_SUBJECT, TOUCH2_SUBJECT } from '../abTest'
-import { type Incident, type Severity } from './rex'
+import { withHealth } from './withHealth'; import { type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
 const COMPANY = 'phishsimai'
@@ -504,7 +504,7 @@ export async function cronAria(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await runAriaAgent()) })
+    return res.json({ success: true, ...(await withHealth('aria', () => runAriaAgent())) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

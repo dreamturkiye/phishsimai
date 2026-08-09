@@ -25,7 +25,7 @@
 //    so rather than asserting the segment he likes best is winning.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
-import { COMPETITORS } from '../competitorIntel'
+import { withHealth } from './withHealth'; import { COMPETITORS } from '../competitorIntel'
 import { INTERNAL_EXCLUSION_SQL, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
@@ -423,7 +423,7 @@ export async function cronScout(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await runScoutAgent()) })
+    return res.json({ success: true, ...(await withHealth('scout', () => runScoutAgent())) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

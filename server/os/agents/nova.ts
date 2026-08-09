@@ -28,7 +28,7 @@
 //    signup that never activated has not churned. Nova is the other side of that boundary.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
-import { INTERNAL_ORG_EXCLUSION_SQL } from './vera'
+import { withHealth } from './withHealth'; import { INTERNAL_ORG_EXCLUSION_SQL } from './vera'
 import { type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
@@ -347,7 +347,7 @@ export async function cronNova(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await runNovaAgent()) })
+    return res.json({ success: true, ...(await withHealth('nova', () => runNovaAgent())) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

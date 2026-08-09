@@ -30,7 +30,7 @@
 //      fabricated, and a forecast over zero pipeline outcomes would be too.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
-import { loadPhishSimPrices, type StripePlan } from '../../stripe/prices'
+import { withHealth } from './withHealth'; import { loadPhishSimPrices, type StripePlan } from '../../stripe/prices'
 import { readSource, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { scanVerdict, scanVerdictReason } from './scanVerdict'
@@ -473,7 +473,7 @@ export async function cronFinn(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await runFinnAgent()) })
+    return res.json({ success: true, ...(await withHealth('finn', () => runFinnAgent())) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
