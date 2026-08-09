@@ -31,7 +31,7 @@
 //    stop tripping is the failure mode that ends a sending domain.
 // ─────────────────────────────────────────────────────────────────────────────
 import { resolveTxt, resolveMx } from 'node:dns/promises'
-import { getSql } from '../conn'
+import { getSql } from '../conn'; import { withHealth } from './withHealth'
 import { readSource, measureCohorts, type CohortSplit, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { reconcileBreaker, readBreakerThreshold, type BreakerRun } from '../dexBreaker'
@@ -701,7 +701,7 @@ export async function cronDex(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    const report = await runDexAgent()
+    const report = await withHealth('dex', () => runDexAgent())
     return res.json({ success: true, ...report })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
