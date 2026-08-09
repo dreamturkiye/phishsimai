@@ -33,7 +33,7 @@
 //    are only ever PROPOSED to Kaan with their count. Mason never bulk-retires on silence.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
-import { assertAutonomyAllows, isAutonomyDenied } from '../autonomyGate'
+import { withHealth } from './withHealth'; import { assertAutonomyAllows, isAutonomyDenied } from '../autonomyGate'
 import { getSequenceHealth } from '../sequences'
 import { runSalesReplyAgent, replyToTrialMetric, type SalesReplyRun } from './salesReplies'
 import { INTERNAL_EXCLUSION_SQL, type Incident, type Severity } from './rex'
@@ -471,7 +471,7 @@ export async function cronMason(req: any, res: any) {
   const viaVercel = !!req.headers?.['x-vercel-cron']
   if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
   try {
-    return res.json({ success: true, ...(await runMasonAgent()) })
+    return res.json({ success: true, ...(await withHealth('mason', () => runMasonAgent())) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
