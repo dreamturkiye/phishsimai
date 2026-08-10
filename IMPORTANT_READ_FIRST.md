@@ -1,5 +1,5 @@
 # READ FIRST
-
+**Master reference as of 2026-08-10: `Kaan AI OS Version 7.5.md` on the founder's Desktop** (not in this repo — local file). Consolidates this map + the 7.4 governance spec + the shared `kaan-os-core` package + verified Marcus autonomy state. Check that first if you have access to it; the docs below remain accurate as the PhishSimAI-specific detail.
 **Before making any change in `server/os/` or related routers, read the system map.** This is not optional — the L5/L5.8 autonomy layer has genuine cascading-break risk, and tracing an incident without this map takes an hour instead of a minute.
 
 - [`docs/FULL_SYSTEM_MAP.md`](docs/FULL_SYSTEM_MAP.md) — base architecture, agent hierarchy, critical daily cron chain, highest-blast-radius files, safe-change protocol
