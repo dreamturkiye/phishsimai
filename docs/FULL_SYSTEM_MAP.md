@@ -120,8 +120,7 @@ Before editing any file in `server/os/` or related routers:
 
 ## 6. Related Documents in Repo
 
-- `KAAN_AI_OS_V5.0.md`
-- `KAAN_AI_OS_V4.5.md`
+- `kaan-os-core/KAAN_AI_OS_V7_ARCHITECTURE.md` (7.3, canonical base) + `Kaan_AI_OS_7.4_Architecture_Spec.md` + `GSA_BUILD_PLAN.md` (7.4 GSA layer, spec only, not built) — see docs/SYSTEM_MAP_ADDENDUM.md section 8 for the current summary
 - `CLAUDE.md` (critical operational notes, especially cron ordering and LLM chain)
 - `PHISHSIM_AUDIT.md`
 - `MIGRATION_V5.md`
