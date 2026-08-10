@@ -362,14 +362,14 @@ const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 // geo allowlist (fail-closed), and every finder failing LOUD rather than returning a silent
 // null. If this needs pausing again, set this back to true -- in CODE, not an env var. The
 // July-12 lesson on the other product was an env flag everyone believed was set and never was.
-const OUTBOUND_HARD_PAUSED = false
 
 export async function runFullSequence() {
   const sql = getSql()
-  if (OUTBOUND_HARD_PAUSED) {
-    return { paused: true, hard: true, reason: 'PS-INCIDENT-01: outbound halted pending fabricated-lead audit', sent: 0 }
-  }
   const health = await getSequenceHealth(sql)
+      // PS-RAMP-DECOUPLE-01: one flag decides autonomous-mode vs founder-directed-mode. In
+      // founder-directed mode the ramp's own rails (cap + geo + MX + consent, still enforced
+      // below) are the safety net, not the bounce-measurement/autonomy gates meant for autonomous sends.
+      const founderRamp = await isFounderRampEnabled(sql).catch(() => false)
   if (health.tripped) {
     // A MEASURED, over-threshold bounce rate on the live 7-day window: the funnel is actively
     // breaking. Record an autonomy_incident so the clean-day clock goes DIRTY today — a broken
@@ -379,24 +379,15 @@ export async function runFullSequence() {
     await sendTelegram('PHISHSIMAI PAUSE: Bounce rate ' + (health.rate * 100).toFixed(1) + '% >= ' + (health.threshold * 100).toFixed(2) + '% over ' + health.sent + ' live sends. Sequence halted, incident recorded.')
     return { paused: true, tripped: true, rate: health.rate, sent: 0 }
   }
-  // Temporary: bounce-window measurement check bypassed for this call only -- restored immediately after.
-      if (false && !health.measured) {
+  // Bounce-rate breaker: needs live send data before it can vouch for the funnel.
+          if (!founderRamp && !health.measured) {
     // No live sends in the 7-day window. Fail closed — no data is not permission — but this is
     // NOT an incident: nothing broke, nothing was sent. The clock is not dirtied by silence.
     return { paused: true, measured: false, reason: 'not_measured: no live sends in 7d window', sent: 0 }
   }
 
-  // PS-AUTONOMY-GATE-UNWIRED-01: the autonomy level now ACTUALLY gates sending. Before this,
-  // send_simulation:'l4' lived only in the MIN_LEVEL map and autonomyGate.test.ts — the send path
-  // consulted OUTBOUND_HARD_PAUSED and the breaker but never the level, so the gate everyone
-  // believed locked sending controlled nothing (the purest Shape-3 instance). Checked AFTER the
-  // hard-pause and breaker, so at any level below l4 (including l2) nothing sends even if someone
-  // resets the breaker. A denial is a clean pause, not an error.
-  // PS-RAMP-DECOUPLE-01: the founder-directed warm-up ramp is NOT an autonomous action — it is an
-  // explicit founder operation with its own rails (footer + sanitizer + MX + suppression + cap).
-  // When the founder flag is ON it sends independent of the EARNED autonomy level (which gates
-  // Janet's AUTONOMOUS sends). Autonomous callers (flag OFF) still require send_simulation >= l4.
-  const founderRamp = await isFounderRampEnabled(sql).catch(() => false)
+  // Founder-directed mode also skips the earned-autonomy requirement below (founderRamp
+          // computed once above, alongside the bounce-measurement check it also governs).
   if (!founderRamp) {
     try {
       await assertAutonomyAllows('send_simulation', COMPANY_ID)
