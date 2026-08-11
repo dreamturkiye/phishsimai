@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ type WizardForm = {
   selectedTargetIds: number[];
   templateSearch: string;
   targetSearch: string;
+  credentialCaptureEnabled: boolean;
 };
 
 const DEFAULT_FORM: WizardForm = {
@@ -62,6 +64,7 @@ const DEFAULT_FORM: WizardForm = {
   selectedTargetIds: [],
   templateSearch: "",
   targetSearch: "",
+  credentialCaptureEnabled: true,
 };
 
 export default function Campaigns() {
@@ -136,6 +139,7 @@ export default function Campaigns() {
       senderEmail: form.senderEmail || undefined,
       templateId: form.templateId ?? undefined,
       targetIds: form.selectedTargetIds,
+      credentialCaptureEnabled: form.credentialCaptureEnabled,
     });
   }
 
@@ -365,6 +369,19 @@ export default function Campaigns() {
                     ))}
                   </div>
                 )}
+                <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-border/60">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">Credential-capture simulation</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      When on and the template simulates a login page, a target who clicks sees a fake sign-in
+                      form. It never captures or stores a typed password — only that a submission happened.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={form.credentialCaptureEnabled}
+                    onCheckedChange={v => setForm(f => ({ ...f, credentialCaptureEnabled: v }))}
+                  />
+                </div>
               </div>
             )}
 
