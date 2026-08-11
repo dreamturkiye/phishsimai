@@ -15,10 +15,11 @@ import { scheduledCampaignHandler } from "../scheduledHandlers";
 import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
-  cronSequence, cronJanet, cronWatchdog, cronHeartbeat,
+  cronSequence, cronSequenceTouch2, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronAria, cronMason, cronScout, cronFinn, cronVera, cronNova, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
   webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk,
-  architectAutonomy, architectIncident
+  architectAutonomy, architectIncident,
+  cronDailyReport
 } from '../os/routes';
 import { miaSpeak, miaFeedbackDigest } from '../mia/routes';
 import { mountMiaApi } from '../mia/vercelMount';
@@ -46,6 +47,14 @@ async function startServer() {
     console.error("[FATAL] JWT_SECRET must be set and >= 32 chars. Refusing to start.");
     process.exit(1);
   }
+
+  // PS-SENTRY-01 (2026-07-22): initSentry() had NO production caller — it was reachable only
+  // from its own test file, and sentryErrorMiddleware was defined but never mounted. Sentry was
+  // installed, tested, and capturing precisely nothing. Every captureServerError() in the
+  // codebase was an inert no-op. Init first, before anything can throw. Still fail-safe: with
+  // SENTRY_DSN unset this returns false and every capture stays a no-op, by design.
+  const { initSentry } = await import("../os/sentryServer");
+  console.log(`[sentry] server capture ${initSentry() ? "ENABLED" : "disabled (SENTRY_DSN unset)"}`);
 
   const app = express();
   const server = createServer(app);
@@ -97,6 +106,9 @@ async function startServer() {
   // Body parsers — reduced limits to prevent DoS
   // Stripe webhook must be registered BEFORE body parsers (express.raw needs the raw body for signature verification)
   registerStripeWebhook(app);
+  // 1b: Resend delivery webhook — same rule, its Svix signature is verified over the raw body.
+  const { registerResendWebhook } = await import("../email/resendWebhook");
+  registerResendWebhook(app);
 
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ limit: "5mb", extended: true }));
@@ -152,10 +164,24 @@ async function startServer() {
   // POST an incident to void a day. Both gated by okCronOrHq (CRON_SECRET or HQ_SECRET).
   app.get("/api/architect/autonomy", architectAutonomy);
   app.post("/api/architect/incident", architectIncident);
+  // PS-DIGEST-01: header auth only (Bearer CRON_SECRET), NOT okCronOrHq.
+  app.get("/api/os/daily-report", cronDailyReport);
   app.get("/api/os/sequence", cronSequence);
+  app.get("/api/os/sequence-touch2", cronSequenceTouch2); // PS-OUTREACH-THROTTLE-01: throttled second-touch tick
+  app.get("/api/os/competitor-intel", cronCompetitorIntel);
+  app.get("/api/os/sales-replies", cronSalesReplies);
+  app.get("/api/os/rex", cronRex);
+  app.get("/api/os/dex", cronDex);
+  app.get("/api/os/aria", cronAria);
+  app.get("/api/os/mason", cronMason);
+  app.get("/api/os/scout", cronScout);
+  app.get("/api/os/finn", cronFinn);
+  app.get("/api/os/vera", cronVera);
+  app.get("/api/os/nova", cronNova);
   app.get("/api/os/janet", cronJanet);
   app.get("/api/os/watchdog", cronWatchdog);
   app.get("/api/os/heartbeat", cronHeartbeat);
+  app.get("/api/os/deploy-verify", cronDeployVerify);
   app.post("/api/os/webhook/reply", webhookReply);
   app.get("/api/os/hq", hqData);
   app.post("/api/os/hq/chat", hqChat);
@@ -202,6 +228,12 @@ async function startServer() {
   } else {
     serveStatic(app);
   }
+
+  // PS-SENTRY-01: error middleware goes LAST — Express only routes errors to a 4-arg handler
+  // registered after the routes that produce them. Captures 5xx, forwards to the self-heal
+  // bridge, then delegates to Express's default handler.
+  const { sentryErrorMiddleware } = await import("../os/sentryExpress");
+  app.use(sentryErrorMiddleware);
 
   const preferredPort = parseInt(process.env.PORT || "3000");
   const port = await findAvailablePort(preferredPort);

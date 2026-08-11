@@ -22,6 +22,7 @@ import {
   FileText, Send, Trash2, Eye, Code
 } from "lucide-react";
 import { getLoginUrl } from "@/const";
+import PsaIntegrations from "@/components/PsaIntegrations";
 
 // ─── Registration Form ────────────────────────────────────────────────────────
 const registerSchema = z.object({
@@ -277,6 +278,7 @@ export default function MspPortal() {
               <TabsTrigger value="customers">Customers</TabsTrigger>
               <TabsTrigger value="templates">Template Library</TabsTrigger>
               <TabsTrigger value="branding">White Label</TabsTrigger>
+              <TabsTrigger value="integrations">Integrations</TabsTrigger>
               <TabsTrigger value="activity">Activity Log</TabsTrigger>
             </TabsList>
             {activeTab === "customers" && (
@@ -532,6 +534,11 @@ export default function MspPortal() {
           {/* ─── MSP Template Library Tab ─── */}
           <TabsContent value="templates">
             <MspTemplateLibrary customers={customers} />
+          </TabsContent>
+
+          {/* ─── PSA Integrations Tab (PS-PSA-01) ─── */}
+          <TabsContent value="integrations">
+            <PsaIntegrations customers={customers as any} />
           </TabsContent>
         </Tabs>
       </div>

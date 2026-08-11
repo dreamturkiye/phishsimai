@@ -1,8 +1,12 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { sendApprovedReply, rejectReply } from './replyParser'
 
 const VALID = ['PROSPECT', 'ENGAGED', 'TRIAL', 'DEAD', 'CUSTOMER', 'NEGOTIATING'] as const
 type Cmd = (typeof VALID)[number]
+// PS-CHECKOUT-GATE-01: approval verbs take a numeric approval id, not a domain — handled ahead of
+// the stage commands below.
+const APPROVAL_CMDS = ['APPROVE_REPLY', 'REJECT_REPLY'] as const
 
 const STAGE: Record<Cmd, string> = {
   PROSPECT: 'prospect',
@@ -17,6 +21,15 @@ export async function processTelegramCommand(text: string): Promise<{ ok: boolea
   const parts = text.trim().split(/\s+/)
   if (parts.length < 2) {
     return { ok: false, message: 'Use: PROSPECT domain.com (or ENGAGED, CUSTOMER, DEAD, etc.)' }
+  }
+
+  // PS-CHECKOUT-GATE-01: APPROVE_REPLY <id> / REJECT_REPLY <id> — the human confirm on a held
+  // outbound draft (checkout link or reply). Send happens ONLY here, on the founder's tap/type.
+  const verb = parts[0].toUpperCase()
+  if (verb === 'APPROVE_REPLY' || verb === 'REJECT_REPLY') {
+    const id = Number(parts[1])
+    if (!Number.isFinite(id)) return { ok: false, message: `Use: ${verb} <id>` }
+    return verb === 'APPROVE_REPLY' ? sendApprovedReply(id) : rejectReply(id)
   }
 
   const cmd = parts[0].toUpperCase() as Cmd
@@ -53,7 +66,7 @@ export async function handleIncomingTelegram(update: any): Promise<void> {
   if (!msg || typeof msg !== 'string') return
 
   const upper = msg.trim().toUpperCase()
-  if (!VALID.some(c => upper.startsWith(c + ' '))) return
+  if (![...VALID, ...APPROVAL_CMDS].some(c => upper.startsWith(c + ' '))) return
 
   const result = await processTelegramCommand(msg)
   await sendTelegram(result.ok ? `✅ ${result.message}` : `⚠️ ${result.message}`)

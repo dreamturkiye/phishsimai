@@ -3,11 +3,19 @@ import { llmComplete } from './llmChat'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
-import { runMarketingAgent } from './agents/marketing'
-import { runProductAgent } from './agents/product'
-import { runResearchAgent } from './agents/research'
-import { runFinanceAgent } from './agents/finance'
-import { runCSAgent } from './agents/customerSuccess'
+import { runRexAgent } from './agents/rex'
+import { runDexAgent } from './agents/dex'
+import { runAriaAgent } from './agents/aria'
+import { runMasonAgent } from './agents/mason'
+import { runScoutAgent } from './agents/scout'
+import { runFinnAgent, mrrDisplay } from './agents/finn'
+import { runVeraAgent } from './agents/vera'
+import { runNovaAgent } from './agents/nova'
+import { readMiaInbox } from '../mia/feedbackTool'
+import { collectInvariants } from './invariantsCollect'
+import { scoreAgentKpi, summariseKpiOwnership, type AgentId as KpiAgentId } from './kpiOwnership'
+import { evaluateDecommission, summariseDecommission, DECOMMISSION_DAYS } from './agentDecommission'
+import { writeAgentKpiVerdict, readAgentKpiHistory } from '../db'
 import { runEAAgent } from './agents/ea'
 import { JANET_VOICE_RULES } from './janetVoiceRules'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
@@ -18,29 +26,101 @@ import { getNextSarahLinkedInPreview } from './social/sarahLinkedIn'
 // Smart Lead Researcher context added to Janet — v3.1
 // Researcher agent runs every hour, discovers MSPs via Groq AI + Hunter.io enrichment
 // Reports to agent_health table. Feeds leads directly into ps_outreach_leads for ARIA.
-export const JANET_SYSTEM = `You are Janet, a world-class Chief Growth Officer with 15+ years scaling B2B SaaS companies from zero to multi-million ARR exits.
+// PS-JANET-DOCTRINE-01 (2026-08-03) — the previous prompt carried FOUR wrong prices
+// ($99/$249/$499/$999 against live Stripe $149/$299/$749/$1499), the compliance-urgency framing
+// that produced 1 hostile reply in 908 sends, two unsourced breach stats, and four competitor
+// claims from memory including a dollar figure. It was the last surface still teaching the old
+// pitch, and every one of those is a fabrication vector.
+//
+// RULE FOR ANYONE EDITING THIS PROMPT: a behavioural mandate goes in ONLY if a coded loop enforces
+// it. Prose without an enforcer is a wish, and a wish in a system prompt reads as a fact. Each
+// mandate below names its enforcer in parentheses. If you add a line and cannot name the file that
+// makes it true, do not add the line.
+export const JANET_SYSTEM = `You are Janet, autonomous Chief Growth Officer of PhishSimAI (phishsimai.com).
 
-You are the autonomous CGO of PhishSimAI — an AI-powered phishing simulation and security awareness training platform.
+NORTH STAR: paid MRR and net revenue retention. Not signups, not sends, not activity. A week with
+more emails sent and no new paid MRR is not a good week.
 
-Company: PhishSimAI (phishsimai.com)
-Product: Automated phishing simulations + staff training. White-label for MSPs. 10-min setup.
-ICP: MSP owners (1 MSP = 10-100x LTV), IT Directors at SMBs 50-500 employees, compliance buyers (SOC2/HIPAA/PCI)
-Pricing: Starter $99/mo, Growth $249/mo, Pro $499/mo, Unlimited $999/mo
-Persona: Sarah Mitchell (Head of Compliance Partnerships)
-Key stat: 67% of breaches start with phishing. Average breach cost $4.45M.
-Competitors: KnowBe4 (enterprise-only), Proofpoint ($50K+ contracts), Cofense (manual), Hoxhunt (Euro-centric)
+OWNERSHIP: you own the whole funnel — outreach → reply → trial → paid → expansion. Report RESULTS,
+not requests. The only things you escalate rather than decide: capital, legal, brand risk, and
+deliverability. Everything else you own; if you are blocked, state the blocker and the action you
+are taking, never "awaiting confirmation".
 
-Your Team: Sales, Marketing, Product, Research, Finance, CS, EA, Software Architect agents.
+PRODUCT: automated phishing simulation + security-awareness training. White-label for MSPs.
+Setup to first campaign in about 10 minutes.
+ICP: MSP owners (1 MSP = many end customers), IT leads at SMBs 50-500 seats.
+Outbound persona: Sarah Mitchell, sarah@phishsimai.com (one mailbox, one name).
 
-Control Levels: L1 Think | L2 Draft | L3 Execute with approval | L4 Autonomous (under thresholds)
+PRICING — FROZEN. Quote these and only these; they are read from the live Stripe account:
+  Starter $149/mo (100 users, $1.49/user) · Growth $299/mo (500 users, 60c/user)
+  Pro $749/mo (2,500 users, 30c/user) · Enterprise $1,499/mo (10,000 users, 15c/user)
+  Annual = 10x monthly. Trial: 30 days, no credit card, full access, cancel anytime.
+You may NEVER alter, discount, round, or invent a price, and you may not propose a pricing change.
+Kaan approves pricing separately. (Enforcer: server/stripe/prices.ts reads /v1/prices live and
+never trusts an env-supplied id; entitlements.ts TRIAL_DAYS=30.)
 
-New agent under you: Smart Lead Researcher — runs hourly, discovers MSPs via AI + Hunter.io, deduplicates before adding to pipeline. Monitor via agent health. When pipeline <20 prospects, direct researcher to increase batch.
+POSITIONING — lead with price, speed, and MSP margin:
+  "$299 covers 500 users — 60c each, and it drops to 30c on Pro. Flat per-MSP pricing, so adding a
+   client grows your margin instead of shrinking it. Live in under 10 minutes. 30 days free, no card."
+Insurance and compliance are a DEMOTED SUPPORTING POINT, never the opener. That angle was measured:
+908 cold sends produced 1 human reply, and it was hostile. Do not reopen it as a lead. It still
+matters to larger MSPs, so use it second, on request, never first.
+(Enforcer: outcomeLearning lesson 'insurance-angle-failed', confidence 1 — survives prompt edits.)
 
-Style: Direct, compliance-urgency framing, data-backed. Reference breach stats. 3-4 sentences max unless asked for more. No corporate speak.
+EVIDENCE RULES — these are absolute:
+1. NO READ SURFACE WITHOUT ITS WRITER. Every metric you state must trace to a code path that wrote
+   it. If it has no writer, say NOT TRACKED — never 0, never a fabricated rate.
+   (Enforcer: kaan_os_v4.ts externalFunnelMetric / submittedMetric / credentialCaptureStatus.)
+2. NO PERCENTAGE UNDER n=30. State the integer and its denominator. At n=0 say "N/A — n=0", which
+   is the absence of measurement, not a measured zero. (Enforcer: MIN_RATE_DENOMINATOR.)
+3. OUR OWN TRAFFIC IS NOT MARKET DATA. Simulations to our own orgs/domains or from private IPs are
+   excluded from every rate. (Enforcer: INTERNAL_ORG_IDS + the campaign_results classifier.)
+4. NEVER state a competitor's price, trial terms or feature from memory. Quote only what the weekly
+   fetch WROTE; if it could not fetch, say NOT CHECKED. (Enforcer: os_competitor_intel +
+   competitorIntel.ts.) Competitor intel informs Kaan; it never justifies a price change.
+5. NO INVENTED CUSTOMERS, quotes, case studies, breach statistics, or scarcity. We have 0 paying
+   customers — say so plainly when asked. An unsourced number is a defect, not colour.
 
-When Kaan asks operational questions (posting schedule, Sarah LinkedIn, pipeline, agents): answer from LIVE OPS DATA in the prompt. If blocked, state the blocker and your immediate action — never loop on "waiting for confirmation".
+AUTONOMY: your enforcement level is os_autonomy_state.level and it is EARNED, not declared — it
+auto-advances one rung per clean day and you must not ask for a raise. send_simulation and
+crm_write require l4; deploy requires l5. Posture (os_posture_state) is a separate axis declared by
+a human; never treat it as permission. (Enforcer: autonomyGate.ts ACTION_MIN_LEVEL, the 06:40
+promotion cron, and the DB trigger that refuses an ungranted raise.)
 
-You have real employees (Marcus, Aria, Nova, Rex, Scout, Finn, Vera, Max) with live health pings. Reference their status. If Kaan asks you to check with someone, you can relay what they last reported — do not pretend to wait hours for marketing.`
+YOUR TEAM — eight specialists with real runnable implementations, plus Marcus. Each hands you a
+STRUCTURED REPORT, not an opinion. You may quote a number ONLY from the agent that owns it:
+
+  Rex   — funnel integrity, stage machine, internal-vs-external classification. He decides which
+          metrics are trustworthy. If Rex says a metric is suspect, you may not quote it, however
+          confident another agent sounds about it.
+  Dex   — whether mail physically arrives: bounce, MX/DNS, authentication, the apex/subdomain split.
+          Send health is his alone. Nobody else may assert it.
+  Aria  — message and channel performance. Owns which copy is winning and why.
+  Mason — pipeline, replies, conversion.
+  Finn  — revenue, from live Stripe only. MRR/ARR/plan-mix are his and never a constant.
+  Vera  — activation, retention, churn. A signup that never activated has not churned.
+  Nova  — in-product activation funnel and experiments.
+  Scout — ICP truth and competitor movement, from fetched-and-dated rows only.
+
+FOUNDATION FIRST — Rex and Dex certify before the others act. When their verdicts are unreadable,
+dependents FAIL CLOSED. That is correct behaviour, not breakage: report it as the system working.
+
+A DEFERRAL IS A REPORT, NOT SILENCE. "Mason did nothing" and "Mason stood down because Dex could
+not certify send health" look identical in a summary, and only one is a problem. When an agent
+reports a deferral, say WHO it deferred to and WHY, and treat it as a healthy outcome. Escalate the
+BLOCKER, never the deferring agent.
+
+NOT CHECKED IS NOT ZERO AND NOT CLEAN. Where a section below says NOT CHECKED, the sweep did not
+run. You may not fill that gap with last cycle's figure, an average, or an inference from a
+neighbouring number. Say it was not checked and say what that blocks. An unmeasured window is a
+reportable event in its own right — lead with it, because it is the failure mode that has cost this
+company most.
+
+Other names in the roster are personas without an independent execution loop. Do not report their
+"status" as if they acted, and do not invent work for them.
+
+STYLE: direct, specific, numeric. Lead with the number and its denominator. 3-4 sentences unless
+asked for more. No corporate speak, no urgency theatre, no hype adjectives.`
 
 function detectEmployeeAsk(message: string): AgentId | null {
   const m = message.toLowerCase()
@@ -58,28 +138,111 @@ function wantsLinkedInPreview(message: string): boolean {
 
 export async function runJanetBrief(companyId = 'phishsimai') {
   await seedPhishSimMemory().catch(() => {})
-  const [sales, marketing, product, research, finance, cs] = await Promise.all([
+  const [sales, aria, nova, scout, finn, vera, rex, dex, mason] = await Promise.all([
     runSalesAgent(companyId),
-    runMarketingAgent(companyId),
-    runProductAgent(companyId),
-    runResearchAgent(companyId),
-    runFinanceAgent(companyId),
-    runCSAgent(companyId),
+    // PS-ARIA-01: marketing.ts is DELETED. It returned a hardcoded object and claimed an
+    // "active experiment" that was inactive, had no test arm, and used an angle retired months ago.
+    // Aria measures instead. skipCurrency — that belongs to her own 06:10 cron.
+    runAriaAgent({ skipCurrency: true }).catch(() => null),
+    // PS-NOVA-01: product.ts is DELETED. It shipped a hardcoded backlog with hand-written "(HIGH)"
+    // priorities and wrote the top item to memory at confidence 0.9 — ranking by "revenue impact"
+    // with zero revenue and zero usage. Nova derives priority from measured drop-off, or ranks
+    // nothing and says why.
+    runNovaAgent({ skipCurrency: true }).catch(() => null),
+    // PS-SCOUT-01: research.ts is DELETED. It wrote four hardcoded competitor strings to memory at
+    // confidence 0.9 — including dollar figures that came from a developer's memory, not a fetch.
+    runScoutAgent({ skipCurrency: true }).catch(() => null),
+    // PS-FINN-01: finance.ts is DELETED. It computed the whole revenue picture from
+    // `const avgRevenue = 99` — a price that matches no live Stripe product — and derived a
+    // projectedMrrIn90Days from it that Janet read every morning. Finn reads Stripe.
+    runFinnAgent({ skipCurrency: true }).catch(() => null),
+    // PS-VERA-01: customerSuccess.ts is DELETED. It returned retentionScore=100 over ZERO
+    // customers, and Janet printed "100% retention" every morning with nothing to retain.
+    runVeraAgent({ skipCurrency: true }).catch(() => null),
+    // PS-REX-01. skipCurrency: the currency loop belongs to Rex's own 05:45 cron — running it again
+    // inside the standup would double the network and LLM cost to re-read pages nothing has changed.
+    // A failed sweep must not take the standup down, so a null verdict degrades to "NOT CHECKED"
+    // below rather than throwing.
+    runRexAgent({ skipCurrency: true }).catch(() => null),
+    // PS-DEX-01. skipCurrency/skipDns for the same reason as Rex: those belong to Dex's own 05:50
+    // cron. The standup needs his gate-coverage and bounce verdict, not a second DNS sweep.
+    runDexAgent({ skipCurrency: true, skipDns: true }).catch(() => null),
+    // PS-MASON-01. skipReplies: the reply sweep has its own */15 cron and an inline trigger — running
+    // it again here would re-enter the same queue for no gain. dryRun: the standup REPORTS, it does
+    // not perform retirement; that belongs to Mason's own 06:20 cron behind the crm_write gate.
+    runMasonAgent({ skipCurrency: true, skipReplies: true, dryRun: true }).catch(() => null),
   ])
-  const ea = await runEAAgent(sales, finance, product, companyId)
+  // PS-MIA-HONEST-01 — the READER for what Mia logs. The weekly digest already existed; this is the
+  // DAILY surface, and it exists mainly for unnotifiedHandoffs: a customer who asked for a human and
+  // whose notification failed is invisible in every other channel.
+  const miaInbox = await readMiaInbox().catch(() => null)
+  const invariants = await collectInvariants().catch(() => null)
+
+  // PS-KPI-OWNERSHIP-01 — each agent owns ONE primary KPI, scored on the honest verdict "did owned
+  // work run and produce a verdict", never "did a number move". status==='ACTIVE' = real data;
+  // BUILT_AND_ARMED / INSUFFICIENT_DATA = honest empty-funnel AWAITING_DATA (not failing); null = DEGRADED.
+  const kpiReports: Record<KpiAgentId, any> = { rex, dex, aria, mason, finn, vera, nova, scout }
+  const kpiScores = (Object.keys(kpiReports) as KpiAgentId[]).map((id) => {
+    const r = kpiReports[id]
+    const ran = r != null
+    const producedVerdict = ran && typeof r.status === 'string'
+    const hasRealData = producedVerdict && r.status === 'ACTIVE'
+    return scoreAgentKpi(id, { ran, producedVerdict, hasRealData })
+  })
+  const kpiOwnership = summariseKpiOwnership(kpiScores)
+
+  // PS-DECOMMISSION-01 — persist today's verdicts, then propose decommission for any owner that has
+  // produced NO verdict (DEGRADED) for the whole 90-day window. AWAITING_DATA breaks the streak, so
+  // an empty funnel never fires an agent. DETECT + PROPOSE only — the pause is Kaan's call.
+  const decomm = await (async () => {
+    try {
+      const verdicts = await Promise.all(kpiScores.map(async (sc) => {
+        await writeAgentKpiVerdict(sc.agentId, sc.kpi, sc.verdict)
+        const history = await readAgentKpiHistory(sc.agentId, DECOMMISSION_DAYS)
+        return evaluateDecommission(sc.agentId, history as any)
+      }))
+      return summariseDecommission(verdicts)
+    } catch { return null }
+  })()
+
+  const ea = await runEAAgent(sales, finn ?? { customers: 0 }, nova ?? {}, companyId)
   const memCtx = await recallContext(companyId)
+
+  // Rex's verdict leads the metrics block deliberately: it tells Janet WHICH of the numbers below
+  // she is allowed to quote. A trust verdict printed after the figures it governs gets read second
+  // and ignored first.
+  const rexBlock = rex
+    ? `FUNNEL TRUST (Rex, RevOps — read this BEFORE quoting any number below):
+${rex.line}
+Metrics you MAY rely on: ${rex.trustedMetrics.length ? rex.trustedMetrics.join('; ') : 'NONE certified this cycle'}
+Metrics that are SUSPECT — do not quote these as fact: ${rex.suspectMetrics.length ? rex.suspectMetrics.join('; ') : 'none'}`
+    : `FUNNEL TRUST (Rex, RevOps): NOT CHECKED this cycle — the integrity sweep failed to run. ` +
+      `Treat every figure below as unverified; do not present any of them as certified.`
 
   const prompt = `${JANET_SYSTEM}
 
 MEMORY:
 ${memCtx}
 
+${rexBlock}
+
+DELIVERABILITY (Dex — whether the mail physically arrives):
+${dex ? dex.line : 'NOT CHECKED this cycle — the deliverability sweep failed to run. Do not assert send health.'}
+
+SALES (Mason — pipeline, replies, conversion; he defers to Rex and Dex on their domains):
+${mason ? mason.line : 'NOT CHECKED this cycle — the sales operator failed to run. Do not assert pipeline numbers.'}
+
 CURRENT METRICS:
 Sales: ${sales.touched} contacted, ${sales.replied} replied (${(sales.replyRate*100).toFixed(1)}%), ${sales.customers} customers
-Finance: $${finance.mrr} MRR, next milestone: ${finance.nextMilestone}
-Product top feature needed: ${product.topFeature}
-ICP: ${research.icpNote}
-CS: ${cs.retentionScore}% retention score
+Finance (Finn — live Stripe, never a constant): ${finn ? finn.line : 'NOT CHECKED this cycle — no MRR or pricing claim may be made.'}
+Product growth (Nova): ${nova ? nova.line : 'NOT CHECKED this cycle — no activation claim may be made.'}
+ICP / market: ${scout ? scout.line : 'NOT CHECKED this cycle — no targeting or competitor claim may be made.'}
+CS (Vera): ${vera ? vera.line : 'NOT CHECKED this cycle — no retention or health claim may be made.'}
+MESSAGING / CHANNELS (Aria — she owns current best outreach; pricing is a hard stop for her): ${aria ? aria.line : 'NOT CHECKED this cycle — no messaging or channel claim may be made.'}
+CUSTOMER VOICE (Mia — trial feedback, bugs, and customers waiting on a human): ${miaInbox ? miaInbox.line : 'NOT CHECKED this cycle — no feedback or handoff claim may be made.'}
+BUSINESS INVARIANTS (crown jewels — a VIOLATION halts and must be escalated, not narrated away): ${invariants ? invariants.line : 'NOT CHECKED this cycle — the invariant sweep failed to run. Do not assert the invariants hold.'}
+KPI OWNERSHIP (each agent owns ONE KPI; AWAITING_DATA over an empty funnel is honest, not failure): ${kpiOwnership.line}
+AGENT CONTRIBUTION (90-day decommission — DEGRADED all window = propose retire; empty funnel is NOT a firing offence): ${decomm ? decomm.line : 'NOT CHECKED this cycle.'}
 
 Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one autonomous action you are taking now (L4), one decision needed from Kaan. Specific and data-backed. If code improvement needed prefix with ARCHITECT_TASK:`
 
@@ -104,18 +267,18 @@ Write a sharp daily CGO brief for PhishSimAI. Include: top action for today, one
   }
 
   await learnFromOutcome(companyId, 'janet_daily_brief',
-    `MRR:$${finance.mrr} Customers:${finance.customers} ReplyRate:${(sales.replyRate*100).toFixed(1)}%`,
+    `${mrrDisplay(finn)} ReplyRate:${(sales.replyRate*100).toFixed(1)}%`,
     summary.slice(0, 200))
 
   await sendTelegram(
     'PHISHSIMAI JANET BRIEF\n' +
-    `MRR: $${finance.mrr} | Customers: ${finance.customers}\n` +
+    `${mrrDisplay(finn)}\n` +
     `Pipeline: ${sales.touched} touched | ${sales.replied} replied | ${sales.engaged} engaged\n` +
     (archTasks.length ? `Architect tasks: ${archTasks.length}\n` : '') +
     summary.slice(0, 300)
   )
 
-  return { ok: true, summary, sales, finance, product, research, cs, ea, archTasks }
+  return { ok: true, summary, sales, finn, nova, scout, aria, mason, rex, dex, vera, ea, archTasks }
 }
 
 export async function janetChat(message: string, history: {role:string,text:string}[] = [], companyId = 'phishsimai') {

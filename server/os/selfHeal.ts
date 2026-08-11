@@ -6,6 +6,7 @@ import { COMPANY_ID } from './version'
 import { dispatchMarcusWake } from './wakeMarcus'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { guardMarcusAllowed, makeMarcusBreakerDeps } from './marcusBreaker'
+import { raiseEscalation } from './escalationNotify'
 
 async function ensureArchitectColumns() {
   const sql = getSql()
@@ -65,7 +66,11 @@ export async function openSystemAlert(key: string, detail: string, companyId = C
     await sendTelegram(
       `🚨 <b>JANET — SYSTEM ISSUE</b>\n` +
       `${key}: ${detail}\n` +
-      `Marcus dispatched autonomously if code fix is needed.`
+      // PS-MARCUS-LIE-01: state what ACTUALLY happens. openSystemAlert only records the alert +
+      // notifies — it does NOT dispatch Marcus (that path is queueJanetArchitectTask, autonomy-gated
+      // and never reached from here). Announcing a dispatch that didn't occur is the exact false
+      // system-state claim this fixes. Truth: alert raised, no autonomous action taken.
+      `Alert raised for review. No autonomous action taken.`
     )
   }
 }
@@ -198,6 +203,9 @@ export async function queueJanetArchitectTask(opts: {
         `Pipeline: dev → QA → prod. Instant wake — no poll delay.`
       )
     }
+    // PS-ESCALATION-COVERAGE-01: a real Marcus/architect dispatch is a high-signal event — route it
+    // to the founder early-warning path (escalation-notify), not just an easily-missed Telegram line.
+    await raiseEscalation('marcus_dispatch', { task: opts.task.slice(0, 200), taskId: id, source: opts.source || 'janet', bugId: opts.bugId ?? null })
     void dispatchMarcusWake(COMPANY_ID, { taskId: id, product: 'phishsim' })
     return id
   } catch (e: any) {

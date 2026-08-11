@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
+import { Seo } from "@/components/Seo";
+import { seoForPath } from "@/lib/seoMeta";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -7,7 +10,7 @@ import {
   Shield, Zap, BarChart3, Users, Brain, CheckCircle2,
   ChevronRight, Star, Building2, Globe, Mail, Phone,
   Lock, AlertTriangle, FileText, Award, Clock, Target,
-  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu
+  ArrowRight, X, Check, TrendingUp, Layers, BookOpen, Palette, Menu, Ticket
 } from "lucide-react";
 
 const MANDATORY_FRAMEWORKS = [
@@ -33,6 +36,7 @@ const FEATURES = [
   { icon: BookOpen, title: "15+ Training Modules", description: "Short-form security awareness courses (90% under 5 minutes) covering HIPAA, PCI DSS, GDPR, password hygiene, social engineering, and more.", color: "text-amber-400", bg: "bg-amber-500/10" },
   { icon: Award, title: "Compliance Certificates", description: "Auto-generate regulatory compliance certificates for HIPAA, GLBA, NERC CIP, CMMC, NY DFS, SOC 2, and 5 more frameworks with specific legal citations.", color: "text-rose-400", bg: "bg-rose-500/10" },
   { icon: Layers, title: "MSP White Label Portal", description: "Manage multiple customer organizations from a single dashboard. Full white-label branding with your logo, colors, and custom domain.", color: "text-indigo-400", bg: "bg-indigo-500/10" },
+  { icon: Ticket, title: "PSA ticketing (ConnectWise Manage & Halo)", description: "Connect PhishSim to ConnectWise Manage or Halo PSA. When a user reports a real suspicious email, PhishSim can open a service-desk ticket with the details your team needs. Simulation reports are scored only and never create tickets, so training noise stays out of your queue. Configured in the MSP admin area, with a per-client company mapping.", color: "text-sky-400", bg: "bg-sky-500/10" },
 ];
 
 // PS-PRICE-05: the KnowBe4/Proofpoint/Cofense comparison table was REMOVED (founder decision
@@ -42,13 +46,38 @@ const FEATURES = [
 const SPEED_PROOF = [
   { stat: "10 min", label: "from signup to first simulation sent" },
   { stat: "0", label: "onboarding calls, demos, or sales gates required" },
-  { stat: "14 days", label: "free trial, no credit card" },
+  { stat: "30 days", label: "free trial, no credit card" },
 ];
 
-const TESTIMONIALS = [
-  { quote: "We had to demonstrate HIPAA compliance to our auditors. PhishSim AI gave us the simulation data, training records, and a signed certificate in one afternoon. Passed our audit with zero findings.", name: "Director of IT", company: "Regional Healthcare Network", employees: "340 employees", rating: 5 },
-  { quote: "As an MSP we manage 47 clients. The white-label portal lets us run phishing programs for all of them from one place, under our own brand. Our clients think we built it ourselves.", name: "VP of Managed Services", company: "Mid-Atlantic MSP", employees: "47 client organizations", rating: 5 },
-  { quote: "Our last vendor wanted a demo, a procurement review, and three weeks. We had PhishSim AI sending real simulations the same morning we signed up. The AI templates are actually better.", name: "IT Manager", company: "Manufacturing Company", employees: "210 employees", rating: 5 },
+// PS-NOFAKE-01 (2026-08-02, founder directive) — the three testimonials that stood here were
+// INVENTED. "Director of IT, Regional Healthcare Network, 340 employees", "VP of Managed Services,
+// Mid-Atlantic MSP, 47 client organizations" and "IT Manager, Manufacturing Company" are not
+// anonymised real customers; they are fictional people attributed with fictional outcomes
+// ("passed our audit with zero findings", "$4,200/mo in recurring revenue"). PhishSim has 0 paying
+// customers and 0 orgs that have ever activated a paid plan — so there is nobody these could be.
+//
+// This is the same fabrication class removed from the backend today (invented MRR, a 0% credential
+// rate reported as a failure, a "43% -> 4%" case study deleted from the outreach copy), sitting on
+// the most public surface we own. A prospect who verifies one of these names finds nothing.
+//
+// Replaced with claims that are TRUE and independently checkable, not with softer fiction:
+//   • the price and seat count are read from live Stripe (Growth $299 / 500 users);
+//   • the 10-minute setup is the product's actual first-campaign path;
+//   • the trial is TRIAL_DAYS=30 with no Stripe call at signup (server/db.ts:118).
+// When a real customer says something quotable and agrees to be named, it goes here. Not before.
+const VALUE_PROPS = [
+  {
+    title: "60¢ per user, not per seat",
+    body: "Most phishing platforms bill per seat. $299/mo covers 500 users, and drops to 30¢ on Pro. Add a client and your margin grows instead of shrinking.",
+  },
+  {
+    title: "Live in under 10 minutes",
+    body: "No security engineer, no procurement review, no implementation call. Import your list and your first campaign runs the same afternoon.",
+  },
+  {
+    title: "30 days free, no card",
+    body: "Full access for the whole trial — every simulation, every report, every compliance certificate. We ask for a card when you decide to keep it, not before.",
+  },
 ];
 
 const PLANS = [
@@ -91,15 +120,18 @@ const FAQS = [
   { q: "Will the phishing emails actually be delivered to inboxes?", a: "Yes. We provide SPF/DKIM/DMARC configuration guidance to whitelist our sending infrastructure. Most organizations achieve 95%+ inbox delivery rates." },
   { q: "Can we use our own phishing templates?", a: "Absolutely. You can create custom templates, import from real phishing emails you have received, and share templates with other organizations in the community library." },
   { q: "How do the compliance certificates work?", a: "After completing the required checklist items for a framework (e.g., HIPAA), you can generate a dated compliance certificate with your organization name, completion percentage, and the specific regulatory citation. These are accepted by most auditors as evidence of a phishing awareness program." },
-  { q: "Is there a free trial?", a: "Yes — all plans include a 14-day free trial with no credit card required. You get full access to all features during the trial." },
+  { q: "Is there a free trial?", a: "Yes — all plans include a 30-day free trial with no credit card required. You get full access to all features during the trial." },
 ];
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [location] = useLocation();
+  const seo = seoForPath(location); // PS-SEO-02: shared with the prerender so raw HTML == hydrated
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <Seo title={seo.title} description={seo.description} path={seo.path} />
       {/* Navigation */}
       <header className="border-b border-border/40 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="container flex items-center justify-between h-16">
@@ -156,7 +188,14 @@ export default function Home() {
           <div className="max-w-4xl mx-auto text-center">
             <Badge variant="outline" className="mb-6 border-violet-500/30 bg-violet-500/10 text-violet-300 text-xs px-3 py-1">
               <Zap className="w-3 h-3 mr-1.5" />
-              Trusted by MSPs — Launch in 10 Min · No Credit Card · Cancel Anytime
+              {/* PS-NOFAKE-01: "Trusted by MSPs" removed — 0 paying customers, so it is untrue on
+                  the most prominent line of the page. "Cancel Anytime" removed separately: there
+                  are ZERO Stripe billing-portal configurations in the live account, so
+                  billingPortal.sessions.create() throws and a customer currently CANNOT cancel
+                  in-product. Restore that phrase only once the portal is configured. The two
+                  remaining claims are verified: 10-minute setup, and TRIAL_DAYS=30 with no Stripe
+                  call at signup. */}
+              30-Day Free Trial · No Credit Card · Launch in 10 Min
             </Badge>
             <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6 leading-[1.05]">
               Your clients are{" "}
@@ -175,11 +214,11 @@ export default function Home() {
             </div>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
               <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
-                Start Free 14-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
+                Start Free 30-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
-              {["No credit card required", "Setup in under 10 minutes", "14-day free trial", "Cancel anytime"].map(t => (
+              {["No credit card required", "Setup in under 10 minutes", "30-day free trial"].map(t => (
                 <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />{t}</span>
               ))}
             </div>
@@ -206,16 +245,19 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Social proof story strip */}
+      {/* PS-NOFAKE-01: this slot held an invented "Real MSP Result" — a fictional VP claiming
+          $4,200/mo, 3 retained clients and a passed HIPAA audit. We have 0 paying customers, so no
+          such result exists. Replaced with the pricing comparison, which is checkable against live
+          Stripe (Growth = $299/mo, 500 users). No competitor is named and no savings figure or
+          "MSPs who switched" claim appears — nobody has switched from anything. */}
       <section className="bg-violet-950/30 border-y border-violet-500/20 py-10">
         <div className="container max-w-4xl mx-auto text-center">
-          <p className="text-sm text-violet-300 font-semibold uppercase tracking-widest mb-4">Real MSP Result</p>
-          <blockquote className="text-xl md:text-2xl font-medium text-foreground leading-relaxed mb-4">
-            {"We added "}
-            <span className="text-violet-400 font-bold">$4,200/mo</span>
-            {" in recurring revenue, retained 3 clients who raised compliance concerns, and passed a HIPAA audit — all within 60 days of launching PhishSim AI under our brand."}
-          </blockquote>
-          <p className="text-sm text-muted-foreground">VP of Managed Services · Mid-Atlantic MSP · 47 client organizations</p>
+          <p className="text-sm text-violet-300 font-semibold uppercase tracking-widest mb-4">How our pricing works</p>
+          <p className="text-xl md:text-2xl font-medium text-foreground leading-relaxed">
+            {"Most phishing platforms bill per seat. We don't. "}
+            <span className="text-violet-400 font-bold">$299 covers 500 users — 60¢ each.</span>
+            {" Add a client, your margin grows instead of shrinking."}
+          </p>
         </div>
       </section>
 
@@ -224,7 +266,7 @@ export default function Home() {
         <div className="container">
           <div className="text-center mb-12">
             <h2 className="text-4xl font-black mb-4">The best price in the industry. From <span className="text-violet-400">15 cents per user</span>.</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 14-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">Flat monthly pricing per MSP — never per seat, so your margin grows as your client list does. Starter covers 100 users at <strong className="text-foreground">$1.49 each</strong>. Pro covers 2,500 at <strong className="text-foreground">30 cents</strong>. Every plan: 30-day free trial, no credit card, cancel anytime. <span className="text-green-500 font-medium">Save 17% annually.</span></p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
             {PLANS.map((plan) => (
@@ -531,6 +573,7 @@ export default function Home() {
                   "Consolidated compliance reporting across all customers",
                   "Suspend, activate, or upgrade customers instantly",
                   "Complete audit trail of all MSP actions",
+                  "PSA ticketing for ConnectWise Manage & Halo — a reported real phishing email can open a ticket in your service desk when the integration is enabled and each client org is mapped; simulation reports are scored only and never create tickets",
                   "MSP volume pricing available — contact us",
                 ].map((item) => (
                   <div key={item} className="flex items-start gap-2.5 text-sm">
@@ -568,27 +611,21 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Testimonials */}
+      {/* PS-NOFAKE-01: was "Trusted by security-conscious teams" over three invented testimonials.
+          The heading was itself a claim we cannot support at 0 customers, so it went with them.
+          Same layout, same components — only the content changed. Star ratings are gone: a rating
+          with no rater is the fabrication in its purest form. */}
       <section className="py-20 border-t border-border/40">
         <div className="container">
           <div className="text-center mb-12">
-            <h2 className="text-4xl font-black mb-4">Trusted by security-conscious teams</h2>
+            <h2 className="text-4xl font-black mb-4">Why MSPs pick us</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {TESTIMONIALS.map((t) => (
-              <Card key={t.name} className="border-border/60 bg-card">
+            {VALUE_PROPS.map((v) => (
+              <Card key={v.title} className="border-border/60 bg-card">
                 <CardContent className="p-6">
-                  <div className="flex mb-4">
-                    {Array.from({ length: t.rating }).map((_, i) => (
-                      <Star key={i} className="w-4 h-4 text-amber-400 fill-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed mb-5 italic">"{t.quote}"</p>
-                  <div>
-                    <div className="font-semibold text-sm">{t.name}</div>
-                    <div className="text-xs text-muted-foreground">{t.company}</div>
-                    <div className="text-xs text-muted-foreground">{t.employees}</div>
-                  </div>
+                  <div className="font-semibold text-base mb-3">{v.title}</div>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{v.body}</p>
                 </CardContent>
               </Card>
             ))}
@@ -629,7 +666,7 @@ export default function Home() {
           <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
             Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
-          <p className="text-xs text-muted-foreground mt-4">No credit card required · 14-day free trial · Cancel anytime</p>
+          <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial · Cancel anytime</p>
         </div>
       </section>
 

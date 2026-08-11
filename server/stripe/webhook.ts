@@ -47,6 +47,32 @@ export function registerStripeWebhook(app: Express): void {
           return res.json({ verified: true });
         }
 
+        // PS-STRIPE-IDEMPOTENCY-01: Stripe RETRIES until it gets a 2xx (network blip, slow response,
+        // a transient throw). Without dedup, a retry re-runs provisioning — re-activating a cancelled
+        // plan or double-counting a CRM conversion. CHECK here (read-only), and RECORD only AFTER a
+        // SUCCESSFUL 2xx (see the end of the handler). Recording only on success is deliberate: the
+        // unknown-price path returns 400 ON PURPOSE so the founder can fix the price and Stripe
+        // REPLAYS — recording-before-process would make that replay skip and leave a paid customer
+        // dark forever. Best-effort: if the dedup store is unreachable we process rather than drop a
+        // real payment.
+        try {
+          const { getDb } = await import("../db");
+          const { sql } = await import("drizzle-orm");
+          const db = await getDb();
+          if (db) {
+            await db.execute(sql`CREATE TABLE IF NOT EXISTS stripe_processed_events (
+              event_id TEXT PRIMARY KEY, event_type TEXT, processed_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+            const seen: any = await db.execute(sql`SELECT 1 FROM stripe_processed_events WHERE event_id = ${event.id} LIMIT 1`);
+            const rows = Array.isArray(seen) ? seen : (seen?.rows ?? []);
+            if (rows.length > 0) {
+              console.log(`[Webhook] duplicate event ${event.id} (${event.type}) — already processed, skipping`);
+              return res.json({ received: true, duplicate: true });
+            }
+          }
+        } catch (e) {
+          console.error("[Webhook] idempotency check unavailable, processing anyway:", (e as Error)?.message);
+        }
+
         if (event.type === "checkout.session.completed") {
           const session = event.data.object as {
             metadata?: { org_id?: string; price_id?: string; lead_id?: string; plan?: string };
@@ -148,6 +174,18 @@ export function registerStripeWebhook(app: Express): void {
           }
         }
 
+        // PS-STRIPE-IDEMPOTENCY-01: processing SUCCEEDED — record the event so a Stripe retry is a
+        // no-op. Only reached on the 2xx path; the 400 (unknown-price) returns never get here, so a
+        // fixed-and-replayed event still reprocesses. Best-effort — never fail a real payment over
+        // the bookkeeping insert.
+        try {
+          const { getDb } = await import("../db");
+          const { sql } = await import("drizzle-orm");
+          const db = await getDb();
+          if (db) await db.execute(sql`INSERT INTO stripe_processed_events (event_id, event_type) VALUES (${event.id}, ${event.type}) ON CONFLICT (event_id) DO NOTHING`);
+        } catch (e) {
+          console.error("[Webhook] failed to record processed event (non-fatal):", (e as Error)?.message);
+        }
         return res.json({ received: true });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown";

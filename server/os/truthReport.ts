@@ -18,7 +18,7 @@
  */
 
 import { getSql } from './conn'
-import { getSequenceHealth, PAUSE_ON_BOUNCE_RATE } from './sequences'
+import { getSequenceHealth } from './sequences'
 import { sendTelegram } from './telegram'
 
 /** The endpoint prod is REQUIRED to be on. A local file that says otherwise is the bug, not this. */
@@ -42,7 +42,7 @@ function pct(n: number, d: number): string {
  * table = where this cron's output lands. If max(created_at) is stale, the cron is dead
  * no matter what its last invocation returned.
  */
-const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string }[] = [
+export const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string }[] = [
   // Measured on the touch timestamps, NOT stage_updated_at: this cron's output is EMAIL SENT.
   // stage_updated_at moves on any row edit (a backfill, a manual quarantine), so it reports
   // green on days nothing was sent. The signal must be the thing the cron exists to produce.
@@ -52,11 +52,21 @@ const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: string 
     table: 'ps_outreach_leads',
     col: 'GREATEST(touch1_sent_at, touch2_sent_at, touch3_sent_at, touch4_sent_at)',
   },
+  // PS-SEND-HEALTH-02 — who watches the send-health watcher. The 08:30 outreach-funnel is the
+  // FAST send tripwire: it fires "🚨 SEND CRON DID NOT RUN" the same morning a 07:00 send is
+  // missed (via agent_health 'aria'). But nothing watched the WATCHER — if the funnel itself
+  // stopped running, its absence read as silence, exactly the failure the founder called out
+  // ("no news should mean the monitor died, not that things are fine"). The funnel is the ONLY
+  // writer of credit_readings, so a stale read_at here means the send-health check went dark, and
+  // this line makes the 06:00 truth report say so. Belt (this, fast-monitor liveness) and braces
+  // (the /api/os/sequence row above, which independently RED-flags a >26h-old last send).
+  { cron: '/api/os/outreach-funnel', schedule: '30 8 * * *', table: 'credit_readings', col: 'read_at' },
   { cron: '/api/os/researcher', schedule: '*/30 * * * *', table: 'lead_research_queue', col: 'created_at' },
   { cron: '/api/os/janet', schedule: '0 8 * * *', table: 'janet_memory', col: 'created_at' },
   { cron: '/api/os/metrics-snapshot', schedule: '0 6 * * *', table: 'metrics_daily', col: 'created_at' },
   { cron: '/api/os/founder-brief', schedule: '0 21 * * *', table: 'founder_briefs', col: 'created_at' },
   { cron: '/api/os/heartbeat', schedule: '0 * * * *', table: 'agent_health', col: 'updated_at' },
+  { cron: '/api/os/deploy-verify', schedule: '0 * * * *', table: 'deploy_verifications', col: 'checked_at' },
   { cron: '/api/os/qa-smoke', schedule: '0 */6 * * *', table: 'qa_runs', col: 'created_at' },
   { cron: '/api/os/escalation-notify', schedule: '*/15 * * * *', table: 'escalations', col: 'created_at' },
   { cron: '/api/os/sarah-social', schedule: '0 10,16 * * *', table: 'os_social_queue', col: 'created_at' },
@@ -118,38 +128,48 @@ export async function buildTruthReport(): Promise<string> {
     `BOUNCED        ${health.bounced} of ${health.sent} lifetime (${pct(health.bounced, health.sent)})`,
   )
   L.push(
-    `BREAKER        ${health.paused ? RED + ' TRIPPED' : OK + ' armed'} — ${(health.rate * 100).toFixed(1)}% vs ${(PAUSE_ON_BOUNCE_RATE * 100).toFixed(0)}% threshold` +
+    `BREAKER        ${health.paused ? RED + ' TRIPPED' : OK + ' armed'} — ${(health.rate * 100).toFixed(1)}% vs ${(health.threshold * 100).toFixed(2)}% threshold (Dex-derived)` +
       (health.paused ? ' — OUTBOUND HALTED' : ''),
   )
 
-  // DELIVERED/OPENED/CLICKED live in Resend, not here. Open+click tracking are disabled on the
-  // domain, so they are unknowable for every send to date. Rule 2: say so, do not print 0.
-  L.push(`DELIVERED      ${NOT_MEASURED} — not mirrored into this DB (authoritative: Resend API)`)
-  L.push(`OPENS/CLICKS   ${RED} ${NOT_MEASURED} — open_tracking + click_tracking DISABLED on domain`)
+  // PS-LABEL-HONESTY-01: these are NOT broken instruments — they are elsewhere / off by choice, so
+  // label them n/a-here rather than the alarming "NOT MEASURED", which is reserved for a real
+  // instrument that should have data and doesn't. Delivery is authoritative in Resend; outreach
+  // open/click tracking is deliberately OFF on this domain (product tracking uses our own /t/,/c/).
+  L.push(`DELIVERED      n/a here → Resend API is authoritative (not mirrored into this DB)`)
+  L.push(`OPENS/CLICKS   n/a — outreach open/click tracking OFF by choice (Resend); enable to measure`)
 
+  // PS-PHANTOM-02: `replied` is a REAL metric with a working writer (replyParser + the live
+  // /api/os/webhook/reply endpoint), so a zero is NOT a phantom — it is bucket-2 "no data yet".
+  // But because `replied` is only ever written on capture, a zero cannot itself distinguish
+  // "no prospect has replied" from "the inbound relay is not delivering". Say exactly that,
+  // rather than a bare NOT_MEASURED that reads as broken.
   const repliesMeasurable = await measurability(sql, 'replied')
   L.push(
-    `REPLIES        ${repliesMeasurable ? String((await sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE replied`)[0].n) : RED + ' ' + NOT_MEASURED + ' — nothing has ever written replied'}`,
+    `REPLIES        ${repliesMeasurable ? String((await sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE replied`)[0].n) : '0 so far — inbound relay UNVERIFIED (endpoint live; no reply ever captured, so this is "no data yet", not confirmed-zero)'}`,
   )
 
-  // ---- AMF CREDITS (PS-SHARED-AMF-01) ----
-  // One AMF account, SHARED with ScrollFuel, finite pool. If it empties BOTH products go dark with
-  // a 402 (not a 401) — different error, same silence. Surfaced here so the pool is never invisible.
+  // ---- ICYPEAS CREDITS (PS-FINDER-ICYPEAS-01) ----
+  // The finder is now Icypeas (AMF's shared pool hit 0). Still SHARED with ScrollFuel — one 1,000
+  // pool, two products — so if it empties BOTH products' enrichment goes dark. Surfaced here so the
+  // shared pool is never invisible. Simple raw-key auth on the subscription-information route.
   try {
-    const amfRes = await fetch('https://api.anymailfinder.com/v5.1/account', {
-      headers: { Authorization: 'Bearer ' + (process.env.ANYMAILFINDER_API_KEY ?? '') },
+    const icyRes = await fetch('https://app.icypeas.com/api/a/actions/subscription-information', {
+      method: 'POST',
+      headers: { Authorization: (process.env.ICYPEAS_API_KEY ?? ''), 'Content-Type': 'application/json' },
+      body: '{}',
       signal: AbortSignal.timeout(8000),
     })
-    if (amfRes.ok) {
-      const acct = (await amfRes.json()) as { credits_left?: number }
-      const c = Number(acct?.credits_left ?? NaN)
-      const flag = !Number.isFinite(c) ? RED : c < 50 ? RED : OK
-      L.push(`AMF CREDITS    ${flag} ${Number.isFinite(c) ? c + ' left (SHARED with ScrollFuel — empty = both dark, 402)' : NOT_MEASURED}`)
+    if (icyRes.ok) {
+      const acct = (await icyRes.json()) as { credits?: number }
+      const c = Number(acct?.credits ?? NaN)
+      const flag = !Number.isFinite(c) ? RED : c < 200 ? RED : OK
+      L.push(`ICYPEAS CREDITS ${flag} ${Number.isFinite(c) ? Math.floor(c) + ' left (SHARED with ScrollFuel — empty = both dark)' : NOT_MEASURED}`)
     } else {
-      L.push(`AMF CREDITS    ${RED} account check HTTP ${amfRes.status} (401=key invalid, 402=pool empty)`)
+      L.push(`ICYPEAS CREDITS ${RED} account check HTTP ${icyRes.status} (401=key invalid)`)
     }
   } catch {
-    L.push(`AMF CREDITS    ${RED} ${NOT_MEASURED} — AMF account endpoint unreachable`)
+    L.push(`ICYPEAS CREDITS ${RED} ${NOT_MEASURED} — Icypeas account endpoint unreachable`)
   }
 
   // ---- LEADS: real vs fabricated vs unenriched ----

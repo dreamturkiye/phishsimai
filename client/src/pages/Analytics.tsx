@@ -202,8 +202,18 @@ export default function Analytics() {
               </div>
             </div>
             <div className="text-right">
-              <div className="text-5xl font-bold text-primary">{analytics?.postureScore ?? 0}</div>
-              <div className="text-sm text-muted-foreground">/ 100</div>
+              {/* PS-POSTURE-HONEST-01: an unmeasured posture says so. Never 0, never a default 50. */}
+              {analytics?.postureScore == null ? (
+                <>
+                  <div className="text-2xl font-semibold text-muted-foreground">Not enough data yet</div>
+                  <div className="text-sm text-muted-foreground">run a campaign to establish a baseline</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-5xl font-bold text-primary">{analytics.postureScore}</div>
+                  <div className="text-sm text-muted-foreground">/ 100</div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>

@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import TrialBanner from "./TrialBanner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getLoginUrl } from "@/const";
@@ -165,6 +166,17 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
   }
 
   // Only now — the query resolved and the user genuinely has no org — go to setup.
+  // PS-ONBOARD-01: "resolved" is not the same as "current". A CACHED empty list is also
+  // defined, so right after org creation this branch fired against pre-creation data and
+  // bounced the user back to /setup holding a success toast. If a refetch is in flight the
+  // answer is still moving — wait for it rather than acting on data we know is stale.
+  if (orgs.length === 0 && orgsQuery.isFetching) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
   if (orgs.length === 0) {
     navigate("/setup");
     return null;
@@ -304,6 +316,9 @@ export default function AppLayout({ children, title, actions }: AppLayoutProps) 
           {title && <h1 className="font-semibold text-base flex-1">{title}</h1>}
           {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
         </header>
+
+        {/* PS-TRIAL-01: trial countdown / upgrade nudge */}
+        <TrialBanner orgId={currentOrg?.id} />
 
         {/* Page content */}
         <div className="flex-1 p-4 lg:p-6">

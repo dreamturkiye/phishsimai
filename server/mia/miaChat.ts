@@ -14,6 +14,13 @@ import {
 import { llmComplete } from '../os/llmChat'
 import { sendTelegram } from '../os/telegram'
 import { rememberFact } from '../os/memory'
+import {
+  classifyFeedbackContent,
+  detectHandoffRequest,
+  recordFeedbackVerified,
+  requestHumanHandoff,
+  type ActionResult,
+} from './feedbackTool'
 
 const FEEDBACK_PATTERNS =
   /\b(feedback|suggest(ion)?|confus(ed|ing)|frustrat(ed|ing)|bug|broken|doesn'?t work|improve(ment)?|wish|hard to|difficult|missing feature|feature request|report)\b/i
@@ -38,6 +45,9 @@ export interface MiaChatInput {
   explicitFeedback?: boolean
   feedbackCategory?: 'bug' | 'ux' | 'feature' | 'praise' | 'other'
   rating?: number
+  /** IANA zone from the browser. The contact FORM is a later build; this one field ships now
+   *  because without it a stated call time cannot be resolved at all. */
+  timezone?: string
 }
 
 export interface MiaChatResult {
@@ -289,24 +299,110 @@ export async function miaChat(input: MiaChatInput): Promise<MiaChatResult> {
 
   const memory = memRow?.memory ?? ''
 
-  const isFeedback = input.explicitFeedback || FEEDBACK_PATTERNS.test(input.message)
-  let feedbackRecorded = false
-  if (isFeedback && input.message.trim().length >= 8) {
-    await recordProductFeedback({
+  // ── PS-MIA-HONEST-01 — THE ACTION ALWAYS ATTEMPTS; THE CLAIM FOLLOWS THE RESULT ──
+  //
+  // Previously: a regex match set `feedbackRecorded = true` WITHOUT checking the write, and fired
+  // on INTENT as readily as on content. The only row in production is a user asking WHETHER they
+  // could give feedback — logged, and acknowledged as logged.
+  //
+  // Now: content is classified first, the write result is inspected, and every sentence Mia is
+  // permitted to say is derived from an outcome that actually happened.
+  const contentVerdict = input.explicitFeedback
+    ? (input.message.trim().length >= 12 ? 'content' : 'intent_only')
+    : classifyFeedbackContent(input.message)
+
+  const conversationContext = memory ? `prior context: ${memory}` : undefined
+
+  let feedbackResult: ActionResult | null = null
+  if (contentVerdict === 'content') {
+    feedbackResult = await recordFeedbackVerified({
       userId: input.userId,
       orgId: input.orgId,
       message: input.message,
+      conversationContext,
       pathname,
       category: input.feedbackCategory,
       rating: input.rating,
     })
-    feedbackRecorded = true
   }
+  // THE GATE: an id, or no claim. Nothing else may set this true.
+  const feedbackRecorded = feedbackResult?.ok === true
+
+  // ── Human handoff. The human is Kaan; nothing else contacts this customer. ──
+  const handoffKind = detectHandoffRequest(input.message)
+  let handoffResult: ActionResult | null = null
+  if (handoffKind) {
+    handoffResult = await requestHumanHandoff({
+      userId: input.userId,
+      orgId: input.orgId,
+      kind: handoffKind,
+      message: input.message,
+      conversationContext,
+      pathname,
+      // Name / phone / best-time come from the contact form, which is NOT built yet — they arrive
+      // null and the Telegram says so rather than implying they were collected.
+      // The EMAIL is not from the form: requestHumanHandoff resolves the logged-in account address
+      // itself (PS-MIA-REACHABLE-01), so it cannot be lost by a caller that forgets to pass it.
+      contact: { timezone: input.timezone },
+    })
+  }
+  const handoffFlagged = handoffResult?.ok === true && handoffResult.notified === true
+  // PS-MIA-REACHABLE-01. Being told is not the same as being able to answer. Mia may promise an
+  // EMAIL only when the notification actually carried an address — otherwise "Kaan will email you
+  // shortly" is a promise that was delivered and still cannot be kept, which is the exact defect
+  // this ticket exists to remove.
+  const handoffReachable = handoffResult?.ok === true && handoffResult.reachable === true
 
   const activationBlock =
     `Activation: step ${activation.step}/${activation.totalSteps} (${activation.label}). ` +
     `Targets: ${activation.targetCount}, campaigns: ${activation.campaignCount}, launched: ${activation.launchedCount}. ` +
     `Next: ${activation.nextAction} Link: ${activation.nextLink}`
+
+  // Every sentence Mia is permitted to say about an action is derived HERE, from a verified
+  // outcome — never from the model's impression that something probably happened.
+  const actionLines: string[] = []
+
+  if (contentVerdict === 'intent_only') {
+    actionLines.push(
+      'They ASKED WHETHER they can give feedback — they have not given any yet. Nothing was logged, ' +
+      'and you must NOT say anything was. Tell them yes, and ask them to describe it now.',
+    )
+  } else if (feedbackRecorded) {
+    actionLines.push('Their feedback WAS logged successfully. You may confirm that plainly, once.')
+  } else if (feedbackResult && !feedbackResult.ok) {
+    actionLines.push(
+      "The attempt to log their feedback FAILED. Say honestly: \"I couldn't log that just now\" and " +
+      'ask them to email sales@phishsimai.com so it is not lost. Do NOT say it was logged.',
+    )
+  }
+
+  if (handoffKind) {
+    if (handoffFlagged && handoffReachable) {
+      actionLines.push(
+        'They asked for a human, and the request WAS flagged to Kaan successfully, WITH their ' +
+        'account email attached so he can reply. You may say: ' +
+        '"I\'ve flagged this — Kaan will email you shortly." Do not promise a phone call or a time window. ' +
+        'Do NOT ask them for their email address: we already have it and asking implies we do not.',
+      )
+    } else if (handoffFlagged) {
+      // Told, but unanswerable. The honest sentence is the one that gets an address, not the one
+      // that promises a reply we have no way to send.
+      actionLines.push(
+        'They asked for a human and the request WAS flagged to Kaan — but we have NO email address ' +
+        'on file for this account, so he cannot reply. You may say it is flagged. You may NOT say ' +
+        'he will email them. Ask them for the best address to reach them on, and give them ' +
+        'sales@phishsimai.com as a channel they can use right now.',
+      )
+    } else {
+      actionLines.push(
+        'They asked for a human and the request FAILED to go through. Say honestly that you could not ' +
+        'flag it, and give them sales@phishsimai.com as the direct channel. Do NOT promise contact.',
+      )
+    }
+  }
+
+  if (!actionLines.length) actionLines.push('No action was taken this message. Do not claim any.')
+  const actionBlock = actionLines.map((l) => `- ${l}`).join('\n')
 
   const system = `You are Mia, customer success specialist at PhishSim AI. Warm, practical, concise — never say you are an AI.
 
@@ -321,7 +417,7 @@ Product map:
 - Compliance (/compliance) = HIPAA/SOC2/PCI audit reports
 - Settings (/settings) = org & billing
 
-Pricing: Starter $99/mo, Growth $249, Pro $499, Unlimited $999. 14-day free trial.
+Pricing (live Stripe, FROZEN — never alter): Starter $149/mo (100 users), Growth $299/mo (500 users), Pro $749/mo (2,500 users), Enterprise $1,499/mo (10,000 users). Annual = 10x monthly. 30-day free trial, no credit card, cancel anytime.
 
 Current page: ${pathname}. ${pageGuide}
 
@@ -330,12 +426,34 @@ ${activationBlock}
 Org: ${orgName}, plan: ${plan}.
 ${memory ? `User memory: ${memory}` : ''}
 
+REALITY BOUNDARY — READ THIS BEFORE ANSWERING ANYTHING.
+You may ONLY reference features, pages, buttons and actions that are listed in this prompt. If it is
+not listed here, IT DOES NOT EXIST and you must not mention it, even if products like this usually
+have one. Your failure mode is confident invention of plausible-but-false product facts, and a false
+fact told to a paying customer costs more than an unanswered question.
+
+Specifically:
+- NEVER describe a UI element, icon, menu, button or its screen position. You cannot see their
+  screen and you do not have a reliable map of it. Guide by PAGE PATH only (e.g. "go to /targets").
+- There is NO "Talk to Sales" option, NO live-chat-with-a-human, NO phone line, NO support ticket
+  system, and NO help centre. You are the only in-app support channel that exists.
+- NEVER promise that someone will contact them unless the system tells you below that a request was
+  actually flagged. "Someone will reach out" with nothing behind it is a broken promise.
+- NEVER claim to have logged, saved, filed, escalated or sent anything unless told below that it
+  succeeded.
+- If you do not know whether something exists, say what you CAN do instead of guessing. "I'm not
+  able to do that from here, but I can ..." is always better than inventing a path.
+
+WHAT ACTUALLY EXISTS: the pages in the product map above, this chat, and Kaan (the founder), who
+can be reached at sales@phishsimai.com and whom I can flag urgent requests to.
+
 Rules:
 - Max 3 sentences unless they ask for steps.
 - Include deep links like "Go to /targets" when guiding.
-- If they share feedback or frustration, thank them and say the team will review it.
 - Proactively nudge toward the next activation step if they seem stuck.
-${feedbackRecorded ? '- You just logged their feedback — acknowledge that.' : ''}`
+
+ACTION RESULTS FOR THIS MESSAGE — these are the ONLY action claims you may make:
+${actionBlock}`
 
   const chat = await llmComplete({
     messages: [

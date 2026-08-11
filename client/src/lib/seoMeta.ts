@@ -1,0 +1,109 @@
+// PS-SEO-02: single source of truth for per-route marketing meta. Used by BOTH the client <Seo>
+// component (hydration) and the build-time prerender (raw HTML) so the two can never drift. The
+// prerender bakes headTags() into the served <head>; helmet re-applies the same values client-side.
+import { getPost } from "@/content/blog";
+
+const SITE = "https://phishsimai.com";
+const OG = `${SITE}/brand/phishsim-og-1200x630.png`;
+
+export interface RouteMeta {
+  title: string;
+  description: string;
+  path: string;
+}
+
+function blogSlug(pathname: string): string | null {
+  if (!pathname.startsWith("/blog/")) return null;
+  return pathname.slice("/blog/".length).replace(/\/$/, "") || null;
+}
+
+export function seoForPath(pathname: string): RouteMeta {
+  const slug = blogSlug(pathname);
+  if (slug) {
+    const post = getPost(slug);
+    if (post) return { title: post.title, description: post.description, path: `/blog/${slug}` };
+  }
+  if (pathname.startsWith("/pricing")) {
+    return {
+      title: "PhishSim AI Pricing — MSP Phishing Simulation from $149/mo",
+      description: "Transparent per-seat pricing for MSPs: Starter $149, Growth $299, Pro $749, Enterprise $1,499/mo. AI phishing simulations, training, and compliance reporting. 30-day free trial, no card required.",
+      path: "/pricing",
+    };
+  }
+  if (pathname.startsWith("/privacy")) {
+    return {
+      title: "Privacy Policy — PhishSim AI",
+      description: "How PhishSim AI collects, uses, and protects data for phishing simulation and security-awareness training.",
+      path: "/privacy",
+    };
+  }
+  if (pathname.startsWith("/terms")) {
+    return {
+      title: "Terms of Service — PhishSim AI",
+      description: "The terms governing use of PhishSim AI's phishing simulation and security-awareness platform.",
+      path: "/terms",
+    };
+  }
+  return {
+    title: "PhishSim AI — AI Phishing Simulation & Security Awareness for MSPs",
+    description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 30-day free trial.",
+    path: "/",
+  };
+}
+
+/** The full <head> SEO block for a route — injected verbatim by the prerender script. */
+export function headTags(m: RouteMeta, ogImage: string = OG): string {
+  const url = `${SITE}${m.path === "/" ? "" : m.path}`;
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return [
+    `<title>${esc(m.title)}</title>`,
+    `<meta name="description" content="${esc(m.description)}" />`,
+    `<link rel="canonical" href="${url}" />`,
+    `<meta property="og:title" content="${esc(m.title)}" />`,
+    `<meta property="og:description" content="${esc(m.description)}" />`,
+    `<meta property="og:url" content="${url}" />`,
+    `<meta property="og:image" content="${ogImage}" />`,
+    `<meta property="og:type" content="website" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:title" content="${esc(m.title)}" />`,
+    `<meta name="twitter:description" content="${esc(m.description)}" />`,
+    `<meta name="twitter:image" content="${ogImage}" />`,
+  ].join("\n    ");
+}
+
+// PS-SEO-03: JSON-LD for a route — baked into the prerendered <head> so it's in the raw HTML (not
+// JS-only). Blog posts get BlogPosting; the cyber-insurance post also gets FAQPage from its Q&As.
+export function jsonLdFor(pathname: string): string {
+  const slug = blogSlug(pathname);
+  if (!slug) return "";
+  const post = getPost(slug);
+  if (!post) return "";
+  const url = `${SITE}/blog/${slug}`;
+  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png` } };
+  const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
+  const tags = [
+    script({
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      headline: post.title,
+      description: post.description,
+      url,
+      mainEntityOfPage: url,
+      datePublished: post.datePublished,
+      dateModified: post.datePublished,
+      image: OG,
+      author: { "@type": "Organization", name: "PhishSim AI" },
+      publisher,
+    }),
+  ];
+  if (post.faq?.length) {
+    tags.push(
+      script({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: post.faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+      }),
+    );
+  }
+  return tags.join("\n    ");
+}

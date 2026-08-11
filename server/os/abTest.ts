@@ -3,8 +3,29 @@ import { getSql } from './conn'
 export interface ABVariant {
   id: string
   subject: (name: string, co: string) => string
+  /**
+   * PS-COPY-PLAINTEXT-01: return '' to send a TEXT-ONLY email. sendEmail omits an empty html part
+   * from the Resend payload entirely, so the message goes out as a single text/plain body rather
+   * than a multipart whose html half is blank.
+   */
   html: (name: string, co: string, ind: string) => string
+  text: (name: string, co: string, ind: string) => string
 }
+
+// PS-CANSPAM-01: mandatory footer on every commercial email — physical postal address (confirmed
+// valid by the founder) + the reason-for-contact + a working one-click unsubscribe. Rendered in
+// BOTH the HTML and plain-text parts. {{TOKEN}} is the per-recipient base64url unsubscribe token
+// (replaced in sequences.ts); the same token backs the List-Unsubscribe one-click header.
+const CANSPAM_POSTAL = '240 Queen Street N.E., Leesburg, VA 20176'
+const CANSPAM_HTML = `<hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
+<p style="color:#666;font-size:12px;margin:0">Sarah Mitchell · PhishSim AI</p>
+<p style="color:#666;font-size:12px;margin:0">${CANSPAM_POSTAL}</p>
+<p style="color:#666;font-size:12px;margin:12px 0 0">You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? <a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a> — one click, no hard feelings.</p>`
+const CANSPAM_TEXT = `—
+Sarah Mitchell · PhishSim AI
+${CANSPAM_POSTAL}
+
+You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? Unsubscribe — one click, no hard feelings: https://phishsimai.com/unsubscribe?e={{TOKEN}}`
 
 /**
  * PS-COPY-REWRITE-01 (PS-POSITIONING-01) — why the OLD touch-1 copy failed, so nobody rebuilds it:
@@ -24,7 +45,7 @@ export interface ABVariant {
  * A/B is OFF: one honest email beats two, and the loser slot is where invented copy used to hide.
  * Both slots hold the identical approved copy so no stale invented text survives in this file.
  */
-const TOUCH1_SUBJECT = `Your Clients' Insurers Now Want Phishing-Sim Proof — White-Label It`
+export const TOUCH1_SUBJECT = `60¢/user, live in 10 minutes, 30 days free`
 
 // PS-SALUTATION-01: AMF v5.1 find-email/company returns EMAILS ONLY — no name/first_name/title
 // (verified: bcainc.com returned 20 emails, zero name fields). So the greeting can never come from
@@ -43,34 +64,116 @@ export function deriveFirstName(email: string): string {
   return local.charAt(0).toUpperCase() + local.slice(1)
 }
 
-// {{TOKEN}} is replaced per-recipient with the base64url unsubscribe token (sequences.ts).
-const touch1Html = (name: string) => `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;max-width:580px;font-size:15px;line-height:1.6;color:#111">
-<p>Hi ${name},</p>
-<p>Cyber insurance underwriting changed in 2026. Phishing simulation is now a hard requirement at renewal — carriers ask for simulation frequency, click-rate trends across the last 12 months, and evidence of remedial training for anyone who failed. Annual video training is explicitly flagged as insufficient by most major carriers.</p>
-<p>And the question underwriters ask has shifted. It used to be "do you have this control?" Now it's "can you prove it was enforced at the time of the incident?" That gap is where claims get denied — and when your client's broker asks for the proof packet, someone has to produce it.</p>
-<p>PhishSim AI is white-label. You run simulations for your clients under your own brand, and it issues a compliance certificate per client, per campaign — the documented evidence their underwriter is asking for.</p>
-<p>Setup takes about 10 minutes. No agents, no IT project, no call with me.</p>
-<p>I'll be straight: we're new. No logos to show you. What we do have is one of the best prices in the category as an introductory offer, and a 7-day trial with no credit card.</p>
-<p style="margin:22px 0"><a href="https://phishsimai.com/register" style="color:#e53e3e;font-weight:700;text-decoration:none">→ Start your 7-day trial — phishsimai.com/register</a></p>
-<p>If it's not useful in ten minutes, you've lost ten minutes.</p>
-<p style="margin-top:24px;margin-bottom:0">Sarah Mitchell</p>
-<p style="margin:0;color:#555">Head of Compliance, Partnerships</p>
-<img src="https://www.phishsimai.com/brand/phishsim-logo-email.png" alt="PhishSim AI" width="150" style="display:block;border:0;outline:0;margin:8px 0 0 0;padding:0;height:auto">
-<p style="color:#666;font-size:12px;margin-top:28px"><a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a></p>
-</div>`
+/**
+ * PS-COPY-PRICE-01 (2026-08-02, founder-supplied copy) — replaces the insurance-underwriting
+ * angle. Sent verbatim as the founder wrote it; not one figure is paraphrased.
+ *
+ * Every price claim here was verified against the LIVE Stripe account on 2026-08-02 before this
+ * shipped, because a cold email that misquotes its own price is the fastest way to lose a deal
+ * you already won:
+ *   $299/mo, 500 users  -> price_1Tnerg2LZ4pKabuOJxHALY09, PhishSim AI Growth, month, $299.00
+ *                          299/500 = $0.598 -> "60¢/user" ✓
+ *   30¢ on Pro          -> price_1Tnerg2LZ4pKabuOV7I9j3Y3, PhishSim AI Pro, month, $749.00
+ *                          749/2500 = $0.2996 -> "30¢" ✓
+ *   "Starts at $149"    -> price_1Tnerf2LZ4pKabuO9rvqy2YI, PhishSim AI Starter, month, $149.00 ✓
+ *   "30-day free trial, no credit card"
+ *                       -> TRIAL_DAYS = 30 (server/lib/entitlements.ts:23) and createOrganization
+ *                          (server/db.ts:118) stamps planExpiresAt with ZERO Stripe involvement —
+ *                          no customer, no payment method. Trial resolves to tier 'trial' with
+ *                          FULL limits, so "Full access" is true. ✓
+ * If any of those change in Stripe, this copy is wrong and must change with it.
+ *
+ * PLAIN TEXT, NO HTML — founder directive. First-touch cold plain text lands in primary; an HTML
+ * body with a logo block reads as bulk. touch1Html returns '' and sendEmail drops the empty part,
+ * so this goes out as a single text/plain body (NOT a multipart with a blank html half).
+ *
+ * A/B REMOVED. Previously both slots held identical copy behind `active:false`; the test arm is
+ * gone from the type entirely so a future editor cannot resurrect a second body by flipping a flag.
+ */
+const touch1Html = (_name: string) => '' // text-only: see PS-COPY-PLAINTEXT-01
 
-export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test: ABVariant; active: boolean }> = {
+// The CAN-SPAM footer is appended by PS-CANSPAM-01 and is NOT optional — it carries the physical
+// postal address and the one-click unsubscribe link that backs the List-Unsubscribe header. It is
+// the only text added to the founder's copy.
+const touch1Text = (name: string) => `Hi ${name},
+
+Most MSPs either overpay for phishing simulation or skip it because setup eats a week.
+
+PhishSim AI:
+
+- $299/mo covers 500 users — 60¢/user. Drops to 30¢ on Pro. Flat pricing, so your margin grows as you add clients. Starts at $149 if you're smaller.
+- Live in under 10 minutes — no security engineer. First campaign running the same afternoon.
+- 30-day free trial, no credit card. Full access.
+
+Built for MSPs who want a recurring revenue line without the complexity.
+
+Reply "trial" or start here — you'll be live today: https://phishsimai.com/login?mode=register
+
+Sarah Mitchell
+PhishSim AI
+
+${CANSPAM_TEXT}`
+
+
+/**
+ * PS-TOUCH2-PRICE-01 (2026-08-03, founder-approved copy) — the second touch, price-led.
+ *
+ * 884 recipients got touch-1 on the insurance/compliance angle and produced 1 human reply, hostile.
+ * This is the same list, a different argument, and it says so in the first line. The acknowledgement
+ * is not politeness: "wrong angle, and I'd rather say so than send it again" is the only honest way
+ * to re-approach someone who already ignored you once, and it is what earns the second read.
+ *
+ * The "tell me and I'll stop" close is deliberate and invites a NEGATIVE reply. Right now the queue
+ * has 0 external replies and we cannot distinguish a dead offer from a dead list. A cheap "no" is
+ * worth more than another month of silence, and every "no" also cleans the list.
+ *
+ * Prices verified against live Stripe before this shipped: Growth 299/500 = $0.598 -> 60c;
+ * Pro 749/2500 = $0.2996 -> 30c; Starter $149. Trial: TRIAL_DAYS=30, no Stripe call at signup.
+ * "Cancel anytime" is true as of 2026-08-03 (billing portal bpc_1U0EQ8..., subscription_cancel
+ * enabled=true, mode=at_period_end, verified by a live sessions.create call).
+ *
+ * Plain text, no HTML — same doctrine as touch-1. touch2Html returns '' and sendEmail omits the
+ * empty part, so this goes out as a single text/plain body.
+ */
+export const TOUCH2_SUBJECT = `60¢/user for phishing sims — 10 min, 30 days free`
+
+const touch2Html = (_name: string) => '' // text-only: see PS-COPY-PLAINTEXT-01
+
+// Founder-supplied body, 2026-08-03, sent VERBATIM. Not one figure paraphrased.
+// Verified against live Stripe before wiring: 299/500 = $0.598 -> "60¢"; 749/2500 = $0.2996 ->
+// "30¢"; Starter $149. Trial: TRIAL_DAYS=30 with no Stripe call at signup. "Full access" is true —
+// a trial resolves to tier 'trial' with FULL limits.
+const touch2Text = (name: string) => `Hi ${name},
+
+One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Drops to 30¢ on Pro. Flat MSP pricing — every client you add widens your margin instead of eating it.
+
+Live in 10 minutes, no engineer. 30-day trial, no card, full access.
+
+If it's worth 10 minutes: https://phishsimai.com/login?mode=register
+
+Sarah Mitchell
+PhishSim AI
+
+${CANSPAM_TEXT}`
+
+export const TOUCH2_VARIANT: ABVariant = {
+  id: 'ctrl_t2_price',
+  subject: () => TOUCH2_SUBJECT,
+  html: (name) => touch2Html(name),
+  text: (name) => touch2Text(name),
+}
+
+// PS-COPY-PRICE-01: `test` is OPTIONAL and deliberately absent. With one honest email there is no
+// loser slot for stale or invented copy to hide in — which is what it was used for historically.
+// sequences.ts falls back to `control` whenever `active` is false or no test arm exists.
+export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test?: ABVariant; active: boolean }> = {
   touch1_subject: {
     active: false,
     control: {
-      id: 'ctrl_t1_insurance',
+      id: 'ctrl_t1_price',
       subject: () => TOUCH1_SUBJECT,
       html: (name) => touch1Html(name),
-    },
-    test: {
-      id: 'test_t1_insurance',
-      subject: () => TOUCH1_SUBJECT,
-      html: (name) => touch1Html(name),
+      text: (name) => touch1Text(name),
     },
   },
 }

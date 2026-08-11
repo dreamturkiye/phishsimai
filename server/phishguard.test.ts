@@ -24,6 +24,7 @@ vi.mock("./db", () => ({
   createDepartment: vi.fn().mockResolvedValue({ id: 1, orgId: 1, name: "Finance", isDefault: false, createdAt: new Date() }),
   deleteDepartment: vi.fn(),
   getTargets: vi.fn().mockResolvedValue([]),
+  getVerifiedDomains: vi.fn().mockResolvedValue(["example.com"]), // PS-TARGET-GATE-01
   createTarget: vi.fn().mockResolvedValue({ id: 1, orgId: 1, email: "test@example.com", firstName: "Test", lastName: "User", departmentId: null, isActive: true, createdAt: new Date(), updatedAt: new Date() }),
   updateTarget: vi.fn(),
   deleteTarget: vi.fn(),
@@ -155,6 +156,8 @@ describe("campaigns.create", () => {
       orgId: 1,
       name: "Q1 Phishing Test",
       language: "en",
+      templateId: 1,             // PS-CAMPAIGN-GATE-01: create now requires a template
+      targetIds: [1],            // ...and at least one target
     });
     expect(db.createCampaign).toHaveBeenCalledWith(expect.objectContaining({
       name: "Q1 Phishing Test",
@@ -174,11 +177,41 @@ describe("campaigns.create", () => {
       name: "Scheduled Campaign",
       language: "es",
       scheduledAt: futureTime,
+      templateId: 1,             // PS-CAMPAIGN-GATE-01: create now requires a template
+      targetIds: [1],            // ...and at least one target
     });
     expect(db.createCampaign).toHaveBeenCalledWith(expect.objectContaining({
       status: "scheduled",
       language: "es",
     }));
+  });
+
+  // PS-CAMPAIGN-GATE-01: the dead end the real customer hit — an unlaunchable campaign that then
+  // silently "completed". Creation must refuse it with a reason instead.
+  it("rejects a campaign with no template", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(caller.campaigns.create({ orgId: 1, name: "No template", targetIds: [1] }))
+      .rejects.toThrow(/template/i);
+  });
+
+  it("rejects a campaign with no targets", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(caller.campaigns.create({ orgId: 1, name: "No targets", templateId: 1, targetIds: [] }))
+      .rejects.toThrow(/target/i);
+  });
+});
+
+describe("targets.create domain gate (PS-TARGET-GATE-01)", () => {
+  it("rejects a target on an unverified domain (verified: example.com)", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    await expect(caller.targets.create({ orgId: 1, firstName: "A", lastName: "B", email: "a@unverified.com" }))
+      .rejects.toThrow(/verified enrolled domain/i);
+  });
+
+  it("allows a target on a verified domain", async () => {
+    const caller = appRouter.createCaller(makeCtx());
+    const t = await caller.targets.create({ orgId: 1, firstName: "A", lastName: "B", email: "a@example.com" });
+    expect(t.id).toBe(1);
   });
 });
 
@@ -200,12 +233,12 @@ describe("targets.create", () => {
     const caller = appRouter.createCaller(ctx);
     const target = await caller.targets.create({
       orgId: 1,
-      email: "employee@company.com",
+      email: "employee@example.com",
       firstName: "Jane",
       lastName: "Doe",
     });
     expect(db.createTarget).toHaveBeenCalledWith(expect.objectContaining({
-      email: "employee@company.com",
+      email: "employee@example.com",
       firstName: "Jane",
       lastName: "Doe",
     }));

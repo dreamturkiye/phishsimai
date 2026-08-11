@@ -1,10 +1,11 @@
 import { Request, Response } from 'express'
-import { computeCleanDay, getAutonomyLevel, getCleanStreak, recordIncident } from './cleanDays'
+import { getCleanStreak, recordIncident } from './cleanDays'
+import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
 import { getAgentHealth } from './agentHealth'
-import { runSequence, runFullSequence } from './sequences'
+import { runSequence, runFullSequence, runTouch2Batch } from './sequences'
 import { runWatchdog } from './watchdog'
 import { runHeartbeat } from './heartbeat'
 import { processReply } from './replyParser'
@@ -28,6 +29,7 @@ import {
 import { cronAgentWatchdog } from './agentWatchdog'
 import { buildJanetCgoSummary, type JanetCgoDeps } from './l5Autonomy'
 import { writeMetricsSnapshot } from './metricsSnapshot'
+import { verifyDeployTarget } from './deployVerify'
 import {
   makeSqlBreakerDeps, getBreakerState, recordTaskOutcome, checkDiffSafety, primaryFingerprint,
 } from './circuitBreaker'
@@ -76,6 +78,15 @@ export async function cronSequence(req: Request, res: Response) {
 
 export async function cronAriaDaily(req: Request, res: Response) {
   return cronSequence(req, res)
+}
+
+// PS-OUTREACH-THROTTLE-01: the SECOND-TOUCH tick. Runs several times across the working window so
+// the day's 50 second-touch spread out instead of bursting. Sends nothing until the founder sets
+// janet_memory touch2_scale_approved='1' (runTouch2Batch holds otherwise), and even then never
+// exceeds the throttle (≤10/run, ≤50 second-touch/day, ≤100 combined/day). Same cron auth as touch-1.
+export async function cronSequenceTouch2(req: Request, res: Response) {
+  if (!okCronOrHq(req,res)) return
+  try { res.json({ ok: true, ...(await runTouch2Batch()) }) } catch(e:any) { res.status(500).json({error:e.message}) }
 }
 
 export async function cronJanet(req: Request, res: Response) {
@@ -221,6 +232,24 @@ export async function breakerEndpoint(req: Request, res: Response) {
   }
 }
 
+// PS-MARCUS-GATES-01 — the autonomy gate the Marcus watcher reads BEFORE it deploys. Returns the
+// raw watcher_audit record + the earned enforcement level, so the watcher fails closed unless the
+// external watcher audit is a genuine 'passed'. This is what makes Kaan's watcher_audit record gate
+// the HANDS (the deploy), not just the promotion ladder. Secret-gated, read-only.
+export async function architectGateEndpoint(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try {
+    const sql = getSql()
+    const w = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY} AND key='watcher_audit' ORDER BY updated_at DESC LIMIT 1`.catch(() => [] as any[])
+    const a = await sql`SELECT level FROM os_autonomy_state WHERE company_id=${COMPANY} LIMIT 1`.catch(() => [] as any[])
+    const watcher_audit = String((w as any[])[0]?.value ?? 'outstanding')
+    const level = String((a as any[])[0]?.level ?? 'manual')
+    res.json({ watcher_audit, watcher_passed: watcher_audit.trim().toLowerCase() === 'passed', level })
+  } catch (e: any) {
+    res.status(500).json({ error: formatOsError(e) })
+  }
+}
+
 export async function cronWatchdog(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
   try { res.json({ ok: true, ...(await runWatchdog()) }) } catch(e:any) { res.status(500).json({error:e.message}) }
@@ -229,6 +258,16 @@ export async function cronWatchdog(req: Request, res: Response) {
 export async function cronHeartbeat(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
   try { res.json(await runHeartbeat()) } catch(e:any) { res.status(500).json({error:e.message}) }
+}
+
+// PS-DEPLOY-VERIFY-01: hourly deploy-target verification. Confirms phishsimai.com serves PhishSim
+// (and NOT ScrollFuel) and writes one deploy_verifications row on a confident answer. This is the
+// WRITER that makes posture probe 7 ("zero blind deploys") measurable — before it, that table had
+// no writer and the criterion passed on absence. Hourly so a single transient miss can't leave a
+// whole day unmeasured, and so YESTERDAY is fully confirmed by the time 06:30 compute judges it.
+export async function cronDeployVerify(req: Request, res: Response) {
+  if (!okCronOrHq(req, res)) return
+  try { res.json(await verifyDeployTarget()) } catch (e: any) { res.status(500).json({ error: formatOsError(e) }) }
 }
 
 export async function webhookReply(req: Request, res: Response) {
@@ -264,7 +303,13 @@ export async function cronDiscover(req: Request, res: Response) {
 export async function cronSarahSocial(req: Request, res: Response) {
   if (!okCronOrHq(req, res)) return
   try {
-    res.json({ ok: true, ...(await runSarahSocialCron()) })
+    const reddit = await runSarahSocialCron()
+    // PS-SARAH-LINKEDIN-01: LinkedIn monitor (safe from day 1) + publish approved posts. Publish is
+    // hard-gated behind the Aug-5 start + approval + content-safety; before Aug-5 it no-ops (drafts-only).
+    const { publishApprovedLinkedIn, runLinkedInMonitor } = await import('./social/linkedInPublisher')
+    const linkedinMonitor = await runLinkedInMonitor().catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
+    const linkedinPublish = await publishApprovedLinkedIn(1).catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
+    res.json({ ok: true, reddit, linkedinMonitor, linkedinPublish })
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })
   }
@@ -455,7 +500,12 @@ export async function hqData(req: Request, res: Response) {
       count(*) filter(where pipeline_stage='prospect') as prospects,
       count(*) filter(where bounced=true and touch1_sent_at is not null) as bounced,
       count(*) filter(where touch1_sent_at is not null) as apollo_sent
-      FROM ps_outreach_leads WHERE bounced=false OR source='apollo'`
+      FROM ps_outreach_leads`
+    // PS-SENDS-COUNT-01: count over ALL leads. The old "WHERE bounced=false OR source=apollo"
+    // dropped every bounced lead from the dataset, so "sends" excluded ~20 emails that WERE sent
+    // (understating 273 to 253), AND the bounced count could never exceed 0 in a bounced=false
+    // dataset (a phantom 0% bounce rate). The comment lives OUT of the sql`` template on purpose:
+    // a backtick inside a tagged template literal terminates it.
 
     const recentLeads = await sql`SELECT name, company, email, pipeline_stage, touch1_sent_at, touch2_sent_at, replied, bounced, created_at
       FROM ps_outreach_leads ORDER BY created_at DESC LIMIT 20`
@@ -1150,13 +1200,45 @@ export async function architectAutonomy(req: Request, res: Response) {
     if (action === 'compute') {
       // Default YESTERDAY: a day is only judgeable once it is over. Computing "today" at
       // 10am would call every day clean until something breaks after lunch.
+      //
+      // PS-POSTURE-01: judged by recordDay() (criteria v2 — the five counter classes) instead of
+      // the old three-check computeCleanDay. v1 scored 2026-07-18 as clean; that was the day of
+      // the unearned-l4 incident and 20 un-gated sends. The classes that would have caught it
+      // simply were not counted.
       const day = String(req.query.day || new Date(Date.now() - 86400000).toISOString().split('T')[0])
-      const result = await computeCleanDay(sql, 'phishsimai', day)
-      return res.json({ product: 'phishsimai', day, ...result })
+      const result = await recordDay(sql, 'phishsimai', day)
+      const ev = await evaluatePosture(sql, 'phishsimai')
+      // PS-POSTURE-ALARM-01: page the founder the moment a day fails to judge clean — a stalled
+      // streak or an unmeasured criterion must not wait to be spotted in the daily brief. Silence
+      // means clean; a message means the gate stalled and says exactly why. Best-effort: an alarm
+      // that can't send must never fail the compute that produced the verdict.
+      const alarm = buildPostureAlarm(day, result, ev)
+      if (alarm) await sendTelegram(alarm).catch(() => {})
+      return res.json({ product: 'phishsimai', day, ...result, posture: ev.posture, next: ev.nextStep, alarmed: !!alarm })
     }
-    const level = await getAutonomyLevel(sql, 'phishsimai')
+    if (action === 'declare') {
+      // GRADUATION IS DECLARED, NOT AUTO-PROMOTED (spec + the 07-18 lesson). A named human is
+      // mandatory, and declarePosture refuses anything evaluatePosture has not already earned.
+      const to = String(req.query.to || '') as any
+      const by = String(req.query.by || '')
+      const out = await declarePosture(sql, 'phishsimai', to, by, { force: req.query.force === '1' })
+      return res.status(out.ok ? 200 : 409).json(out)
+    }
+    const ev = await evaluatePosture(sql, 'phishsimai')
+    // PS-AUTONOMY-CRITERIA-01: getCleanStreak is the UNFILTERED (v1) reader. Its last-computed day
+    // is useful operationally — it says whether the compute cron ran at all — but it sat here as a
+    // bare `lastComputedDay` next to `ev.lastJudgedDay`, which is the v2 baseline-filtered value.
+    // Two dates, different rigor, neither labelled: 2026-07-22 next to null reads like a bug.
+    // Name the version in the key so no reader has to know which ladder produced which.
     const streak = await getCleanStreak(sql, 'phishsimai')
-    return res.json({ product: 'phishsimai', ...level, lastComputedDay: streak.lastComputedDay })
+    return res.json({
+      product: 'phishsimai',
+      ...ev,
+      line: postureLine(ev),
+      criteriaVersion: CRITERIA_VERSION,
+      lastJudgedDayV2: ev.lastJudgedDay,
+      lastComputedDayAnyCriteria: streak.lastComputedDay,
+    })
   } catch (e: any) {
     // Fail LOUD. An autonomy endpoint that 200s on error is an instrument reporting health it
     // cannot verify -- precisely what this ladder exists to prevent.
@@ -1178,3 +1260,59 @@ export async function architectIncident(req: Request, res: Response) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }
 }
+
+// PS-AUTONOMY-BRIDGE-01: expose the daily earned-autonomy cron through the routes namespace
+// (api/handler.ts dispatches via `routes.*`).
+export { cronAutonomyPromotion } from './autonomyPromotion'
+
+// PS-REFILL-01: daily sendable-pool auto-refill (AMF-valid + MX), scheduled before the 0 7 send.
+export { cronSanitizeRefill } from './sanitizeRefill'
+
+// PS-HARVEST-01: free MSP discovery from mymsphub.com (sitemap → profile JSON-LD domain → queue).
+export { cronMspHubHarvest } from './agents/mspHubHarvest'
+
+// PS-FUNNEL-01: one daily Telegram line — harvest → queue → enriched → valid → sendable → sent.
+export { cronOutreachFunnel } from './agents/mspHubHarvest'
+export { cronTrialNudges } from './trialNudges'
+
+// PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
+export { resendInbound } from './social/replyCapture'
+
+// KAAN AI OS 7.5 §5 #3 — weekly competitor intel (fetched, never recalled).
+export { cronCompetitorIntel } from './competitorIntel'
+export { cronReflection } from './agents/reflection'
+export { cronScoutLandscape } from './agents/scoutLandscape'
+
+// PS-SALES-REPLY-01 — 15-minute reply sweep (replyCapture also triggers it inline).
+export { cronSalesReplies } from './agents/salesReplies'
+
+// PS-REX-01 — Revenue Operations. Runs at 05:45 UTC, BEFORE the 06:00 metrics snapshot, so his
+// verdict on whether the numbers can be trusted arrives ahead of the numbers themselves.
+export { cronRex } from './agents/rex'
+
+// PS-DEX-01 — Deliverability & Infrastructure. 05:50 UTC, between Rex (05:45) and the metrics
+// snapshot (06:00): Rex certifies the funnel data, Dex certifies the paths that produced it.
+export { cronDex } from './agents/dex'
+
+// PS-ARIA-01 — VP Marketing. 06:10 UTC, after Rex/Dex certify the data she reasons on.
+export { cronAria } from './agents/aria'
+
+// PS-MASON-01 — Sales Director, the full-operator form of the live reply agent. 06:20 UTC, after
+// Rex/Dex/Aria: he reads their verdicts and defers to them on their domains.
+export { cronMason } from './agents/mason'
+
+// PS-SCOUT-01 — VP Market Intelligence. 06:30 UTC. Data-side only: never edits copy, never prices.
+export { cronScout } from './agents/scout'
+
+// PS-FINN-01 — CFO. 06:40 UTC. Pricing guard ACTIVE; revenue metrics built and armed at $0.
+export { cronFinn } from './agents/finn'
+
+// PS-VERA-01 — VP Customer Success. 06:50 UTC. BUILD-AND-ARM: machinery live, book empty, honest.
+export { cronVera } from './agents/vera'
+
+// PS-NOVA-01 — Head of Product Growth. 07:00 UTC, the last of the eight before Janet's 08:00 standup.
+export { cronNova } from './agents/nova'
+
+// PS-DIGEST-01 — daily signup digest to Telegram. 21:00 UTC. Header auth only
+// (Bearer CRON_SECRET); deliberately does not use okCronOrHq. See dailyReport.ts.
+export { cronDailyReport } from './dailyReport'

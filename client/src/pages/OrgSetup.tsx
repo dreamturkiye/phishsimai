@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Shield, Building2, ArrowRight } from "lucide-react";
 
@@ -14,8 +14,46 @@ export default function OrgSetup() {
   const [, navigate] = useLocation();
   const [orgName, setOrgName] = useState("");
 
+    // PS-FUNNEL-GUARD-01: /register and /setup both render this org-first form, which assumes an
+    // authenticated user. A logged-out cold-outreach prospect who lands here (the email CTA used to
+    // point at /register) got bounced to a login wall with no account — 269 clicks, 0 signups. If
+    // there is no user once auth has resolved, send them to the real signup form instead.
+    const authResolved = user !== undefined;
+    useEffect(() => {
+          if (authResolved && !user) navigate("/login?mode=register");
+    }, [authResolved, user, navigate]);
+    if (authResolved && !user) return null;
+
+  const utils = trpc.useUtils();
+
   const createOrgMutation = trpc.orgs.create.useMutation({
-    onSuccess: () => {
+    // PS-ONBOARD-01 (2026-07-22): the org WAS being created server-side, but the user was
+    // left staring at this form under a success toast. AppLayout gates every authed page on
+    // a CACHED orgs.myOrgs; navigating straight to /dashboard mounted it against the
+    // pre-creation `[]`, which is defined and therefore counts as "resolved" — so AppLayout
+    // concluded the user had no org and navigated right back to /setup. The earlier fix
+    // there handled the LOADING race; this is the STALE-CACHE case it left open.
+    // Repopulate the cache and confirm the org is visible BEFORE navigating.
+    onSuccess: async (org) => {
+      let orgs: Awaited<ReturnType<typeof utils.orgs.myOrgs.fetch>> | undefined;
+      try {
+        await utils.orgs.myOrgs.invalidate();
+        orgs = await utils.orgs.myOrgs.fetch(undefined);
+      } catch {
+        orgs = undefined;
+      }
+
+      const idx = orgs?.findIndex((o) => o.org?.id === org.id) ?? -1;
+      if (idx < 0) {
+        // The org exists, but the app cannot see it yet — navigating now would bounce
+        // straight back here. Say so instead of reporting a success we can't stand behind.
+        toast.error("Organization created, but we couldn't load it yet. Please refresh the page.");
+        return;
+      }
+
+      // Point the switcher at the org just created, not a stale saved index.
+      try { localStorage.setItem("active_org_idx", String(idx)); } catch { /* ignore */ }
+
       toast.success("Organization created! Welcome to PhishSim AI.");
       navigate("/dashboard");
     },
