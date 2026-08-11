@@ -13,7 +13,7 @@ function SelfHealTestProbe({ armed }: { armed: boolean }) {
     return (
       <div className="flex min-h-screen items-center justify-center p-10 text-muted-foreground">
         <p>
-          Self-heal test probe disarmed. Add <code className="rounded bg-muted px-1">?arm=ps-hq-2026</code> to trigger.
+          Self-heal test probe disarmed. Add <code className="rounded bg-muted px-1">?arm=heal-probe</code> to trigger.
         </p>
       </div>
     )
@@ -28,6 +28,6 @@ function SelfHealTestProbe({ armed }: { armed: boolean }) {
 
 export default function HealTest() {
   const armed = typeof window !== 'undefined'
-    && new URLSearchParams(window.location.search).get('arm') === 'ps-hq-2026'
+    && new URLSearchParams(window.location.search).get('arm') === 'heal-probe'
   return <SelfHealTestProbe armed={armed} />
 }
