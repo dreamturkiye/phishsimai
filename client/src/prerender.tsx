@@ -10,6 +10,7 @@ import Home from "./pages/Home";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import BlogPost from "./pages/BlogPost";
+import BlogIndex from "./pages/BlogIndex";
 import { seoForPath, headTags, jsonLdFor } from "./lib/seoMeta";
 import { BLOG_POSTS } from "./content/blog";
 
@@ -19,6 +20,7 @@ const ROUTES: Record<string, React.ComponentType> = {
   "/pricing": Home,
   "/privacy": PrivacyPolicy,
   "/terms": TermsOfService,
+  "/blog": BlogIndex,
 };
 // Every blog post prerenders through BlogPost (it reads its slug from the ssrPath).
 for (const p of BLOG_POSTS) ROUTES[`/blog/${p.slug}`] = BlogPost;
