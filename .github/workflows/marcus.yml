@@ -8,6 +8,8 @@ on:
       task_id:
         description: "agent_tasks id (optional)"
         required: false
+  schedule:
+    - cron: "*/30 * * * *"   # pull + run the next actionable task every 30 min
 
 concurrency:
   group: marcus
@@ -16,9 +18,33 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  actions: read
 
 jobs:
-  marcus:
+  pick:
+    runs-on: ubuntu-latest
+    outputs:
+      task: ${{ steps.r.outputs.task }}
+      task_id: ${{ steps.r.outputs.task_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i @neondatabase/serverless ws --no-save --silent
+      - id: r
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_TASK: ${{ github.event.inputs.task }}
+          IN_ID: ${{ github.event.inputs.task_id }}
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/marcus-resolve-task.mjs
+
+  run:
+    needs: pick
+    if: needs.pick.outputs.task != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,10 +66,10 @@ jobs:
       - name: Marcus edits files
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TASK: ${{ github.event.inputs.task }}
+          TASK: ${{ needs.pick.outputs.task }}
         run: |
           npm install -g @anthropic-ai/claude-code
-          claude -p "You are Marcus, the autonomous engineer for PhishSimAI. TASK: $TASK  Make the minimal correct change to accomplish the task. Create or edit files only. If the change needs a new DB column/table, also add a drizzle/pg migration file whose SQL is additive and idempotent (use IF NOT EXISTS). Do NOT run git, do NOT commit, do NOT open a PR - the workflow does that. Do NOT edit .github/, ci/, vercel.json, scripts/apply-migrations.mjs, server/os/kaan-os-core/, or any path containing billing, stripe, price, pricing, or legal. When done, stop." --model claude-sonnet-5 --dangerously-skip-permissions
+          claude -p "You are Marcus, the autonomous engineer for PhishSimAI. TASK: $TASK  Make the minimal correct change to accomplish the task. Create or edit files only. If the change needs a new DB column/table, add an additive idempotent drizzle/pg migration (use IF NOT EXISTS). Do NOT run git, do NOT commit, do NOT open a PR - the workflow does that. Do NOT edit .github/, ci/, vercel.json, scripts/, server/os/kaan-os-core/, or any path containing billing, stripe, price, pricing, or legal. When done, stop." --model claude-sonnet-5 --dangerously-skip-permissions
       - name: Apply pending migrations to PROD DB (before code can deploy)
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
@@ -54,12 +80,18 @@ jobs:
         run: |
           BR="marcus/task-${{ github.run_id }}"
           git add -A
-          git commit -m "marcus: ${{ github.event.inputs.task }}" || true
+          git commit -m "marcus: ${{ needs.pick.outputs.task_id }}" || true
           if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             echo "::error::Marcus made no changes"; exit 1
           fi
           git push origin "$BR"
           gh pr create --base main --head "$BR" \
-            --title "marcus: ${{ github.event.inputs.task }}" \
-            --body "task_id=${{ github.event.inputs.task_id }}" --label marcus
+            --title "marcus: task ${{ needs.pick.outputs.task_id }}" \
+            --body "task_id=${{ needs.pick.outputs.task_id }}" --label marcus
           gh pr merge "$BR" --auto --squash
+      - name: Mark task completed
+        if: success()
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          TASK_ID: ${{ needs.pick.outputs.task_id }}
+        run: node scripts/mark-task.mjs
