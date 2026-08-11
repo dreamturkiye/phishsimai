@@ -16,7 +16,6 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
 
 jobs:
   marcus:
@@ -33,22 +32,12 @@ jobs:
           git config user.email "marcus@phishsimai.com"
           git checkout -b "marcus/task-${{ github.run_id }}"
       - name: Marcus edits files
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            You are Marcus, the autonomous engineer for PhishSimAI.
-
-            TASK:
-            ${{ github.event.inputs.task }}
-
-            Rules:
-            - Make the MINIMAL correct change. Edit or create files only.
-            - Do NOT run git, do NOT commit, do NOT open a PR. The workflow does all of that.
-            - Do NOT edit: .github/, ci/, vercel.json, server/os/kaan-os-core/, or any path
-              containing billing, stripe, price, pricing, or legal.
-            - When the edit is complete, just stop.
-          claude_args: "--max-turns 15 --model claude-sonnet-5"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TASK: ${{ github.event.inputs.task }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude -p "You are Marcus, the autonomous engineer for PhishSimAI. TASK: $TASK  Make the minimal correct change to accomplish the task. Create or edit files only. Do NOT run git, do NOT commit, do NOT open a PR - the workflow does that. Do NOT edit .github/, ci/, vercel.json, server/os/kaan-os-core/, or any path containing billing, stripe, price, pricing, or legal. When done, stop." --model claude-sonnet-5 --dangerously-skip-permissions
       - name: Commit, push, PR, auto-merge
         env:
           GH_TOKEN: ${{ secrets.MARCUS_PAT }}
