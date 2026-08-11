@@ -29,5 +29,10 @@ function SelfHealTestProbe({ armed }: { armed: boolean }) {
 export default function HealTest() {
   const armed = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('arm') === 'heal-probe'
-  return <SelfHealTestProbe armed={armed} />
+  // ARCH-FIX: data-testid for e2e_certification_final HealTest QA locator (CERT_FINAL_0811C)
+  return (
+    <div data-testid="heal-test">
+      <SelfHealTestProbe armed={armed} />
+    </div>
+  )
 }
