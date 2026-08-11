@@ -6,6 +6,7 @@ export type FrontendSmokeOptions = {
   brandMarker: string
   minCssBytes?: number
   minJsBytes?: number
+    headers?: Record<string, string>
 }
 
 const DEFAULT_MIN_CSS = 32_000
@@ -55,13 +56,13 @@ export function filterAppScripts(srcs: string[]): string[] {
   )
 }
 
-export async function fetchAssetSize(url: string): Promise<number> {
-  const head = await fetch(url, { method: 'HEAD', redirect: 'follow' })
+export async function fetchAssetSize(url: string, headers?: Record<string, string>): Promise<number> {
+    const head = await fetch(url, { method: 'HEAD', redirect: 'follow', headers })
   if (head.ok) {
     const len = head.headers.get('content-length')
     if (len) return parseInt(len, 10)
   }
-  const r = await fetch(url, { redirect: 'follow' })
+    const r = await fetch(url, { redirect: 'follow', headers })
   if (!r.ok) throw new Error(`Asset ${url} returned ${r.status}`)
   const buf = await r.arrayBuffer()
   return buf.byteLength
@@ -74,7 +75,7 @@ export async function assertHomepageStyled(baseUrl: string, opts: FrontendSmokeO
   cssBytes: number
 }> {
   const root = baseUrl.replace(/\/$/, '')
-  const r = await fetch(root, { redirect: 'follow' })
+    const r = await fetch(root, { redirect: 'follow', headers: opts.headers })
   if (!r.ok) throw new Error(`Homepage status ${r.status}`)
   const html = await r.text()
   if (!html.includes(opts.brandMarker)) {
@@ -92,7 +93,7 @@ export async function assertHomepageStyled(baseUrl: string, opts: FrontendSmokeO
   let cssUrl = resolveUrl(root, appCss[0])
   for (const href of appCss) {
     const url = resolveUrl(root, href)
-    totalCssBytes += await fetchAssetSize(url)
+    totalCssBytes += await fetchAssetSize(url, opts.headers)
     cssUrl = url
   }
 
@@ -108,7 +109,7 @@ export async function assertHomepageStyled(baseUrl: string, opts: FrontendSmokeO
   if (appJs.length > 0) {
     jsUrl = resolveUrl(root, appJs[0])
     const minJs = opts.minJsBytes ?? DEFAULT_MIN_JS
-    const jsBytes = await fetchAssetSize(jsUrl)
+    const jsBytes = await fetchAssetSize(jsUrl, opts.headers)
     if (jsBytes < minJs) {
       throw new Error(`CRITICAL: App JS too small (${jsBytes} bytes < ${minJs}): ${jsUrl}`)
     }
