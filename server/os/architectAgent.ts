@@ -226,8 +226,14 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
   await ensureTables()
   const sql = getSql()
   const root = (baseUrl || 'https://phishsimai.com').replace(/\/$/, '')
-    // MARCUS-QA-BYPASS-01 (2026-08-11): Vercel Authentication gates every preview deployment,
-    // including this function's own server-to-server fetches back to itself. See PR #163.
+    // MARCUS-QA-BYPASS-01 (2026-08-11): Vercel Authentication ("Standard Protection") gates
+    // every preview deployment behind a login wall, including server-to-server fetches from
+    // THIS function to its own preview URL. Live-confirmed: dev-preview QA failed 3/4 checks
+    // with literal "<!DOCTYPE..." HTML back instead of JSON -- Vercel's own auth page, not a
+    // bug in the fix being tested. VERCEL_AUTOMATION_BYPASS_SECRET is a system env var Vercel
+    // injects into every deployment once a bypass secret is configured in Deployment Protection
+    // settings; passing it as this header is the documented way for automation to see through
+    // the wall without disabling protection for real visitors.
     const bypassHeaders: Record<string, string> = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
       ? { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
           : {}
@@ -236,7 +242,7 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
       name: 'Homepage styled (CSS + assets)',
       critical: true,
       test: async () => {
-              const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000, headers: bypassHeaders })
+                      const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000, headers: bypassHeaders, requiredBundleMarkers: ['/api/trpc', 'ResizeObserver loop limit exceeded'] })
         if (!r.jsUrl) throw new Error('CRITICAL: No Vite JS module script on homepage')
       },
     },
