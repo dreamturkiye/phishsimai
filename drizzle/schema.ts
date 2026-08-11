@@ -180,6 +180,11 @@ export const campaigns = pgTable("campaigns", {
   senderEmail: varchar("senderEmail", { length: 320 }),
   trackingDomain: varchar("trackingDomain", { length: 255 }),
   notes: text("notes"),
+  // PS-CREDCAPTURE-TOGGLE-01: per-campaign gate on the existing (safe, non-storing) fake login
+  // page — see PS-CREDPAGE-01 in server/email/tracker.ts. Default true preserves prior behavior
+  // (a credential_harvest template always showed the login page); setting this false lets a
+  // campaign opt out and go straight to the training landing page regardless of template.
+  credentialCaptureEnabled: boolean("credentialCaptureEnabled").default(true).notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (t) => [

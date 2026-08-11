@@ -528,13 +528,17 @@ export async function getAttackTypeForToken(token: string): Promise<string | nul
   const db = await getDb();
   if (!db) return null;
   const rows = await db
-    .select({ attackType: templates.attackType })
+    .select({ attackType: templates.attackType, credentialCaptureEnabled: campaigns.credentialCaptureEnabled })
     .from(campaignResults)
     .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
     .innerJoin(templates, eq(templates.id, campaigns.templateId))
     .where(eq(campaignResults.trackingToken, token))
     .limit(1);
-  return rows[0]?.attackType ?? null;
+  const r = rows[0];
+  if (!r) return null;
+  // PS-CREDCAPTURE-TOGGLE-01: the campaign can opt out of the login page even for a
+  // credential_harvest template — treat that the same as "not credential_harvest".
+  return r.credentialCaptureEnabled ? r.attackType : null;
 }
 
 export async function trackEvent(token: string, event: "open" | "click" | "submit" | "report", meta?: { ip?: string; ua?: string }) {
