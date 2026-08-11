@@ -15,6 +15,10 @@ PROTECTED_PATTERNS = [
     'auth/options', 'middleware', 'webhook',
     # PS-MARCUS-GATES-01 additions (founder O.5): CI config, pricing bands, escalation logic.
     '.github/workflows', 'pricing', 'escalation',
+        # PS-MARCUS-GATES-02: the three files named in the 2026-07-26 halt notice were never
+        # actually covered by the substring patterns above ('billing/checkout' != 'checkout.ts',
+        # 'auth/options' != 'auth.ts'). Closing that gap explicitly before re-enabling.
+        'checkout', 'server/auth.ts', 'campaignsend',
 ]
 
 
