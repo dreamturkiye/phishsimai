@@ -7,6 +7,7 @@ export type FrontendSmokeOptions = {
   minCssBytes?: number
   minJsBytes?: number
     headers?: Record<string, string>
+    requiredBundleMarkers?: string[]
 }
 
 const DEFAULT_MIN_CSS = 32_000
@@ -68,6 +69,21 @@ export async function fetchAssetSize(url: string, headers?: Record<string, strin
   return buf.byteLength
 }
 
+// PS-QA-DEPTH-01 (2026-08-11): fetchAssetSize only proves a JS bundle EXISTS and is
+// big enough -- live-confirmed insufficient tonight, three times: Grok regenerated
+// client/src/main.tsx as a bare-bones stub that still imports ./index.css and renders
+// SOMETHING, so size/reachability checks all passed while tRPC, React Query, Sentry,
+// OrgProvider and the 401-redirect handler were silently deleted. This fetches the
+// bundle's TEXT so callers can grep for literal strings (API paths, ignoreErrors
+// entries, etc.) that survive minification -- minifiers rename identifiers, they do
+// not rewrite string literal contents -- and therefore only appear if the real code
+// path that references them is actually bundled.
+export async function fetchAssetText(url: string, headers?: Record<string, string>): Promise<string> {
+    const r = await fetch(url, { redirect: 'follow', headers })
+    if (!r.ok) throw new Error(`Asset ${url} returned ${r.status}`)
+    return r.text()
+}
+
 export async function assertHomepageStyled(baseUrl: string, opts: FrontendSmokeOptions): Promise<{
   html: string
   cssUrl: string
@@ -113,6 +129,20 @@ export async function assertHomepageStyled(baseUrl: string, opts: FrontendSmokeO
     if (jsBytes < minJs) {
       throw new Error(`CRITICAL: App JS too small (${jsBytes} bytes < ${minJs}): ${jsUrl}`)
     }
+          // PS-QA-DEPTH-01: size passing only proves a bundle exists, not that it still
+          // contains the specific functionality it's supposed to. Verify required literal
+          // strings survive in the actual bundle text -- live-confirmed necessary tonight
+          // (three separate regenerations of main.tsx passed CSS+brand+size checks while
+          // deleting tRPC, Sentry, React Query and OrgProvider entirely).
+          if (opts.requiredBundleMarkers && opts.requiredBundleMarkers.length > 0) {
+                    const jsText = await fetchAssetText(jsUrl, opts.headers)
+                    const missing = opts.requiredBundleMarkers.filter((marker) => !jsText.includes(marker))
+                    if (missing.length > 0) {
+                                throw new Error(
+                                              `CRITICAL: App JS bundle is missing required marker(s): ${missing.join(', ')} -- likely a regenerated/simplified file that dropped real functionality: ${jsUrl}`
+                                            )
+                    }
+          }
   }
 
   return { html, cssUrl, jsUrl, cssBytes: totalCssBytes }
