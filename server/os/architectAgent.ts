@@ -226,26 +226,31 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
   await ensureTables()
   const sql = getSql()
   const root = (baseUrl || 'https://phishsimai.com').replace(/\/$/, '')
+    // MARCUS-QA-BYPASS-01 (2026-08-11): Vercel Authentication gates every preview deployment,
+    // including this function's own server-to-server fetches back to itself. See PR #163.
+    const bypassHeaders: Record<string, string> = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      ? { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
+          : {}
   const tests = [
     {
       name: 'Homepage styled (CSS + assets)',
       critical: true,
       test: async () => {
-        const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000 })
+              const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000, headers: bypassHeaders })
         if (!r.jsUrl) throw new Error('CRITICAL: No Vite JS module script on homepage')
       },
     },
     { name: 'API health', test: async () => {
-      const r = await fetch(`${root}/api/health`)
+      const r = await fetch(`${root}/api/health`, { headers: bypassHeaders })
       if (!r.ok) throw new Error('Status ' + r.status)
     }},
     { name: 'HQ data responds', test: async () => {
-      const r = await fetch(`${root}/api/os/hq?secret=${process.env.HQ_SECRET}`)
+      const r = await fetch(`${root}/api/os/hq?secret=${process.env.HQ_SECRET}`, { headers: bypassHeaders })
       const d = await r.json()
       if (!d.ok) throw new Error('HQ not ok: ' + (d.error || r.status))
     }},
     { name: 'Agent watchdog status', test: async () => {
-      const r = await fetch(`${root}/api/os/agent-watchdog?secret=${process.env.HQ_SECRET}&action=status`)
+      const r = await fetch(`${root}/api/os/agent-watchdog?secret=${process.env.HQ_SECRET}&action=status`, { headers: bypassHeaders })
       const d = await r.json()
       if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},
