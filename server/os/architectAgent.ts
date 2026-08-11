@@ -242,7 +242,7 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
       name: 'Homepage styled (CSS + assets)',
       critical: true,
       test: async () => {
-              const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000, headers: bypassHeaders })
+                      const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000, headers: bypassHeaders, requiredBundleMarkers: ['/api/trpc', 'ResizeObserver loop limit exceeded'] })
         if (!r.jsUrl) throw new Error('CRITICAL: No Vite JS module script on homepage')
       },
     },
