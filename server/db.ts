@@ -537,6 +537,26 @@ export async function getAttackTypeForToken(token: string): Promise<string | nul
   return rows[0]?.attackType ?? null;
 }
 
+/**
+ * PS-CAMPAIGN-CREDCAPTURE-01: whether THIS campaign has opted into showing the fake login page.
+ * `campaigns.captureCredentials` was added to the wizard but never consulted by the click path —
+ * a credential_harvest simulation showed the login page regardless of the toggle. The click
+ * handler must check both this AND the attack type before rendering it.
+ */
+export async function getCaptureGateForToken(token: string): Promise<{ attackType: string | null; captureCredentials: boolean }> {
+  const db = await getDb();
+  if (!db) return { attackType: null, captureCredentials: false };
+  const rows = await db
+    .select({ attackType: templates.attackType, captureCredentials: campaigns.captureCredentials })
+    .from(campaignResults)
+    .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
+    .innerJoin(templates, eq(templates.id, campaigns.templateId))
+    .where(eq(campaignResults.trackingToken, token))
+    .limit(1);
+  const r = rows[0];
+  return { attackType: r?.attackType ?? null, captureCredentials: r?.captureCredentials ?? false };
+}
+
 export async function trackEvent(token: string, event: "open" | "click" | "submit" | "report", meta?: { ip?: string; ua?: string }) {
   const db = await getDb();
   if (!db) return;

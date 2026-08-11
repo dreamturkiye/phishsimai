@@ -19,12 +19,14 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
 import express from 'express'
 import type { Server } from 'node:http'
 
-// Mock the DB layer: capture every trackEvent argument, and let each test choose the attack type.
+// Mock the DB layer: capture every trackEvent argument, and let each test choose the attack type
+// and the campaign's captureCredentials toggle.
 const trackEvent = vi.fn(async () => {})
 let attackType: string | null = 'credential_harvest'
+let captureCredentials = true
 vi.mock('./db', () => ({
   trackEvent: (...args: any[]) => trackEvent(...args),
-  getAttackTypeForToken: async () => attackType,
+  getCaptureGateForToken: async () => ({ attackType, captureCredentials }),
   assignTrainingForToken: async () => null,
 }))
 
@@ -44,7 +46,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(server.address() as any).port}`
 })
 afterAll(() => new Promise<void>(r => server.close(() => r())))
-beforeEach(() => { trackEvent.mockClear(); attackType = 'credential_harvest' })
+beforeEach(() => { trackEvent.mockClear(); attackType = 'credential_harvest'; captureCredentials = true })
 
 describe('the login page HTML cannot submit a password', () => {
   it('serves the fake login on /c/ for a credential_harvest simulation', async () => {
@@ -83,6 +85,13 @@ describe('a non-credential simulation is unaffected', () => {
 
   it('defaults to training when the attack type cannot be resolved', async () => {
     attackType = null
+    const r = await fetch(`${base}/c/${TOKEN}`, { redirect: 'manual' })
+    expect(r.status).toBe(302)
+    expect(r.headers.get('location')).toBe(`/landing/${TOKEN}`)
+  })
+
+  it('PS-CAMPAIGN-CREDCAPTURE-01: still 302s to training for credential_harvest when the campaign has not opted in', async () => {
+    captureCredentials = false
     const r = await fetch(`${base}/c/${TOKEN}`, { redirect: 'manual' })
     expect(r.status).toBe(302)
     expect(r.headers.get('location')).toBe(`/landing/${TOKEN}`)
