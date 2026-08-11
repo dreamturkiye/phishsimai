@@ -28,10 +28,12 @@ jobs:
       task_id: ${{ steps.r.outputs.task_id }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm i @neondatabase/serverless ws --no-save --silent
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - id: r
         env:
           EVENT: ${{ github.event_name }}
