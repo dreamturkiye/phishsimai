@@ -24,13 +24,13 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Apply pending migrations to PROD DB
+      - name: Apply pending migrations to PROD DB (tracked runner)
         env:
           DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: pnpm exec drizzle-kit migrate
+        run: node scripts/apply-migrations.mjs
       - name: Promote dev -> main (open/reuse PR, auto-merge)
         env:
           GH_TOKEN: ${{ secrets.MARCUS_PAT }}
