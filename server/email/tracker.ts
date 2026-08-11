@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { momentFor, lessonHtml } from './learningMoments';
-import { trackEvent, getAttackTypeForToken, assignTrainingForToken, completeTrainingForToken } from "../db";
+import { trackEvent, getCaptureGateForToken, assignTrainingForToken, completeTrainingForToken } from "../db";
 import { captureServerError } from "../os/sentryServer";
 
 // PS-TRACK-01 (2026-07-22): these writes were wrapped in `catch(e){}` — a failed open/click
@@ -82,13 +82,16 @@ export function registerTrackingRoutes(app: Express): void {
     // PS-REMEDIATION-01: a click IS the failure — auto-enroll the target in the matching module.
     // Best-effort: assignTrainingForToken never throws and never blocks the recipient response.
     assignTrainingForToken(req.params.token, "sim_click").catch(() => {});
-    // PS-CREDPAGE-01: a credential_harvest simulation shows the fake login page — the behaviour
-    // this product measures. Everything else (link_click, attachment, …) goes straight to
-    // training, exactly as before. A lookup failure defaults to training: we never show a
-    // recipient a login form because a DB read hiccuped.
+    // PS-CREDPAGE-01 / PS-CAMPAIGN-CREDCAPTURE-01: a credential_harvest simulation shows the fake
+    // login page — the behaviour this product measures — but only when the campaign has opted in
+    // via `captureCredentials` (added in 0028, previously never consulted here). Everything else
+    // (link_click, attachment, …, or the toggle left off) goes straight to training, exactly as
+    // before. A lookup failure defaults to training: we never show a recipient a login form
+    // because a DB read hiccuped.
     let attackType: string | null = null;
-    try { attackType = await getAttackTypeForToken(req.params.token); } catch(e){ trackFailed("attacktype", req.params.token, e); }
-    if (attackType === "credential_harvest") {
+    let captureCredentials = false;
+    try { ({ attackType, captureCredentials } = await getCaptureGateForToken(req.params.token)); } catch(e){ trackFailed("attacktype", req.params.token, e); }
+    if (attackType === "credential_harvest" && captureCredentials) {
       res.set("Content-Type","text/html").set("Cache-Control","no-store").send(loginHtml(req.params.token));
       return;
     }

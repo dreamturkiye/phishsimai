@@ -187,6 +187,7 @@ export default function CampaignDetail() {
                 { label: "Delivery", value: sent > 0 ? `${delivered} delivered · ${bounced} bounced (of ${sent} sent)` : "Not launched yet" },
                 { label: "Language", value: campaign.language === "en" ? "English" : campaign.language === "es" ? "Spanish" : "Turkish" },
                 { label: "Sender", value: campaign.senderName ? `${campaign.senderName} <${campaign.senderEmail}>` : "Not configured" },
+                { label: "Credential Capture", value: campaign.captureCredentials ? "Enabled — shows fake login page" : "Disabled — goes straight to training" },
                 { label: "Created", value: new Date(campaign.createdAt).toLocaleString() },
                 { label: "Recurring", value: campaign.isRecurring ? `Yes — ${campaign.cronExpression}` : "No" },
                 ...(campaign.notes ? [{ label: "Notes", value: campaign.notes }] : []),
