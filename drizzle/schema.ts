@@ -180,6 +180,10 @@ export const campaigns = pgTable("campaigns", {
   senderEmail: varchar("senderEmail", { length: 320 }),
   trackingDomain: varchar("trackingDomain", { length: 255 }),
   notes: text("notes"),
+  // PS-CAMPAIGN-CREDCAPTURE-01: per-campaign opt-in for showing the simulated credential-harvest
+  // landing page on credential_harvest templates. Does not change what /submit/:token records --
+  // actual submitted values are still never read or stored (see PS-CREDPAGE-01).
+  captureCredentials: boolean("captureCredentials").default(false).notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (t) => [

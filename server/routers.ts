@@ -693,6 +693,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         senderName: z.string().optional(),
         senderEmail: z.string().email().optional(),
         notes: z.string().optional(),
+        captureCredentials: z.boolean().default(false),
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
@@ -742,6 +743,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           senderEmail: input.senderEmail ?? null,
           trackingDomain: null,
           notes: input.notes ?? null,
+          captureCredentials: input.captureCredentials,
         });
       }),
 
@@ -756,6 +758,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         senderName: z.string().optional(),
         senderEmail: z.string().email().optional(),
         notes: z.string().optional(),
+        captureCredentials: z.boolean().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);

@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ type WizardForm = {
   selectedTargetIds: number[];
   templateSearch: string;
   targetSearch: string;
+  captureCredentials: boolean;
 };
 
 const DEFAULT_FORM: WizardForm = {
@@ -62,6 +64,7 @@ const DEFAULT_FORM: WizardForm = {
   selectedTargetIds: [],
   templateSearch: "",
   targetSearch: "",
+  captureCredentials: false,
 };
 
 export default function Campaigns() {
@@ -136,6 +139,7 @@ export default function Campaigns() {
       senderEmail: form.senderEmail || undefined,
       templateId: form.templateId ?? undefined,
       targetIds: form.selectedTargetIds,
+      captureCredentials: form.captureCredentials,
     });
   }
 
@@ -309,6 +313,19 @@ export default function Campaigns() {
                       className="bg-background border-border/60"
                     />
                   </div>
+                </div>
+                <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 p-3">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">Simulate Credential Capture</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Show a fake login page for credential-harvest templates and record whether a
+                      target submits it. Actual entered passwords are never read or stored.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={form.captureCredentials}
+                    onCheckedChange={v => setForm(f => ({ ...f, captureCredentials: v }))}
+                  />
                 </div>
               </div>
             )}
