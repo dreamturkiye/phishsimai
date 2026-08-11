@@ -23,6 +23,13 @@ export function seoForPath(pathname: string): RouteMeta {
     const post = getPost(slug);
     if (post) return { title: post.title, description: post.description, path: `/blog/${slug}` };
   }
+  if (pathname === "/blog" || pathname === "/blog/") {
+    return {
+      title: "PhishSim AI Blog - Phishing Simulation & MSP Security Guides",
+      description: "Guides on phishing simulation, security awareness training, cyber insurance requirements, and MSP security, from the PhishSim AI team.",
+      path: "/blog",
+    };
+  }
   if (pathname.startsWith("/pricing")) {
     return {
       title: "PhishSim AI Pricing — MSP Phishing Simulation from $149/mo",
