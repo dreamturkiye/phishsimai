@@ -41,6 +41,16 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   hard: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
+// PS-LOGINPAGE-TEMPLATES-01: brand skins for the simulated login page a target sees after
+// clicking, when Simulate Credential Capture is on. Keep in sync with
+// server/email/loginPageTemplates.ts LOGIN_PAGE_TEMPLATE_META.
+const LOGIN_PAGE_TEMPLATES: { value: string; label: string; description: string }[] = [
+  { value: "microsoft365", label: "Microsoft 365", description: "Classic Microsoft sign-in page." },
+  { value: "google_workspace", label: "Google Workspace", description: "Google Account sign-in page." },
+  { value: "okta", label: "Okta SSO", description: "Okta single sign-on portal." },
+  { value: "generic_it", label: "Generic IT Portal", description: "Unbranded internal login portal." },
+];
+
 const STEPS = ["Basics", "Template", "Targets"];
 
 type WizardForm = {
@@ -53,6 +63,7 @@ type WizardForm = {
   templateSearch: string;
   targetSearch: string;
   captureCredentials: boolean;
+  loginPageBrand: string;
 };
 
 const DEFAULT_FORM: WizardForm = {
@@ -65,6 +76,7 @@ const DEFAULT_FORM: WizardForm = {
   templateSearch: "",
   targetSearch: "",
   captureCredentials: false,
+  loginPageBrand: "microsoft365",
 };
 
 export default function Campaigns() {
@@ -140,6 +152,7 @@ export default function Campaigns() {
       templateId: form.templateId ?? undefined,
       targetIds: form.selectedTargetIds,
       captureCredentials: form.captureCredentials,
+      loginPageBrand: form.loginPageBrand as "microsoft365" | "google_workspace" | "okta" | "generic_it",
     });
   }
 
@@ -327,6 +340,24 @@ export default function Campaigns() {
                     onCheckedChange={v => setForm(f => ({ ...f, captureCredentials: v }))}
                   />
                 </div>
+                {form.captureCredentials && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Login Page Template</Label>
+                    <Select value={form.loginPageBrand} onValueChange={v => setForm(f => ({ ...f, loginPageBrand: v }))}>
+                      <SelectTrigger className="bg-background border-border/60">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LOGIN_PAGE_TEMPLATES.map(t => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {LOGIN_PAGE_TEMPLATES.find(t => t.value === form.loginPageBrand)?.description}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

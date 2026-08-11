@@ -28,6 +28,7 @@ export const orgStatus = pgEnum("org_status", ["active", "suspended", "trial"]);
 export const subscriptionPlan = pgEnum("subscription_plan", ["starter", "professional", "enterprise"]);
 export const subscriptionStatus = pgEnum("subscription_status", ["active", "suspended", "pending"]);
 export const feedbackCategory = pgEnum("feedback_category", ["bug", "ux", "feature", "praise", "other"]);
+export const loginPageBrand = pgEnum("login_page_brand", ["microsoft365", "google_workspace", "okta", "generic_it"]);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 export const users = pgTable("users", {
@@ -184,6 +185,10 @@ export const campaigns = pgTable("campaigns", {
   // landing page on credential_harvest templates. Does not change what /submit/:token records --
   // actual submitted values are still never read or stored (see PS-CREDPAGE-01).
   captureCredentials: boolean("captureCredentials").default(false).notNull(),
+  // PS-LOGINPAGE-TEMPLATES-01: which fake login page brand skin to show when captureCredentials is
+  // on for a credential_harvest template. Defaults to microsoft365 — the pre-existing hardcoded
+  // page — so campaigns created before this feature render exactly as before.
+  loginPageBrand: loginPageBrand("loginPageBrand").default("microsoft365").notNull(),
   createdAt: timestamp("createdAt", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updatedAt", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
 }, (t) => [
