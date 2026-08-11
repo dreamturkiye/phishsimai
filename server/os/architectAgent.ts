@@ -226,26 +226,37 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
   await ensureTables()
   const sql = getSql()
   const root = (baseUrl || 'https://phishsimai.com').replace(/\/$/, '')
+    // MARCUS-QA-BYPASS-01 (2026-08-11): Vercel Authentication ("Standard Protection") gates
+    // every preview deployment behind a login wall, including server-to-server fetches from
+    // THIS function to its own preview URL. Live-confirmed: dev-preview QA failed 3/4 checks
+    // with literal "<!DOCTYPE..." HTML back instead of JSON -- Vercel's own auth page, not a
+    // bug in the fix being tested. VERCEL_AUTOMATION_BYPASS_SECRET is a system env var Vercel
+    // injects into every deployment once a bypass secret is configured in Deployment Protection
+    // settings; passing it as this header is the documented way for automation to see through
+    // the wall without disabling protection for real visitors.
+    const bypassHeaders: Record<string, string> = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+      ? { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
+          : {}
   const tests = [
     {
       name: 'Homepage styled (CSS + assets)',
       critical: true,
       test: async () => {
-        const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000 })
+              const r = await assertHomepageStyled(root, { brandMarker: 'PhishSim', minCssBytes: 32_000, headers: bypassHeaders })
         if (!r.jsUrl) throw new Error('CRITICAL: No Vite JS module script on homepage')
       },
     },
     { name: 'API health', test: async () => {
-      const r = await fetch(`${root}/api/health`)
+      const r = await fetch(`${root}/api/health`, { headers: bypassHeaders })
       if (!r.ok) throw new Error('Status ' + r.status)
     }},
     { name: 'HQ data responds', test: async () => {
-      const r = await fetch(`${root}/api/os/hq?secret=${process.env.HQ_SECRET}`)
+      const r = await fetch(`${root}/api/os/hq?secret=${process.env.HQ_SECRET}`, { headers: bypassHeaders })
       const d = await r.json()
       if (!d.ok) throw new Error('HQ not ok: ' + (d.error || r.status))
     }},
     { name: 'Agent watchdog status', test: async () => {
-      const r = await fetch(`${root}/api/os/agent-watchdog?secret=${process.env.HQ_SECRET}&action=status`)
+      const r = await fetch(`${root}/api/os/agent-watchdog?secret=${process.env.HQ_SECRET}&action=status`, { headers: bypassHeaders })
       const d = await r.json()
       if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},
