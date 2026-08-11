@@ -694,6 +694,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         senderEmail: z.string().email().optional(),
         notes: z.string().optional(),
         captureCredentials: z.boolean().default(false),
+        loginPageBrand: z.enum(["microsoft365", "google_workspace", "okta", "generic_it"]).default("microsoft365"),
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
@@ -744,6 +745,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           trackingDomain: null,
           notes: input.notes ?? null,
           captureCredentials: input.captureCredentials,
+          loginPageBrand: input.loginPageBrand,
         });
       }),
 
@@ -759,6 +761,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         senderEmail: z.string().email().optional(),
         notes: z.string().optional(),
         captureCredentials: z.boolean().optional(),
+        loginPageBrand: z.enum(["microsoft365", "google_workspace", "okta", "generic_it"]).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);

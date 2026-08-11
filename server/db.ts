@@ -543,18 +543,18 @@ export async function getAttackTypeForToken(token: string): Promise<string | nul
  * a credential_harvest simulation showed the login page regardless of the toggle. The click
  * handler must check both this AND the attack type before rendering it.
  */
-export async function getCaptureGateForToken(token: string): Promise<{ attackType: string | null; captureCredentials: boolean }> {
+export async function getCaptureGateForToken(token: string): Promise<{ attackType: string | null; captureCredentials: boolean; loginPageBrand: string | null }> {
   const db = await getDb();
-  if (!db) return { attackType: null, captureCredentials: false };
+  if (!db) return { attackType: null, captureCredentials: false, loginPageBrand: null };
   const rows = await db
-    .select({ attackType: templates.attackType, captureCredentials: campaigns.captureCredentials })
+    .select({ attackType: templates.attackType, captureCredentials: campaigns.captureCredentials, loginPageBrand: campaigns.loginPageBrand })
     .from(campaignResults)
     .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
     .innerJoin(templates, eq(templates.id, campaigns.templateId))
     .where(eq(campaignResults.trackingToken, token))
     .limit(1);
   const r = rows[0];
-  return { attackType: r?.attackType ?? null, captureCredentials: r?.captureCredentials ?? false };
+  return { attackType: r?.attackType ?? null, captureCredentials: r?.captureCredentials ?? false, loginPageBrand: r?.loginPageBrand ?? null };
 }
 
 export async function trackEvent(token: string, event: "open" | "click" | "submit" | "report", meta?: { ip?: string; ua?: string }) {
