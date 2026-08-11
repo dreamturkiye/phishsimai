@@ -1,3 +1,4 @@
+import type { AllowlistState } from "./lib/allowlistGate";
 import { neon } from "@neondatabase/serverless";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { DrizzleQueryError } from "drizzle-orm/errors";
@@ -26,6 +27,7 @@ import {
   targets,
   templates,
   trainingCompletions,
+  trainingAssignments,
   trainingModules,
   users,
 } from "../drizzle/schema";
@@ -118,7 +120,12 @@ export async function getUserByOpenId(openId: string) {
 export async function createOrganization(data: { name: string; slug: string; userId: number }): Promise<Organization> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  const [row] = await db.insert(organizations).values({ name: data.name, slug: data.slug }).returning({ id: organizations.id });
+  // PS-TRIAL-01: stamp a real 30-day trial at signup. Until now the welcome email promised a trial
+  // that had no mechanism — a false claim. planExpiresAt makes it true: full access until it
+  // passes, then the gated free tier (see server/lib/entitlements.ts). plan stays 'free'.
+  const { TRIAL_DAYS } = await import("./lib/entitlements");
+  const planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000);
+  const [row] = await db.insert(organizations).values({ name: data.name, slug: data.slug, planExpiresAt }).returning({ id: organizations.id });
   const orgId = row.id;
   await db.insert(orgMembers).values({ orgId, userId: data.userId, role: "admin" });
   // Seed default departments
@@ -369,12 +376,13 @@ export async function removeVerifiedDomain(orgId: number, domain: string): Promi
     .where(and(eq(orgVerifiedDomains.orgId, orgId), eq(orgVerifiedDomains.domain, clean)));
 }
 
-export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; language?: string; attackType?: string; difficulty?: string; industry?: string }) {
+export async function getTemplates(opts: { orgId?: number; isBuiltIn?: boolean; isShared?: boolean; moderationStatus?: string; language?: string; attackType?: string; difficulty?: string; industry?: string }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
   if (opts.isBuiltIn !== undefined) conditions.push(eq(templates.isBuiltIn, opts.isBuiltIn));
   if (opts.isShared !== undefined) conditions.push(eq(templates.isShared, opts.isShared));
+  if (opts.moderationStatus !== undefined) conditions.push(eq(templates.moderationStatus, opts.moderationStatus));
   if (opts.orgId !== undefined) conditions.push(eq(templates.orgId, opts.orgId));
   if (opts.language) conditions.push(eq(templates.language, opts.language as any));
   if (opts.attackType) conditions.push(eq(templates.attackType, opts.attackType as any));
@@ -398,7 +406,7 @@ export async function getTemplateById(id: number, requestingOrgId?: number): Pro
   return t;
 }
 
-export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount">): Promise<Template> {
+export async function createTemplate(data: Omit<Template, "id" | "createdAt" | "updatedAt" | "usageCount" | "senderName" | "moderationStatus"> & { senderName?: string | null; moderationStatus?: string }): Promise<Template> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const [row] = await db.insert(templates).values({ ...data, usageCount: 0 }).returning({ id: templates.id });
@@ -489,6 +497,46 @@ export async function createCampaignResult(data: Omit<CampaignResult, "id" | "cr
   return r;
 }
 
+/**
+ * PS-CREDPAGE-01: which simulation is this token part of?
+ *
+ * The click path branches on it: a credential_harvest simulation shows the fake login page (the
+ * behaviour the product measures), everything else goes straight to training as before. Returns
+ * null when it cannot be resolved — the caller MUST treat null as "go to training", because a
+ * lookup failure is not a reason to show a recipient a login form.
+ */
+export async function getLessonContextForToken(token: string): Promise<{ attackType: string | null; senderName: string | null; subject: string | null }> {
+  const db = await getDb();
+  if (!db) return { attackType: null, senderName: null, subject: null };
+  try {
+    const rows = await db
+      .select({ attackType: templates.attackType, subject: templates.subject, tSender: templates.senderName, cSender: campaigns.senderName })
+      .from(campaignResults)
+      .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
+      .innerJoin(templates, eq(templates.id, campaigns.templateId))
+      .where(eq(campaignResults.trackingToken, token))
+      .limit(1);
+    const r = rows[0];
+    if (!r) return { attackType: null, senderName: null, subject: null };
+    return { attackType: r.attackType ?? null, senderName: (r.cSender ?? r.tSender) ?? null, subject: r.subject ?? null };
+  } catch {
+    return { attackType: null, senderName: null, subject: null };
+  }
+}
+
+export async function getAttackTypeForToken(token: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select({ attackType: templates.attackType })
+    .from(campaignResults)
+    .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
+    .innerJoin(templates, eq(templates.id, campaigns.templateId))
+    .where(eq(campaignResults.trackingToken, token))
+    .limit(1);
+  return rows[0]?.attackType ?? null;
+}
+
 export async function trackEvent(token: string, event: "open" | "click" | "submit" | "report", meta?: { ip?: string; ua?: string }) {
   const db = await getDb();
   if (!db) return;
@@ -536,9 +584,69 @@ export async function recordTrainingCompletion(data: Omit<TrainingCompletion, "i
   const db = await getDb();
   if (!db) return;
   await db.insert(trainingCompletions).values({ ...data, completedAt: new Date() });
-  // Update gamification if targetId provided
+  // PS-REMEDIATION-01: close the loop. If this completion matches an OPEN auto-assignment for the
+  // same target+module, stamp it completed. No open assignment (a self-serve completion) simply
+  // records the completion — it does not invent an assignment.
   if (data.targetId) {
+    await db.update(trainingAssignments)
+      .set({ completedAt: new Date() })
+      .where(and(
+        eq(trainingAssignments.targetId, data.targetId),
+        eq(trainingAssignments.moduleId, data.moduleId),
+        isNull(trainingAssignments.completedAt),
+      ));
     await updateGamificationOnTraining(data.orgId, data.targetId);
+  }
+}
+
+/**
+ * PS-REMEDIATION-01 — the ENROLL step. Curated, deterministic attack-type -> module-category map.
+ * Not guessed per run: a fixed table so the same failure always assigns the same kind of training.
+ */
+export const ATTACK_TYPE_TO_CATEGORY: Record<string, string> = {
+  credential_harvest: 'Social Engineering',
+  link_click: 'Threat Awareness',
+  attachment: 'Threat Awareness',
+  vishing: 'Social Engineering',
+  smishing: 'Social Engineering',
+  pretexting: 'Social Engineering',
+};
+/** Fallback when no module exists in the mapped category — a general module always seeded. */
+export const FALLBACK_CATEGORY = 'Security Fundamentals';
+
+/**
+ * Auto-enroll the target behind a tracking token into the module matching the simulation's attack
+ * type. Best-effort and idempotent: returns null (never throws) so a failure here can never break
+ * the tracker's response to the recipient. One OPEN assignment per (target, module) — the 0023
+ * partial unique index enforces it, and ON CONFLICT DO NOTHING makes a repeat failure inert.
+ *
+ * Returns the assignment id on a fresh enroll, or null when there was nothing to assign (no result
+ * row, no module) or the open assignment already existed. Never fabricates: no module -> no row.
+ */
+export async function assignTrainingForToken(token: string, source: 'sim_click' | 'sim_submit'): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const [res] = await db.select({ id: campaignResults.id, orgId: campaignResults.orgId, targetId: campaignResults.targetId })
+      .from(campaignResults).where(eq(campaignResults.trackingToken, token)).limit(1);
+    if (!res) return null; // no result row -> nothing to enroll
+    const attackType = await getAttackTypeForToken(token);
+    const category = (attackType && ATTACK_TYPE_TO_CATEGORY[attackType]) || FALLBACK_CATEGORY;
+    // Pick the module: matching category first, else the fallback category, else nothing.
+    let [mod] = await db.select({ id: trainingModules.id }).from(trainingModules)
+      .where(eq(trainingModules.category, category)).orderBy(trainingModules.id).limit(1);
+    if (!mod && category !== FALLBACK_CATEGORY) {
+      [mod] = await db.select({ id: trainingModules.id }).from(trainingModules)
+        .where(eq(trainingModules.category, FALLBACK_CATEGORY)).orderBy(trainingModules.id).limit(1);
+    }
+    if (!mod) return null; // no module exists -> assign nothing, never a phantom row
+    const rows = await db.insert(trainingAssignments).values({
+      orgId: res.orgId, targetId: res.targetId, moduleId: mod.id,
+      attackType: attackType ?? null, source, campaignResultId: res.id,
+    }).onConflictDoNothing().returning({ id: trainingAssignments.id });
+    return rows[0]?.id ?? null; // null when an open assignment already existed
+  } catch {
+    return null; // never break the tracker
   }
 }
 
@@ -589,11 +697,26 @@ export async function updateGamificationOnTraining(orgId: number, targetId: numb
   await db.update(gamificationScores).set({ riskScore: newRisk, trainingCount: score.trainingCount + 1 }).where(and(eq(gamificationScores.orgId, orgId), eq(gamificationScores.targetId, targetId)));
 }
 
-export async function getOrgPostureScore(orgId: number): Promise<number> {
+/**
+ * PS-POSTURE-HONEST-01 — a posture score over zero data is NOT 50.
+ *
+ * This returned a hardcoded 50 both when the database was unreachable and when the org had no
+ * scored targets at all. A brand-new trial — the exact account we most need to tell the truth to —
+ * was shown "Security Score 50/100" as though something had been measured. Nothing had.
+ *
+ * That is the same defect class as a rate over an empty denominator (truthReport.ts:36
+ * NOT_MEASURED) and as a scan verdict over zero units (scanVerdict.ts), except pointed at a
+ * customer instead of at an internal brief. INV-3 exists to halt exactly this shape; it was living
+ * in the analytics dashboard the whole time.
+ *
+ * NULL means "we have not measured this yet" and the UI must say so in words. It must never be
+ * coalesced to 0 either — 0/100 reads as catastrophic security, which is a worse lie than 50.
+ */
+export async function getOrgPostureScore(orgId: number): Promise<number | null> {
   const db = await getDb();
-  if (!db) return 50;
+  if (!db) return null; // unreachable DB is not a posture of 50
   const scores = await db.select().from(gamificationScores).where(eq(gamificationScores.orgId, orgId));
-  if (scores.length === 0) return 50;
+  if (scores.length === 0) return null; // no scored targets: nothing has been measured
   const avg = scores.reduce((sum, s) => sum + s.riskScore, 0) / scores.length;
   return Math.round(100 - avg); // posture = inverse of risk
 }
@@ -620,4 +743,172 @@ export async function updateOrgStripeSubscription(
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.update(organizations).set(data).where(eq(organizations.id, orgId));
+}
+
+// ─── PS-DELIVER-ALLOWLIST-01 — allowlist onboarding state ────────────────────
+
+/**
+ * Read an org's allowlist state. Returns null when there is no row, which the gate treats as
+ * not_started — the correct default, since an org that has never seen the step has not completed it.
+ *
+ * A read FAILURE also returns null and therefore blocks. Fail closed: an unreadable state is not
+ * evidence of consent, and the cost of a wrong block (one extra click) is far below the cost of a
+ * wrong pass (an invisible first campaign, which is the activation leak this exists to close).
+ */
+export async function getOrgAllowlistState(orgId: number): Promise<{ state: AllowlistState; skipAckText: string | null } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rows = (await db.execute(
+      sql`SELECT state, skip_ack_text FROM org_allowlist_state WHERE "orgId" = ${orgId} LIMIT 1`,
+    )) as any;
+    const r = rows?.rows?.[0] ?? rows?.[0];
+    if (!r) return null;
+    return { state: r.state as AllowlistState, skipAckText: r.skip_ack_text ?? null };
+  } catch {
+    return null; // fail closed
+  }
+}
+
+/** Record that the admin says they configured allowlisting. Never a claim that we verified it. */
+export async function confirmOrgAllowlist(orgId: number, userId: number, platform: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("database unavailable");
+  await db.execute(sql`
+    INSERT INTO org_allowlist_state ("orgId", state, platform, "confirmedAt", "confirmedBy", "updatedAt")
+    VALUES (${orgId}, 'confirmed_by_admin', ${platform}, NOW(), ${userId}, NOW())
+    ON CONFLICT ("orgId") DO UPDATE SET
+      state = 'confirmed_by_admin', platform = ${platform},
+      "confirmedAt" = NOW(), "confirmedBy" = ${userId},
+      "skippedAt" = NULL, skip_ack_text = NULL, "updatedAt" = NOW()
+  `);
+}
+
+/**
+ * Record a knowing skip. `ackText` is the warning the admin actually agreed to, stored verbatim —
+ * the 0021 CHECK constraint rejects a skip without it, so an unrecorded skip cannot be written.
+ */
+export async function skipOrgAllowlist(orgId: number, ackText: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("database unavailable");
+  await db.execute(sql`
+    INSERT INTO org_allowlist_state ("orgId", state, "skippedAt", skip_ack_text, "updatedAt")
+    VALUES (${orgId}, 'skipped', NOW(), ${ackText}, NOW())
+    ON CONFLICT ("orgId") DO UPDATE SET
+      state = 'skipped', "skippedAt" = NOW(), skip_ack_text = ${ackText},
+      "confirmedAt" = NULL, "confirmedBy" = NULL, "updatedAt" = NOW()
+  `);
+}
+
+/**
+ * PS-LEARNING-COMPLETE-01 — mark the on-click micro-lesson complete for the target behind a token.
+ *
+ * "Complete" is a DELIBERATE acknowledgement, never a page-view: the caller is the landing page's
+ * POST-only acknowledgement button, mirroring the report control (a GET would be prefetched by mail
+ * scanners and would fabricate completions for people who never finished).
+ *
+ * Stamps the target's OPEN training_assignment (the one auto-created on their click by
+ * PS-REMEDIATION-01) via recordTrainingCompletion. Returns false and records NOTHING when there is
+ * no open assignment — no assignment means nothing was owed, and inventing a completion would be the
+ * exact fabrication this loop guards against.
+ */
+export async function completeTrainingForToken(token: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    const [res] = await db.select({ orgId: campaignResults.orgId, targetId: campaignResults.targetId })
+      .from(campaignResults).where(eq(campaignResults.trackingToken, token)).limit(1);
+    if (!res) return false;
+    const [open] = await db.select({ moduleId: trainingAssignments.moduleId })
+      .from(trainingAssignments)
+      .where(and(
+        eq(trainingAssignments.targetId, res.targetId),
+        isNull(trainingAssignments.completedAt),
+      ))
+      .orderBy(trainingAssignments.assignedAt).limit(1);
+    if (!open) return false; // nothing owed -> record nothing, never a phantom completion
+    await recordTrainingCompletion({ orgId: res.orgId, targetId: res.targetId, moduleId: open.moduleId, userId: null, score: null, timeSpentSeconds: null } as any);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** PS-HUMAN-RISK-01 — org training-assignment counts for the risk composite's training dimension. */
+export async function getTrainingAssignmentStats(orgId: number): Promise<{ assigned: number; completed: number }> {
+  const db = await getDb();
+  if (!db) return { assigned: 0, completed: 0 };
+  try {
+    const rows = (await db.execute(
+      sql`SELECT count(*)::int AS assigned, count("completedAt")::int AS completed
+          FROM training_assignments WHERE "orgId" = ${orgId}`,
+    )) as any;
+    const r = rows?.rows?.[0] ?? rows?.[0] ?? {};
+    return { assigned: Number(r.assigned ?? 0), completed: Number(r.completed ?? 0) };
+  } catch {
+    return { assigned: 0, completed: 0 };
+  }
+}
+
+// ─── PS-DECOMMISSION-01 — daily KPI verdict history ──────────────────────────
+
+/** Write today's KPI verdict for an agent (one row per agent per UTC day). Best-effort. */
+export async function writeAgentKpiVerdict(agentId: string, kpi: string, verdict: string): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.execute(sql`
+      INSERT INTO os_agent_kpi_daily (product_id, agent_id, kpi, verdict)
+      VALUES ('phishsimai', ${agentId}, ${kpi}, ${verdict})
+      ON CONFLICT (product_id, agent_id, day) DO UPDATE SET verdict = ${verdict}, kpi = ${kpi}
+    `);
+  } catch { /* history write is best-effort; never break the brief */ }
+}
+
+/** Read an agent's verdict history, most-recent day FIRST, up to `days` rows. */
+export async function readAgentKpiHistory(agentId: string, days: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const rows = (await db.execute(sql`
+      SELECT verdict FROM os_agent_kpi_daily
+      WHERE product_id='phishsimai' AND agent_id=${agentId}
+      ORDER BY day DESC LIMIT ${days}
+    `)) as any;
+    const list = rows?.rows ?? rows ?? [];
+    return list.map((r: any) => String(r.verdict));
+  } catch {
+    return [];
+  }
+}
+
+/** PS-MARKETPLACE-GATE-01 — admin sets a shared template's moderation state. */
+export async function moderateTemplate(templateId: number, status: 'approved' | 'rejected'): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(templates).set({ moderationStatus: status }).where(eq(templates.id, templateId));
+}
+
+/** Pending community submissions awaiting review. */
+export async function getPendingCommunityTemplates() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(templates).where(and(eq(templates.isShared, true), eq(templates.moderationStatus, 'pending'))).orderBy(desc(templates.createdAt));
+}
+
+/** PS-REPORT-UX-01 — award the real gamification credit for a phish report and return the true
+ *  running count for the celebration page. Null when the token has no resolvable target. */
+export async function creditReportForToken(token: string): Promise<{ reportCount: number } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const [res] = await db.select({ orgId: campaignResults.orgId, targetId: campaignResults.targetId })
+      .from(campaignResults).where(eq(campaignResults.trackingToken, token)).limit(1);
+    if (!res) return null;
+    await updateGamificationOnEvent(res.orgId, res.targetId, "report"); // real: reportCount++, risk down
+    const score = await getOrCreateGamificationScore(res.orgId, res.targetId);
+    return { reportCount: score.reportCount };
+  } catch {
+    return null;
+  }
 }

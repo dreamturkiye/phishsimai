@@ -65,6 +65,17 @@ async function sendTelegram(text: string): Promise<void> {
 }
 
 async function sendEmail(lead: OutreachLead, subject: string, html: string): Promise<void> {
+  // PS-BYPASS-CLOSE-01: this path is a RAW sender — it has no sanitizer/MX/suppression/CAN-SPAM
+  // footer gate (unlike server/os/sequences.ts, the sanctioned send path). It is disabled at the
+  // source so it is STRUCTURALLY INCAPABLE of sending: even if runOutreachSequence is ever
+  // triggered, this throws before any Resend call. The only compliant sender is sequences.ts
+  // (sanitizer + hasMx + suppression + ramp cap + the CAN-SPAM footer). Do NOT re-enable this by
+  // deleting the guard — route through sequences.ts instead.
+  throw new Error(
+    "PS-BYPASS-CLOSE-01: outreachSequence raw sender is disabled — no send may leave this path. " +
+    "Use server/os/sequences.ts (sanitizer + MX + suppression + CAN-SPAM footer + ramp cap).",
+  )
+  // eslint-disable-next-line no-unreachable
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {

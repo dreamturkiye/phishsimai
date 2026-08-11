@@ -132,6 +132,11 @@ export default function MiaWidget({ orgId, orgName, hidden }: MiaWidgetProps) {
           message: msg,
           pathname: location,
           explicitFeedback: opts?.explicitFeedback ?? /feedback|suggest/i.test(msg),
+          // PS-MIA-CALLWINDOW-01. The browser's own zone, sent with every message so a handoff
+          // request can resolve "9am" to an absolute instant. This is NOT the contact form (name /
+          // phone / best-time is a later build) — it is the one field that makes a stated call time
+          // usable at all, and it costs the user nothing.
+          timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return undefined } })(),
         }),
       })
       const reply = d.reply || 'Sorry, try again!'

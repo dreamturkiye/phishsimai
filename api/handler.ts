@@ -2,6 +2,7 @@
 import express from "express";
 import { mountProductApi } from "../server/productApiMount";
 import { registerStripeWebhook } from "../server/stripe/webhook";
+import { registerResendWebhook } from "../server/email/resendWebhook";
 import { scheduledCampaignHandler } from "../server/scheduledHandlers";
 import { initSentry } from "../server/os/sentryServer";
 import { sentryErrorMiddleware } from "../server/os/sentryExpress";
@@ -35,6 +36,10 @@ const app = express();
 // signature verification (webhooks.constructEvent) needs the RAW request body, so the raw route
 // must win before the global JSON parser consumes the stream. Order is load-bearing.
 registerStripeWebhook(app);
+// 1b: Resend delivery webhook — same load-bearing rule as Stripe. Its Svix signature is verified
+// over the RAW body, so it MUST win before the global JSON parser below consumes the stream. This
+// is the production (Vercel) entry point; server/_core/index.ts registers it for local/dev.
+registerResendWebhook(app);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -114,7 +119,24 @@ async function dispatchOsRoute(req: any, res: any) {
     const method = req.method.toLowerCase();
 
     if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
+    if (path === "/api/os/deploy-verify") return routes.cronDeployVerify(req, res);
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
+    if (path === "/api/os/sequence-touch2") return routes.cronSequenceTouch2(req, res); // PS-OUTREACH-THROTTLE-01: was mounted only in _core (dev server) → 404'd in prod
+    // PS-DIGEST-01: mounted HERE, not only in _core — same trap as sequence-touch2 above.
+    if (path === "/api/os/daily-report") return routes.cronDailyReport(req, res);    if (path === "/api/os/funnel-health") { if (!routes.okCronOrHq(req, res)) return; const { runFunnelHealthCheck } = await import("../server/os/funnelHealth"); return res.json({ ok: true, ...(await runFunnelHealthCheck()) }); }
+
+    if (path === "/api/os/competitor-intel") return routes.cronCompetitorIntel(req, res);
+    if (path === "/api/os/reflection") return routes.cronReflection(req, res);
+    if (path === "/api/os/scout-landscape") return routes.cronScoutLandscape(req, res);
+    if (path === "/api/os/sales-replies") return routes.cronSalesReplies(req, res);
+    if (path === "/api/os/rex") return routes.cronRex(req, res);
+    if (path === "/api/os/dex") return routes.cronDex(req, res);
+    if (path === "/api/os/aria") return routes.cronAria(req, res);
+    if (path === "/api/os/mason") return routes.cronMason(req, res);
+    if (path === "/api/os/scout") return routes.cronScout(req, res);
+    if (path === "/api/os/finn") return routes.cronFinn(req, res);
+    if (path === "/api/os/vera") return routes.cronVera(req, res);
+    if (path === "/api/os/nova") return routes.cronNova(req, res);
     if (path === "/api/os/aria-daily") return routes.cronAriaDaily(req, res);
     if (path === "/api/os/janet" || path === "/api/os/janet-cgo") return routes.cronJanetCgo(req, res);
     if (path === "/api/os/metrics-snapshot") return routes.cronMetricsSnapshot(req, res);
@@ -138,6 +160,8 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/qa-smoke") return routes.qaSmokePS(req, res);
     if (path === "/api/os/webhook/reply") return routes.webhookReply(req, res);
     if (path === "/api/os/webhooks/resend" && method === "post") return routes.webhookResend(req, res);
+    // PS-REPLY-CAPTURE-01: inbound reply capture (Google Workspace forward relay POSTs here).
+    if (path === "/api/os/webhooks/resend-inbound" && method === "post") return routes.resendInbound(req, res);
     if (path === "/api/os/hq" && method === "get") return routes.hqData(req, res);
     if (path === "/api/os/hq/chat" && method === "post") return routes.hqChat(req, res);
     if (path === "/api/os/hq/ingest" && method === "post") return routes.hqIngest(req, res);
@@ -152,6 +176,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/bug-report" && method === "post") return routes.bugReport(req, res);
     if (path === "/api/os/janet/report" && method === "get") return routes.janetReport(req, res);
     if (path === "/api/os/architect/breaker") return routes.breakerEndpoint(req, res);
+    if (path === "/api/os/architect/gate") return routes.architectGateEndpoint(req, res); // PS-MARCUS-GATES-01
     if (path === "/api/os/architect/pending" && method === "get") return routes.architectPending(req, res);
     // PS-LADDER-01: clean-day ladder. Mounted HERE, not in server/_core/index.ts -- that
     // Express app is the LOCAL dev server and never runs on Vercel. Production enters via
@@ -159,6 +184,13 @@ async function dispatchOsRoute(req: any, res: any) {
     // in _core is a route that 404s in prod, which is how "mountProductApi defined but never
     // called" happened: code that exists, looks wired, and is unreachable.
     if (path === "/api/os/architect/autonomy" && method === "get") return routes.architectAutonomy(req, res);
+    // PS-AUTONOMY-BRIDGE-01: daily earned-autonomy promotion (token-audited). Scheduled AFTER the
+    // clean-day compute so it reads the finalized result. Emits the daily autonomy Telegram line.
+    if (path === "/api/os/autonomy-promote") return routes.cronAutonomyPromotion(req, res);
+    if (path === "/api/os/sanitize-refill") return routes.cronSanitizeRefill(req, res);
+    if (path === "/api/os/msp-harvest") return routes.cronMspHubHarvest(req, res);
+    if (path === "/api/os/outreach-funnel") return routes.cronOutreachFunnel(req, res);
+    if (path === "/api/os/trial-nudges") return routes.cronTrialNudges(req, res);
     if (path === "/api/os/architect/incident" && method === "post") return routes.architectIncident(req, res);
     if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);

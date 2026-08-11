@@ -5,12 +5,15 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "build": "vite build && ./node_modules/.bin/esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && ./node_modules/.bin/esbuild api/handler.ts --platform=node --bundle --format=cjs --outfile=api/index.js --external:mysql2 --external:mysql2/promise --external:canvas --external:sharp --external:opentype.js",
+    "build": "./node_modules/.bin/tsc --noEmit && vite build && ./node_modules/.bin/vite build --ssr src/prerender.tsx --outDir ../dist/prerender && node scripts/prerender.mjs && ./node_modules/.bin/esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && ./node_modules/.bin/esbuild api/handler.ts --platform=node --bundle --format=cjs --outfile=api/index.js --external:mysql2 --external:mysql2/promise --external:canvas --external:sharp --external:opentype.js",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate"
+    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "claims:generate": "tsx scripts/generatePriceClaims.ts",
+    "claims:check": "tsx scripts/generatePriceClaims.ts --check",
+    "ci:detectors": "tsx ci/static-detectors.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
@@ -73,6 +76,7 @@
     "input-otp": "^1.4.2",
     "jose": "6.1.0",
     "lucide-react": "^0.453.0",
+    "marked": "^18.0.7",
     "mysql2": "^3.15.0",
     "nanoid": "^5.1.5",
     "next-themes": "^0.4.6",

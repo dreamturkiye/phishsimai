@@ -4,7 +4,7 @@ import { advanceLongTermStrategies } from './kaan-os-core/janetStrategy'
 import { runMarcusProactiveScan } from './kaan-os-core/marcusProactive'
 import { runIntelFinanceProactiveCycle } from './kaan-os-core/intelligenceFinance'
 import { queueJanetArchitectTask } from './selfHeal'
-import { issueTask, runJanetFullOrchestration, AGENTS, type AgentId } from '../lib/kaan_os_v4'
+import { issueTask, runJanetFullOrchestration, AGENTS, scaledDueHours, type AgentId } from '../lib/kaan_os_v4'
 import type { AgentId as CoreAgentId } from './kaan-os-core/types'
 import { getSql } from './conn'
 import { isAutonomyDenied } from './autonomyGate'
@@ -73,7 +73,7 @@ export async function runL5JanetCycle(
     // denial so the cycle continues instead of crashing the cron; a non-gate
     // error (e.g. a real DB failure) still propagates.
     try {
-      await issueTask(agentId, { agent_id: agentId, title, description, priority: 'high', due_in_hours: 48 }, companyId)
+      await issueTask(agentId, { agent_id: agentId, title, description, priority: 'high', due_in_hours: scaledDueHours(title, description) }, companyId)
     } catch (e) {
       if (isAutonomyDenied(e)) {
         gateDenials.push({ action: 'issue_agent_task', target: agentId, reason: e.reason })

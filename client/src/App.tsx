@@ -19,6 +19,7 @@ import AcceptInvite from "./pages/AcceptInvite";
 import ComplianceCenter from "./pages/ComplianceCenter";
 import MspPortal from "./pages/MspPortal";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
+import BlogPost from "./pages/BlogPost";
 import TermsOfService from "./pages/TermsOfService";
 import Login from "./pages/Login";
 import HQ from "./pages/HQ";
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/compliance" component={ComplianceCenter} />
       <Route path="/msp" component={MspPortal} />
       <Route path="/privacy" component={PrivacyPolicy} />
+      <Route path="/blog/:slug" component={BlogPost} />
       <Route path="/terms" component={TermsOfService} />
       <Route path="/login" component={Login} />
       <Route path="/hq" component={HQ} />

@@ -41,6 +41,7 @@ export default function Dashboard() {
   const org = orgsData?.[0]?.org;
 
   const { data: analytics } = trpc.analytics.overview.useQuery({ orgId: orgId! }, { enabled: !!orgId });
+  const { data: humanRisk } = trpc.analytics.humanRisk.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: campaigns } = trpc.campaigns.list.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: targets } = trpc.targets.list.useQuery({ orgId: orgId! }, { enabled: !!orgId });
 
@@ -81,13 +82,37 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* PS-HUMAN-RISK-01 tile — the single QBR number. Null reads "Not enough data yet", never a
+            fabricated score; the "N of 3 dimensions" context stays honest about how complete it is. */}
+        <Card className="border-border/60 mb-4">
+          <CardContent className="p-6 flex items-center justify-between gap-6">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Human Risk Score</div>
+              {humanRisk?.score == null ? (
+                <>
+                  <div className="text-2xl font-semibold text-muted-foreground">Not enough data yet</div>
+                  <div className="text-xs text-muted-foreground mt-1">Run a campaign to establish a baseline</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-5xl font-black text-primary leading-none">{humanRisk.score}<span className="text-xl text-muted-foreground font-medium">/100</span></div>
+                  <div className="text-xs text-muted-foreground mt-2">{humanRisk.measured} of {humanRisk.total} dimensions measured{humanRisk.measured < humanRisk.total ? " — partial, honestly labelled" : ""}</div>
+                </>
+              )}
+            </div>
+            <div className="hidden sm:block max-w-xs text-xs text-muted-foreground leading-relaxed">
+              One number for your QBR: phishing behaviour + training completion, rolled up. Lower is safer. A missing dimension is omitted, never invented.
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: "Emails Sent", value: sent.toLocaleString(), icon: Mail, color: "text-blue-400", bg: "bg-blue-500/10" },
             { label: "Avg Click Rate", value: `${clickRate}%`, icon: MousePointer, color: "text-amber-400", bg: "bg-amber-500/10" },
             { label: "Cred Submissions", value: `${submitRate}%`, icon: KeyRound, color: "text-red-400", bg: "bg-red-500/10" },
-            { label: "Security Score", value: `${analytics?.postureScore ?? 0}`, icon: Shield, color: "text-primary", bg: "bg-primary/10", suffix: "/100" },
+            { label: "Security Score", value: analytics?.postureScore == null ? "Not enough data yet" : `${analytics.postureScore}`, icon: Shield, color: "text-primary", bg: "bg-primary/10", suffix: analytics?.postureScore == null ? "" : "/100" },
           ].map((s) => (
             <Card key={s.label} className="border-border/60">
               <CardContent className="p-5">

@@ -223,7 +223,15 @@ input:focus,textarea:focus{border-color:#e53e3e!important}
 </div>
 
 <script>
-const HQ = 'ps-hq-2026'
+// PS-HQAUTH-01: burned hardcoded secret retired. Open /hq.html?key=<HQ_SECRET> once (cached in
+// localStorage). The server stopped accepting the old literal on 2026-07-10 (commit 6a7789d).
+const HQ = (function () {
+  try {
+    const fromUrl = new URLSearchParams(location.search).get('key')
+    if (fromUrl) { localStorage.setItem('hq_secret', fromUrl); return fromUrl }
+    return localStorage.getItem('hq_secret') || ''
+  } catch (e) { return '' }
+})()
 const CRON = '' // set via env in production
 let voiceOn = true, chatHistory = [], mediaRec = null, audioChunks = [], currentAudio = null, voiceState = 'idle'
 let data = null

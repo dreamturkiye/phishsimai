@@ -216,3 +216,35 @@ MX pre-check · geo allowlist [US,GB,AU] · DAILY_SEND_LIMIT 20 (query LIMIT 20 
 - [ ] BUG-12: Templates "Use Template" — navigate to campaigns after fork
 - [ ] BUG-13: OrgSettings — add Copy Link button for pending invites
 - [ ] BUG-18: MSP impersonation banner — show "Managing: [Customer]" persistent banner
+
+## Phase 19: Deliverability — sims must reach the inbox (routed to PhishSim seat)
+
+Root cause of "product looks broken": simulated-phishing content is phishing BY DESIGN, so content
++ new-sender reputation put it in spam even with SPF/DKIM/DMARC all passing (auth is NOT the
+problem — verified 2026-07-22: DKIM aligned, SPF healthy 2/10 lookups, DMARC passing). The industry
+fix is customer-side allowlisting; every competitor gates onboarding on it. Confirmed by a real
+send to kaan@phishsimai.com landing in Junk despite delivering.
+
+- [ ] **PS-DELIVER-ALLOWLIST-01 (P1)** — Onboarding step that hands the customer's IT admin exact
+      allowlist instructions, gated as part of setup (like KnowBe4/Proofpoint/Hoxhunt).
+      • Microsoft 365: Defender → Policies & rules → Threat policies → **Advanced Delivery →
+        Phishing simulation** — configure sending domain(s), IPs, and sim URLs → delivers to inbox,
+        does NOT strip links, does NOT count as real threats. Purpose-built for exactly this.
+      • Google Workspace: no single equivalent — combine Admin → Apps → Gmail → Spam/Phishing/
+        Malware → **Email allowlist (sending IPs)** + a **content-compliance rule scoped to the sim
+        sender domain** to bypass spam classification. (Google-approved pattern for third-party sims.)
+      • Product surfaces the exact sending domain/IPs/URLs per org so the admin can paste them in.
+- [ ] **PS-DELIVER-PREFLIGHT-01 (P2)** — Deliverability preflight: before a campaign launches, send
+      a test sim to a seeded/monitored customer mailbox and verify INBOX placement. Block launch (or
+      warn hard) if it lands in spam. Turns today's silent failure into a blocking check.
+- [ ] **PS-DELIVER-IDENTITY-01** — Split sending identities so they stop poisoning each other:
+      apex phishsimai.com = corporate/transactional ONLY; sims → dedicated `sim.phishsimai.com`
+      (verified on Resend, own SPF/DKIM/DMARC, warmed); cold outreach → a SEPARATE, expendable
+      burner domain (not a subdomain — outreach reputation is disposable). Code hook already in:
+      CAMPAIGN_DEFAULT_SENDER env drives the sim sender (PS-SIM-ISOLATION-01); this item is the DNS +
+      Resend-domain + warmup + outreach-domain-migration half.
+
+Quick wins (not features — do directly):
+- [ ] **DMARC rua** — add reporting so we stop collecting zero data. `_dmarc.phishsimai.com` TXT:
+      `v=DMARC1; p=none; rua=mailto:dmarc@phishsimai.com; fo=1`  (same gap on scrollfuel.io).
+- [ ] **DKIM 2048** — ask Resend to rotate resend._domainkey from 1024-bit to 2048-bit.

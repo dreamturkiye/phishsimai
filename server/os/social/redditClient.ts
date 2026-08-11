@@ -1,7 +1,10 @@
 /**
  * Sarah Mitchell Reddit client — session login via credentials (no OAuth app required).
  * Credentials: SARAH_REDDIT_USERNAME, SARAH_REDDIT_PASSWORD in env only.
+ *
+ * PS-SOCIAL-LOCKOUT-01: publishing is severed at redditPostForm(). Reads/monitoring still work.
  */
+import { assertPublicPostingDisabled } from './publicPostingLockout'
 
 const UA = () =>
   process.env.SARAH_REDDIT_USER_AGENT ||
@@ -165,7 +168,11 @@ export async function redditGet(path: string, session: RedditSession): Promise<a
   return res.json()
 }
 
+// PS-SOCIAL-LOCKOUT-01: every public Reddit write (/api/submit, /api/comment) funnels through this
+// one function, so it is the choke point. Throws before any network call. Read paths (hot.json,
+// /api/v1/me, login) are deliberately untouched — monitoring stays allowed.
 async function redditPostForm(path: string, session: RedditSession, fields: Record<string, string>): Promise<any> {
+  assertPublicPostingDisabled(`Reddit ${path}`)
   const body = new URLSearchParams({ ...fields, api_type: 'json' })
   const headers: Record<string, string> = {
     'User-Agent': UA(),

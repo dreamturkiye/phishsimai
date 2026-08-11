@@ -15,6 +15,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { COMPANY_ID } from './version'
+
+// PS-ESCALATION-COVERAGE-01: the founder early-warning writer. escalation-notify (*/15) delivers
+// every un-notified `escalations` row to Telegram, but the ONLY feed used to be circuit-breaker
+// trips — so the events that most needed escalating (a hand-written autonomy level, a Marcus
+// dispatch, repeated agent failures) were silent or scattered. This routes high-signal events to
+// the same founder-alert path. Best-effort: a failed escalation write must NEVER break the caller.
+export async function raiseEscalation(
+  category: 'autonomy_change' | 'marcus_dispatch' | 'agent_critical' | 'breaker_trip' | string,
+  payload: Record<string, any>,
+  productId: string = COMPANY_ID,
+): Promise<void> {
+  try {
+    const sql = getSql()
+    await sql`INSERT INTO escalations (product_id, category, payload)
+      VALUES (${productId}, ${category}, ${JSON.stringify(payload)}::jsonb)`
+  } catch (e: any) {
+    console.warn(`[escalation] raiseEscalation(${category}) failed: ${e?.message?.slice(0, 120)}`)
+  }
+}
 
 export interface EscalationRow {
   id: number

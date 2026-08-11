@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install --no-frozen-lockfile && npm run build",
-  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm install --no-frozen-lockfile --prod=false && npm run build",
+  "installCommand": "pnpm install --no-frozen-lockfile --prod=false",
   "outputDirectory": "dist/public",
   "framework": null,
   "functions": {
@@ -14,7 +14,12 @@
   "redirects": [
     {
       "source": "/:path*",
-      "has": [{ "type": "host", "value": "www.phishsimai.com" }],
+      "has": [
+        {
+          "type": "host",
+          "value": "www.phishsimai.com"
+        }
+      ],
       "destination": "https://phishsimai.com/:path*",
       "permanent": true
     }
@@ -37,14 +42,46 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/t/:token",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/c/:token",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/landing/:token",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/pricing",
+      "destination": "/pricing/index.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy/index.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms/index.html"
+    },
+    {
+      "source": "/blog/:slug",
+      "destination": "/blog/:slug/index.html"
+    },
+    {
       "source": "/((?!api).*)",
-      "destination": "/index.html"
+      "destination": "/app.html"
     }
   ],
   "crons": [
     {
       "path": "/api/os/architect/autonomy?action=compute",
-      "schedule": "10 0 * * *"
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/os/autonomy-promote",
+      "schedule": "40 6 * * *"
     },
     {
       "path": "/api/os/truth-report",
@@ -55,16 +92,56 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/os/sanitize-refill",
+      "schedule": "30 6 * * *"
+    },
+    {
       "path": "/api/os/sequence",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/os/sequence-touch2",
+      "schedule": "0 13-21/2 * * *"
     },
     {
       "path": "/api/os/janet",
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/os/rex",
+      "schedule": "45 5 * * *"
+    },
+    {
+      "path": "/api/os/dex",
+      "schedule": "50 5 * * *"
+    },
+    {
       "path": "/api/os/metrics-snapshot",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/os/aria",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/os/mason",
+      "schedule": "20 6 * * *"
+    },
+    {
+      "path": "/api/os/scout",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/os/finn",
+      "schedule": "40 6 * * *"
+    },
+    {
+      "path": "/api/os/vera",
+      "schedule": "50 6 * * *"
+    },
+    {
+      "path": "/api/os/nova",
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/os/escalation-notify",
@@ -87,8 +164,24 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/os/deploy-verify",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/os/discover",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/os/msp-harvest",
+      "schedule": "0 */3 * * *"
+    },
+    {
+      "path": "/api/os/outreach-funnel",
+      "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/os/trial-nudges",
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/os/researcher",
@@ -107,12 +200,32 @@
       "schedule": "0 10,16 * * *"
     },
     {
-      "path": "/api/os/v4/full",
-      "schedule": "0 9 * * *"
-    },
-    {
       "path": "/api/scheduled/mia-feedback-digest",
       "schedule": "0 11 * * 1"
-    }
+    },
+    {
+      "path": "/api/os/competitor-intel",
+      "schedule": "30 5 * * 1"
+    },
+    {
+      "path": "/api/os/sales-replies",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/os/reflection",
+      "schedule": "30 9 * * 1"
+    },
+    {
+      "path": "/api/os/scout-landscape",
+      "schedule": "0 7 * * 1"
+    },
+    {
+      "path": "/api/os/daily-report",
+      "schedule": "0 21 * * *"
+    },
+        {
+                "path": "/api/os/funnel-health",
+                "schedule": "0 20 * * *"
+        }
   ]
 }

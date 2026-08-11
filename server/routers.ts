@@ -3,12 +3,15 @@ import { TRPCError } from "@trpc/server";
 import { parse as parseCookie } from "cookie";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { checkAllowlistGate } from "./lib/allowlistGate";
+import { audit } from "./lib/campaignSend";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { createHeartbeatJob, deleteHeartbeatJob, listHeartbeatJobs, updateHeartbeatJob } from "./_core/heartbeat";
 import { llmComplete } from "./os/llmChat";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
+import { entitlementsFor, upgradeMessage } from "./lib/entitlements";
 import {
   acceptInvite,
   addPendingDomain,
@@ -29,6 +32,7 @@ import {
   deleteTarget,
   deleteTemplate,
   getCampaignById,
+  getOrgAllowlistState,
   getCampaignByTaskUid,
   getCampaignResults,
   getCampaigns,
@@ -95,6 +99,19 @@ async function requireOrgMember(orgId: number, userId: number, requireAdmin = fa
   return member;
 }
 
+// ─── Helper: resolve the caller's OWN MSP tenant (PS-PSA-01) ──────────────────
+// PSA integrations are partner-scoped. The mspTenantId is ALWAYS derived from ctx.user here, never
+// accepted from the client — so a partner can only touch its own connections and mappings.
+async function requireMspTenant(userId: number) {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+  const { mspTenants } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const [tenant] = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, userId)).limit(1);
+  if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "Not registered as an MSP partner" });
+  return tenant;
+}
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -113,6 +130,16 @@ export const appRouter = router({
     myOrgs: protectedProcedure.query(async ({ ctx }) => {
       return getUserOrgs(ctx.user.id);
     }),
+
+    // PS-TRIAL-01: the org's entitlements for the in-app trial banner + gating UX (tier,
+    // trialDaysLeft, whether full access). Read-only, org-scoped.
+    entitlements: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const org = await getOrgById(input.orgId);
+        return entitlementsFor(org ?? ({ plan: "free", planExpiresAt: null } as any));
+      }),
 
     create: protectedProcedure
       .input(z.object({ name: z.string().min(2).max(100) }))
@@ -235,6 +262,14 @@ export const appRouter = router({
           const badDomains = Array.from(new Set(blocked.map((r: any) => r.email.split("@")[1]))).join(", ");
           throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot import: ${blocked.length} target(s) on unverified domains: ${badDomains}. Verify domain ownership (Settings → Verified Domains) first.` });
         }
+        // PS-GATE-01: expired-free target cap also applies to CSV import (else it's a bypass).
+        const impEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!impEnt.full) {
+          const current = (await getTargets(input.orgId)).length;
+          if (current + rows.length > impEnt.limits.targets) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("targets", `Your free plan includes ${impEnt.limits.targets} targets (you have ${current}). Upgrade to import your full team.`) });
+          }
+        }
         const count = await bulkCreateTargets(rows);
         return { count, message: 'Imported '+count+' targets' };
       }),
@@ -341,6 +376,23 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
+        // PS-TARGET-GATE-01: manual single-target add must pre-check the domain exactly like CSV
+        // bulkImport already does — otherwise a user adds a target on an unverified domain and only
+        // learns at Launch (the compliance floor). Same gate, same message, caught at add.
+        const verifiedDomains = await getVerifiedDomains(input.orgId);
+        const { domainEnrolled } = await import("./lib/complianceGuard");
+        const domain = input.email.split("@")[1]?.toLowerCase();
+        if (!domain || !domainEnrolled(domain, verifiedDomains)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot add ${input.email}: domain ${domain ?? "(none)"} is not a verified enrolled domain for this org. Verify domain ownership (Settings → Verified Domains) first.` });
+        }
+        // PS-GATE-01: expired-free target cap.
+        const tgtEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!tgtEnt.full) {
+          const current = (await getTargets(input.orgId)).length;
+          if (current >= tgtEnt.limits.targets) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("targets", `Your free plan includes ${tgtEnt.limits.targets} targets. Upgrade to add your full team.`) });
+          }
+        }
         return createTarget({ ...input, isActive: true, title: input.title ?? null, departmentId: input.departmentId ?? null });
       }),
 
@@ -410,7 +462,9 @@ export const appRouter = router({
           results.push(...builtIn.map(t => ({ ...t, source: "built-in" })));
         }
         if (input.includeCommunity) {
-          const community = await getTemplates({ isShared: true, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
+          // PS-MARKETPLACE-GATE-01: only APPROVED shared templates reach the community pool — a bare
+          // isShared flag no longer publishes with zero review.
+          const community = await getTemplates({ isShared: true, moderationStatus: "approved", language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
           results.push(...community.filter(t => !t.isBuiltIn).map(t => ({ ...t, source: "community" })));
         }
         const orgTemplates = await getTemplates({ orgId: input.orgId, language: input.language, attackType: input.attackType, difficulty: input.difficulty, industry: input.industry });
@@ -448,6 +502,15 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
+        // PS-GATE-01: expired-free gets ONE AI template "taste" — capped by the custom-template
+        // allowance so a free account can't burn unlimited LLM credits generating.
+        const genEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!genEnt.full) {
+          const custom = (await getTemplates({ orgId: input.orgId, isBuiltIn: false })).filter((t: { orgId: number | null }) => t.orgId === input.orgId).length;
+          if (custom >= genEnt.limits.customTemplates) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("ai_template", `Your free plan includes ${genEnt.limits.customTemplates} custom template. Upgrade for unlimited AI generation.`) });
+          }
+        }
         checkLlmRateLimit(input.orgId); // SECURITY: rate limit LLM
         const langNames: Record<string, string> = { en: "English", es: "Spanish", tr: "Turkish" };
         const safeContext = input.context ? sanitizeContext(input.context) : null; // SECURITY: sanitize
@@ -521,6 +584,14 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id);
+        // PS-GATE-01: expired-free custom-template cap (built-in library stays fully usable).
+        const tplEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!tplEnt.full) {
+          const custom = (await getTemplates({ orgId: input.orgId, isBuiltIn: false })).filter((t: { orgId: number | null }) => t.orgId === input.orgId).length;
+          if (custom >= tplEnt.limits.customTemplates) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("template", `Your free plan includes ${tplEnt.limits.customTemplates} custom template. Upgrade to author more (built-in templates stay free).`) });
+          }
+        }
         // SECURITY: Sanitize HTML before storing
         return createTemplate({ ...input, htmlBody: sanitizeEmailHtml(input.htmlBody), industry: input.industry ?? null, createdByUserId: ctx.user.id, isBuiltIn: false, isMspTemplate: false, mspTenantId: null });
       }),
@@ -543,7 +614,11 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         await requireOrgMember(input.orgId, ctx.user.id);
         const { orgId, templateId, ...data } = input;
         // SECURITY: Sanitize htmlBody if provided
-        const sanitizedData = { ...data, ...(data.htmlBody ? { htmlBody: sanitizeEmailHtml(data.htmlBody) } : {}) };
+        // PS-MARKETPLACE-GATE-01: sharing a template SUBMITS it for review — moderationStatus goes
+        // to 'pending', it does NOT reach the community pool until an admin approves it. Un-sharing
+        // resets to 'pending' too, so a re-share is re-reviewed.
+        const moderation = data.isShared !== undefined ? { moderationStatus: 'pending' } : {};
+        const sanitizedData = { ...data, ...moderation, ...(data.htmlBody ? { htmlBody: sanitizeEmailHtml(data.htmlBody) } : {}) };
         await updateTemplate(templateId, orgId, sanitizedData);
         return { success: true };
       }),
@@ -621,6 +696,34 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
+        // PS-CAMPAIGN-GATE-01: block the dead-end the real customer hit. A campaign with no
+        // template can never send; one with no targets has no one to send to. Both used to be
+        // creatable and then silently "completed" via the fake Launch flip. Refuse at creation
+        // with a reason the founder can act on, instead of minting an unlaunchable row.
+        if (!input.templateId) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Pick a template — a campaign can't send without one." });
+        }
+        if (input.targetIds.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Add at least one target employee — a campaign needs someone to send to. Add employees under Targets first." });
+        }
+        // PS-GATE-01: expired-free tier caps lifetime campaigns + no scheduling. The client keeps
+        // the whole wizard usable and renders an "Upgrade to launch" CTA on this `upgrade_required`
+        // error — the soft block at the highest-intent moment, not a dead-end refusal.
+        const campEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!campEnt.full) {
+          if (input.scheduledAt && !campEnt.limits.scheduling) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("scheduling", "Scheduled & recurring campaigns are a paid feature.") });
+          }
+          const existing = await getCampaigns(input.orgId);
+          if (existing.length >= campEnt.limits.campaigns) {
+            throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("campaign", `Your free plan includes ${campEnt.limits.campaigns} campaign. Upgrade to launch more.`) });
+          }
+        }
+        // PS-TEMPLATE-SENDER-01: inherit the template's default From display name unless the
+        // campaign overrides it. Makes display-name spoofing the default realism lever rather than
+        // a per-campaign manual step. Display name only — the sending address is unchanged.
+        const seedTemplate = await getTemplateById(input.templateId, input.orgId);
+        const inheritedSenderName = input.senderName ?? seedTemplate?.senderName ?? null;
         return createCampaign({
           orgId: input.orgId,
           createdByUserId: ctx.user.id,
@@ -635,7 +738,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           isRecurring: false,
           cronExpression: null,
           scheduleCronTaskUid: null,
-          senderName: input.senderName ?? null,
+          senderName: inheritedSenderName,
           senderEmail: input.senderEmail ?? null,
           trackingDomain: null,
           notes: input.notes ?? null,
@@ -657,6 +760,11 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
         const { orgId, campaignId, scheduledAt, ...rest } = input;
+        // PS-GATE-01: scheduling is paid — block setting a future schedule on the expired-free tier.
+        if (scheduledAt) {
+          const updEnt = entitlementsFor((await getOrgById(orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+          if (!updEnt.limits.scheduling) throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("scheduling", "Scheduled & recurring campaigns are a paid feature.") });
+        }
         await updateCampaign(campaignId, orgId, {
           ...rest,
           ...(scheduledAt !== undefined ? { scheduledAt: scheduledAt ? new Date(scheduledAt) : null } : {}),
@@ -681,6 +789,9 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id, true);
+        // PS-GATE-01: recurring/scheduled campaigns are a paid feature.
+        const schEnt = entitlementsFor((await getOrgById(input.orgId)) ?? ({ plan: "free", planExpiresAt: null } as any));
+        if (!schEnt.limits.scheduling) throw new TRPCError({ code: "FORBIDDEN", message: upgradeMessage("scheduling", "Recurring campaigns are a paid feature. Upgrade to automate.") });
         const campaign = await getCampaignById(input.campaignId, input.orgId);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND" });
         // SECURITY: Use CRON_SECRET service token, not user session cookie
@@ -740,6 +851,22 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const campaign = await getCampaignById(input.campaignId, input.orgId);
         if (!campaign) throw new TRPCError({ code: "NOT_FOUND", message: "Campaign not found" });
         if (!campaign.templateId) throw new TRPCError({ code: "BAD_REQUEST", message: "No template assigned to campaign" });
+
+        // PS-DELIVER-ALLOWLIST-01 — ALLOWLIST GATE. Before a single email leaves: a check that runs
+        // after the send loop is not a gate (mail already gone, only the status update refused).
+        // Passing requires the admin to have CONFIRMED allowlisting or KNOWINGLY skipped it. We never
+        // verify the tenant policy ourselves — no vendor API exposes it — so the audit records the
+        // admin's claim as a claim, never as a verification.
+        {
+          const allowlistRow = await getOrgAllowlistState(input.orgId);
+          const gate = checkAllowlistGate(allowlistRow);
+          if (!gate.allowed) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: `Allowlist step incomplete — ${gate.detail}` });
+          }
+          await audit("allowlist_gate", "campaign_launch_allowed", `campaign:${input.campaignId}`, {
+            orgId: input.orgId, state: gate.state, note: gate.note,
+          });
+        }
         const template = await getTemplateById(campaign.templateId, input.orgId);
         if (!template) throw new TRPCError({ code: "NOT_FOUND", message: "Template not found" });
         const allTargets = await getTargets(input.orgId);
@@ -751,10 +878,16 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         // when the recipient's domain is enrolled for this org. Sends happen only on allow.
         const appBaseUrl = process.env.VITE_APP_URL ?? "https://phishsimai.com";
         const { sendCampaignEmail } = await import("./email/sender");
-        const { enqueueCampaignSend } = await import("./lib/campaignSend");
+        const { enqueueCampaignSend, markCampaignResultSent } = await import("./lib/campaignSend");
         const { nanoid } = await import("nanoid");
+        // PS-SEND-01: `sent` counts CONFIRMED provider acceptances only. It previously
+        // incremented unconditionally after a sendCampaignEmail() that swallowed its own
+        // errors, so a campaign where every send failed still reported success. Blocked (the
+        // compliance floor said no) and failed (the provider said no) are tracked separately —
+        // they need different fixes from the customer, so they must not be merged.
         let sent = 0;
         const rejected: string[] = [];
+        const failed: string[] = [];
         for (const target of targets) {
           const trackingToken = nanoid(32);
           const verdict = await enqueueCampaignSend(campaign.id, target, trackingToken);
@@ -762,14 +895,33 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
             rejected.push(`${target.email} (${verdict.reason})`);
             continue;
           }
-          await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? "security@phishsimai.com", subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl });
+          // PS-SIM-ISOLATION-01: sims must NOT default to the apex identity. Phishing-shaped
+          // content degrades the sending reputation of whatever domain it uses, and the apex is
+          // shared with sarah@ cold outreach and any real corporate mail. The default sim sender
+          // is env-driven (CAMPAIGN_DEFAULT_SENDER) so ops can point it at a dedicated, verified,
+          // reputation-isolated sim subdomain WITHOUT a code deploy. Falls back to the apex only
+          // until that subdomain is provisioned. A per-campaign senderEmail still overrides.
+          const defaultSender = process.env.CAMPAIGN_DEFAULT_SENDER ?? "security@phishsimai.com";
+          const result = await sendCampaignEmail({ to: target.email, fromName: campaign.senderName ?? "IT Security Team", fromEmail: campaign.senderEmail ?? defaultSender, subject: template.subject, htmlBody: template.htmlBody, trackingToken, appBaseUrl, firstName: target.firstName });
+          if (!result.ok) {
+            failed.push(`${target.email} (${result.error})`);
+            continue; // row stays with emailSentAt NULL — it was authorised, not delivered
+          }
+          if (verdict.resultId !== undefined) await markCampaignResultSent(verdict.resultId, result.id);
           sent++;
         }
         if (sent === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch: no targets passed the compliance floor (recipient domain must be enrolled). ${rejected.length} blocked${rejected.length ? ": " + rejected.slice(0, 5).join("; ") : ""}` });
+          // Say WHICH wall they hit. "Blocked by compliance" and "the mail provider errored"
+          // are entirely different problems and the old message asserted the former for both.
+          const parts: string[] = [];
+          if (rejected.length) parts.push(`${rejected.length} blocked by the compliance floor (recipient domain must be a verified enrolled domain): ${rejected.slice(0, 5).join("; ")}`);
+          if (failed.length) parts.push(`${failed.length} failed to send: ${failed.slice(0, 5).join("; ")}`);
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Cannot launch — nothing was sent. ${parts.join(". ") || "No eligible targets."}` });
         }
+        // Only reached when at least one email was genuinely accepted by the provider.
         await updateCampaign(input.campaignId, input.orgId, { status: "active" });
-        return { success: true, sent, rejected: rejected.length, message: `Campaign launched — ${sent} sent, ${rejected.length} blocked by the compliance floor.` };
+        const detail = [`${sent} sent`, rejected.length ? `${rejected.length} blocked by the compliance floor` : "", failed.length ? `${failed.length} failed to send` : ""].filter(Boolean).join(", ");
+        return { success: true, sent, rejected: rejected.length, failed: failed.length, rejectedDetail: rejected.slice(0, 10), failedDetail: failed.slice(0, 10), message: `Campaign launched — ${detail}.` };
       }),
 
     reportPhishing: publicProcedure
@@ -782,6 +934,14 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
 
   // ─── Analytics ──────────────────────────────────────────────────────────────
   analytics: router({
+    humanRisk: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        const { collectHumanRisk } = await import("./os/humanRiskCollect");
+        return collectHumanRisk(input.orgId);
+      }),
+
     overview: protectedProcedure
       .input(z.object({ orgId: z.number() }))
       .query(async ({ ctx, input }) => {
@@ -838,6 +998,21 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const baselineClickRate = sorted[0]?.clickRate ?? 0;
         const currentClickRate = sorted[sorted.length - 1]?.clickRate ?? 0;
         const { generateInsurancePack } = await import("./reports/insurancePack");
+        // PS-WHITELABEL-CERT-01: the cert presents under the RESELLER's brand. Resolve the MSP tenant
+        // owned by the requesting user; its brandName/brandLogoUrl white-label the certificate. No
+        // tenant -> brand stays undefined and generateInsurancePack falls back to "PhishSim AI".
+        // The org's own logo is a secondary fallback for the mark. The FACTS are unchanged either way.
+        let brandName: string | null = null;
+        let logoUrl: string | null = org.logoUrl ?? null;
+        try {
+          const { mspTenants } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          const db3 = await getDb();
+          if (db3) {
+            const [tenant] = await db3.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
+            if (tenant) { brandName = tenant.brandName ?? null; logoUrl = tenant.brandLogoUrl ?? logoUrl; }
+          }
+        } catch { /* no tenant / lookup failed -> PhishSim AI fallback, never a broken brand */ }
         const pdfBuffer = await generateInsurancePack({
           orgName: org.name,
           campaigns: campaignStats,
@@ -847,6 +1022,8 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           trainingModulesCount: 20,
           reportPeriodStart: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
           reportPeriodEnd: new Date(),
+          brandName,
+          logoUrl,
         });
         return { pdf: pdfBuffer.toString("base64"), filename: `${org.name.replace(/\s+/g, "-")}-Insurance-Readiness-Pack.pdf` };
       }),
@@ -1418,14 +1595,153 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
     }),
   }),
 
+  // ─── PSA ticketing integrations (PS-PSA-01) ──────────────────────────────────
+  //  MSP/partner-scoped. Every procedure resolves the caller's OWN mspTenant from ctx.user — the
+  //  client never supplies an mspTenantId, so a partner can only ever read/write its own connections
+  //  and mappings. Secrets are encrypted at rest and never returned to the client.
+  psa: router({
+    // List this MSP's PSA connections, SECRETS MASKED (secretEnc is never selected into the response;
+    // hasCredentials tells the UI whether keys are stored without revealing them).
+    getConnections: protectedProcedure.query(async ({ ctx }) => {
+      const tenant = await requireMspTenant(ctx.user.id);
+      const { getConnections } = await import("./psa/db");
+      const { psaSecretKeyConfigured } = await import("./psa/crypto");
+      const rows = await getConnections(tenant.id);
+      return {
+        secretKeyConfigured: psaSecretKeyConfigured(),
+        connections: rows.map((c) => ({
+          id: c.id, provider: c.provider, enabled: c.enabled, config: c.config,
+          hasCredentials: !!c.secretEnc,
+          lastTestOk: c.lastTestOk, lastTestAt: c.lastTestAt, lastError: c.lastError,
+          lastSuccessAt: c.lastSuccessAt, ticketsCreated: c.ticketsCreated,
+        })),
+      };
+    }),
+
+    // Save a connection. `secret` (the credential object) is optional: omit it to edit config
+    // without re-entering keys. When present it is encrypted before storage.
+    upsertConnection: protectedProcedure
+      .input(z.object({
+        provider: z.enum(["connectwise_manage", "halo"]),
+        enabled: z.boolean().default(false),
+        config: z.record(z.string(), z.any()),
+        secret: z.record(z.string(), z.any()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { upsertConnection } = await import("./psa/db");
+        let secretEnc: string | undefined;
+        if (input.secret && Object.keys(input.secret).length) {
+          const { encryptSecret } = await import("./psa/crypto");
+          try { secretEnc = encryptSecret(JSON.stringify(input.secret)); }
+          catch (e) { throw new TRPCError({ code: "PRECONDITION_FAILED", message: (e as Error).message }); }
+        }
+        await upsertConnection({ mspTenantId: tenant.id, provider: input.provider, enabled: input.enabled, config: input.config, secretEnc });
+        return { success: true };
+      }),
+
+    // Test a connection. Tests unsaved config+secret when supplied (so the admin can verify before
+    // enabling); otherwise tests the stored connection. Never returns the secret.
+    testConnection: protectedProcedure
+      .input(z.object({
+        provider: z.enum(["connectwise_manage", "halo"]),
+        config: z.record(z.string(), z.any()).optional(),
+        secret: z.record(z.string(), z.any()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { getConnection, recordConnectionTest } = await import("./psa/db");
+        const stored = await getConnection(tenant.id, input.provider);
+        let adapter;
+        try {
+          if (input.config && input.secret) {
+            const { buildAdapterFromPlain } = await import("./psa");
+            adapter = buildAdapterFromPlain(input.provider, input.config, input.secret);
+          } else if (stored) {
+            const { buildAdapter } = await import("./psa");
+            adapter = buildAdapter(stored);
+          } else {
+            return { ok: false, detail: "No stored connection and no config/secret supplied to test." };
+          }
+        } catch (e) { return { ok: false, detail: (e as Error).message }; }
+        const result = await adapter.testConnection();
+        if (stored) await recordConnectionTest(stored.id, result.ok, result.detail);
+        return result;
+      }),
+
+    // List companies from the PSA for the mapping UI.
+    listExternalCompanies: protectedProcedure
+      .input(z.object({ provider: z.enum(["connectwise_manage", "halo"]) }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { getConnection } = await import("./psa/db");
+        const stored = await getConnection(tenant.id, input.provider);
+        if (!stored) throw new TRPCError({ code: "NOT_FOUND", message: "Configure and save the connection first." });
+        const { buildAdapter } = await import("./psa");
+        try {
+          const adapter = buildAdapter(stored);
+          return await adapter.listCompanies();
+        } catch (e) { throw new TRPCError({ code: "BAD_REQUEST", message: (e as Error).message }); }
+      }),
+
+    getMappings: protectedProcedure.query(async ({ ctx }) => {
+      const tenant = await requireMspTenant(ctx.user.id);
+      const { getMappings } = await import("./psa/db");
+      return getMappings(tenant.id);
+    }),
+
+    upsertMapping: protectedProcedure
+      .input(z.object({
+        connectionId: z.number(),
+        orgId: z.number(),
+        externalCompanyId: z.string().min(1),
+        externalCompanyName: z.string().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { upsertMapping } = await import("./psa/db");
+        try {
+          await upsertMapping({ mspTenantId: tenant.id, connectionId: input.connectionId, orgId: input.orgId, externalCompanyId: input.externalCompanyId, externalCompanyName: input.externalCompanyName ?? null });
+        } catch (e) { throw new TRPCError({ code: "FORBIDDEN", message: (e as Error).message }); }
+        return { success: true };
+      }),
+
+    deleteMapping: protectedProcedure
+      .input(z.object({ mappingId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const tenant = await requireMspTenant(ctx.user.id);
+        const { deleteMapping } = await import("./psa/db");
+        await deleteMapping(tenant.id, input.mappingId);
+        return { success: true };
+      }),
+  }),
+
   // ─── Seed ───────────────────────────────────────────────────────────────────
   seed: router({
+    // PS-MARKETPLACE-GATE-01 — the review queue + the approve/reject action. A shared template is
+    // NOT in the community pool until an admin approves it here.
+    pendingCommunity: protectedProcedure.query(async ({ ctx }) => {
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      const { getPendingCommunityTemplates } = await import("./db");
+      return getPendingCommunityTemplates();
+    }),
+    moderate: protectedProcedure
+      .input(z.object({ templateId: z.number(), status: z.enum(["approved", "rejected"]) }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+        const { moderateTemplate } = await import("./db");
+        await moderateTemplate(input.templateId, input.status);
+        return { ok: true, templateId: input.templateId, status: input.status };
+      }),
+
     seedBuiltIns: protectedProcedure.mutation(async ({ ctx }) => {
       if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
       // Seed templates
       type TemplateInsert = Parameters<typeof createTemplate>[0];
       for (const t of BUILT_IN_TEMPLATES) {
-        await createTemplate({ ...t, isBuiltIn: true, isShared: false, orgId: null, createdByUserId: null } as TemplateInsert);
+        // PS-TEMPLATE-100: learningMoment has no column yet — strip it so the insert only carries real columns.
+        const { learningMoment: _lm, ...tCols } = t as any;
+        await createTemplate({ ...tCols, isBuiltIn: true, isShared: false, orgId: null, createdByUserId: null, moderationStatus: 'approved' } as TemplateInsert);
       }
       // Seed training modules
       const db2 = await getDb();
@@ -1452,6 +1768,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         explicitFeedback: z.boolean().optional(),
         feedbackCategory: z.enum(['bug', 'ux', 'feature', 'praise', 'other']).optional(),
         rating: z.number().min(1).max(5).optional(),
+        timezone: z.string().max(64).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         await requireOrgMember(input.orgId, ctx.user.id)
@@ -1464,6 +1781,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           explicitFeedback: input.explicitFeedback,
           feedbackCategory: input.feedbackCategory,
           rating: input.rating,
+          timezone: input.timezone,
         })
       }),
 
@@ -1496,6 +1814,43 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const { ensureMiaTables, getActivationState } = await import('./mia/miaChat')
         await ensureMiaTables()
         return getActivationState(input.orgId)
+      }),
+  }),
+
+  // ─── Allowlist onboarding wizard (PS-DELIVER-ALLOWLIST-01 UI surface) ────────
+  allowlist: router({
+    // Current state + the pre-filled M365 instructions the wizard renders.
+    state: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id)
+        const { microsoft365Instructions, googleWorkspaceInstructions, SKIP_WARNING } = await import('./lib/allowlistGate')
+        const row = await getOrgAllowlistState(input.orgId)
+        return {
+          state: row?.state ?? 'not_started',
+          microsoft365: microsoft365Instructions(),
+          googleWorkspace: googleWorkspaceInstructions(),
+          skipWarning: SKIP_WARNING,
+        }
+      }),
+    // The admin states they configured allowlisting. NEVER a claim we verified it.
+    confirm: protectedProcedure
+      .input(z.object({ orgId: z.number(), platform: z.enum(['microsoft365', 'google_workspace']) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true)
+        const { confirmOrgAllowlist } = await import('./db')
+        await confirmOrgAllowlist(input.orgId, ctx.user.id, input.platform)
+        return { ok: true, state: 'confirmed_by_admin' as const }
+      }),
+    // Knowingly skip. The exact warning acknowledged is stored verbatim (the gate rejects a skip
+    // without it, so the client must send SKIP_WARNING).
+    skip: protectedProcedure
+      .input(z.object({ orgId: z.number(), ack: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id, true)
+        const { skipOrgAllowlist } = await import('./db')
+        await skipOrgAllowlist(input.orgId, input.ack)
+        return { ok: true, state: 'skipped' as const }
       }),
   }),
 

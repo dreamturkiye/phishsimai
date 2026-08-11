@@ -109,17 +109,37 @@ describe("runAgentLevels + founder-brief flag", () => {
     expect(r.levels).toHaveLength(10);
   });
 
-  it("agentsBelowL5TwoWeeks flags an agent whose last 2 weekly levels are both below L5", async () => {
-    const sql = ((strings: TemplateStringsArray, ...v: any[]) => {
+  // ── agentsBelowL5TwoWeeks ──────────────────────────────────────────────────────────────────
+  // The contract changed in PS-BRIEF-HONESTY-01 (73350ad, 2026-07-20): the founder-brief flag
+  // fires only when both recent weeks are level 'below' AND both had graded tasks. That commit
+  // touched agentLevels.ts alone and left this block asserting the OLD rule ("last 2 levels are
+  // not L5"), so it has been failing on main ever since. The code is deliberate — see the D3
+  // comment on the implementation — so the test was what needed correcting, not the behaviour.
+  const withData = (level: string, taskCount = 12) => ({ level, window_stats: { trailing30: { taskCount } } });
+  const levelsSql = (byAgent: Record<string, any[]>) =>
+    ((strings: TemplateStringsArray, ...v: any[]) => {
       const q = strings.join(" ? ");
-      if (/FROM agent_levels/i.test(q)) {
-        const agent = v[0];
-        return Promise.resolve(agent === "janet" ? [{ level: "below" }, { level: "L4" }] : [{ level: "L5" }, { level: "L5" }]);
-      }
+      // Default every other agent to a healthy L5 so only the agent under test can be flagged.
+      if (/FROM agent_levels/i.test(q)) return Promise.resolve(byAgent[v[0] as string] ?? [withData("L5"), withData("L5")]);
       return Promise.resolve([]);
     }) as any;
-    const flagged = await agentsBelowL5TwoWeeks(sql, "phishsimai");
+
+  it("agentsBelowL5TwoWeeks flags an agent whose last 2 weeks are BOTH 'below' with graded tasks", async () => {
+    const flagged = await agentsBelowL5TwoWeeks(levelsSql({ janet: [withData("below"), withData("below")] }), "phishsimai");
     expect(flagged).toContain("janet");
     expect(flagged).not.toContain("marcus");
+  });
+
+  // The two false alarms PS-BRIEF-HONESTY-01 existed to silence. Without these the fix is unpinned
+  // and the next person to "simplify" the predicate reintroduces the crying-wolf brief.
+  it("does NOT flag a no-data agent — 'below' from zero graded tasks is untested, not underperforming", async () => {
+    const flagged = await agentsBelowL5TwoWeeks(levelsSql({ janet: [withData("below", 0), withData("below", 0)] }), "phishsimai");
+    expect(flagged).not.toContain("janet");
+  });
+
+  it("does NOT flag a healthy L4 — short of the L5 self-originated bar is not a poor score", async () => {
+    // This is the exact fixture the stale assertion used to expect a FLAG for.
+    const flagged = await agentsBelowL5TwoWeeks(levelsSql({ janet: [withData("below"), withData("L4")] }), "phishsimai");
+    expect(flagged).not.toContain("janet");
   });
 });

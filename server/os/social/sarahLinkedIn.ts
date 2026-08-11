@@ -36,11 +36,23 @@ export function renderLinkedInPreviewCard(preview: Omit<LinkedInPreview, 'previe
   return renderLinkedInFeedPost(preview)
 }
 
+// PS-SARAH-AUG5-01: hard start-date guard. Sarah takes over LinkedIn on 2026-08-05 (Kaan's PostForMe
+// schedule runs through Aug 3). NOTHING may publish before that date — no cron, no path. Every publish
+// path (queue + the PostForMe publisher, when wired) MUST consult this; before Aug 5 it is drafts-only.
+export const LINKEDIN_TAKEOVER_START = '2026-08-05'
+export function sarahLinkedInPublishBlocker(now: Date = new Date()): string | null {
+  if (now.getTime() < Date.parse(`${LINKEDIN_TAKEOVER_START}T00:00:00Z`)) {
+    return `pre-takeover: Sarah's LinkedIn goes live ${LINKEDIN_TAKEOVER_START}; no publish before then (drafts-only)`
+  }
+  return null
+}
+
 export async function generateSarahLinkedInDraft(topic?: string): Promise<LinkedInPreview> {
   const postForMeConfigured = !!(process.env.POSTFORME_API_KEY || process.env.POST_FOR_ME_API_KEY)
-  const blocker = postForMeConfigured
-    ? null
-    : 'POSTFORME_API_KEY not set — autopost blocked; preview is draft-only'
+  // Aug-5 date guard takes precedence, then the PostForMe-configured check. Either way: draft-only.
+  const blocker =
+    sarahLinkedInPublishBlocker() ||
+    (postForMeConfigured ? null : 'POSTFORME_API_KEY not set — autopost blocked; preview is draft-only')
 
   const topicLine = topic?.trim() || 'MSP compliance + phishing simulation ROI (67% breaches start with phishing)'
 
