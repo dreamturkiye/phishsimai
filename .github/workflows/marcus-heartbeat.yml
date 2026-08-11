@@ -1,0 +1,27 @@
+name: marcus-heartbeat
+on:
+  schedule:
+    - cron: "17 */3 * * *"   # every 3 hours, offset so it doesn't collide with Marcus ticks
+  workflow_dispatch: {}
+
+permissions:
+  actions: read
+  issues: write
+
+concurrency:
+  group: marcus-heartbeat
+  cancel-in-progress: true
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/marcus-heartbeat.mjs
