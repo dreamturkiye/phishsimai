@@ -1,0 +1,20 @@
+name: marcus-automerge
+on:
+  pull_request:
+    types: [opened, reopened, labeled]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    if: startsWith(github.event.pull_request.head.ref, 'marcus/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge (waits for required checks)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR" --auto --squash -R "${{ github.repository }}"
