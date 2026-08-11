@@ -1,0 +1,49 @@
+name: Marcus
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Task for Marcus"
+        required: true
+      task_id:
+        description: "agent_tasks id (optional)"
+        required: false
+
+concurrency:
+  group: marcus
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  marcus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - name: Run Marcus
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are Marcus, the autonomous engineer for PhishSimAI. You start on the `dev` branch.
+
+            TASK:
+            ${{ github.event.inputs.task }}
+
+            Do exactly this and nothing more:
+            1. Create a branch named: marcus/task-${{ github.run_id }}
+            2. Make the MINIMAL correct change to accomplish the task. Touch as few files as possible.
+            3. Do NOT edit any of: .github/, ci/, vercel.json, server/os/kaan-os-core/, or any file whose
+               path contains billing, stripe, price, pricing, or legal. A guard will hard-fail the PR if you do.
+            4. Commit, push the branch, and open a pull request into `dev`:
+               - Title: "marcus: <one-line summary>"
+               - Apply the label: marcus
+               - Put this exact line in the body: task_id=${{ github.event.inputs.task_id }}
+            5. Stop. Do not merge. Do not touch main.
+          claude_args: "--max-turns 25 --model claude-sonnet-5"

@@ -1,0 +1,30 @@
+name: marcus-path-guard
+on:
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  marcus-path-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Enforce hard-stop paths on Marcus PRs only
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          case "$HEAD_REF" in
+            marcus/*) : ;;
+            *) echo "Not a Marcus PR ($HEAD_REF) - guard passes."; exit 0 ;;
+          esac
+          FILES=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Marcus changed files:"; echo "$FILES"
+          BLOCKED=$(echo "$FILES" | grep -Ei '(^\.github/|^ci/|^vercel\.json$|^server/os/kaan-os-core/|billing|stripe|price|pricing|legal)' || true)
+          if [ -n "$BLOCKED" ]; then
+            echo "::error::Marcus touched hard-stop path(s) - blocking:"; echo "$BLOCKED"
+            exit 1
+          fi
+          echo "Path guard passed."
