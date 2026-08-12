@@ -1,0 +1,1 @@
+export const MARCUS_PROOF = 'ok';
