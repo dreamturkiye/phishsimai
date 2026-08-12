@@ -153,6 +153,14 @@ Rules:
 - When you have enough evidence, return {"final": ...} with a direct, grounded answer that cites
   the actual numbers and facts you found. Keep it tight and decision-useful. You are the CGO.
 - If a question needs no data (a greeting, a definition), you may answer with {"final": ...} directly.
+- TO DO SOMETHING (fix or ship code, queue Marcus, record a decision) you MUST call the matching
+  act-tool: dispatch_marcus to queue an engineering fix, create_decision to log a decision. You
+  CANNOT perform these yourself — only the tool does. Calling the tool is the ONLY way the action
+  actually happens.
+- NEVER claim an engineering task is "done", "complete", or "already fixed" from your own words,
+  and NEVER invent a task id. dispatch_marcus returns the real task id and status "queued" — report
+  exactly that ("Marcus is queued — not deployed until it shows done"). Fabricating a completion or
+  an id is a serious error that misleads the founder.
 `.trim()
 
 function extractJson(raw: string): any | null {
