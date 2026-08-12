@@ -59,6 +59,14 @@ export async function isFounderRampEnabled(sql = getSql()): Promise<boolean> {
   return String((r as any[])[0]?.value ?? '') === '1'
 }
 
+// PS-OPEN-TRACK-01: 1x1 pixel pointed at the route in server/os/trackOpen.ts, which decodes this
+// same token (decodeUnsubToken) back to the lead's email and stamps open_count/first_opened_at/
+// last_opened_at on ps_outreach_leads (see drizzle/pg/0030_ps_outreach_leads_open_tracking.sql).
+function withOpenPixel(html: string, token: string): string {
+  const pixel = `<img src="https://phishsimai.com/api/os/open?e=${token}" width="1" height="1" alt="" style="display:none" border="0">`
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, pixel + '</body>') : html + pixel
+}
+
 async function sendEmail(
   to: string,
   subject: string,
@@ -83,7 +91,10 @@ async function sendEmail(
   // that prefer text/html. An empty html means "this variant is text-only" — honour that by
   // sending a single text/plain body.
   const payload: Record<string, unknown> = { from: FROM, reply_to: REPLY_TO, to, subject, tags, headers }
-  if (html) payload.html = html
+  // PS-OPEN-TRACK-01: pixel goes into the HTML part only, keyed off the same unsubToken every
+  // touch already computes. Plain-text sends (touch-1/touch-2's current copy, PS-COPY-PLAINTEXT-01)
+  // have no html here and are untouched — this must never force a text-only send into multipart.
+  if (html) payload.html = unsubToken ? withOpenPixel(html, unsubToken) : html
   if (text) payload.text = text
   if (!html && !text) throw new Error('sendEmail: refusing to send an email with no body')
   const res = await fetch('https://api.resend.com/emails', {

@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { momentFor, lessonHtml } from './learningMoments';
-import { trackEvent, getAttackTypeForToken, assignTrainingForToken, completeTrainingForToken } from "../db";
+import { trackEvent, getCaptureGateForToken, assignTrainingForToken, completeTrainingForToken } from "../db";
 import { captureServerError } from "../os/sentryServer";
+import { renderLoginPage } from "./loginPageTemplates";
 
 // PS-TRACK-01 (2026-07-22): these writes were wrapped in `catch(e){}` — a failed open/click
 // write was discarded in total silence while the user still got a 200 and a redirect, so the
@@ -27,29 +28,9 @@ function landingHtml(token: string, lessonBlock: string): string {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Security Awareness Training</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.card{background:#1e293b;border-radius:16px;padding:40px;max-width:540px;width:100%;border:1px solid #334155;text-align:center}.icon{font-size:64px;margin-bottom:16px}h1{font-size:24px;font-weight:700;color:#f8fafc;margin-bottom:12px}p{font-size:15px;line-height:1.7;color:#94a3b8;margin-bottom:16px}.badge{display:inline-block;background:#6366f1;color:#fff;padding:6px 16px;border-radius:9999px;font-size:13px;font-weight:600;margin-bottom:24px}.cta{background:#0b1220;border:1px solid #3b4a63;border-radius:12px;padding:22px;margin:24px 0}.cta .step{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#818cf8;margin-bottom:8px}.cta .ask{font-size:15px;line-height:1.6;color:#e2e8f0;margin-bottom:18px}.btn{display:inline-block;background:#dc2626;color:#fff;border:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none}.tips{border-top:1px solid #334155;padding-top:20px;margin-top:28px;text-align:left}.tips h3{font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}.tips ul{list-style:none}.tips li{font-size:12px;color:#64748b;padding:3px 0 3px 18px;position:relative}.tips li::before{content:"\u2192";position:absolute;left:0;color:#475569}.footer{margin-top:20px;font-size:12px;color:#475569}.lm-frame{font-size:15px;line-height:1.6;color:#e2e8f0;margin:18px 0}.lm-email{background:#0b1220;border:1px solid #3b4a63;border-radius:8px;padding:12px 14px;margin:0 0 8px;text-align:left}.lm-meta{font-size:12px;color:#94a3b8;padding:2px 0}.lm-habit{border-top:1px solid #334155;margin-top:18px;padding-top:14px;font-size:13px;color:#cbd5e1;text-align:left;line-height:1.6}</style></head><body><div class="card"><div class="icon">\u26a0\ufe0f</div><div class="badge">Security Awareness Training</div><h1>This Was a Simulated Phishing Test</h1><p>You clicked a link in a <strong style="color:#f8fafc">simulated phishing email</strong> from your security team. No real data was collected \u2014 but a real attacker would have had you.</p><div class="cta"><div class="step">One more step</div><div class="ask">Report it. Click below to report this email as phishing \u2014 exactly what you'd do with a real one.</div><form method="POST" action="/api/report/${token}" style="margin:0"><button type="submit" class="btn">Report This Email \u2192</button></form><form method="POST" action="/api/training-complete/${token}" style="margin:14px 0 0"><button type="submit" style="background:#334155;color:#e2e8f0;border:1px solid #475569;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">I have reviewed this training \u2192</button></form></div>${lessonBlock}<p class="footer">Powered by <a href="https://phishsimai.com" style="color:#6366f1">PhishSim AI</a></p></div></body></html>`;
 }
 
-// ─── PS-CREDPAGE-01: the fake login page ─────────────────────────────────────
-//
-// PhishSim is sold as phishing SIMULATION and credential_harvest is the core measured behaviour,
-// but the click path terminated at a training page with no form — so credentialSubmittedAt was
-// structurally always NULL and a template labelled "credential_harvest" harvested nothing. This
-// closes that gap the only defensible way, the way KnowBe4/Proofpoint do it.
-//
-// THE HARD CONSTRAINT, and how the CODE enforces it (not a comment promising to):
-//   The password <input> has NO `name` attribute. A browser only submits fields that HAVE a
-//   name, so the typed password is never placed in the request body — there is nothing for the
-//   server to read because nothing was sent. The form posts a single fixed marker field and
-//   nothing else. This is stronger than "the server chooses not to log it": the value does not
-//   leave the browser at all. The submit handler (below) reads ONLY req.params.token and never
-//   touches req.body, and a test asserts a posted password value is absent server-side.
-//
-// The email field keeps its name so the page looks real and the recipient sees their own address
-// pre-filled — an email address in a phishing sim is not a secret we are avoiding capturing; a
-// PASSWORD is. We record the same three facts KnowBe4 records: that a submission occurred, on
-// which target, in which campaign — via the existing campaign_results row keyed by the token.
-function loginHtml(token: string): string {
-  // Note the password input: type=password, NO name= — deliberately un-submittable.
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',-apple-system,sans-serif;background:#f3f2f1;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.box{background:#fff;width:100%;max-width:440px;padding:44px;box-shadow:0 2px 6px rgba(0,0,0,.12)}.logo{display:flex;align-items:center;gap:6px;margin-bottom:20px}.logo span{width:22px;height:22px;display:inline-block}.logo .r{background:#f25022}.logo .g{background:#7fba00}.logo .b{background:#00a4ef}.logo .y{background:#ffb900}.logo b{font-size:15px;color:#5e5e5e;margin-left:4px}h1{font-size:24px;font-weight:600;color:#1b1b1b;margin-bottom:20px}label{display:block;font-size:13px;color:#1b1b1b;margin:14px 0 4px}input{width:100%;border:none;border-bottom:1px solid #666;padding:6px 0;font-size:15px;outline:none}input:focus{border-bottom:2px solid #0067b8}.row{display:flex;justify-content:flex-end;margin-top:28px}button{background:#0067b8;color:#fff;border:none;padding:8px 28px;font-size:15px;cursor:pointer}.foot{margin-top:22px;font-size:13px;color:#0067b8}</style></head><body><div class="box"><div class="logo"><span class="r"></span><span class="g"></span><span class="b"></span><span class="y"></span><b>Microsoft</b></div><h1>Sign in</h1><form method="POST" action="/submit/${token}" autocomplete="off"><label>Email or phone</label><input type="email" name="email" value="" autofocus><label>Password</label><input type="password"><input type="hidden" name="submitted" value="1"><div class="row"><button type="submit">Sign in</button></div></form><div class="foot">Can't access your account?</div></div></body></html>`;
-}
+// PS-CREDPAGE-01 / PS-LOGINPAGE-TEMPLATES-01: the fake login page rendering itself — including the
+// hard "no name= on the password input" constraint — now lives in ./loginPageTemplates so a
+// campaign can pick from a small library of brand skins. See that module for the full invariant.
 
 // Confirmation page after the report form posts. `ok=false` says so plainly rather than
 // thanking the user for something we failed to record.
@@ -82,14 +63,18 @@ export function registerTrackingRoutes(app: Express): void {
     // PS-REMEDIATION-01: a click IS the failure — auto-enroll the target in the matching module.
     // Best-effort: assignTrainingForToken never throws and never blocks the recipient response.
     assignTrainingForToken(req.params.token, "sim_click").catch(() => {});
-    // PS-CREDPAGE-01: a credential_harvest simulation shows the fake login page — the behaviour
-    // this product measures. Everything else (link_click, attachment, …) goes straight to
-    // training, exactly as before. A lookup failure defaults to training: we never show a
-    // recipient a login form because a DB read hiccuped.
+    // PS-CREDPAGE-01 / PS-CAMPAIGN-CREDCAPTURE-01: a credential_harvest simulation shows the fake
+    // login page — the behaviour this product measures — but only when the campaign has opted in
+    // via `captureCredentials` (added in 0028, previously never consulted here). Everything else
+    // (link_click, attachment, …, or the toggle left off) goes straight to training, exactly as
+    // before. A lookup failure defaults to training: we never show a recipient a login form
+    // because a DB read hiccuped.
     let attackType: string | null = null;
-    try { attackType = await getAttackTypeForToken(req.params.token); } catch(e){ trackFailed("attacktype", req.params.token, e); }
-    if (attackType === "credential_harvest") {
-      res.set("Content-Type","text/html").set("Cache-Control","no-store").send(loginHtml(req.params.token));
+    let captureCredentials = false;
+    let loginPageBrand: string | null = null;
+    try { ({ attackType, captureCredentials, loginPageBrand } = await getCaptureGateForToken(req.params.token)); } catch(e){ trackFailed("attacktype", req.params.token, e); }
+    if (attackType === "credential_harvest" && captureCredentials) {
+      res.set("Content-Type","text/html").set("Cache-Control","no-store").send(renderLoginPage(loginPageBrand, req.params.token));
       return;
     }
     res.redirect(302, "/landing/"+req.params.token);

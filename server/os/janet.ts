@@ -1,5 +1,6 @@
 import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
+import { runJanetAgent } from './janetAgent'
 import { recallContext, seedPhishSimMemory, learnFromOutcome, rememberFact } from './memory'
 import { openSystemAlert, queueJanetArchitectTask } from './selfHeal'
 import { runSalesAgent } from './agents/sales'
@@ -307,12 +308,25 @@ export async function janetChat(message: string, history: {role:string,text:stri
   ]
   let response: string
   try {
-    const chat = await llmComplete({
-      messages: [{ role: 'system', content: JANET_SYSTEM + '\n\nLIVE OPS DATA (authoritative):\n' + (ops?.text || 'unavailable') + extraContext + '\n\nMEMORY:\n' + memCtx }, ...messages],
-      max_tokens: 400,
-      temperature: 0.7,
-    })
-    response = chat.text
+    const systemBase = JANET_SYSTEM + '\n\nLIVE OPS DATA (authoritative):\n' + (ops?.text || 'unavailable') + extraContext + '\n\nMEMORY:\n' + memCtx
+    // JAN-AGENT-01: agentic path — investigate -> reason -> answer (runJanetAgent can call
+    // read-only tools mid-conversation). Falls back to the one-shot completion on ANY failure,
+    // so it can only improve Janet, never regress her.
+    try {
+      const agent = await runJanetAgent(message, history, companyId, systemBase)
+      if (agent && agent.text && agent.text.trim().length > 0) {
+        response = agent.text
+      } else {
+        throw new Error('empty agent result')
+      }
+    } catch {
+      const chat = await llmComplete({
+        messages: [{ role: 'system', content: systemBase }, ...messages],
+        max_tokens: 400,
+        temperature: 0.7,
+      })
+      response = chat.text
+    }
   } catch (e: unknown) {
     const err = e instanceof Error ? e.message : String(e)
     await openSystemAlert('janet_hq_chat', err).catch(() => {})

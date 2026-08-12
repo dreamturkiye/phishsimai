@@ -41,6 +41,16 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   hard: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
+// PS-LOGINPAGE-TEMPLATES-01: brand skins for the simulated login page a target sees after
+// clicking, when Simulate Credential Capture is on. Keep in sync with
+// server/email/loginPageTemplates.ts LOGIN_PAGE_TEMPLATE_META.
+const LOGIN_PAGE_TEMPLATES: { value: string; label: string; description: string }[] = [
+  { value: "microsoft365", label: "Microsoft 365", description: "Classic Microsoft sign-in page." },
+  { value: "google_workspace", label: "Google Workspace", description: "Google Account sign-in page." },
+  { value: "okta", label: "Okta SSO", description: "Okta single sign-on portal." },
+  { value: "generic_it", label: "Generic IT Portal", description: "Unbranded internal login portal." },
+];
+
 const STEPS = ["Basics", "Template", "Targets"];
 
 type WizardForm = {
@@ -52,7 +62,8 @@ type WizardForm = {
   selectedTargetIds: number[];
   templateSearch: string;
   targetSearch: string;
-  credentialCaptureEnabled: boolean;
+  captureCredentials: boolean;
+  loginPageBrand: string;
 };
 
 const DEFAULT_FORM: WizardForm = {
@@ -64,7 +75,8 @@ const DEFAULT_FORM: WizardForm = {
   selectedTargetIds: [],
   templateSearch: "",
   targetSearch: "",
-  credentialCaptureEnabled: true,
+  captureCredentials: false,
+  loginPageBrand: "microsoft365",
 };
 
 export default function Campaigns() {
@@ -139,7 +151,8 @@ export default function Campaigns() {
       senderEmail: form.senderEmail || undefined,
       templateId: form.templateId ?? undefined,
       targetIds: form.selectedTargetIds,
-      credentialCaptureEnabled: form.credentialCaptureEnabled,
+      captureCredentials: form.captureCredentials,
+      loginPageBrand: form.loginPageBrand as "microsoft365" | "google_workspace" | "okta" | "generic_it",
     });
   }
 
@@ -314,6 +327,37 @@ export default function Campaigns() {
                     />
                   </div>
                 </div>
+                <div className="flex items-start justify-between gap-4 rounded-md border border-border/60 p-3">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">Simulate Credential Capture</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      Show a fake login page for credential-harvest templates and record whether a
+                      target submits it. Actual entered passwords are never read or stored.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={form.captureCredentials}
+                    onCheckedChange={v => setForm(f => ({ ...f, captureCredentials: v }))}
+                  />
+                </div>
+                {form.captureCredentials && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Login Page Template</Label>
+                    <Select value={form.loginPageBrand} onValueChange={v => setForm(f => ({ ...f, loginPageBrand: v }))}>
+                      <SelectTrigger className="bg-background border-border/60">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {LOGIN_PAGE_TEMPLATES.map(t => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      {LOGIN_PAGE_TEMPLATES.find(t => t.value === form.loginPageBrand)?.description}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -369,19 +413,6 @@ export default function Campaigns() {
                     ))}
                   </div>
                 )}
-                <div className="flex items-start justify-between gap-4 p-3 rounded-lg border border-border/60">
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">Credential-capture simulation</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      When on and the template simulates a login page, a target who clicks sees a fake sign-in
-                      form. It never captures or stores a typed password — only that a submission happened.
-                    </div>
-                  </div>
-                  <Switch
-                    checked={form.credentialCaptureEnabled}
-                    onCheckedChange={v => setForm(f => ({ ...f, credentialCaptureEnabled: v }))}
-                  />
-                </div>
               </div>
             )}
 

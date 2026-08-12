@@ -182,6 +182,11 @@ async function startServer() {
   app.get("/api/os/watchdog", cronWatchdog);
   app.get("/api/os/heartbeat", cronHeartbeat);
   app.get("/api/os/deploy-verify", cronDeployVerify);
+  // PS-OPEN-TRACK-01: mirrors the Vercel entry (api/handler.ts) so local dev can exercise it too.
+  app.get("/api/os/open", async (req: any, res: any) => {
+    const { trackOpenPixel } = await import("../os/trackOpen");
+    return trackOpenPixel(req, res);
+  });
   app.post("/api/os/webhook/reply", webhookReply);
   app.get("/api/os/hq", hqData);
   app.post("/api/os/hq/chat", hqChat);

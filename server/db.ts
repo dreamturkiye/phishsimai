@@ -528,17 +528,33 @@ export async function getAttackTypeForToken(token: string): Promise<string | nul
   const db = await getDb();
   if (!db) return null;
   const rows = await db
-    .select({ attackType: templates.attackType, credentialCaptureEnabled: campaigns.credentialCaptureEnabled })
+    .select({ attackType: templates.attackType })
+    .from(campaignResults)
+    .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
+    .innerJoin(templates, eq(templates.id, campaigns.templateId))
+    .where(eq(campaignResults.trackingToken, token))
+    .limit(1);
+  return rows[0]?.attackType ?? null;
+}
+
+/**
+ * PS-CAMPAIGN-CREDCAPTURE-01: whether THIS campaign has opted into showing the fake login page.
+ * `campaigns.captureCredentials` was added to the wizard but never consulted by the click path —
+ * a credential_harvest simulation showed the login page regardless of the toggle. The click
+ * handler must check both this AND the attack type before rendering it.
+ */
+export async function getCaptureGateForToken(token: string): Promise<{ attackType: string | null; captureCredentials: boolean; loginPageBrand: string | null }> {
+  const db = await getDb();
+  if (!db) return { attackType: null, captureCredentials: false, loginPageBrand: null };
+  const rows = await db
+    .select({ attackType: templates.attackType, captureCredentials: campaigns.captureCredentials, loginPageBrand: campaigns.loginPageBrand })
     .from(campaignResults)
     .innerJoin(campaigns, eq(campaigns.id, campaignResults.campaignId))
     .innerJoin(templates, eq(templates.id, campaigns.templateId))
     .where(eq(campaignResults.trackingToken, token))
     .limit(1);
   const r = rows[0];
-  if (!r) return null;
-  // PS-CREDCAPTURE-TOGGLE-01: the campaign can opt out of the login page even for a
-  // credential_harvest template — treat that the same as "not credential_harvest".
-  return r.credentialCaptureEnabled ? r.attackType : null;
+  return { attackType: r?.attackType ?? null, captureCredentials: r?.captureCredentials ?? false, loginPageBrand: r?.loginPageBrand ?? null };
 }
 
 export async function trackEvent(token: string, event: "open" | "click" | "submit" | "report", meta?: { ip?: string; ua?: string }) {
