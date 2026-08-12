@@ -21,12 +21,26 @@ const queries: string[] = []
 const params: any[][] = []
 let failNextWrite = false
 
+// Simulated ps_outreach_leads rows, keyed by lowercased email — lets the stateful
+// accumulation tests below apply the UPDATE's real COALESCE/increment semantics across
+// repeated opens instead of only asserting the query's shape once.
+const rows = new Map<string, { first_opened_at: string | null; last_opened_at: string | null; open_count: number }>()
+
 vi.mock('./conn', () => ({
   getSql: () => {
     const fn = async (strings: TemplateStringsArray, ...vals: any[]) => {
       queries.push(strings.join(' ? ').replace(/\s+/g, ' ').trim())
       params.push(vals)
       if (failNextWrite) throw new Error('write failed')
+      if (/UPDATE ps_outreach_leads/.test(strings.join(''))) {
+        const [ts, , email] = vals
+        const key = String(email).toLowerCase()
+        const row = rows.get(key) ?? { first_opened_at: null, last_opened_at: null, open_count: 0 }
+        row.first_opened_at = row.first_opened_at ?? ts
+        row.last_opened_at = ts
+        row.open_count += 1
+        rows.set(key, row)
+      }
       return []
     }
     return fn as any
@@ -59,6 +73,7 @@ beforeEach(() => {
   queries.length = 0
   params.length = 0
   failNextWrite = false
+  rows.clear()
   vi.restoreAllMocks()
 })
 
@@ -116,6 +131,40 @@ describe('trackOpenPixel — data capture', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.headers['Content-Type']).toBe('image/gif')
+  })
+})
+
+describe('trackOpenPixel — accurate accumulation across a controlled external test send', () => {
+  // A non-org address, standing in for the "controlled external test send" this ticket asks
+  // for — the mock in this file applies the UPDATE's real COALESCE/increment semantics per
+  // row, so this proves accumulation over repeated opens, not just the shape of one query.
+  const externalTestEmail = 'ps-open-track-validate-01@external-test.dev'
+
+  it('first_opened_at is set once (COALESCE) while last_opened_at and open_count keep advancing', async () => {
+    const t = token(externalTestEmail)
+
+    await trackOpenPixel(fakeReq({ e: t }), fakeRes())
+    const afterFirst = { ...rows.get(externalTestEmail)! }
+    expect(afterFirst.open_count).toBe(1)
+    expect(afterFirst.first_opened_at).not.toBeNull()
+    expect(afterFirst.last_opened_at).toBe(afterFirst.first_opened_at)
+
+    await trackOpenPixel(fakeReq({ e: t }), fakeRes())
+    await trackOpenPixel(fakeReq({ e: t }), fakeRes())
+    const afterThree = rows.get(externalTestEmail)!
+
+    expect(afterThree.open_count).toBe(3)
+    expect(afterThree.first_opened_at).toBe(afterFirst.first_opened_at)
+    expect(afterThree.last_opened_at).not.toBeNull()
+  })
+
+  it('opens for a different lead never affect this address\'s counters (scoped by email)', async () => {
+    await trackOpenPixel(fakeReq({ e: token(externalTestEmail) }), fakeRes())
+    await trackOpenPixel(fakeReq({ e: token('someone-else@example.com') }), fakeRes())
+    await trackOpenPixel(fakeReq({ e: token('someone-else@example.com') }), fakeRes())
+
+    expect(rows.get(externalTestEmail)!.open_count).toBe(1)
+    expect(rows.get('someone-else@example.com')!.open_count).toBe(2)
   })
 })
 
