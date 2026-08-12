@@ -15,6 +15,7 @@ import {
   buildAriaLine,
   auditExperiments,
   measureChannels,
+  followupSequenceStatus,
   MIN_N,
   KILL_WINDOW_DAYS,
   CHANNEL_BOUNCE_ALARM,
@@ -287,5 +288,61 @@ describe('PS-ARIA-AB-01 — the impression generator records what was SENT', () 
   it('derives sentVariant from the copy actually chosen', () => {
     // The bug was that `variant` (hash) and `v` (copy sent) disagree whenever there is no test arm.
     expect(SEQ).toContain("const sentVariant: 'control' | 'test' = v === exp.test ? 'test' : 'control'")
+  })
+})
+
+// A fake DB that answers the two sequential tagged-template queries touch2Headroom makes:
+// first touch2SentInBatch's count, then isTouch2ScaleApproved's flag read.
+function fakeSeqSql(responses: any[][]) {
+  let i = 0
+  const fn: any = () => Promise.resolve(responses[i++] ?? [])
+  return fn
+}
+
+describe('follow-up sequence status — the touch-2 batch gate, surfaced rather than hidden in a cron log', () => {
+  it('reports batch progress while headroom remains', async () => {
+    const r = await followupSequenceStatus(fakeSeqSql([[{ n: 42 }], []]))
+    expect(r).toMatchObject({ touch: 2, sentInBatch: 42, batchLimit: 150, headroom: 108, holding: false })
+    expect(r!.line).toContain('42/150 sent this batch')
+  })
+
+  it('reports BATCH 1 COMPLETE and holding once headroom hits zero', async () => {
+    const r = await followupSequenceStatus(fakeSeqSql([[{ n: 150 }], []]))
+    expect(r).toMatchObject({ sentInBatch: 150, headroom: 0, holding: true })
+    expect(r!.line).toContain('BATCH 1 COMPLETE (150/150)')
+    expect(r!.line).toContain('holding for founder scale-approval')
+  })
+
+  it('never reports holding once the founder has approved scaling', async () => {
+    const r = await followupSequenceStatus(fakeSeqSql([[{ n: 300 }], [{ value: '1' }]]))
+    expect(r!.holding).toBe(false)
+    expect(r!.headroom).toBeGreaterThan(300)
+  })
+
+  it('reports unreadable state as null when the query throws before it can even attach a .catch', async () => {
+    // touch2SentInBatch/isTouch2ScaleApproved each do `await sql\`...\`.catch(() => [])` — a sql
+    // that rejects is swallowed there and reads as a genuine zero. Only a sql that throws
+    // SYNCHRONOUSLY (the tagged-template call itself failing, before `.catch` can attach) escapes
+    // that inner catch and reaches followupSequenceStatus's own try/catch as null.
+    const throwing: any = () => { throw new Error('no table') }
+    expect(await followupSequenceStatus(throwing)).toBeNull()
+  })
+
+  it('buildAriaLine includes the follow-up status when present, and omits it when not', () => {
+    const base = {
+      status: 'ACTIVE' as const,
+      totals: { contacted: 100, replied: 2, bounced: 0, trials: 0 },
+      incidents: [],
+      bySeverity: { critical: 0, high: 0, medium: 0 },
+      channels: [chan({ currentContacted: 100 })],
+      messagePerformance: 'Reply 2/100 (2.0%)',
+      notChecked: [],
+    }
+    const withFollowup = buildAriaLine({
+      ...base,
+      followup: { touch: 2, sentInBatch: 42, batchLimit: 150, headroom: 108, holding: false, line: 'touch-2 follow-up: 42/150 sent this batch' },
+    })
+    expect(withFollowup).toContain('touch-2 follow-up: 42/150 sent this batch')
+    expect(buildAriaLine({ ...base, followup: null })).not.toContain('touch-2 follow-up')
   })
 })

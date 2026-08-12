@@ -120,6 +120,9 @@ async function dispatchOsRoute(req: any, res: any) {
 
     if (path === "/api/os/heartbeat") return routes.cronHeartbeat(req, res);
     if (path === "/api/os/deploy-verify") return routes.cronDeployVerify(req, res);
+    // PS-OPEN-TRACK-01: 1x1 pixel for cold-outreach open tracking. NO AUTH — a recipient's mail
+    // client fetches this with no session, same doctrine as /unsubscribe below.
+    if (path === "/api/os/open" && method === "get") { const { trackOpenPixel } = await import("../server/os/trackOpen"); return trackOpenPixel(req, res); }
     if (path === "/api/os/sequence") return routes.cronSequence(req, res);
     if (path === "/api/os/sequence-touch2") return routes.cronSequenceTouch2(req, res); // PS-OUTREACH-THROTTLE-01: was mounted only in _core (dev server) → 404'd in prod
     // PS-DIGEST-01: mounted HERE, not only in _core — same trap as sequence-touch2 above.

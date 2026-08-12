@@ -31,6 +31,7 @@ import { getSql } from '../conn'
 import { AB_EXPERIMENTS, TOUCH1_SUBJECT, TOUCH2_SUBJECT } from '../abTest'
 import { withHealth } from './withHealth'; import { type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
+import { touch2Headroom, TOUCH2_BATCH1_LIMIT } from '../sequences'
 
 const COMPANY = 'phishsimai'
 
@@ -102,6 +103,36 @@ export function currentBestOutreach(): BestOutreach {
       '908 compliance-led cold sends produced 1 human reply and it was hostile. Recorded permanently ' +
       'as lesson phishsim:insurance-angle-failed. Compliance remains a second-position supporting ' +
       'point for larger MSPs, never the lead.',
+  }
+}
+
+// ─── FOLLOW-UP SEQUENCE STATUS ───────────────────────────────────────────────
+
+export type FollowupStatus = {
+  touch: 2
+  sentInBatch: number
+  batchLimit: number
+  headroom: number
+  holding: boolean
+  line: string
+}
+
+/**
+ * The touch-2 follow-up batch (PS-TOUCH2-PRICE-01) runs on its own cron in sequences.ts and its
+ * gate state — sent count, whether it is holding for founder scale-approval — was only ever
+ * visible in that endpoint's own response. Aria owns "current best outreach" for the cold-outreach
+ * system; the follow-up's operating status belongs in her report so it reaches Janet's standup
+ * instead of a cron log nobody reads. This reports status only — it never touches the send gates.
+ */
+export async function followupSequenceStatus(sql: any): Promise<FollowupStatus | null> {
+  try {
+    const h = await touch2Headroom(sql)
+    const line = h.holding
+      ? `touch-2 follow-up: BATCH 1 COMPLETE (${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT}) — holding for founder scale-approval`
+      : `touch-2 follow-up: ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent this batch`
+    return { touch: 2, sentInBatch: h.sentInBatch, batchLimit: TOUCH2_BATCH1_LIMIT, headroom: h.headroom, holding: h.holding, line }
+  } catch {
+    return null
   }
 }
 
@@ -411,6 +442,7 @@ export type AriaReport = {
   messagePerformance: string
   notChecked: string[]
   currency: CurrencyRun | null
+  followup: FollowupStatus | null
   line: string
 }
 
@@ -430,8 +462,13 @@ export async function runAriaAgent(opts: { sql?: any; skipCurrency?: boolean } =
   for (const i of incidents) bySeverity[i.severity]++
 
   const lessonsWritten = await writeAriaLessons(sql, incidents).catch(() => 0)
+  const followup = await followupSequenceStatus(sql)
 
-  const notChecked = [...(ch.checked ? [] : ['channels']), ...(ex.checked ? [] : ['experiments'])]
+  const notChecked = [
+    ...(ch.checked ? [] : ['channels']),
+    ...(ex.checked ? [] : ['experiments']),
+    ...(followup ? [] : ['followup_sequence']),
+  ]
 
   // ANTI-FABRICATION: this is the sentence that must never become "reply rate 0%".
   const messagePerformance =
@@ -448,7 +485,7 @@ export async function runAriaAgent(opts: { sql?: any; skipCurrency?: boolean } =
     : await runCurrencyLoop('aria', 'B2B outbound messaging, channel economics and demand generation', ARIA_SOURCES, sql).catch(() => null)
 
   const status: AriaReport['status'] = ch.checked || ex.checked ? 'ACTIVE' : 'INSUFFICIENT_DATA'
-  const line = buildAriaLine({ status, totals, incidents, bySeverity, channels: ch.rows, messagePerformance, notChecked })
+  const line = buildAriaLine({ status, totals, incidents, bySeverity, channels: ch.rows, messagePerformance, notChecked, followup })
 
   return {
     status,
@@ -462,6 +499,7 @@ export async function runAriaAgent(opts: { sql?: any; skipCurrency?: boolean } =
     messagePerformance,
     notChecked,
     currency,
+    followup,
     line: currency ? `${line} ${currency.line}` : line,
   }
 }
@@ -474,6 +512,7 @@ export function buildAriaLine(a: {
   channels: ChannelRow[]
   messagePerformance: string
   notChecked: string[]
+  followup?: FollowupStatus | null
 }): string {
   if (a.status === 'INSUFFICIENT_DATA') {
     return (
@@ -489,9 +528,10 @@ export function buildAriaLine(a: {
   const best = live.filter((c) => c.currentContacted >= MIN_N).sort((x, y) => x.currentBounced / x.currentContacted - y.currentBounced / y.currentContacted)[0]
   const bestLine = best ? ` · cleanest live channel: ${best.source} (${best.bounceLine})` : ''
   const histLine = hist.length ? ` · ${hist.length} historical source(s) excluded from alarms: ${hist.map((h) => h.source).join(', ')}` : ''
+  const followupLine = a.followup ? ` · ${a.followup.line}` : ''
   return (
     `Aria (Marketing): ${a.totals.contacted} external sends across ${live.length} live channel(s)${histLine}, ` +
-    `${a.totals.trials} trial(s). ${a.messagePerformance}${bestLine}${defects}${nc} ` +
+    `${a.totals.trials} trial(s). ${a.messagePerformance}${bestLine}${followupLine}${defects}${nc} ` +
     `Current angle: price-led. Pricing is a HARD STOP — Aria proposes, never edits.`
   )
 }
