@@ -16,7 +16,7 @@ import { registerStripeWebhook } from "../stripe/webhook";
 import { registerTrackingRoutes } from "../email/tracker";
 import {
   cronSequence, cronSequenceTouch2, cronCompetitorIntel, cronSalesReplies, cronRex, cronDex, cronAria, cronMason, cronScout, cronFinn, cronVera, cronNova, cronJanet, cronWatchdog, cronHeartbeat, cronDeployVerify,
-  webhookReply, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
+  webhookReply, webhookResend, hqData, hqChat, hqTTS, hqJanetSignedUrl, hqJanetTool, hqTask, hqMemoryGet, hqSeed,
   v4Status, v4Roster, v4Standup, v4WeeklyReview, v4Full, v4AgentTalk,
   architectAutonomy, architectIncident,
   cronDailyReport
@@ -188,6 +188,15 @@ async function startServer() {
     return trackOpenPixel(req, res);
   });
   app.post("/api/os/webhook/reply", webhookReply);
+  // PS-INSTRUMENT-01: Resend ESP events (email.bounced/opened/clicked/complained) — captures
+  // engagement + protects deliverability. Guarded by CRON_SECRET in the URL (?secret=...), which
+  // Resend forwards verbatim. Handler updates ps_outreach_leads pipeline_stage/bounced.
+  app.post("/api/os/webhook/resend", (req: any, res: any) => {
+    if (String(req.query?.secret || "") !== String(process.env.CRON_SECRET || "\u0000")) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+    return webhookResend(req, res);
+  });
   app.get("/api/os/hq", hqData);
   app.post("/api/os/hq/chat", hqChat);
   app.post("/api/os/hq/tts", hqTTS);
