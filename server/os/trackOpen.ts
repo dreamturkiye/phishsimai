@@ -14,6 +14,9 @@ import { decodeUnsubToken } from './unsubscribe'
 const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
 
 export async function trackOpenPixel(req: Request, res: Response): Promise<void> {
+  // t0 = the open event itself (pixel request received), so the logged latency covers
+  // decode + UPDATE + commit — the actual gap PS-OPEN-TRACK-VALIDATE-01 needs measured.
+  const t0 = Date.now()
   res.setHeader('Content-Type', 'image/gif')
   res.setHeader('Cache-Control', 'no-store')
   const token = String((req.query?.e as string) ?? '')
@@ -28,10 +31,11 @@ export async function trackOpenPixel(req: Request, res: Response): Promise<void>
             last_opened_at = ${ts},
             open_count = open_count + 1
         WHERE LOWER(email) = LOWER(${email})`
+      console.log('[trackOpen] write ok for', email, 'latency_ms=' + (Date.now() - t0))
     } catch (e) {
       // A failed write must never surface to the recipient — same doctrine as
       // server/email/tracker.ts's trackFailed: log loud, respond with the pixel regardless.
-      console.error('[trackOpen] write FAILED for', email, e)
+      console.error('[trackOpen] write FAILED for', email, 'latency_ms=' + (Date.now() - t0), e)
     }
   }
   res.status(200).send(PIXEL_GIF)
