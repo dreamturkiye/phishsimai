@@ -53,6 +53,12 @@ export async function ensureHqTables() {
     ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
     ADD COLUMN IF NOT EXISTS subscription_id TEXT,
     ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`
+  // PS-OPEN-TRACK-01: mirrors drizzle/pg/0030_ps_outreach_leads_open_tracking.sql so a rebuild
+  // from code reproduces the schema. See server/os/trackOpen.ts for the route that writes these.
+  await sql`ALTER TABLE ps_outreach_leads
+    ADD COLUMN IF NOT EXISTS first_opened_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS open_count INT NOT NULL DEFAULT 0`
   await sql`CREATE TABLE IF NOT EXISTS os_architect_tasks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     task TEXT NOT NULL,

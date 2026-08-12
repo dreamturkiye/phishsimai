@@ -2,7 +2,7 @@ name: marcus-automerge
 on:
   pull_request:
     types: [opened, reopened, labeled]
-    branches: [dev]
+    branches: [main]
 
 permissions:
   contents: write

@@ -1,15 +1,14 @@
 // Tracked SQL migration runner for drizzle/pg/*.sql
-// Why this exists: drizzle's _journal.json froze at 0006 while 0007..0028 were applied
-// by running the .sql directly, with no tracking. This runner restores tracking so
-// autonomous promotion can safely apply only new migrations.
+// drizzle's _journal.json froze at 0006 while 0007..0028 were applied by running the .sql
+// directly, with no tracking. This runner restores tracking so autonomous shipping can
+// safely apply only new migrations.
 // - records applied migrations in applied_sql_migrations
 // - never runs anything <= BASELINE_TAG (legacy migrations already live): records only
 // - runs + records only new migrations (> baseline) not yet applied, each in a transaction
-// - fails non-zero on any error so the promote pipeline aborts (prod stays safe)
+// - fails non-zero on any error so the pipeline aborts (prod stays safe)
 import { readFileSync, readdirSync } from 'fs';
 import { Pool, neonConfig } from '@neondatabase/serverless';
 
-// neon Pool needs a WebSocket. Node 22+ has a global; fall back to the 'ws' package.
 if (!neonConfig.webSocketConstructor) {
   if (typeof WebSocket !== 'undefined') {
     neonConfig.webSocketConstructor = WebSocket;

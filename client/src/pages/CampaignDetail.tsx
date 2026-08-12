@@ -18,6 +18,14 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   paused: { label: "Paused", className: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
 };
 
+// PS-LOGINPAGE-TEMPLATES-01: keep in sync with server/email/loginPageTemplates.ts LOGIN_PAGE_TEMPLATE_META.
+const LOGIN_PAGE_TEMPLATE_LABELS: Record<string, string> = {
+  microsoft365: "Microsoft 365",
+  google_workspace: "Google Workspace",
+  okta: "Okta SSO",
+  generic_it: "Generic IT Portal",
+};
+
 export default function CampaignDetail() {
   const { id } = useParams<{ id: string }>();
   const { isAuthenticated } = useAuth();
@@ -187,6 +195,8 @@ export default function CampaignDetail() {
                 { label: "Delivery", value: sent > 0 ? `${delivered} delivered · ${bounced} bounced (of ${sent} sent)` : "Not launched yet" },
                 { label: "Language", value: campaign.language === "en" ? "English" : campaign.language === "es" ? "Spanish" : "Turkish" },
                 { label: "Sender", value: campaign.senderName ? `${campaign.senderName} <${campaign.senderEmail}>` : "Not configured" },
+                { label: "Credential Capture", value: campaign.captureCredentials ? "Enabled — shows fake login page" : "Disabled — goes straight to training" },
+                ...(campaign.captureCredentials ? [{ label: "Login Page Template", value: LOGIN_PAGE_TEMPLATE_LABELS[campaign.loginPageBrand] ?? campaign.loginPageBrand }] : []),
                 { label: "Created", value: new Date(campaign.createdAt).toLocaleString() },
                 { label: "Recurring", value: campaign.isRecurring ? `Yes — ${campaign.cronExpression}` : "No" },
                 ...(campaign.notes ? [{ label: "Notes", value: campaign.notes }] : []),

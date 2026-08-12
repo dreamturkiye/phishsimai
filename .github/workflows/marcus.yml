@@ -8,6 +8,8 @@ on:
       task_id:
         description: "agent_tasks id (optional)"
         required: false
+  schedule:
+    - cron: "*/30 * * * *"   # pull + run the next actionable task every 30 min
 
 concurrency:
   group: marcus
@@ -16,16 +18,48 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
+  actions: read
 
 jobs:
-  marcus:
+  pick:
+    runs-on: ubuntu-latest
+    outputs:
+      task: ${{ steps.r.outputs.task }}
+      task_id: ${{ steps.r.outputs.task_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: r
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_TASK: ${{ github.event.inputs.task }}
+          IN_ID: ${{ github.event.inputs.task_id }}
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/marcus-resolve-task.mjs
+
+  run:
+    needs: pick
+    if: needs.pick.outputs.task != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: main
           fetch-depth: 0
           token: ${{ secrets.MARCUS_PAT }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Create task branch
         run: |
           git config user.name "marcus-bot"
@@ -34,22 +68,49 @@ jobs:
       - name: Marcus edits files
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TASK: ${{ github.event.inputs.task }}
+          TASK: ${{ needs.pick.outputs.task }}
         run: |
           npm install -g @anthropic-ai/claude-code
-          claude -p "You are Marcus, the autonomous engineer for PhishSimAI. TASK: $TASK  Make the minimal correct change to accomplish the task. Create or edit files only. Do NOT run git, do NOT commit, do NOT open a PR - the workflow does that. Do NOT edit .github/, ci/, vercel.json, server/os/kaan-os-core/, or any path containing billing, stripe, price, pricing, or legal. When done, stop." --model claude-sonnet-5 --dangerously-skip-permissions
-      - name: Commit, push, PR, auto-merge
+          claude -p "You are Marcus, the autonomous engineer for PhishSimAI. TASK: $TASK  Make the minimal correct change to accomplish the task. Create or edit files only. If the change needs a new DB column/table, add an additive idempotent drizzle/pg migration (use IF NOT EXISTS). Do NOT run git, do NOT commit, do NOT open a PR - the workflow does that. Do NOT edit .github/, ci/, vercel.json, scripts/, server/os/kaan-os-core/, or any path containing billing, stripe, price, pricing, or legal. When done, stop." --model claude-sonnet-5 --dangerously-skip-permissions
+      - name: Apply pending migrations to PROD DB (before code can deploy)
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/apply-migrations.mjs
+      - name: Open PR + enable auto-merge
         env:
           GH_TOKEN: ${{ secrets.MARCUS_PAT }}
         run: |
           BR="marcus/task-${{ github.run_id }}"
           git add -A
-          git commit -m "marcus: ${{ github.event.inputs.task }}" || true
-          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/dev)" ]; then
+          git commit -m "marcus: ${{ needs.pick.outputs.task_id }}" || true
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             echo "::error::Marcus made no changes"; exit 1
           fi
           git push origin "$BR"
-          gh pr create --base dev --head "$BR" \
-            --title "marcus: ${{ github.event.inputs.task }}" \
-            --body "task_id=${{ github.event.inputs.task_id }}" --label marcus
+          gh pr create --base main --head "$BR" \
+            --title "marcus: task ${{ needs.pick.outputs.task_id }}" \
+            --body "task_id=${{ needs.pick.outputs.task_id }}" --label marcus
           gh pr merge "$BR" --auto --squash
+          echo "PR_BR=$BR" >> "$GITHUB_ENV"
+      - name: Wait for gate + merge, then mark task done
+        env:
+          GH_TOKEN: ${{ secrets.MARCUS_PAT }}
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          TASK_ID: ${{ needs.pick.outputs.task_id }}
+        run: |
+          for i in $(seq 1 16); do
+            ST=$(gh pr view "$PR_BR" --json state --jq .state 2>/dev/null || echo UNKNOWN)
+            if [ "$ST" = "MERGED" ]; then
+              echo "PR merged to prod; marking task done."
+              node scripts/mark-task.mjs
+              exit 0
+            fi
+            if [ "$ST" = "CLOSED" ]; then
+              echo "::error::PR was closed without merging."; exit 1
+            fi
+            echo "waiting for gate + merge... state=$ST [$i/16]"
+            sleep 30
+          done
+          echo "::error::PR did not merge within ~8min (gate likely failed). Cleaning up; task left for retry."
+          gh pr close "$PR_BR" --delete-branch 2>/dev/null || true
+          exit 1

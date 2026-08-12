@@ -1,7 +1,7 @@
 name: marcus-path-guard
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [main]
 
 jobs:
   marcus-path-guard:
@@ -22,7 +22,7 @@ jobs:
           esac
           FILES=$(git diff --name-only "$BASE" "$HEAD")
           echo "Marcus changed files:"; echo "$FILES"
-          BLOCKED=$(echo "$FILES" | grep -Ei '(^\.github/|^ci/|^vercel\.json$|^server/os/kaan-os-core/|billing|stripe|price|pricing|legal)' || true)
+          BLOCKED=$(echo "$FILES" | grep -Ei '(^\.github/|^ci/|^vercel\.json$|^scripts/apply-migrations\.mjs$|^server/os/kaan-os-core/|billing|stripe|price|pricing|legal)' || true)
           if [ -n "$BLOCKED" ]; then
             echo "::error::Marcus touched hard-stop path(s) - blocking:"; echo "$BLOCKED"
             exit 1
