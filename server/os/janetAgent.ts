@@ -19,6 +19,7 @@ import { getSql } from './conn'
 import { llmComplete } from './llmChat'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
 import { recallContext } from './memory'
+import { queueJanetArchitectTask } from './selfHeal'
 
 type Tool = {
   name: string
@@ -81,6 +82,50 @@ const TOOLS: Tool[] = [
         return ctx || 'no memory found'
       } catch (e: any) {
         return `search_memory unavailable: ${e?.message || e}`
+      }
+    },
+  },
+  // ── ACT TOOLS (JAN-AGENT-02) ───────────────────────────────────────────────
+  // Safe by construction: dispatch_marcus goes through queueJanetArchitectTask, which already
+  // enforces the autonomy gate + Marcus circuit breaker, and Marcus's own gates (destructive
+  // diff / CI / dev+prod QA / auto-revert) protect prod. create_decision only writes an
+  // escalation row. The OS 7.5 hard-stops (pricing/billing/spend/legal) are enforced upstream
+  // and are deliberately NOT in Janet's tool surface.
+  {
+    name: 'dispatch_marcus',
+    description:
+      'Queue Marcus (the autonomous engineer) to make a code fix or build. Use when the founder asks for something that requires code to change or ship (e.g. "the homepage image is broken - fix it"). Give ONE clear, scoped, single-purpose task. arg: task (string).',
+    run: async (args, _companyId) => {
+      const task = String((args && args.task) || '').trim()
+      if (task.length < 12) return 'dispatch_marcus needs a clear task description in the "task" arg.'
+      try {
+        const id = await queueJanetArchitectTask({ task, source: 'janet_agent', notes: 'Queued by Janet from founder conversation' })
+        return id
+          ? `Marcus task queued (id ${id}). It lands via dev -> QA -> prod; not deployed until status shows done (HQ -> Architect Log).`
+          : 'Could not queue Marcus: autonomy gate denied or the circuit breaker is open (recent failures). No task was created.'
+      } catch (e: any) {
+        return `dispatch_marcus failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'create_decision',
+    description:
+      'Record a strategic decision that needs founder sign-off, so it appears in HQ and can be discussed later. Use for pivots or choices you should not make alone. args: title (string), detail (string), recommendation (string, optional).',
+    run: async (args, companyId) => {
+      const title = String((args && args.title) || '').trim()
+      const detail = String((args && args.detail) || '').trim()
+      const recommendation = String((args && args.recommendation) || '').trim()
+      if (!title) return 'create_decision needs a "title".'
+      try {
+        const sql = getSql()
+        const rows: any[] = await sql`
+          INSERT INTO escalations (product_id, category, payload, status)
+          VALUES (${companyId}, 'founder_decision', ${JSON.stringify({ title, detail, recommendation })}::jsonb, 'pending')
+          RETURNING id`
+        return `Decision recorded (id ${rows[0]?.id || '?'}) - pending your sign-off in HQ.`
+      } catch (e: any) {
+        return `create_decision failed: ${e?.message || e}`
       }
     },
   },
