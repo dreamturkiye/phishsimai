@@ -4,6 +4,7 @@ import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
 import { queueJanetArchitectTask } from '../os/selfHeal'
+import { researchCurrentBestPractice } from '../os/domainResearch'
 import { evaluatePosture, postureLine } from '../os/posture'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
@@ -2049,8 +2050,14 @@ system record backs it.
       // os_agent_reflections (that agent's past lessons), so the task runs grounded and self-learning.
       const a = AGENTS[aId]
       if (!a) continue
-      taskText = `As ${a.title}, identify and begin the single highest-impact improvement in your domain (${a.domain}) that advances the company's current top goal. Use real company data; propose and start the concrete next step.`
-      source = 'domain-default ownership'
+      // PS-SME-01: ground the self-originated task in CURRENT external best practice when search is
+      // configured (see domainResearch.ts) — an SME does not reason from a frozen training cutoff.
+      // Fails open to the original generic wording if research is unavailable/inert/finds nothing.
+      const research = await researchCurrentBestPractice(aId, a.domain, a.title, companyId).catch(() => null)
+      taskText = research
+        ? `As ${a.title}: current best practice (verified ${new Date().toISOString().slice(0, 10)}) — ${research.summary} Apply this to your domain (${a.domain}) to advance the company's current top goal. Sources: ${research.sources.map((x) => x.url).join(', ')}`
+        : `As ${a.title}, identify and begin the single highest-impact improvement in your domain (${a.domain}) that advances the company's current top goal. Use real company data; propose and start the concrete next step.`
+      source = research ? 'domain-default ownership (current best practice)' : 'domain-default ownership'
     }
     try {
       const t = await issueTask(aId, {

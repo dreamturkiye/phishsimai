@@ -29,7 +29,7 @@ export async function learnFromOutcome(
     success: boolean
     score?: number
     lesson: string
-    source?: 'agent_task' | 'experiment' | 'architect_memory'
+    source?: 'agent_task' | 'experiment' | 'architect_memory' | 'web_research'
     signature?: string
   },
 ): Promise<void> {
