@@ -1302,7 +1302,7 @@ export async function issueTask(
   agentId: AgentId,
   task: NewAgentTask,
   companyId = COMPANY_ID,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; issuedBy?: string } = {},
 ): Promise<{ task_id: string; agent: string; title: string; deduped?: boolean; voided?: boolean; reason?: string }> {
   // AUTONOMY GATE — no agent task is written unless this company's earned level
   // permits it. At 'manual' this throws AutonomyDenied (audited) before any write.
@@ -1348,11 +1348,12 @@ export async function issueTask(
 
   const [inserted] = await sql`
     INSERT INTO agent_tasks (agent_id, issued_by, title, description, priority, due_in_hours, status, company_id)
-    VALUES (${agentId}, 'janet', ${task.title}, ${task.description}, ${task.priority}, ${task.due_in_hours}, 'assigned', ${companyId})
+    VALUES (${agentId}, ${opts.issuedBy ?? 'janet'}, ${task.title}, ${task.description}, ${task.priority}, ${task.due_in_hours}, 'assigned', ${companyId})
     RETURNING id
   `
 
-  await sendTelegram(`📋 *Task Assigned by Janet*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
+  const _issuerLabel = (opts.issuedBy && opts.issuedBy !== 'janet') ? `Self-Originated by ${agent.name}` : 'Task Assigned by Janet'
+  await sendTelegram(`📋 *${_issuerLabel}*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
 
   return { task_id: inserted.id, agent: agent.name, title: task.title, deduped: false }
 }
@@ -1773,6 +1774,17 @@ export function trimToLineBoundary(text: string, limit: number): string {
   return `${kept}\n… [trimmed ${text.length - kept.length} of ${text.length} chars]`
 }
 
+/**
+ * PS-OWNERSHIP-01: pull an agent's proposed next step out of its standup report ("PROPOSAL: ...").
+ * Agents write this when unassigned; we convert it into a self-originated task so they own their lane.
+ */
+function extractProposal(summary: string): string | null {
+  const m = summary.match(/PROPOSAL[:\s\*]+([\s\S]*?)(?:\n\n|\n\s*\*\*|\n\s*\d[.)]|\n\s*#|$)/i)
+  if (!m) return null
+  const p = m[1].replace(/[\*`]/g, '').replace(/\s+/g, ' ').trim()
+  return p.length >= 12 ? p.slice(0, 200) : null
+}
+
 /** Generous guard rail for one agent's standup report. Does not bind at a 400-token budget. */
 export const AGENT_REPORT_LIMIT = 4000
 
@@ -1960,6 +1972,34 @@ system record backs it.
     `[kaan_os_v4] standup task issuance: parsed=${parsed.length} issued=${newTasks.length} ` +
     `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
+
+  // PS-OWNERSHIP-01: restore agent OWNERSHIP. Any specialist left with NO open task after Janet's
+  // 1-3 assignments SELF-ORIGINATES its own proposed next step (issued_by = the agent, not 'janet').
+  // Root cause of the regression: every task was Janet-assigned, so self-originated % (the L5 bar)
+  // was structurally 0 and most of 8 agents sat idle at "unassigned / 0 confidence". Marcus is
+  // excluded — his work is architect_tasks, a separate pipeline. Bounded: one self-task per idle
+  // agent per standup; issueTask still dedupes and still honours the autonomy gate.
+  let selfOriginated = 0
+  for (const report of reports) {
+    const aId = report.agent_id as AgentId
+    if (aId === 'marcus' || aId === 'janet') continue
+    const openN = ((await sql`SELECT count(*)::int AS n FROM agent_tasks
+      WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('assigned','in_progress')`) as any[])[0]?.n ?? 0
+    if (openN > 0) continue
+    const proposal = extractProposal(report.summary)
+    if (!proposal) continue
+    try {
+      const t = await issueTask(aId, {
+        title: proposal.slice(0, 100),
+        description: `Self-originated by ${aId} from today's standup proposal: ${proposal}`,
+        priority: 'high', due_in_hours: 24,
+      }, companyId, { issuedBy: aId })
+      if (!t.deduped && !t.voided) selfOriginated++
+    } catch (e: any) {
+      if (!isAutonomyDenied(e)) console.error(`[kaan_os_v4] self-originate failed for ${aId}: ${String(e?.message || e).slice(0, 160)}`)
+    }
+  }
+  if (selfOriginated) console.log(`[kaan_os_v4] standup: ${selfOriginated} agent(s) self-originated their proposal (ownership restored)`)
   if (parsed.length === 0 && /\bassign|assignment\b/i.test(janetResponse)) {
     console.warn('[kaan_os_v4] standup: Janet named assignments but NONE parsed — parser/prompt drift, not an empty agenda')
   }
