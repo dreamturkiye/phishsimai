@@ -115,11 +115,14 @@ export async function researchCurrentBestPractice(
 
   // Compound into the EXISTING reflection store, tagged distinctly from outcome-based lessons —
   // this is external knowledge, not a result of the agent's own actions.
+  // 'source' stays 'agent_task' (the default) rather than a new enum value: outcomeLearning.ts is
+  // a PINNED copy of the canonical kaan-os-core package here and must never be edited directly in
+  // this repo (CI's check-core-drift enforces this). The lesson TEXT prefix + signature already
+  // distinguish this as external research, which is all that's needed to compound it correctly.
   await learnFromOutcome(sql, companyId, {
     agentId,
     success: true,
     lesson: `[current best practice, ${new Date().toISOString().slice(0, 10)}] ${summary}`,
-    source: 'web_research',
     signature: `${agentId}:web_research:${new Date().toISOString().slice(0, 10)}`,
   }).catch(() => {})
 
