@@ -21,6 +21,7 @@ import {
   organizationalDomain,
   isInboundMailHost,
   checkDomainAuth,
+  inboxPlacementVerdict,
   SEND_PATHS,
   type DomainAuth,
 } from './dex'
@@ -288,6 +289,23 @@ describe('send health is reported honestly', () => {
 
   it('reports a threshold close to the measured rate as OK', () => {
     expect(breakerVerdict(38, 933, 0.05)).toContain('OK')
+  })
+})
+
+describe('inbox-placement is a PROXY, never claimed as proof (PS-DEX-INBOX-01)', () => {
+  it('gives no verdict below n=30 delivered', () => {
+    expect(inboxPlacementVerdict(5, 10, 14)).toContain('no verdict below n=30')
+  })
+
+  it('flags a high unopened rate as a PROXY signal, not a fact', () => {
+    const v = inboxPlacementVerdict(90, 100, 14)
+    expect(v).toContain('PROXY SIGNAL')
+    expect(v).toContain('Not proof')
+    expect(v).toContain('SURFACED TO KAAN')
+  })
+
+  it('reports a normal unopened rate as OK', () => {
+    expect(inboxPlacementVerdict(50, 100, 14)).toContain('OK')
   })
 })
 

@@ -32,7 +32,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { resolveTxt, resolveMx } from 'node:dns/promises'
 import { getSql } from '../conn'; import { withHealth } from './withHealth'
-import { readSource, measureCohorts, type CohortSplit, type SourceFile, type Incident, type Severity } from './rex'
+import {
+  readSource, measureCohorts, INTERNAL_EXCLUSION_SQL, COHORT_CURRENT_SQL,
+  type CohortSplit, type SourceFile, type Incident, type Severity,
+} from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { reconcileBreaker, readBreakerThreshold, type BreakerRun } from '../dexBreaker'
 import { scanVerdict, scanVerdictReason } from './scanVerdict'
@@ -343,6 +346,82 @@ export function breakerVerdict(bounced: number, contacted: number, threshold: nu
   return `OK: measured ${pct}% against a ${thrPct}% breaker (${headroom.toFixed(1)}x headroom).`
 }
 
+// ─── INBOX PLACEMENT (proxy, not proof) ──────────────────────────────────────
+//
+//  PS-DEX-INBOX-01 — Dex has never answered "does mail that isn't bouncing still reach the
+//  inbox?". checkDomainAuth proves we are AUTHENTICATED to send; measureSendHealth proves the
+//  opposite failure -- REJECTED at the mailbox. Neither catches mail that is ACCEPTED and never
+//  bounces but is silently foldered as spam/promotions, which is the "filtered out" failure this
+//  check exists for.
+//
+//  There is no seed-inbox panel and no Postmaster Tools wired up, so there is no direct signal.
+//  The nearest proxy from OUR OWN DATA: of the CURRENT-cohort contacts that did NOT bounce, how many
+//  were NEVER opened in the window. A high rate does NOT prove spam placement -- a cold list or a
+//  weak subject line (Aria's domain) reads identically -- so the verdict says PROXY, never FACT, and
+//  is surfaced to Kaan rather than acted on. Same asymmetry as breakerVerdict: Dex reports, he does
+//  not tune copy or thresholds off it.
+
+export type InboxPlacementSignal = {
+  checked: boolean
+  windowDays: number
+  contacted: number
+  bounced: number
+  opened: number
+  /** Delivered (not bounced) but never opened, in the window. */
+  silent: number
+  delivered: number
+  silentRate: string
+  verdict: string
+}
+
+/** Pure. Judges the unopened-but-delivered rate. Mirrors breakerVerdict's n>=30 gate and PROXY framing. */
+export function inboxPlacementVerdict(silent: number, delivered: number, windowDays: number): string {
+  if (delivered < 30) return `n=${delivered} delivered — too few to judge (no verdict below n=30).`
+  const rate = silent / delivered
+  const pct = (rate * 100).toFixed(2)
+  if (rate >= 0.85) {
+    return (
+      `PROXY SIGNAL: ${pct}% of delivered mail went unopened in ${windowDays}d. Not proof of ` +
+      `spam-foldering — a cold list or a weak subject line reads identically — SURFACED TO KAAN as ` +
+      `an inbox-placement risk to investigate, not acted on.`
+    )
+  }
+  return `OK: ${pct}% unopened among delivered mail, within normal range for a cold-outbound list.`
+}
+
+export async function measureInboxPlacementSignal(sql: any, windowDays = 14): Promise<InboxPlacementSignal> {
+  const empty: InboxPlacementSignal = {
+    checked: false, windowDays, contacted: 0, bounced: 0, opened: 0, silent: 0, delivered: 0,
+    silentRate: 'Inbox-placement proxy: NOT CHECKED (query failed).',
+    verdict: 'NOT CHECKED',
+  }
+  try {
+    const r = (await sql.query(`
+      SELECT
+        count(*)::int AS contacted,
+        count(*) FILTER (WHERE bounced)::int AS bounced,
+        count(*) FILTER (WHERE first_opened_at IS NOT NULL)::int AS opened
+      FROM ps_outreach_leads l
+      WHERE l.touch1_sent_at > NOW() - (${windowDays} || ' days')::interval
+        AND ${COHORT_CURRENT_SQL}
+        ${INTERNAL_EXCLUSION_SQL}`)) as any[]
+
+    const contacted = Number(r[0]?.contacted ?? 0)
+    const bounced = Number(r[0]?.bounced ?? 0)
+    const opened = Number(r[0]?.opened ?? 0)
+    const delivered = Math.max(0, contacted - bounced)
+    const silent = Math.max(0, delivered - opened)
+
+    return {
+      checked: true, windowDays, contacted, bounced, opened, silent, delivered,
+      silentRate: rateLine(`Unopened-but-delivered (${windowDays}d)`, silent, delivered),
+      verdict: inboxPlacementVerdict(silent, delivered, windowDays),
+    }
+  } catch {
+    return empty
+  }
+}
+
 // ─── AUTHENTICATION / DNS ────────────────────────────────────────────────────
 
 export type DmarcState = { found: boolean; host: string; inherited: boolean; policy: string | null }
@@ -577,6 +656,7 @@ export type DexReport = {
   notChecked: string[]
   breaker: BreakerRun | null
   currency: CurrencyRun | null
+  inboxPlacement: InboxPlacementSignal
   line: string
 }
 
@@ -632,6 +712,8 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
     ? null
     : await runCurrencyLoop('dex', 'email deliverability, sender reputation and authentication', DEX_SOURCES, sql).catch(() => null)
 
+  const inboxPlacement = await measureInboxPlacementSignal(sql)
+
   const coverageInput = { unitsScanned: paths.covered + paths.incidents.length, findings: paths.incidents.length, pass: 'COVERED' as const, fail: 'GAPS' as const }
   const pathCoverage = scanVerdict(coverageInput)
   const pathCoverageReason = scanVerdictReason(coverageInput, 'Send-path rail coverage')
@@ -652,7 +734,8 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
     notChecked,
     breaker,
     currency,
-    line: [line, breaker?.line, currency?.line].filter(Boolean).join(' '),
+    inboxPlacement,
+    line: [line, breaker?.line, currency?.line, `${inboxPlacement.silentRate} ${inboxPlacement.verdict}`].filter(Boolean).join(' '),
   }
 }
 
