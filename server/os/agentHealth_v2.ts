@@ -126,12 +126,42 @@ export async function getAllAgentHealth(companyId = 'phishsimai'): Promise<Agent
     ORDER BY agent_id
   `.catch(() => [] as any[])
 
-  return (rows as any[]).map((r: any) => ({
-    ...r,
-    agent_name: AGENTS[r.agent_id as AgentId]?.name || r.agent_id,
-    agent_title: AGENTS[r.agent_id as AgentId]?.title || '',
-    company_id: companyId,
-  }))
+  // PS-HEALTH-01: agent_health_v2 is written only by the rarely-used heartbeat path, so it reads
+  // 'unknown' / 0% even though specialists run daily on crons and complete real work. Overlay ACTUAL
+  // activity from agent_tasks so status reflects whether an agent DID work, not whether it emitted a
+  // heartbeat. Completed a task in the last 7 days -> healthy; issued-but-none-done -> idle; no data
+  // falls back to the stored value.
+  const activity = (await sql`
+    SELECT agent_id,
+      max(completed_at) FILTER (WHERE status IN ('completed','reviewed')) AS last_done,
+      count(*) FILTER (WHERE status IN ('completed','reviewed') AND completed_at > now() - interval '7 days')::int AS done_7d,
+      count(*) FILTER (WHERE created_at > now() - interval '7 days')::int AS issued_7d
+    FROM agent_tasks WHERE company_id = ${companyId} GROUP BY agent_id
+  `.catch(() => [] as any[])) as any[]
+  const actMap = new Map(activity.map((a) => [a.agent_id, a]))
+  return (rows as any[]).map((r: any) => {
+    const a = actMap.get(r.agent_id)
+    const done7 = Number(a?.done_7d ?? 0)
+    const issued7 = Number(a?.issued_7d ?? 0)
+    let status = r.status
+    let uptime = r.uptime_pct
+    if (done7 > 0) {
+      status = 'healthy'
+      uptime = issued7 > 0 ? Math.min(100, Math.round((done7 / issued7) * 100)) : 100
+    } else if (issued7 > 0) {
+      status = 'idle'
+      uptime = 0
+    }
+    return {
+      ...r,
+      status,
+      uptime_pct: uptime,
+      last_run_at: a?.last_done ?? r.last_run_at,
+      agent_name: AGENTS[r.agent_id as AgentId]?.name || r.agent_id,
+      agent_title: AGENTS[r.agent_id as AgentId]?.title || '',
+      company_id: companyId,
+    }
+  })
 }
 
 export async function markHealing(agentId: AgentId, companyId = 'phishsimai') {
