@@ -201,9 +201,16 @@ export async function recordImpression(leadId: string, experimentKey: string, va
 export async function recordConversion(leadId: string, experimentKey: string, event: string) {
   try {
     const sql = getSql()
+    // Idempotent per (lead, experiment, event): only record an outcome once, so repeated pixel
+    // opens (or repeat calls) never inflate the numerator of the open/reply rate.
     await sql`INSERT INTO ab_impressions (lead_id, experiment_key, variant, event)
       SELECT lead_id, ${experimentKey}, variant, ${event} FROM ab_impressions
-      WHERE lead_id=${leadId} AND experiment_key=${experimentKey} AND event='sent' LIMIT 1`
+      WHERE lead_id=${leadId} AND experiment_key=${experimentKey} AND event='sent'
+        AND NOT EXISTS (
+          SELECT 1 FROM ab_impressions
+          WHERE lead_id=${leadId} AND experiment_key=${experimentKey} AND event=${event}
+        )
+      LIMIT 1`
   } catch {}
 }
 
