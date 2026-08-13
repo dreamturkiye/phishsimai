@@ -677,7 +677,9 @@ Janet's standup prompt no longer tells her to reflexively "Pause X and pivot to 
 - **Self-learning:** `os_agent_reflections` records each agent's outcomes (pass and fail) and feeds its own past lessons into its next prompt.
 - **Execution loop:** per-agent daily crons (5:45–7:00) + `runJanetFullOrchestration` execute overdue tasks. The gap was ownership + actions — now closed. NOTE: `executeTask` is otherwise text-only by design; agents ACT only through the two gated surfaces above.
 
-### Open / deferred (honest)
-- The health-status endpoint's "9-of-10 unknown / 0% uptime" is a misleading REPORTING artifact (it measures heartbeats agents don't emit, not whether crons run) — cosmetic, not yet fixed.
-- 3 stale `marcus_dispatch` escalations (ids 34/35/37, ~21h) are superseded by this session; automated cleanup hit a status-constraint + is deferred (dismiss from HQ).
-- Richer domain-native action tools (e.g. Scout triggering discovery, Aria staging content) are the deliberate next layer — each needs its own safe wiring rather than a bulk grant.
+### Resolved (Aug 13, later same day)
+- **Health status FIXED (PS-HEALTH-01/02):** `getAllAgentHealth` no longer relies on the never-written heartbeat table. It overlays real `agent_tasks` activity (completed work → healthy, with a real uptime = done/issued) plus recent standup participation (ran in the last 48h → active), falling back to stored only when there is genuinely no signal. Live result: 7/10 agents read truthful `healthy` with real uptimes, versus 9/10 "unknown / 0%" before. Janet (orchestrator) and the two agents with no recent completed work stay `unknown` — now accurate, not misleading.
+- **Stale escalations cleared:** the 3 `marcus_dispatch` escalations (#34/#35/#37) were resolved as `rejected` (the `escalations_status_check` constraint allows `pending`/`approved`/`rejected`/`deferred`); 0 pending remain. The earlier "constraint failures" were stale CI logs, not a real rejection.
+
+### Deferred (deliberate next layer, not a gap)
+- Richer domain-native action tools (e.g. Scout triggering discovery batches, Aria staging content) — each needs its own safe wiring rather than a bulk grant. The universal `queue_marcus` + `escalate` already let every agent act.
