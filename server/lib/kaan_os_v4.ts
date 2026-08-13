@@ -1986,12 +1986,23 @@ system record backs it.
     const openN = ((await sql`SELECT count(*)::int AS n FROM agent_tasks
       WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('assigned','in_progress')`) as any[])[0]?.n ?? 0
     if (openN > 0) continue
-    const proposal = extractProposal(report.summary)
-    if (!proposal) continue
+    let taskText = extractProposal(report.summary)
+    let source = 'standup proposal'
+    if (!taskText) {
+      // PS-OWNERSHIP-02: domain-default ownership. An agent whose report carried no PROPOSAL still
+      // OWNS its lane — self-originate a domain-anchored task so it proactively improves its own
+      // area (Vera and the other SMEs). Janet is not an SME on everything; each specialist drives
+      // its domain. executeTask already injects getCompanyContext (real company data) and
+      // os_agent_reflections (that agent's past lessons), so the task runs grounded and self-learning.
+      const a = AGENTS[aId]
+      if (!a) continue
+      taskText = `As ${a.title}, identify and begin the single highest-impact improvement in your domain (${a.domain}) that advances the company's current top goal. Use real company data; propose and start the concrete next step.`
+      source = 'domain-default ownership'
+    }
     try {
       const t = await issueTask(aId, {
-        title: proposal.slice(0, 100),
-        description: `Self-originated by ${aId} from today's standup proposal: ${proposal}`,
+        title: taskText.slice(0, 100),
+        description: `Self-originated by ${aId} (${source}): ${taskText}`,
         priority: 'high', due_in_hours: 24,
       }, companyId, { issuedBy: aId })
       if (!t.deduped && !t.voided) selfOriginated++
