@@ -163,10 +163,23 @@ export const TOUCH2_VARIANT: ABVariant = {
 // sequences.ts falls back to `control` whenever `active` is false or no test arm exists.
 export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test?: ABVariant; active: boolean }> = {
   touch1_subject: {
-    active: false,
+    // PS-SUBJECT-AB-01 (founder-directed, 2026-08-12): subject-only test. The `test` arm differs
+    // from control ONLY in the subject line — it reuses the SAME approved plain-text body
+    // (touch1Html/touch1Text: CTA + CAN-SPAM footer intact). This is NOT the historically-banned
+    // "loser slot for invented copy": the body is the one approved email; the only variable is a
+    // founder-approved punchier subject. getVariant does a 50/50 split; Aria's daily analysis
+    // evaluates control vs test on real opens (ab_impressions). Promotion of the winner stays
+    // human-gated (flip control's subject in a PR) — nothing auto-changes live copy.
+    active: true,
     control: {
       id: 'ctrl_t1_price',
       subject: () => TOUCH1_SUBJECT,
+      html: (name) => touch1Html(name),
+      text: (name) => touch1Text(name),
+    },
+    test: {
+      id: 'test_t1_subject_punchy',
+      subject: () => `500 users. $299/mo.`,
       html: (name) => touch1Html(name),
       text: (name) => touch1Text(name),
     },
