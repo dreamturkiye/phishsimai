@@ -45,7 +45,7 @@ You're receiving this because we work with MSPs on phishing-simulation and compl
  * A/B is OFF: one honest email beats two, and the loser slot is where invented copy used to hide.
  * Both slots hold the identical approved copy so no stale invented text survives in this file.
  */
-export const TOUCH1_SUBJECT = `60¢/user, live in 10 minutes, 30 days free`
+export const TOUCH1_SUBJECT = `500 users, $299/mo — live in 10 minutes`
 
 // PS-SALUTATION-01: AMF v5.1 find-email/company returns EMAILS ONLY — no name/first_name/title
 // (verified: bcainc.com returned 20 emails, zero name fields). So the greeting can never come from
@@ -97,21 +97,16 @@ const touch1Html = (_name: string) => '' // text-only: see PS-COPY-PLAINTEXT-01
 // the only text added to the founder's copy.
 const touch1Text = (name: string) => `Hi ${name},
 
-Most MSPs either overpay for phishing simulation or skip it because setup eats a week.
+Run phishing simulations for 500 users for just $299/month.
 
-PhishSim AI:
+Most MSPs pay triple that for platforms that take weeks to configure. With PhishSim AI, you're live in under 10 minutes.
 
-- $299/mo covers 500 users — 60¢/user. Drops to 30¢ on Pro. Flat pricing, so your margin grows as you add clients. Starts at $149 if you're smaller.
-- Live in under 10 minutes — no security engineer. First campaign running the same afternoon.
-- 30-day free trial, no credit card. Full access.
+Just upload your list and let the automation run. It's a set-and-forget compliance check that protects your clients and preserves your margins.
 
-Built for MSPs who want a recurring revenue line without the complexity.
-
-Reply "trial" or start here — you'll be live today: https://phishsimai.com/login?mode=register
+Want to see the 10-minute setup? Start your free trial (30 days, no card): https://phishsimai.com/login?mode=register
 
 Sarah Mitchell
 PhishSim AI
-
 ${CANSPAM_TEXT}`
 
 
