@@ -3,6 +3,7 @@ import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
+import { queueJanetArchitectTask } from '../os/selfHeal'
 import { evaluatePosture, postureLine } from '../os/posture'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
@@ -1358,6 +1359,50 @@ export async function issueTask(
   return { task_id: inserted.id, agent: agent.name, title: task.title, deduped: false }
 }
 
+/**
+ * PS-AGENT-ACT-01: scoped, gated, LOGGED action layer. An agent may take ONE real action per task,
+ * under Janet's supervision. Two safe surfaces only — none touches prod, real recipients, or money
+ * directly. queue_marcus routes a code/infra change into the VERIFIED architect pipeline (autonomy
+ * gate + circuit breaker + CI verify + deploy); escalate puts anything sensitive in front of a
+ * human as a founder_decision (the no-drift guarantee). Every action is logged to agent_actions.
+ */
+async function executeAgentAction(sql: any, task: AgentTask, resultText: string, companyId: string): Promise<string> {
+  const m = resultText.match(/ACTION:\s*(queue_marcus|escalate)\s*:\s*([^\n]+)/i)
+  if (!m) return ''
+  const verb = m[1].toLowerCase()
+  const arg = m[2].trim()
+  const agentId = task.agent_id
+  await sql`CREATE TABLE IF NOT EXISTS agent_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id TEXT, agent_id TEXT, task_id TEXT,
+    action TEXT, arg TEXT, result TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`.catch(() => {})
+  let outcome = ''
+  try {
+    if (verb === 'queue_marcus') {
+      const id = await queueJanetArchitectTask({
+        task: arg.slice(0, 400),
+        source: `agent:${agentId}`,
+        notes: `Self-originated action from ${agentId} on task "${task.title.slice(0, 60)}"`,
+      })
+      outcome = id
+        ? `queued engineering task to Marcus via the verified pipeline (id ${id})`
+        : `queue_marcus blocked by the autonomy gate / circuit breaker and parked — not executed`
+    } else {
+      const [title, detail] = arg.split('|').map((x) => x.trim())
+      const rows = (await sql`INSERT INTO escalations (product_id, category, payload, status)
+        VALUES (${companyId}, 'founder_decision',
+          ${JSON.stringify({ title: title || arg, detail: detail || '', from: agentId })}::jsonb, 'pending')
+        RETURNING id`) as any[]
+      outcome = `escalated a decision to Janet/founder (id ${rows[0]?.id || '?'}, pending sign-off)`
+    }
+  } catch (e: any) {
+    outcome = `action failed: ${String(e?.message || e).slice(0, 120)}`
+  }
+  await sql`INSERT INTO agent_actions (company_id, agent_id, task_id, action, arg, result)
+    VALUES (${companyId}, ${agentId}, ${String(task.id)}, ${verb}, ${arg.slice(0, 400)}, ${outcome})`.catch(() => {})
+  console.log(`[kaan_os_v4] agent action: ${agentId} ${verb} -> ${outcome}`)
+  return `\n\n---\n**ACTION TAKEN (${agentId}, under Janet's review):** ${outcome}`
+}
+
 export async function executeTask(taskId: string, companyId = COMPANY_ID): Promise<AgentTask> {
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
@@ -1397,24 +1442,32 @@ Execute this task now. Provide:
 4. Any blockers or things you need from Janet
 5. Self-assessment: how confident are you in this output? (0-10)
 
+You may take ONE real action to advance this (under Janet's supervision) by ending with a single line:
+- ACTION: queue_marcus: <specific code/infra change> — routes into the verified deploy pipeline (you never touch prod directly).
+- ACTION: escalate: <title> | <why a human must decide> — for pricing, spend, legal, contacting real customers, or cross-team calls.
+Only ONE action, only if a concrete step should genuinely HAPPEN now, not just be recommended. Omit the ACTION line for analysis-only work. Never invent an action to look busy.
 Be specific. Janet will review and score your work.`
 
   const result = await llm(system, user, 1200)
+  // PS-AGENT-ACT-01: if the agent proposed a real action, execute it (gated + logged) and append
+  // the outcome so the stored result records what actually happened, not just what was recommended.
+  const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
+  const finalResult = result + actionSummary
 
   await sql`
     UPDATE agent_tasks
-    SET status='completed', result=${result}, completed_at=NOW()
+    SET status='completed', result=${finalResult}, completed_at=NOW()
     WHERE id=${taskId}
   `
 
   // Save to agent memory
   await rememberFact({
     company_id: companyId, type: 'strategic',
-    key: `task:${task.title.slice(0,50)}`, value: result.slice(0,500),
+    key: `task:${task.title.slice(0,50)}`, value: finalResult.slice(0,500),
     confidence: 0.8, source: task.agent_id
   }).catch(() => {})
 
-  return { ...task, status: 'completed', result }
+  return { ...task, status: 'completed', result: finalResult }
 }
 
 export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number; task: any }> {
@@ -1930,7 +1983,7 @@ system record backs it.
       `that FILLS the funnel.\n\n`
     : ''
 
-  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. To REPLACE an agent's current task (redirect them), begin the task with "Pause ... and pivot to ..." — that cancels their prior open task instead of leaving a contradictory one running.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
