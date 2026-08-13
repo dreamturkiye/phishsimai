@@ -20,6 +20,7 @@ import { llmComplete } from './llmChat'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
 import { recallContext } from './memory'
 import { queueJanetArchitectTask } from './selfHeal'
+import { talkToAgent } from '../lib/kaan_os_v4'
 
 type Tool = {
   name: string
@@ -98,6 +99,12 @@ const TOOLS: Tool[] = [
     run: async (args, _companyId) => {
       const task = String((args && args.task) || '').trim()
       if (task.length < 12) return 'dispatch_marcus needs a clear task description in the "task" arg.'
+      // JAN-ROUTE-01: Marcus writes CODE. Copy/marketing/strategy directives go to brief_agent, not here.
+      const nonCode = /\b(copy|value ?prop|pricing message|messaging|positioning|subject line|a\/b|variant|outreach copy|email content|email message|tone|wording|the (cold )?email|sequence copy|marketing)\b/i
+      const code = /\b(code|file|\.tsx?|deploy|bug|endpoint|api|component|function|schema|migration|route|webhook|refactor|build|typescript|handler|import|render)\b/i
+      if (nonCode.test(task) && !code.test(task)) {
+        return 'That is a copy/marketing/strategy directive, not an engineering change — Marcus only writes code. Use brief_agent to route it to the right specialist (aria = marketing/copy/email, mason = sales). Do NOT queue Marcus for it.'
+      }
       try {
         const id = await queueJanetArchitectTask({ task, source: 'janet_agent', notes: 'Queued by Janet from founder conversation' })
         return id
@@ -105,6 +112,24 @@ const TOOLS: Tool[] = [
           : 'Could not queue Marcus: autonomy gate denied or the circuit breaker is open (recent failures). No task was created.'
       } catch (e: any) {
         return `dispatch_marcus failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'brief_agent',
+    description:
+      'Route a directive to a specialist teammate and return their response. Use this for anything that is NOT a code change: marketing / copy / email / positioning (aria), sales (mason), product growth (nova), revenue ops (rex), market intelligence (scout), finance (finn), customer success (vera). Example: a "lead with price in the cold email" directive -> brief_agent(agent="aria", directive="rewrite the T1 cold email to lead with price, then speed, then set-and-forget"). args: agent (string), directive (string).',
+    run: async (args, companyId) => {
+      const agent = String((args && (args.agent || args.employee)) || '').trim().toLowerCase()
+      const directive = String((args && (args.directive || args.task || args.message)) || '').trim()
+      const valid = ['mason', 'aria', 'nova', 'rex', 'scout', 'finn', 'vera']
+      if (!valid.includes(agent)) return `brief_agent needs a valid agent: ${valid.join(', ')}.`
+      if (directive.length < 8) return 'brief_agent needs a "directive".'
+      try {
+        const r = await talkToAgent(agent as any, directive, companyId, true)
+        return `${r.agent}: ${r.response}`
+      } catch (e: any) {
+        return `brief_agent failed: ${e?.message || e}`
       }
     },
   },
@@ -153,10 +178,15 @@ Rules:
 - When you have enough evidence, return {"final": ...} with a direct, grounded answer that cites
   the actual numbers and facts you found. Keep it tight and decision-useful. You are the CGO.
 - If a question needs no data (a greeting, a definition), you may answer with {"final": ...} directly.
-- TO DO SOMETHING (fix or ship code, queue Marcus, record a decision) you MUST call the matching
-  act-tool: dispatch_marcus to queue an engineering fix, create_decision to log a decision. You
-  CANNOT perform these yourself — only the tool does. Calling the tool is the ONLY way the action
-  actually happens.
+- TO DO SOMETHING you MUST call the matching act-tool — you CANNOT perform actions yourself, only
+  the tool does. ROUTE BY TYPE, this matters:
+  • CODE change only (a file, a bug, an endpoint, a deploy) -> dispatch_marcus.
+  • Marketing / copy / email / value-prop / pricing-message / positioning -> brief_agent(agent="aria", ...).
+    Sales -> brief_agent("mason"). Other specialists as listed. NEVER send copy or strategy to Marcus —
+    he writes code, not marketing; that is a category error and it fails.
+  • A pivot or choice you should not make alone -> create_decision.
+  Example: founder says "lead with price in the cold email" — that is copy, so brief_agent("aria"),
+  NOT dispatch_marcus.
 - NEVER claim an engineering task is "done", "complete", or "already fixed" from your own words,
   and NEVER invent a task id. dispatch_marcus returns the real task id and status "queued" — report
   exactly that ("Marcus is queued — not deployed until it shows done"). Fabricating a completion or
