@@ -10,11 +10,13 @@ export type ReplyIntent =
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 
+import { BRAND_LOGO_FOOTER } from '../email/brandFooter'
+
 async function sendEmail(to: string, subject: string, html: string) {
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
-    body: JSON.stringify({ from: FROM, to, subject, html }),
+    body: JSON.stringify({ from: FROM, to, subject, html: html + BRAND_LOGO_FOOTER }),
   })
 }
 
