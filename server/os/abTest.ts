@@ -236,7 +236,9 @@ export async function computeAdaptiveSplit(
     if (cs + ts < minSamples || cs === 0 || ts === 0) return 0.5
     const controlRate = co / cs
     const testRate = to / ts
-    return testRate > controlRate ? 1 - floor : floor
+    if (testRate > controlRate) return 1 - floor
+    if (controlRate > testRate) return floor
+    return 0.5 // tie (incl. equal/no outcomes) -> even split, no bias toward either arm
   } catch {
     return 0.5
   }
