@@ -10,6 +10,7 @@
 import type { Request, Response } from 'express'
 import { getSql } from './conn'
 import { decodeUnsubToken } from './unsubscribe'
+import { recordConversion } from './abTest'
 
 const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
 
@@ -25,12 +26,20 @@ export async function trackOpenPixel(req: Request, res: Response): Promise<void>
     try {
       const sql = getSql()
       const ts = new Date().toISOString()
-      await sql`
+      const rows = await sql`
         UPDATE ps_outreach_leads
         SET first_opened_at = COALESCE(first_opened_at, ${ts}),
             last_opened_at = ${ts},
             open_count = open_count + 1
-        WHERE LOWER(email) = LOWER(${email})`
+        WHERE LOWER(email) = LOWER(${email})
+        RETURNING id`
+      // PS-SUBJECT-AB-01: attribute the open to this lead's experiment variant so the subject
+      // A/B has real OPEN outcomes (not just 'sent'). recordConversion is idempotent per
+      // (lead, experiment, event), so repeated pixel hits record at most one 'opened'.
+      const openedLeadId = (rows as unknown as Array<{ id: string }>)[0]?.id
+      if (openedLeadId) {
+        await recordConversion(String(openedLeadId), 'touch1_subject', 'opened').catch(() => {})
+      }
       console.log('[trackOpen] write ok for', email, 'latency_ms=' + (Date.now() - t0))
     } catch (e) {
       // A failed write must never surface to the recipient — same doctrine as

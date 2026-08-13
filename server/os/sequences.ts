@@ -1,6 +1,6 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
-import { AB_EXPERIMENTS, TOUCH2_VARIANT, getVariant, recordImpression, deriveFirstName } from './abTest'
+import { AB_EXPERIMENTS, TOUCH2_VARIANT, getVariant, recordImpression, deriveFirstName, computeAdaptiveSplit, splitByWeight } from './abTest'
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
 import { hasMx, domainOf } from './mxGate'
@@ -420,6 +420,10 @@ export async function runFullSequence() {
 
   if (totalSent < cap) {
     const exp = AB_EXPERIMENTS.touch1_subject
+    // PS-BANDIT-01: adaptive split, computed ONCE per batch (one query). Weights allocation toward
+    // the higher open-rate subject once there is enough data; 0.5 (current 50/50) until then or if
+    // the experiment is off. Fail-safe inside computeAdaptiveSplit.
+    const testWeight = (exp.active && exp.test) ? await computeAdaptiveSplit('touch1_subject') : 0
     // PS-DEX-GATE-01: `AND NOT EXISTS (suppression)` added here. Touch-1 filtered on `unsubscribed`
     // alone and never consulted ps_outreach_suppression — a provider-suppressed lead whose flag was
     // unset (Rex found 8 on 2026-08-03) was fully eligible for a first touch.
@@ -450,7 +454,7 @@ export async function runFullSequence() {
           console.warn('[sequence] T1 send gate blocked', lead.email, '-', gate1.reason)
           continue
         }
-        const variant = getVariant(String(lead.id), 'touch1_subject')
+        const variant = splitByWeight(String(lead.id), testWeight)
         // PS-COPY-PRICE-01: the test arm is optional and currently absent. Fall back to control
         // whenever the experiment is off OR no test variant exists — never send `undefined`.
         const v = (exp.active && variant === 'test' && exp.test) ? exp.test : exp.control

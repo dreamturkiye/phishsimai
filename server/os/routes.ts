@@ -35,6 +35,7 @@ import {
 } from './circuitBreaker'
 import { deliverPendingEscalations, makeSqlNotifyDeps } from './escalationNotify'
 import { composeFounderBrief, makeSqlBriefDeps } from './founderBrief'
+import { triageEscalations } from './escalationTriage'
 import { runAgentLevels } from './agentLevels'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth } from './agentHealth_v2'
@@ -147,6 +148,11 @@ export async function cronFounderBrief(req: Request, res: Response) {
   if (!okCronOrHq(req, res)) return
   try {
     const date = (req.query.date as string) || new Date().toISOString().slice(0, 10)
+    // PS-TRIAGE-01: triage pending escalations BEFORE composing the brief, so Janet has already
+    // resolved what she safely can and re-alerted (with growing urgency) what she cannot, and the
+    // brief's "pending escalations" line reflects the TRUE unresolved count -- not a passive list
+    // nothing ever acts on.
+    await triageEscalations(COMPANY).catch((e) => console.error('[cronFounderBrief] triage failed:', e?.message))
     const result = await composeFounderBrief(makeSqlBriefDeps(COMPANY), date)
     res.json({ ok: true, ...result })
   } catch (e: any) {
