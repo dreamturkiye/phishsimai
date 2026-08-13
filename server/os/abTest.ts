@@ -191,6 +191,57 @@ export function getVariant(leadId: string, _experimentKey: string): 'control' | 
   return hash % 2 === 0 ? 'control' : 'test'
 }
 
+/**
+ * PS-BANDIT-01: deterministic per-lead assignment to a weighted split. `testWeight` is the fraction
+ * of traffic to route to the 'test' arm (0..1). Same lead always lands the same way for a given
+ * weight, so re-runs are stable. Replaces the fixed 50/50 in getVariant when a weight is supplied.
+ */
+export function splitByWeight(leadId: string, testWeight: number): 'control' | 'test' {
+  const hash = leadId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  const r = (hash % 1000) / 1000
+  return r < testWeight ? 'test' : 'control'
+}
+
+/**
+ * PS-BANDIT-01: epsilon-greedy allocation on OPEN rate. Returns the fraction of sends to route to
+ * 'test'. CAREFUL by construction:
+ *  - Below `minSamples` total sends (or if either arm has zero sends) it returns 0.5 — the existing
+ *    even split — so we never converge on noise.
+ *  - Once past the gate, the higher-open-rate arm gets (1 - floor); the loser KEEPS `floor` so the
+ *    experiment never fully stops exploring (handles noise + non-stationarity).
+ *  - Any error returns 0.5 (fail-safe: the send path never breaks on the bandit).
+ * The winning COPY is never auto-promoted — only the traffic split moves, and both arms are
+ * founder-approved. Reads the real outcomes recorded by recordImpression/recordConversion.
+ */
+export async function computeAdaptiveSplit(
+  experimentKey: string,
+  minSamples = 200,
+  floor = 0.2,
+): Promise<number> {
+  try {
+    const sql = getSql()
+    const rows = (await sql`
+      SELECT variant,
+             count(*) FILTER (WHERE event = 'sent')::int   AS sent,
+             count(*) FILTER (WHERE event = 'opened')::int AS opened
+      FROM ab_impressions
+      WHERE experiment_key = ${experimentKey} AND variant IN ('control', 'test')
+      GROUP BY variant
+    `) as Array<{ variant: string; sent: number; opened: number }>
+    const m = new Map(rows.map((r) => [r.variant, r]))
+    const cs = m.get('control')?.sent ?? 0
+    const co = m.get('control')?.opened ?? 0
+    const ts = m.get('test')?.sent ?? 0
+    const to = m.get('test')?.opened ?? 0
+    if (cs + ts < minSamples || cs === 0 || ts === 0) return 0.5
+    const controlRate = co / cs
+    const testRate = to / ts
+    return testRate > controlRate ? 1 - floor : floor
+  } catch {
+    return 0.5
+  }
+}
+
 export async function recordImpression(leadId: string, experimentKey: string, variant: string) {
   try {
     const sql = getSql()
