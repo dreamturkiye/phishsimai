@@ -80,6 +80,9 @@ export async function setGoal(
 ): Promise<string | null> {
   const sql = getSql()
   await ensureCgoGoalsTable(sql)
+  // PS-CGO-OKR-02: a top-line goal REPLACES the prior active one (single active OKR model) so
+  // "change the goal" does not accumulate stale rows. Prior goals are archived, not deleted.
+  await sql`UPDATE cgo_goals SET status='archived', updated_at=NOW() WHERE company_id=${opts.companyId ?? DEFAULT_COMPANY} AND status='active'`.catch(() => {})
   const rows = (await sql`
     INSERT INTO cgo_goals (company_id, objective, period, key_results, status, owner)
     VALUES (
