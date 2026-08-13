@@ -21,6 +21,7 @@ import { getJanetOpsSnapshot } from './janetOpsSnapshot'
 import { recallContext } from './memory'
 import { queueJanetArchitectTask } from './selfHeal'
 import { talkToAgent } from '../lib/kaan_os_v4'
+import { setGoal, getGoalsWithProgress } from './cgoGoals'
 
 type Tool = {
   name: string
@@ -130,6 +131,46 @@ const TOOLS: Tool[] = [
         return `${r.agent}: ${r.response}`
       } catch (e: any) {
         return `brief_agent failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'set_goal',
+    description:
+      'Set or update a measurable OKR you own as CGO. An objective plus key results, each with a numeric target. For a key result, set metric to one of leads_touched_7d, opens_7d, open_rate_7d, customers to AUTO-TRACK it from real data; omit metric for a manually-tracked target (e.g. MRR). args: objective (string), key_results (array of {name, target, unit?, metric?}), period (string, optional).',
+    run: async (args, companyId) => {
+      const objective = String((args && args.objective) || '').trim()
+      const keyResults = Array.isArray(args && args.key_results) ? (args.key_results as any[]) : []
+      if (!objective) return 'set_goal needs an "objective".'
+      if (!keyResults.length) return 'set_goal needs at least one key result {name, target}.'
+      try {
+        const krs = keyResults.map((k: any) => ({
+          name: String(k?.name || '').slice(0, 120),
+          target: Number(k?.target) || 0,
+          current: Number(k?.current) || 0,
+          unit: k?.unit ? String(k.unit) : undefined,
+          metric: k?.metric ? String(k.metric) : undefined,
+        }))
+        const id = await setGoal({ objective, keyResults: krs, period: (args && args.period) ? String(args.period) : undefined, companyId })
+        return id ? `Goal set (id ${id}). Progress auto-tracks from real data whenever you read it.` : 'Could not set goal.'
+      } catch (e: any) {
+        return `set_goal failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'list_goals',
+    description:
+      'List your active OKRs with LIVE progress (current vs target per key result, computed from real data on read). Use to check where we stand against the goals.',
+    run: async (_args, companyId) => {
+      try {
+        const goals = await getGoalsWithProgress(companyId)
+        if (!goals.length) return 'No active goals set.'
+        return goals
+          .map((g) => `[${g.progress}%] ${g.objective} (${g.period}): ` + g.keyResults.map((k) => `${k.name} ${k.current}/${k.target}${k.unit || ''}`).join('; '))
+          .join('\n')
+      } catch (e: any) {
+        return `list_goals failed: ${e?.message || e}`
       }
     },
   },
