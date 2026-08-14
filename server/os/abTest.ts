@@ -45,7 +45,7 @@ You're receiving this because we work with MSPs on phishing-simulation and compl
  * A/B is OFF: one honest email beats two, and the loser slot is where invented copy used to hide.
  * Both slots hold the identical approved copy so no stale invented text survives in this file.
  */
-export const TOUCH1_SUBJECT = `60¢/user, live in 10 minutes, 30 days free`
+export const TOUCH1_SUBJECT = `500 users, $299/mo — live in 10 minutes`
 
 // PS-SALUTATION-01: AMF v5.1 find-email/company returns EMAILS ONLY — no name/first_name/title
 // (verified: bcainc.com returned 20 emails, zero name fields). So the greeting can never come from
@@ -97,21 +97,16 @@ const touch1Html = (_name: string) => '' // text-only: see PS-COPY-PLAINTEXT-01
 // the only text added to the founder's copy.
 const touch1Text = (name: string) => `Hi ${name},
 
-Most MSPs either overpay for phishing simulation or skip it because setup eats a week.
+Run phishing simulations for 500 users for just $299/month.
 
-PhishSim AI:
+Most MSPs pay triple that for platforms that take weeks to configure. With PhishSim AI, you're live in under 10 minutes.
 
-- $299/mo covers 500 users — 60¢/user. Drops to 30¢ on Pro. Flat pricing, so your margin grows as you add clients. Starts at $149 if you're smaller.
-- Live in under 10 minutes — no security engineer. First campaign running the same afternoon.
-- 30-day free trial, no credit card. Full access.
+Just upload your list and let the automation run. It's a set-and-forget compliance check that protects your clients and preserves your margins.
 
-Built for MSPs who want a recurring revenue line without the complexity.
-
-Reply "trial" or start here — you'll be live today: https://phishsimai.com/login?mode=register
+Want to see the 10-minute setup? Start your free trial (30 days, no card): https://phishsimai.com/login?mode=register
 
 Sarah Mitchell
 PhishSim AI
-
 ${CANSPAM_TEXT}`
 
 
@@ -168,10 +163,23 @@ export const TOUCH2_VARIANT: ABVariant = {
 // sequences.ts falls back to `control` whenever `active` is false or no test arm exists.
 export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test?: ABVariant; active: boolean }> = {
   touch1_subject: {
-    active: false,
+    // PS-SUBJECT-AB-01 (founder-directed, 2026-08-12): subject-only test. The `test` arm differs
+    // from control ONLY in the subject line — it reuses the SAME approved plain-text body
+    // (touch1Html/touch1Text: CTA + CAN-SPAM footer intact). This is NOT the historically-banned
+    // "loser slot for invented copy": the body is the one approved email; the only variable is a
+    // founder-approved punchier subject. getVariant does a 50/50 split; Aria's daily analysis
+    // evaluates control vs test on real opens (ab_impressions). Promotion of the winner stays
+    // human-gated (flip control's subject in a PR) — nothing auto-changes live copy.
+    active: true,
     control: {
       id: 'ctrl_t1_price',
       subject: () => TOUCH1_SUBJECT,
+      html: (name) => touch1Html(name),
+      text: (name) => touch1Text(name),
+    },
+    test: {
+      id: 'test_t1_subject_punchy',
+      subject: () => `500 users. $299/mo.`,
       html: (name) => touch1Html(name),
       text: (name) => touch1Text(name),
     },
@@ -181,6 +189,69 @@ export const AB_EXPERIMENTS: Record<string, { control: ABVariant; test?: ABVaria
 export function getVariant(leadId: string, _experimentKey: string): 'control' | 'test' {
   const hash = leadId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
   return hash % 2 === 0 ? 'control' : 'test'
+}
+
+/**
+ * PS-BANDIT-01: deterministic per-lead assignment to a weighted split. `testWeight` is the fraction
+ * of traffic to route to the 'test' arm (0..1). Same lead always lands the same way for a given
+ * weight, so re-runs are stable. Replaces the fixed 50/50 in getVariant when a weight is supplied.
+ */
+export function splitByWeight(leadId: string, testWeight: number): 'control' | 'test' {
+  const hash = leadId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
+  const r = (hash % 1000) / 1000
+  return r < testWeight ? 'test' : 'control'
+}
+
+/**
+ * PS-BANDIT-01: epsilon-greedy allocation on a chosen outcome event. Returns the fraction of sends
+ * to route to 'test'. CAREFUL by construction:
+ *  - Below `minSamples` total sends (or if either arm has zero sends) it returns 0.5 — the existing
+ *    even split — so we never converge on noise.
+ *  - Once past the gate, the higher-rate arm gets (1 - floor); the loser KEEPS `floor` so the
+ *    experiment never fully stops exploring (handles noise + non-stationarity).
+ *  - Any error returns 0.5 (fail-safe: the send path never breaks on the bandit).
+ * The winning COPY is never auto-promoted — only the traffic split moves, and both arms are
+ * founder-approved. Reads the real outcomes recorded by recordImpression/recordConversion.
+ *
+ * PS-REPLYOPT-01: `outcomeEvent` defaults to 'opened', UNCHANGED from prior behavior, so every
+ * existing call site (sequences.ts) keeps optimizing on open rate exactly as before. Pass
+ * 'replied' to optimize the split on reply rate directly instead of the open-rate proxy — open
+ * rate and reply rate are not the same thing, and this repo's stated goal for the funnel is
+ * replies. Left opt-in rather than flipped by default because replies are far sparser than opens
+ * (touch1_subject had 0 external replies across 884 sends as of 2026-08-03, see the PS-TOUCH2-PRICE-01
+ * note above) — `minSamples` should be raised well past the default before a reply-optimized split
+ * is trustworthy, and that call is the founder's to make per-experiment, not a silent default flip.
+ */
+export async function computeAdaptiveSplit(
+  experimentKey: string,
+  minSamples = 200,
+  floor = 0.2,
+  outcomeEvent: 'opened' | 'replied' = 'opened',
+): Promise<number> {
+  try {
+    const sql = getSql()
+    const rows = (await sql`
+      SELECT variant,
+             count(*) FILTER (WHERE event = 'sent')::int          AS sent,
+             count(*) FILTER (WHERE event = ${outcomeEvent})::int AS outcome
+      FROM ab_impressions
+      WHERE experiment_key = ${experimentKey} AND variant IN ('control', 'test')
+      GROUP BY variant
+    `) as Array<{ variant: string; sent: number; outcome: number }>
+    const m = new Map(rows.map((r) => [r.variant, r]))
+    const cs = m.get('control')?.sent ?? 0
+    const co = m.get('control')?.outcome ?? 0
+    const ts = m.get('test')?.sent ?? 0
+    const to = m.get('test')?.outcome ?? 0
+    if (cs + ts < minSamples || cs === 0 || ts === 0) return 0.5
+    const controlRate = co / cs
+    const testRate = to / ts
+    if (testRate > controlRate) return 1 - floor
+    if (controlRate > testRate) return floor
+    return 0.5 // tie (incl. equal/no outcomes) -> even split, no bias toward either arm
+  } catch {
+    return 0.5
+  }
 }
 
 export async function recordImpression(leadId: string, experimentKey: string, variant: string) {
@@ -193,9 +264,16 @@ export async function recordImpression(leadId: string, experimentKey: string, va
 export async function recordConversion(leadId: string, experimentKey: string, event: string) {
   try {
     const sql = getSql()
+    // Idempotent per (lead, experiment, event): only record an outcome once, so repeated pixel
+    // opens (or repeat calls) never inflate the numerator of the open/reply rate.
     await sql`INSERT INTO ab_impressions (lead_id, experiment_key, variant, event)
       SELECT lead_id, ${experimentKey}, variant, ${event} FROM ab_impressions
-      WHERE lead_id=${leadId} AND experiment_key=${experimentKey} AND event='sent' LIMIT 1`
+      WHERE lead_id=${leadId} AND experiment_key=${experimentKey} AND event='sent'
+        AND NOT EXISTS (
+          SELECT 1 FROM ab_impressions
+          WHERE lead_id=${leadId} AND experiment_key=${experimentKey} AND event=${event}
+        )
+      LIMIT 1`
   } catch {}
 }
 

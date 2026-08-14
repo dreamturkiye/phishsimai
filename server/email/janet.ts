@@ -13,9 +13,11 @@ const APP_URL = process.env.VITE_APP_URL ?? "https://phishsimai.com";
  * forget (a failed lifecycle email must not break signup), but a failure is now logged AND
  * captured rather than discarded. Returns whether it was accepted, for callers that care.
  */
+import { BRAND_LOGO_FOOTER } from './brandFooter'
+
 async function sendLifecycle(tag: string, to: string, subject: string, html: string): Promise<boolean> {
   try {
-    const { data, error } = await resend().emails.send({ from: FROM, to, subject, html });
+    const { data, error } = await resend().emails.send({ from: FROM, to, subject, html: html + BRAND_LOGO_FOOTER });
     if (error) {
       console.error(`[Janet ${tag}] Resend rejected:`, error);
       captureServerError(new Error(`Janet ${tag} rejected: ${(error as any)?.message ?? JSON.stringify(error)}`), { scope: "janet", tag });

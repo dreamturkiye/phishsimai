@@ -3,6 +3,8 @@ import { neon } from '@neondatabase/serverless'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
+import { queueJanetArchitectTask } from '../os/selfHeal'
+import { researchCurrentBestPractice } from '../os/domainResearch'
 import { evaluatePosture, postureLine } from '../os/posture'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
@@ -1302,7 +1304,7 @@ export async function issueTask(
   agentId: AgentId,
   task: NewAgentTask,
   companyId = COMPANY_ID,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; issuedBy?: string } = {},
 ): Promise<{ task_id: string; agent: string; title: string; deduped?: boolean; voided?: boolean; reason?: string }> {
   // AUTONOMY GATE — no agent task is written unless this company's earned level
   // permits it. At 'manual' this throws AutonomyDenied (audited) before any write.
@@ -1348,13 +1350,58 @@ export async function issueTask(
 
   const [inserted] = await sql`
     INSERT INTO agent_tasks (agent_id, issued_by, title, description, priority, due_in_hours, status, company_id)
-    VALUES (${agentId}, 'janet', ${task.title}, ${task.description}, ${task.priority}, ${task.due_in_hours}, 'assigned', ${companyId})
+    VALUES (${agentId}, ${opts.issuedBy ?? 'janet'}, ${task.title}, ${task.description}, ${task.priority}, ${task.due_in_hours}, 'assigned', ${companyId})
     RETURNING id
   `
 
-  await sendTelegram(`📋 *Task Assigned by Janet*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
+  const _issuerLabel = (opts.issuedBy && opts.issuedBy !== 'janet') ? `Self-Originated by ${agent.name}` : 'Task Assigned by Janet'
+  await sendTelegram(`📋 *${_issuerLabel}*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
 
   return { task_id: inserted.id, agent: agent.name, title: task.title, deduped: false }
+}
+
+/**
+ * PS-AGENT-ACT-01: scoped, gated, LOGGED action layer. An agent may take ONE real action per task,
+ * under Janet's supervision. Two safe surfaces only — none touches prod, real recipients, or money
+ * directly. queue_marcus routes a code/infra change into the VERIFIED architect pipeline (autonomy
+ * gate + circuit breaker + CI verify + deploy); escalate puts anything sensitive in front of a
+ * human as a founder_decision (the no-drift guarantee). Every action is logged to agent_actions.
+ */
+async function executeAgentAction(sql: any, task: AgentTask, resultText: string, companyId: string): Promise<string> {
+  const m = resultText.match(/ACTION:\s*(queue_marcus|escalate)\s*:\s*([^\n]+)/i)
+  if (!m) return ''
+  const verb = m[1].toLowerCase()
+  const arg = m[2].trim()
+  const agentId = task.agent_id
+  await sql`CREATE TABLE IF NOT EXISTS agent_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(), company_id TEXT, agent_id TEXT, task_id TEXT,
+    action TEXT, arg TEXT, result TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`.catch(() => {})
+  let outcome = ''
+  try {
+    if (verb === 'queue_marcus') {
+      const id = await queueJanetArchitectTask({
+        task: arg.slice(0, 400),
+        source: `agent:${agentId}`,
+        notes: `Self-originated action from ${agentId} on task "${task.title.slice(0, 60)}"`,
+      })
+      outcome = id
+        ? `queued engineering task to Marcus via the verified pipeline (id ${id})`
+        : `queue_marcus blocked by the autonomy gate / circuit breaker and parked — not executed`
+    } else {
+      const [title, detail] = arg.split('|').map((x) => x.trim())
+      const rows = (await sql`INSERT INTO escalations (product_id, category, payload, status)
+        VALUES (${companyId}, 'founder_decision',
+          ${JSON.stringify({ title: title || arg, detail: detail || '', from: agentId })}::jsonb, 'pending')
+        RETURNING id`) as any[]
+      outcome = `escalated a decision to Janet/founder (id ${rows[0]?.id || '?'}, pending sign-off)`
+    }
+  } catch (e: any) {
+    outcome = `action failed: ${String(e?.message || e).slice(0, 120)}`
+  }
+  await sql`INSERT INTO agent_actions (company_id, agent_id, task_id, action, arg, result)
+    VALUES (${companyId}, ${agentId}, ${String(task.id)}, ${verb}, ${arg.slice(0, 400)}, ${outcome})`.catch(() => {})
+  console.log(`[kaan_os_v4] agent action: ${agentId} ${verb} -> ${outcome}`)
+  return `\n\n---\n**ACTION TAKEN (${agentId}, under Janet's review):** ${outcome}`
 }
 
 export async function executeTask(taskId: string, companyId = COMPANY_ID): Promise<AgentTask> {
@@ -1396,24 +1443,32 @@ Execute this task now. Provide:
 4. Any blockers or things you need from Janet
 5. Self-assessment: how confident are you in this output? (0-10)
 
+You may take ONE real action to advance this (under Janet's supervision) by ending with a single line:
+- ACTION: queue_marcus: <specific code/infra change> — routes into the verified deploy pipeline (you never touch prod directly).
+- ACTION: escalate: <title> | <why a human must decide> — for pricing, spend, legal, contacting real customers, or cross-team calls.
+Only ONE action, only if a concrete step should genuinely HAPPEN now, not just be recommended. Omit the ACTION line for analysis-only work. Never invent an action to look busy.
 Be specific. Janet will review and score your work.`
 
   const result = await llm(system, user, 1200)
+  // PS-AGENT-ACT-01: if the agent proposed a real action, execute it (gated + logged) and append
+  // the outcome so the stored result records what actually happened, not just what was recommended.
+  const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
+  const finalResult = result + actionSummary
 
   await sql`
     UPDATE agent_tasks
-    SET status='completed', result=${result}, completed_at=NOW()
+    SET status='completed', result=${finalResult}, completed_at=NOW()
     WHERE id=${taskId}
   `
 
   // Save to agent memory
   await rememberFact({
     company_id: companyId, type: 'strategic',
-    key: `task:${task.title.slice(0,50)}`, value: result.slice(0,500),
+    key: `task:${task.title.slice(0,50)}`, value: finalResult.slice(0,500),
     confidence: 0.8, source: task.agent_id
   }).catch(() => {})
 
-  return { ...task, status: 'completed', result }
+  return { ...task, status: 'completed', result: finalResult }
 }
 
 export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number; task: any }> {
@@ -1773,6 +1828,17 @@ export function trimToLineBoundary(text: string, limit: number): string {
   return `${kept}\n… [trimmed ${text.length - kept.length} of ${text.length} chars]`
 }
 
+/**
+ * PS-OWNERSHIP-01: pull an agent's proposed next step out of its standup report ("PROPOSAL: ...").
+ * Agents write this when unassigned; we convert it into a self-originated task so they own their lane.
+ */
+function extractProposal(summary: string): string | null {
+  const m = summary.match(/PROPOSAL[:\s\*]+([\s\S]*?)(?:\n\n|\n\s*\*\*|\n\s*\d[.)]|\n\s*#|$)/i)
+  if (!m) return null
+  const p = m[1].replace(/[\*`]/g, '').replace(/\s+/g, ' ').trim()
+  return p.length >= 12 ? p.slice(0, 200) : null
+}
+
 /** Generous guard rail for one agent's standup report. Does not bind at a 400-token budget. */
 export const AGENT_REPORT_LIMIT = 4000
 
@@ -1918,7 +1984,7 @@ system record backs it.
       `that FILLS the funnel.\n\n`
     : ''
 
-  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. To REPLACE an agent's current task (redirect them), begin the task with "Pause ... and pivot to ..." — that cancels their prior open task instead of leaving a contradictory one running.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
@@ -1960,6 +2026,51 @@ system record backs it.
     `[kaan_os_v4] standup task issuance: parsed=${parsed.length} issued=${newTasks.length} ` +
     `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
+
+  // PS-OWNERSHIP-01: restore agent OWNERSHIP. Any specialist left with NO open task after Janet's
+  // 1-3 assignments SELF-ORIGINATES its own proposed next step (issued_by = the agent, not 'janet').
+  // Root cause of the regression: every task was Janet-assigned, so self-originated % (the L5 bar)
+  // was structurally 0 and most of 8 agents sat idle at "unassigned / 0 confidence". Marcus is
+  // excluded — his work is architect_tasks, a separate pipeline. Bounded: one self-task per idle
+  // agent per standup; issueTask still dedupes and still honours the autonomy gate.
+  let selfOriginated = 0
+  for (const report of reports) {
+    const aId = report.agent_id as AgentId
+    if (aId === 'marcus' || aId === 'janet') continue
+    const openN = ((await sql`SELECT count(*)::int AS n FROM agent_tasks
+      WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('assigned','in_progress')`) as any[])[0]?.n ?? 0
+    if (openN > 0) continue
+    let taskText = extractProposal(report.summary)
+    let source = 'standup proposal'
+    if (!taskText) {
+      // PS-OWNERSHIP-02: domain-default ownership. An agent whose report carried no PROPOSAL still
+      // OWNS its lane — self-originate a domain-anchored task so it proactively improves its own
+      // area (Vera and the other SMEs). Janet is not an SME on everything; each specialist drives
+      // its domain. executeTask already injects getCompanyContext (real company data) and
+      // os_agent_reflections (that agent's past lessons), so the task runs grounded and self-learning.
+      const a = AGENTS[aId]
+      if (!a) continue
+      // PS-SME-01: ground the self-originated task in CURRENT external best practice when search is
+      // configured (see domainResearch.ts) — an SME does not reason from a frozen training cutoff.
+      // Fails open to the original generic wording if research is unavailable/inert/finds nothing.
+      const research = await researchCurrentBestPractice(aId, a.domain, a.title, companyId).catch(() => null)
+      taskText = research
+        ? `As ${a.title}: current best practice (verified ${new Date().toISOString().slice(0, 10)}) — ${research.summary} Apply this to your domain (${a.domain}) to advance the company's current top goal. Sources: ${research.sources.map((x) => x.url).join(', ')}`
+        : `As ${a.title}, identify and begin the single highest-impact improvement in your domain (${a.domain}) that advances the company's current top goal. Use real company data; propose and start the concrete next step.`
+      source = research ? 'domain-default ownership (current best practice)' : 'domain-default ownership'
+    }
+    try {
+      const t = await issueTask(aId, {
+        title: taskText.slice(0, 100),
+        description: `Self-originated by ${aId} (${source}): ${taskText}`,
+        priority: 'high', due_in_hours: 24,
+      }, companyId, { issuedBy: aId })
+      if (!t.deduped && !t.voided) selfOriginated++
+    } catch (e: any) {
+      if (!isAutonomyDenied(e)) console.error(`[kaan_os_v4] self-originate failed for ${aId}: ${String(e?.message || e).slice(0, 160)}`)
+    }
+  }
+  if (selfOriginated) console.log(`[kaan_os_v4] standup: ${selfOriginated} agent(s) self-originated their proposal (ownership restored)`)
   if (parsed.length === 0 && /\bassign|assignment\b/i.test(janetResponse)) {
     console.warn('[kaan_os_v4] standup: Janet named assignments but NONE parsed — parser/prompt drift, not an empty agenda')
   }
