@@ -203,36 +203,46 @@ export function splitByWeight(leadId: string, testWeight: number): 'control' | '
 }
 
 /**
- * PS-BANDIT-01: epsilon-greedy allocation on OPEN rate. Returns the fraction of sends to route to
- * 'test'. CAREFUL by construction:
+ * PS-BANDIT-01: epsilon-greedy allocation on a chosen outcome event. Returns the fraction of sends
+ * to route to 'test'. CAREFUL by construction:
  *  - Below `minSamples` total sends (or if either arm has zero sends) it returns 0.5 — the existing
  *    even split — so we never converge on noise.
- *  - Once past the gate, the higher-open-rate arm gets (1 - floor); the loser KEEPS `floor` so the
+ *  - Once past the gate, the higher-rate arm gets (1 - floor); the loser KEEPS `floor` so the
  *    experiment never fully stops exploring (handles noise + non-stationarity).
  *  - Any error returns 0.5 (fail-safe: the send path never breaks on the bandit).
  * The winning COPY is never auto-promoted — only the traffic split moves, and both arms are
  * founder-approved. Reads the real outcomes recorded by recordImpression/recordConversion.
+ *
+ * PS-REPLYOPT-01: `outcomeEvent` defaults to 'opened', UNCHANGED from prior behavior, so every
+ * existing call site (sequences.ts) keeps optimizing on open rate exactly as before. Pass
+ * 'replied' to optimize the split on reply rate directly instead of the open-rate proxy — open
+ * rate and reply rate are not the same thing, and this repo's stated goal for the funnel is
+ * replies. Left opt-in rather than flipped by default because replies are far sparser than opens
+ * (touch1_subject had 0 external replies across 884 sends as of 2026-08-03, see the PS-TOUCH2-PRICE-01
+ * note above) — `minSamples` should be raised well past the default before a reply-optimized split
+ * is trustworthy, and that call is the founder's to make per-experiment, not a silent default flip.
  */
 export async function computeAdaptiveSplit(
   experimentKey: string,
   minSamples = 200,
   floor = 0.2,
+  outcomeEvent: 'opened' | 'replied' = 'opened',
 ): Promise<number> {
   try {
     const sql = getSql()
     const rows = (await sql`
       SELECT variant,
-             count(*) FILTER (WHERE event = 'sent')::int   AS sent,
-             count(*) FILTER (WHERE event = 'opened')::int AS opened
+             count(*) FILTER (WHERE event = 'sent')::int          AS sent,
+             count(*) FILTER (WHERE event = ${outcomeEvent})::int AS outcome
       FROM ab_impressions
       WHERE experiment_key = ${experimentKey} AND variant IN ('control', 'test')
       GROUP BY variant
-    `) as Array<{ variant: string; sent: number; opened: number }>
+    `) as Array<{ variant: string; sent: number; outcome: number }>
     const m = new Map(rows.map((r) => [r.variant, r]))
     const cs = m.get('control')?.sent ?? 0
-    const co = m.get('control')?.opened ?? 0
+    const co = m.get('control')?.outcome ?? 0
     const ts = m.get('test')?.sent ?? 0
-    const to = m.get('test')?.opened ?? 0
+    const to = m.get('test')?.outcome ?? 0
     if (cs + ts < minSamples || cs === 0 || ts === 0) return 0.5
     const controlRate = co / cs
     const testRate = to / ts
