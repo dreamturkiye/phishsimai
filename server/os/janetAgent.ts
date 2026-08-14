@@ -19,6 +19,9 @@ import { getSql } from './conn'
 import { llmComplete } from './llmChat'
 import { getJanetOpsSnapshot } from './janetOpsSnapshot'
 import { recallContext } from './memory'
+import { queueJanetArchitectTask } from './selfHeal'
+import { talkToAgent } from '../lib/kaan_os_v4'
+import { setGoal, getGoalsWithProgress } from './cgoGoals'
 
 type Tool = {
   name: string
@@ -84,6 +87,114 @@ const TOOLS: Tool[] = [
       }
     },
   },
+  // ── ACT TOOLS (JAN-AGENT-02) ───────────────────────────────────────────────
+  // Safe by construction: dispatch_marcus goes through queueJanetArchitectTask, which already
+  // enforces the autonomy gate + Marcus circuit breaker, and Marcus's own gates (destructive
+  // diff / CI / dev+prod QA / auto-revert) protect prod. create_decision only writes an
+  // escalation row. The OS 7.5 hard-stops (pricing/billing/spend/legal) are enforced upstream
+  // and are deliberately NOT in Janet's tool surface.
+  {
+    name: 'dispatch_marcus',
+    description:
+      'Queue Marcus (the autonomous engineer) to make a code fix or build. Use when the founder asks for something that requires code to change or ship (e.g. "the homepage image is broken - fix it"). Give ONE clear, scoped, single-purpose task. arg: task (string).',
+    run: async (args, _companyId) => {
+      const task = String((args && args.task) || '').trim()
+      if (task.length < 12) return 'dispatch_marcus needs a clear task description in the "task" arg.'
+      // JAN-ROUTE-01: Marcus writes CODE. Copy/marketing/strategy directives go to brief_agent, not here.
+      const nonCode = /\b(copy|value ?prop|pricing message|messaging|positioning|subject line|a\/b|variant|outreach copy|email content|email message|tone|wording|the (cold )?email|sequence copy|marketing)\b/i
+      const code = /\b(code|file|\.tsx?|deploy|bug|endpoint|api|component|function|schema|migration|route|webhook|refactor|build|typescript|handler|import|render)\b/i
+      if (nonCode.test(task) && !code.test(task)) {
+        return 'That is a copy/marketing/strategy directive, not an engineering change — Marcus only writes code. Use brief_agent to route it to the right specialist (aria = marketing/copy/email, mason = sales). Do NOT queue Marcus for it.'
+      }
+      try {
+        const id = await queueJanetArchitectTask({ task, source: 'janet_agent', notes: 'Queued by Janet from founder conversation' })
+        return id
+          ? `Marcus task queued (id ${id}). It lands via dev -> QA -> prod; not deployed until status shows done (HQ -> Architect Log).`
+          : 'Could not queue Marcus: autonomy gate denied or the circuit breaker is open (recent failures). No task was created.'
+      } catch (e: any) {
+        return `dispatch_marcus failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'brief_agent',
+    description:
+      'Route a directive to a specialist teammate and return their response. Use this for anything that is NOT a code change: marketing / copy / email / positioning (aria), sales (mason), product growth (nova), revenue ops (rex), market intelligence (scout), finance (finn), customer success (vera). Example: a "lead with price in the cold email" directive -> brief_agent(agent="aria", directive="rewrite the T1 cold email to lead with price, then speed, then set-and-forget"). args: agent (string), directive (string).',
+    run: async (args, companyId) => {
+      const agent = String((args && (args.agent || args.employee)) || '').trim().toLowerCase()
+      const directive = String((args && (args.directive || args.task || args.message)) || '').trim()
+      const valid = ['mason', 'aria', 'nova', 'rex', 'scout', 'finn', 'vera']
+      if (!valid.includes(agent)) return `brief_agent needs a valid agent: ${valid.join(', ')}.`
+      if (directive.length < 8) return 'brief_agent needs a "directive".'
+      try {
+        const r = await talkToAgent(agent as any, directive, companyId, true)
+        return `${r.agent}: ${r.response}`
+      } catch (e: any) {
+        return `brief_agent failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'set_goal',
+    description:
+      'Set or update a measurable OKR you own as CGO. An objective plus key results, each with a numeric target. For a key result, set metric to one of leads_touched_7d, opens_7d, open_rate_7d, customers to AUTO-TRACK it from real data; omit metric for a manually-tracked target (e.g. MRR). args: objective (string), key_results (array of {name, target, unit?, metric?}), period (string, optional).',
+    run: async (args, companyId) => {
+      const objective = String((args && args.objective) || '').trim()
+      const keyResults = Array.isArray(args && args.key_results) ? (args.key_results as any[]) : []
+      if (!objective) return 'set_goal needs an "objective".'
+      if (!keyResults.length) return 'set_goal needs at least one key result {name, target}.'
+      try {
+        const krs = keyResults.map((k: any) => ({
+          name: String(k?.name || '').slice(0, 120),
+          target: Number(k?.target) || 0,
+          current: Number(k?.current) || 0,
+          unit: k?.unit ? String(k.unit) : undefined,
+          metric: k?.metric ? String(k.metric) : undefined,
+        }))
+        const id = await setGoal({ objective, keyResults: krs, period: (args && args.period) ? String(args.period) : undefined, companyId })
+        return id ? `Goal set (id ${id}). Progress auto-tracks from real data whenever you read it.` : 'Could not set goal.'
+      } catch (e: any) {
+        return `set_goal failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'list_goals',
+    description:
+      'List your active OKRs with LIVE progress (current vs target per key result, computed from real data on read). Use to check where we stand against the goals.',
+    run: async (_args, companyId) => {
+      try {
+        const goals = await getGoalsWithProgress(companyId)
+        if (!goals.length) return 'No active goals set.'
+        return goals
+          .map((g) => `[${g.progress}%] ${g.objective} (${g.period}): ` + g.keyResults.map((k) => `${k.name} ${k.current}/${k.target}${k.unit || ''}`).join('; '))
+          .join('\n')
+      } catch (e: any) {
+        return `list_goals failed: ${e?.message || e}`
+      }
+    },
+  },
+  {
+    name: 'create_decision',
+    description:
+      'Record a strategic decision that needs founder sign-off, so it appears in HQ and can be discussed later. Use for pivots or choices you should not make alone. args: title (string), detail (string), recommendation (string, optional).',
+    run: async (args, companyId) => {
+      const title = String((args && args.title) || '').trim()
+      const detail = String((args && args.detail) || '').trim()
+      const recommendation = String((args && args.recommendation) || '').trim()
+      if (!title) return 'create_decision needs a "title".'
+      try {
+        const sql = getSql()
+        const rows: any[] = await sql`
+          INSERT INTO escalations (product_id, category, payload, status)
+          VALUES (${companyId}, 'founder_decision', ${JSON.stringify({ title, detail, recommendation })}::jsonb, 'pending')
+          RETURNING id`
+        return `Decision recorded (id ${rows[0]?.id || '?'}) - pending your sign-off in HQ.`
+      } catch (e: any) {
+        return `create_decision failed: ${e?.message || e}`
+      }
+    },
+  },
 ]
 
 function toolCatalog(): string {
@@ -108,6 +219,19 @@ Rules:
 - When you have enough evidence, return {"final": ...} with a direct, grounded answer that cites
   the actual numbers and facts you found. Keep it tight and decision-useful. You are the CGO.
 - If a question needs no data (a greeting, a definition), you may answer with {"final": ...} directly.
+- TO DO SOMETHING you MUST call the matching act-tool — you CANNOT perform actions yourself, only
+  the tool does. ROUTE BY TYPE, this matters:
+  • CODE change only (a file, a bug, an endpoint, a deploy) -> dispatch_marcus.
+  • Marketing / copy / email / value-prop / pricing-message / positioning -> brief_agent(agent="aria", ...).
+    Sales -> brief_agent("mason"). Other specialists as listed. NEVER send copy or strategy to Marcus —
+    he writes code, not marketing; that is a category error and it fails.
+  • A pivot or choice you should not make alone -> create_decision.
+  Example: founder says "lead with price in the cold email" — that is copy, so brief_agent("aria"),
+  NOT dispatch_marcus.
+- NEVER claim an engineering task is "done", "complete", or "already fixed" from your own words,
+  and NEVER invent a task id. dispatch_marcus returns the real task id and status "queued" — report
+  exactly that ("Marcus is queued — not deployed until it shows done"). Fabricating a completion or
+  an id is a serious error that misleads the founder.
 `.trim()
 
 function extractJson(raw: string): any | null {

@@ -1,1 +1,1 @@
-// Pipeline-proof artifact — safe to delete.
+export const MARCUS_PROOF = 'ok';

@@ -21,8 +21,11 @@ import {
   organizationalDomain,
   isInboundMailHost,
   checkDomainAuth,
+  measureCampaignDeliveryHealth,
+  campaignDeliveryIncidents,
   SEND_PATHS,
   type DomainAuth,
+  type CampaignDeliveryHealth,
 } from './dex'
 import type { SourceFile } from './rex'
 
@@ -288,6 +291,59 @@ describe('send health is reported honestly', () => {
 
   it('reports a threshold close to the measured rate as OK', () => {
     expect(breakerVerdict(38, 933, 0.05)).toContain('OK')
+  })
+})
+
+describe('PS-DEX-INBOX-01 — campaign inbox-placement measurement', () => {
+  const sqlReturning = (row: Record<string, number>) => ({
+    query: async () => [{ settled_sent: 0, settled_delivered: 0, settled_bounced: 0, complained: 0, ...row }],
+  })
+
+  it('is NOT CHECKED when the query fails, never reported as clean', async () => {
+    const sql = { query: async () => { throw new Error('db down') } }
+    const r = await measureCampaignDeliveryHealth(sql)
+    expect(r.checked).toBe(false)
+    expect(r.line).toContain('NOT CHECKED')
+  })
+
+  it('computes unaccounted as settled sends minus delivered minus bounced', async () => {
+    const sql = sqlReturning({ settled_sent: 100, settled_delivered: 70, settled_bounced: 10, complained: 0 })
+    const r = await measureCampaignDeliveryHealth(sql)
+    expect(r.checked).toBe(true)
+    expect(r.unaccounted).toBe(20)
+    expect(r.line).toContain('20/100')
+  })
+
+  it('never lets delivered+bounced exceed sent drive unaccounted negative', async () => {
+    const sql = sqlReturning({ settled_sent: 10, settled_delivered: 8, settled_bounced: 5, complained: 0 })
+    const r = await measureCampaignDeliveryHealth(sql)
+    expect(r.unaccounted).toBe(0)
+  })
+
+  it('files no incident below n=30 even at a high unaccounted rate', () => {
+    const d: CampaignDeliveryHealth = { checked: true, sent: 10, delivered: 2, bounced: 0, complained: 0, unaccounted: 8, line: '' }
+    expect(campaignDeliveryIncidents(d)).toEqual([])
+  })
+
+  it('files a high-severity finding at n>=30 with a >=20% unaccounted rate', () => {
+    const d: CampaignDeliveryHealth = { checked: true, sent: 100, delivered: 70, bounced: 5, complained: 0, unaccounted: 25, line: '' }
+    const incidents = campaignDeliveryIncidents(d)
+    expect(incidents).toHaveLength(1)
+    expect(incidents[0].severity).toBe('high')
+    expect(incidents[0].signature).toBe('campaign_inbox_placement_unaccounted')
+  })
+
+  it('files a critical finding on any spam complaint, regardless of n', () => {
+    const d: CampaignDeliveryHealth = { checked: true, sent: 5, delivered: 5, bounced: 0, complained: 1, unaccounted: 0, line: '' }
+    const incidents = campaignDeliveryIncidents(d)
+    expect(incidents).toHaveLength(1)
+    expect(incidents[0].severity).toBe('critical')
+    expect(incidents[0].signature).toBe('campaign_spam_complaint')
+  })
+
+  it('files nothing when checked is false', () => {
+    const d: CampaignDeliveryHealth = { checked: false, sent: 0, delivered: 0, bounced: 0, complained: 0, unaccounted: 0, line: '' }
+    expect(campaignDeliveryIncidents(d)).toEqual([])
   })
 })
 

@@ -145,12 +145,13 @@ function fakeSql(rows: any[] = [], queryRows: any[] = []) {
 
 describe('experiment integrity — the defects the ghost hid', () => {
   it('catches impressions labelled with a variant that was never sent', async () => {
-    // The real defect: 413 rows say variant='test' but touch1_subject has no test arm, so
-    // sequences.ts sent CONTROL to every one of them.
+    // The detector must fire for ANY experiment with 'test'-labelled impressions but no test arm
+    // (meaning sequences.ts sent CONTROL to all of them). As of PS-SUBJECT-AB-01 touch1_subject
+    // has a REAL test arm, so this exercises the logic against an orphan key with no config.
     const { incidents } = await auditExperiments(
       fakeSql([
-        { experiment_key: 'touch1_subject', variant: 'control', event: 'sent', n: 360 },
-        { experiment_key: 'touch1_subject', variant: 'test', event: 'sent', n: 413 },
+        { experiment_key: 'orphan_no_arm', variant: 'control', event: 'sent', n: 360 },
+        { experiment_key: 'orphan_no_arm', variant: 'test', event: 'sent', n: 413 },
       ]),
     )
     const mis = incidents.find((i) => i.signature.includes('experiment_mislabelled'))

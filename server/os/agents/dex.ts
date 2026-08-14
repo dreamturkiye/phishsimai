@@ -343,6 +343,90 @@ export function breakerVerdict(bounced: number, contacted: number, threshold: nu
   return `OK: measured ${pct}% against a ${thrPct}% breaker (${headroom.toFixed(1)}x headroom).`
 }
 
+// ─── INBOX PLACEMENT (campaign sends) ────────────────────────────────────────
+
+export type CampaignDeliveryHealth = {
+  checked: boolean
+  sent: number
+  delivered: number
+  bounced: number
+  complained: number
+  unaccounted: number
+  line: string
+}
+
+/**
+ * PS-DEX-INBOX-01 — the campaign send path (server/lib/campaignSend.ts, server/email/sender.ts)
+ * writes deliveredAt/bouncedAt/complainedAt onto campaign_results from Resend webhooks, but nothing
+ * reads it back in aggregate. `emailSentAt` only means the provider ACCEPTED the send; a row that is
+ * settled (sent 24h+ ago, past normal webhook lag) with NEITHER a delivered NOR a bounced event is
+ * the signature of mail silently filtered rather than bounced — a bounce-rate-only view can never
+ * see it, because a spam-foldered email never bounces.
+ */
+export async function measureCampaignDeliveryHealth(sql: any): Promise<CampaignDeliveryHealth> {
+  const empty: CampaignDeliveryHealth = {
+    checked: false, sent: 0, delivered: 0, bounced: 0, complained: 0, unaccounted: 0,
+    line: 'Inbox placement: NOT CHECKED (query failed).',
+  }
+  try {
+    const r = (await sql.query(`
+      SELECT
+        count(*) FILTER (WHERE "emailSentAt" IS NOT NULL AND "emailSentAt" < NOW() - INTERVAL '24 hours')::int AS settled_sent,
+        count(*) FILTER (WHERE "emailSentAt" IS NOT NULL AND "emailSentAt" < NOW() - INTERVAL '24 hours' AND "deliveredAt" IS NOT NULL)::int AS settled_delivered,
+        count(*) FILTER (WHERE "emailSentAt" IS NOT NULL AND "emailSentAt" < NOW() - INTERVAL '24 hours' AND "bouncedAt" IS NOT NULL)::int AS settled_bounced,
+        count(*) FILTER (WHERE "complainedAt" IS NOT NULL)::int AS complained
+      FROM campaign_results`)) as any[]
+
+    const sent = Number(r[0]?.settled_sent ?? 0)
+    const delivered = Number(r[0]?.settled_delivered ?? 0)
+    const bounced = Number(r[0]?.settled_bounced ?? 0)
+    const complained = Number(r[0]?.complained ?? 0)
+    const unaccounted = Math.max(0, sent - delivered - bounced)
+
+    return {
+      checked: true, sent, delivered, bounced, complained, unaccounted,
+      line:
+        `${rateLine('Inbox placement (settled sends with no delivered/bounced event)', unaccounted, sent)} · ` +
+        `${complained} spam complaint(s) all-time.`,
+    }
+  } catch {
+    return empty
+  }
+}
+
+/** Unaccounted-delivery and spam-complaint findings. Counts-only below n=30, per the house rule. */
+export function campaignDeliveryIncidents(d: CampaignDeliveryHealth): Incident[] {
+  if (!d.checked) return []
+  const out: Incident[] = []
+  if (d.sent >= 30 && d.unaccounted / d.sent >= 0.2) {
+    out.push({
+      detector: 'blind_gate',
+      severity: 'high',
+      subject: 'campaign_results:inbox_placement',
+      summary:
+        `${d.unaccounted}/${d.sent} simulation sends accepted by Resend 24h+ ago have neither a ` +
+        `delivered nor a bounced event — the signature of mail silently filtered rather than ` +
+        `bounced. A view that only tracks bounce rate reports these sends as healthy.`,
+      evidence: { sent: d.sent, delivered: d.delivered, bounced: d.bounced, unaccounted: d.unaccounted },
+      signature: 'campaign_inbox_placement_unaccounted',
+    })
+  }
+  if (d.complained > 0) {
+    out.push({
+      detector: 'blind_gate',
+      severity: 'critical',
+      subject: 'campaign_results:spam_complaints',
+      summary:
+        `${d.complained} recipient(s) marked a simulation email as spam (email.complained). ` +
+        `Complaint rate is the strongest signal mailbox providers use to throttle or blacklist a ` +
+        `sender, and it is currently written to campaign_results but never surfaced.`,
+      evidence: { complained: d.complained },
+      signature: 'campaign_spam_complaint',
+    })
+  }
+  return out
+}
+
 // ─── AUTHENTICATION / DNS ────────────────────────────────────────────────────
 
 export type DmarcState = { found: boolean; host: string; inherited: boolean; policy: string | null }
@@ -574,6 +658,8 @@ export type DexReport = {
   bySeverity: Record<Severity, number>
   health: SendHealth
   auth: DomainAuth[]
+  /** PS-DEX-INBOX-01: simulation-send delivery outcomes from campaign_results (Resend webhooks). */
+  campaignDelivery: CampaignDeliveryHealth
   notChecked: string[]
   breaker: BreakerRun | null
   currency: CurrencyRun | null
@@ -605,14 +691,16 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
   const auth = opts.skipDns
     ? []
     : await Promise.all(SENDING_DOMAINS.map((d) => checkDomainAuth(d.domain, d.role)))
+  const campaignDelivery = await measureCampaignDeliveryHealth(sql)
 
-  const incidents = [...paths.incidents, ...unreg.incidents, ...authIncidents(auth)]
+  const incidents = [...paths.incidents, ...unreg.incidents, ...authIncidents(auth), ...campaignDeliveryIncidents(campaignDelivery)]
   const notChecked = [
     ...new Set([
       ...paths.notChecked.map((f) => `source:${f}`),
       ...unreg.notChecked.map((f) => `source:${f}`),
       ...(health.checked ? [] : ['send_health']),
       ...auth.filter((a) => !a.checked).map((a) => `dns:${a.domain}`),
+      ...(campaignDelivery.checked ? [] : ['campaign_delivery']),
     ]),
   ]
 
@@ -649,10 +737,11 @@ export async function runDexAgent(opts: DexOptions = {}): Promise<DexReport> {
     bySeverity,
     health,
     auth,
+    campaignDelivery,
     notChecked,
     breaker,
     currency,
-    line: [line, breaker?.line, currency?.line].filter(Boolean).join(' '),
+    line: [line, campaignDelivery.checked ? campaignDelivery.line : null, breaker?.line, currency?.line].filter(Boolean).join(' '),
   }
 }
 
