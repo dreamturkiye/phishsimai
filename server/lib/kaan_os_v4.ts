@@ -825,9 +825,12 @@ export function topOfFunnelMetric(f: {
         `change, and do NOT read it as a week-over-week trend.`)
     }
   }
-  lines.push(`Opens on cold outreach: NOT INSTRUMENTED — ps_outreach_leads has no open-tracking column, so ` +
-    `there is no external open rate and no honest way to state one. Any "open rate" figure in this brief ` +
-    `refers to SIMULATIONS sent to our own internal org, never to cold outreach.`)
+  lines.push(`Opens on cold outreach: INSTRUMENTED (PS-OPEN-TRACK-01) but currently INERT — the pixel, the ` +
+    `/api/os/open route, and ps_outreach_leads.open_count/first_opened_at/last_opened_at all exist and are ` +
+    `wired into sequences.ts, but touch1/touch2 bodies are text-only (PS-COPY-PLAINTEXT-01), so no pixel is ` +
+    `ever delivered and every lead's open_count stays 0. There is still no honest external open rate to ` +
+    `state — a 0% read here would mean "no HTML shipped", not "nobody opened". Any "open rate" figure in ` +
+    `this brief refers to SIMULATIONS sent to our own internal org, never to cold outreach.`)
 
   // Inbound conversion — the number every "convert our free orgs" plan is really about.
   lines.push(`NEW real prospects that entered this week: ${f.newRealSignups7d} · REAL prospects ever: ` +
