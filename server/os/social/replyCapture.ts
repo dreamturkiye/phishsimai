@@ -121,8 +121,40 @@ Voice: warm, concise, helpful peer. NEVER fabricate stats, customers, or claims.
 // CloudMailin, Mailgun Routes, or a plain {from,subject,text}). Always 200s so the relay doesn't retry-storm.
 export async function resendInbound(req: any, res: any) {
   try {
-    if (!checkInboundAuth(req)) return res.status(401).json({ ok: false, error: 'unauthorized' })
-    const b = req.body || {}
+    const raw = req.body || {}
+    let b: any = raw
+    if (raw.type === 'email.received' && raw.data) {
+      // PS-REPLY-CAPTURE-02 (2026-08-14): native Resend inbound. Three things at once, each
+      // load-bearing:
+      //  1. UNWRAP — Resend nests everything under data; the flat-field parser below saw
+      //     nothing and answered "no sender email in payload" to every real event.
+      //  2. ROUTE — the inbound domain is shared across products; PhishSim owns ONLY the
+      //     phishsim@ address (the Gmail forward target). Anything else is another product's.
+      //  3. AUTHENTICATE-BY-FETCH — email.received payloads carry NO body, and Resend cannot
+      //     send the CloudMailin Basic credentials. Instead of weakening auth, the content
+      //     fetch IS the auth: a forged event cannot mint an email_id that resolves under OUR
+      //     API key, and the fetched fields are server-truth — payload claims are discarded.
+      const d = raw.data
+      const toStr = (Array.isArray(d.to) ? d.to.join(',') : String(d.to || '')).toLowerCase()
+      if (toStr && !toStr.includes('phishsim@')) return res.json({ ok: true, ignored: 'foreign_inbound_address' })
+      const id = d.email_id || d.id
+      if (!id) return res.status(400).json({ ok: false, error: 'no email_id' })
+      const r = await fetch('https://api.resend.com/emails/receiving/' + id, {
+        headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
+      })
+      if (!r.ok) {
+        console.log('[reply-capture] resend content fetch failed (unverifiable event)', r.status, id)
+        return res.status(400).json({ ok: false, error: 'unverifiable_event' })
+      }
+      const full: any = await r.json()
+      b = {
+        from: full.from,
+        subject: full.subject,
+        text: full.text || (typeof full.html === 'string' ? full.html.replace(/<[^>]+>/g, ' ') : ''),
+      }
+    } else if (!checkInboundAuth(req)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized' })
+    }
     const from = extractEmail(b.from || b.sender || b.From || b.envelope?.from || b.from_email || b['from-email'] || '')
     const subject = String(b.subject || b.Subject || '')
     const text = String(b.text || b['body-plain'] || b['stripped-text'] || b.plain || b.TextBody || b.html || '').trim()
