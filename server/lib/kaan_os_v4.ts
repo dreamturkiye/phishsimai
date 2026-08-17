@@ -793,8 +793,17 @@ export function topOfFunnelMetric(f: {
     const excl = internal
       ? ` · ${internal} of our own address(es) EXCLUDED from this count${selfReplies ? `, incl. ${selfReplies} self-test repl(y/ies)` : ''}`
       : ''
+    // PS-METRIC-QUOTE-01 (2026-08-17): the reply RATE is now computed here and handed over ready to
+    // quote. Bounce and unsubscribe rates were already precomputed; this one was not, so every agent
+    // divided it themselves and they disagreed in the same standup — Finn published 0.07% and Vera
+    // 0.13% off the identical 2-from-1,477, and Janet then repeated Finn's figure to the founder.
+    // Two different reply rates in one brief destroys trust in every other number in it.
+    const replyPct = f.touchedEver > 0 ? ((f.replied / f.touchedEver) * 100).toFixed(2) : '0.00'
     lines.push(`Replies: ${f.replied} EXTERNAL from ${f.touchedEver} contacted ` +
       `(${f.replyDraftsEver} inbound message(s) captured, so the capture path is PROVEN LIVE)${excl}.`)
+    lines.push(`Reply rate: ${replyPct}% (${f.replied}/${f.touchedEver}). QUOTE THIS FIGURE VERBATIM — ` +
+      `do not recalculate it, and do not round it to a different number of decimals. If your report ` +
+      `states a reply rate that differs from this line, your report is wrong.`)
     if (f.replied === 0 && f.replyDraftsEver > 0) {
       lines.push(`   ↳ Zero EXTERNAL replies so far, but this is now a measured zero rather than an ` +
         `unverified one: inbound capture has demonstrably written a row, so "nobody replied" and ` +
@@ -831,6 +840,12 @@ export function topOfFunnelMetric(f: {
     `ever delivered and every lead's open_count stays 0. There is still no honest external open rate to ` +
     `state — a 0% read here would mean "no HTML shipped", not "nobody opened". Any "open rate" figure in ` +
     `this brief refers to SIMULATIONS sent to our own internal org, never to cold outreach.`)
+  lines.push(`   ↳ INERT IS NOT BROKEN. Text-only cold email is a deliberate positioning decision ` +
+    `(PS-COPY-PLAINTEXT-01: a plain-text note reads as personal, an HTML shell reads as bulk), so do NOT ` +
+    `propose "fixing the open tracking instrumentation" — there is no defect in it. Shipping an HTML body ` +
+    `to make the pixel fire REVERSES that decision and is the founder's call, not an engineering task. ` +
+    `A standup that assigns this as a bug wastes a cycle: on 2026-08-16 exactly that framing produced a ` +
+    `917-line rewrite of the email subsystem that the destructive-diff guard correctly refused.`)
 
   // Inbound conversion — the number every "convert our free orgs" plan is really about.
   lines.push(`NEW real prospects that entered this week: ${f.newRealSignups7d} · REAL prospects ever: ` +
@@ -1370,6 +1385,34 @@ export async function issueTask(
  * gate + circuit breaker + CI verify + deploy); escalate puts anything sensitive in front of a
  * human as a founder_decision (the no-drift guarantee). Every action is logged to agent_actions.
  */
+/**
+ * PS-AGENT-DISPATCH-01: why a dispatch must be refused, or null when it is safe to queue.
+ * Cheap structural checks only — this is not a SQL parser. It exists to catch the failure mode
+ * actually observed in production (statements cut mid-expression by a length or newline limit)
+ * plus two dialect mistakes that are guaranteed to fail against Postgres, so the pipeline does not
+ * burn a task, a breaker and a founder escalation discovering them.
+ */
+export function dispatchRefusalReason(arg: string): string | null {
+  const s = arg.trim()
+  if (!s) return 'empty task'
+  if (s.length >= 2000) return 'task exceeds 2000 chars — split it into separate dispatches'
+  const looksSql = /^\s*(alter|update|delete|insert|create|drop|truncate)\s/i.test(s)
+  if (!looksSql) return null
+  // Unbalanced brackets/quotes mean the statement was cut before it finished.
+  const opens = (s.match(/\(/g) || []).length
+  const closes = (s.match(/\)/g) || []).length
+  if (opens !== closes) return `incomplete SQL: ${opens} "(" vs ${closes} ")" — statement was cut off`
+  if ((s.match(/'/g) || []).length % 2 !== 0) return 'incomplete SQL: unterminated string literal'
+  // A statement that stops on a keyword or operator never finished.
+  if (/\b(and|or|then|else|when|case|as|set|where|values|add)\s*$/i.test(s)) return 'incomplete SQL: ends on a keyword'
+  if (/[,+\-=<>]\s*$/.test(s)) return 'incomplete SQL: ends on an operator'
+  // MySQL backticks are not Postgres identifier quotes — this task would always have failed.
+  if (s.includes('`')) return 'MySQL backticks are not valid in Postgres — use double quotes or bare identifiers'
+  // Destructive statements without a predicate would hit every row.
+  if (/^\s*(update|delete)\s/i.test(s) && !/\swhere\s/i.test(s)) return 'refusing UPDATE/DELETE with no WHERE clause'
+  return null
+}
+
 async function executeAgentAction(sql: any, task: AgentTask, resultText: string, companyId: string): Promise<string> {
   const m = resultText.match(/ACTION:\s*(queue_marcus|escalate)\s*:\s*([^\n]+)/i)
   if (!m) return ''
@@ -1382,8 +1425,23 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
   let outcome = ''
   try {
     if (verb === 'queue_marcus') {
+      // PS-AGENT-DISPATCH-01 (2026-08-17): `arg.slice(0, 400)` silently truncated the dispatched
+      // task, and the ACTION regex already stops at the first newline. Both cuts landed MID-
+      // STATEMENT on real DDL: escalations went out reading "...THEN true ELSE f" and
+      // "GENERATED ALWAYS AS (C". A truncated statement is not a smaller task, it is a DIFFERENT
+      // one — and for an UPDATE or DELETE, losing the tail means losing the WHERE clause, which
+      // would apply to every row in the table. So: never trim a statement to fit. Refuse it,
+      // say why, and let the agent send something that fits intact.
+      const refusal = dispatchRefusalReason(arg)
+      if (refusal) {
+        outcome = `queue_marcus REFUSED: ${refusal}`
+        console.warn(`[kaan_os_v4] dispatch refused for ${agentId}: ${refusal}`)
+        await sql`INSERT INTO agent_actions (company_id, agent_id, task_id, action, arg, result)
+          VALUES (${companyId}, ${agentId}, ${String(task.id)}, ${verb}, ${arg.slice(0, 2000)}, ${outcome})`.catch(() => {})
+        return `\n\n---\n**ACTION REFUSED (${agentId}):** ${outcome}`
+      }
       const id = await queueJanetArchitectTask({
-        task: arg.slice(0, 400),
+        task: arg.slice(0, 2000),
         source: `agent:${agentId}`,
         notes: `Self-originated action from ${agentId} on task "${task.title.slice(0, 60)}"`,
       })
@@ -1402,7 +1460,7 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
     outcome = `action failed: ${String(e?.message || e).slice(0, 120)}`
   }
   await sql`INSERT INTO agent_actions (company_id, agent_id, task_id, action, arg, result)
-    VALUES (${companyId}, ${agentId}, ${String(task.id)}, ${verb}, ${arg.slice(0, 400)}, ${outcome})`.catch(() => {})
+    VALUES (${companyId}, ${agentId}, ${String(task.id)}, ${verb}, ${arg.slice(0, 2000)}, ${outcome})`.catch(() => {})
   console.log(`[kaan_os_v4] agent action: ${agentId} ${verb} -> ${outcome}`)
   return `\n\n---\n**ACTION TAKEN (${agentId}, under Janet's review):** ${outcome}`
 }
