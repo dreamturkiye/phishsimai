@@ -178,11 +178,17 @@ export const getAutonomyLevel: GetLevel = async (companyId: string) => {
       SELECT level FROM os_autonomy_state WHERE company_id=${companyId} LIMIT 1
     `) as Array<{ level?: string }>
     const stored = rows[0]?.level ?? null
-    const floored = applyAutonomyFloor(companyId, stored)
-    if (floored !== stored) {
-      console.warn(`[autonomyGate] ${companyId}: stored level ${JSON.stringify(stored)} is below the founder-set floor — holding at ${floored}`)
+    // A level that is genuinely STORED is respected as written, including 'manual' — that is the
+    // founder's emergency stop and code must never override it. What the floor protects against is
+    // arriving at a low level by ACCIDENT: an unreadable row (below) or an automatic demotion (the
+    // ladder in autonomyPromotion). If a stored level sits below the floor, say so loudly so the
+    // self-heal in the promotion cycle can restore it, but do not silently pretend it is higher.
+    const floor = autonomyFloorFor(companyId)
+    if (floor && stored && levelRank(stored as AutonomyLevel) < levelRank(floor)) {
+      console.warn(`[autonomyGate] ${companyId}: stored level '${stored}' is BELOW the founder-set floor '${floor}' — ` +
+        'either a deliberate stop or an accidental demotion; the promotion cycle will restore it if no kill flag is set')
     }
-    return floored
+    return stored
   } catch (e) {
     // Unreadable is NOT manual. Say so loudly and hold the floor; products without a floor keep
     // the original fail-closed behaviour.

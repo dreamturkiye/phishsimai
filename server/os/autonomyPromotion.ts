@@ -45,6 +45,12 @@ const rankOf = (l: string): number => Math.max(0, (ORDER as readonly string[]).i
 export const FIRST_ACTING_LEVEL: EnfLevel = 'l3'
 
 export interface DecisionInput {
+  /**
+   * PS-AUTONOMY-FLOOR-01: the founder-set level this product may never fall below. Passed in
+   * rather than read inside, so this stays a pure function and both behaviours are testable.
+   * undefined => resolve from the product's configured floor; null => no floor (classic ladder).
+   */
+  floor?: EnfLevel | null
   level: EnfLevel
   cleanSinceLastGrant: number // consecutive clean days earned SINCE the last grant (the cycle)
   breakerOpen: boolean
@@ -82,7 +88,7 @@ export function decidePromotion(input: DecisionInput): AutonomyDecision {
     // safety here — it just stops everything else the product does. At the floor we hold and say
     // so, and the breaker keeps doing its job.
     const demoteTo = ORDER[r - 1]
-    const floor = autonomyFloorFor(COMPANY_ID)
+    const floor = input.floor !== undefined ? input.floor : autonomyFloorFor(COMPANY_ID)
     if (floor && ORDER.indexOf(demoteTo) < ORDER.indexOf(floor as EnfLevel)) {
       return { ...base, action: 'hold', to: level, reason: `breaker_open_but_at_floor:${floor}` }
     }
@@ -243,9 +249,59 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
 // at a time, so the loop stops EXACTLY at the earned level (or the l5 cap) — it cannot over-promote
 // past what was earned. A breaker trip demotes exactly one rung then stops (safety, no cascade).
 // Idempotent when nothing is owed: no grant, no write.
+/**
+ * PS-AUTONOMY-FLOOR-01 — restore a level that fell below the founder-set floor by accident.
+ *
+ * The ladder can no longer demote below the floor, but a row may already be sitting under it from
+ * before this rule existed (PhishSim was found at 'manual' after a breaker cascade plus a Neon 402
+ * that made the level unreadable). A deliberate stop must still win, so this is skipped entirely
+ * when the kill flag is set — the founder's emergency stop is never overridden by code.
+ *
+ * The level column is guarded by assert_autonomy_level_change(), which consumes an autonomy_grants
+ * row. That guard exists to stop UNEARNED PROMOTION. Restoring a floor the founder has declared is
+ * not a promotion, so it writes a grant of its own and records why. If the trigger still refuses,
+ * that is logged loudly rather than swallowed — a floor that cannot be restored must be visible.
+ */
+async function restoreFloorIfBelow(sql: any, companyId: string, storedLevel: string | null): Promise<string | null> {
+  const floor = autonomyFloorFor(companyId)
+  if (!floor || !storedLevel) return null
+  if (ORDER.indexOf(storedLevel as EnfLevel) >= ORDER.indexOf(floor as EnfLevel)) return null
+
+  try {
+    const killed = (await sql`SELECT 1 FROM os_kill_flags WHERE company_id=${companyId} AND active=true LIMIT 1`) as any[]
+    if (killed.length) {
+      console.warn(`[autonomyPromotion] ${companyId} is below floor '${floor}' but a kill flag is ACTIVE — leaving it stopped`)
+      return null
+    }
+  } catch {
+    // No kill-flag table/row is not permission to override; only a successful "no active flag" is.
+  }
+
+  try {
+    await sql`INSERT INTO autonomy_grants (company_id, granted_level, granted_by, reason, created_at)
+      VALUES (${companyId}, ${floor}, 'founder_floor_policy',
+              ${'PS-AUTONOMY-FLOOR-01: restoring founder-set floor after an accidental demotion'}, NOW())`
+    await sql`UPDATE os_autonomy_state SET level=${floor} WHERE company_id=${companyId}`
+    console.warn(`[autonomyPromotion] ${companyId}: restored level '${storedLevel}' -> floor '${floor}'`)
+    return floor
+  } catch (e) {
+    console.error(`[autonomyPromotion] ${companyId}: FAILED to restore floor '${floor}' from '${storedLevel}': ` +
+      String((e as Error)?.message || e).slice(0, 160))
+    return null
+  }
+}
+
 export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?: any) {
   const sql = sqlOverride ?? getSql()
-  const { level, trust, storedStreak } = await readState(sql, companyId)
+  const state0 = await readState(sql, companyId)
+  // PS-AUTONOMY-FLOOR-01: repair an accidental sub-floor level BEFORE deciding anything, so the
+  // cycle reasons from the level the founder actually mandated rather than from the accident.
+  // Only against the real database: a caller that injects its own sql is exercising a specific
+  // scenario (including deliberately sub-floor ones), and a self-repair would silently rewrite the
+  // very condition under test.
+  const restored = sqlOverride ? null : await restoreFloorIfBelow(sql, companyId, state0.level)
+  const { trust, storedStreak } = state0
+  const level = (restored ?? state0.level) as typeof state0.level
   const [budget0, open, streak, watcherAudited] = await Promise.all([
     cleanDaysSinceLastGrant(sql, companyId),
     breakerOpen(sql, companyId),
