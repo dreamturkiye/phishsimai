@@ -18,6 +18,7 @@
 // number belonged to. Every clean-day read below now goes through the same v2 + baseline filter,
 // and every streak written is stamped with the version that produced it.
 import { getSql } from './conn'
+import { autonomyFloorFor } from './autonomyGate'
 import { CRITERIA_VERSION, getPostureState, currentStreak } from './posture'
 import { COMPANY_ID } from './version'
 import { sendTelegram } from './telegram'
@@ -75,7 +76,17 @@ export function decidePromotion(input: DecisionInput): AutonomyDecision {
 
   // DEMOTE first: a breaker trip is a safety signal — step down exactly one rung, never below floor.
   if (breakerOpen && r > rankOf(AUTONOMY_FLOOR)) {
-    return { ...base, action: 'demote', to: ORDER[r - 1], reason: 'breaker_open' }
+    // PS-AUTONOMY-FLOOR-01: a demotion may never cross the founder-set floor. PhishSim earned L5
+    // and holds posture 5.7; the standing instruction is that it never returns to manual. An open
+    // breaker already halts the work it applies to, so stepping the LEVEL down as well buys no
+    // safety here — it just stops everything else the product does. At the floor we hold and say
+    // so, and the breaker keeps doing its job.
+    const demoteTo = ORDER[r - 1]
+    const floor = autonomyFloorFor(COMPANY_ID)
+    if (floor && ORDER.indexOf(demoteTo) < ORDER.indexOf(floor as EnfLevel)) {
+      return { ...base, action: 'hold', to: level, reason: `breaker_open_but_at_floor:${floor}` }
+    }
+    return { ...base, action: 'demote', to: demoteTo, reason: 'breaker_open' }
   }
   // PROMOTE: breaker closed, below cap, and a FRESH full clean cycle earned. Exactly one rung.
   // cleanSinceLastGrant resets to 0 after every grant, so this cannot fire twice on one cycle.

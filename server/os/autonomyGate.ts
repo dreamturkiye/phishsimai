@@ -132,17 +132,64 @@ export interface DeniedAudit {
 }
 export type AuditSink = (row: DeniedAudit) => Promise<void>
 
-// Real level reader: os_autonomy_state.level for the company. Fail closed —
-// missing row / missing table / query error all resolve to null → 'manual'.
+// PS-AUTONOMY-FLOOR-01 (2026-08-18) — founder-set floor per product.
+//
+// PhishSim reached L5 and holds posture 5.7; the founder's standing instruction is that it NEVER
+// drops to manual, and climbs to 5.8 on consecutive clean days. Two mechanisms were violating that
+// from opposite directions:
+//
+//   1. This reader failed closed on ANY error. Neon began returning HTTP 402 (data transfer quota
+//      exceeded), the SELECT threw, the catch returned null, and null normalises to 'manual' — so
+//      an infrastructure hiccup silently collapsed the whole company's autonomy to zero while the
+//      gate reported a confident "below_min_level:l3". No demotion was ever decided; the level was
+//      simply unreadable. Marcus was handed nothing for a day because a billing quota tripped.
+//   2. The demotion ladder could write a level below the floor after a breaker cascade.
+//
+// Fail-closed is right when the answer is genuinely unknown; it is wrong when it converts a
+// transient read failure into a total stop. Hard stops are denied at EVERY level and breakers halt
+// work independently, so the floor cannot make anything dangerous — it only prevents a silent
+// company-wide halt. A read failure is now loud and holds the floor instead of pretending it means
+// manual.
+const AUTONOMY_FLOORS: Record<string, AutonomyLevel> = {
+  phishsimai: 'l5',
+}
+
+export function autonomyFloorFor(companyId: string): AutonomyLevel | null {
+  const envKey = `AUTONOMY_FLOOR_${companyId.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
+  const fromEnv = process.env[envKey]?.trim()
+  if (fromEnv && (LEVEL_ORDER as readonly string[]).includes(fromEnv)) return fromEnv as AutonomyLevel
+  return AUTONOMY_FLOORS[companyId] ?? null
+}
+
+/** Raise a stored/absent level up to the product's floor. Never lowers anything. */
+export function applyAutonomyFloor(companyId: string, level: string | null | undefined): string | null | undefined {
+  const floor = autonomyFloorFor(companyId)
+  if (!floor) return level
+  const current = level && (LEVEL_ORDER as readonly string[]).includes(level) ? (level as AutonomyLevel) : null
+  if (!current || levelRank(current) < levelRank(floor)) return floor
+  return current
+}
+
+// Real level reader: os_autonomy_state.level for the company, never below the product's floor.
 export const getAutonomyLevel: GetLevel = async (companyId: string) => {
   try {
     const sql = getSql()
     const rows = (await sql`
       SELECT level FROM os_autonomy_state WHERE company_id=${companyId} LIMIT 1
     `) as Array<{ level?: string }>
-    return rows[0]?.level ?? null
-  } catch {
-    return null
+    const stored = rows[0]?.level ?? null
+    const floored = applyAutonomyFloor(companyId, stored)
+    if (floored !== stored) {
+      console.warn(`[autonomyGate] ${companyId}: stored level ${JSON.stringify(stored)} is below the founder-set floor — holding at ${floored}`)
+    }
+    return floored
+  } catch (e) {
+    // Unreadable is NOT manual. Say so loudly and hold the floor; products without a floor keep
+    // the original fail-closed behaviour.
+    const floor = autonomyFloorFor(companyId)
+    console.error(`[autonomyGate] ${companyId}: level read FAILED (${String((e as Error)?.message || e).slice(0, 120)}) — ` +
+      (floor ? `holding founder-set floor ${floor}` : 'failing closed to manual'))
+    return floor
   }
 }
 
