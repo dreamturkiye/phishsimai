@@ -90,18 +90,35 @@ describe('decidePromotion (pure)', () => {
     expect(d.reason).toBe('at_cap_l5')
   })
 
-  it('breaker trip → DEMOTE one rung', () => {
-    const d = decidePromotion({ ...base, breakerOpen: true, level: 'l3', cleanSinceLastGrant: 99 })
+  // PS-AUTONOMY-FLOOR-01: floor:null = a product with no founder-set floor, i.e. the classic
+  // ladder. These assertions are unchanged; they now just say which contract they belong to.
+  it('breaker trip → DEMOTE one rung (product with no floor)', () => {
+    const d = decidePromotion({ ...base, floor: null, breakerOpen: true, level: 'l3', cleanSinceLastGrant: 99 })
     expect(d.action).toBe('demote')
     expect(d.to).toBe('l2')
   })
 
   it('a breaker trip beats any clean streak (safety wins over promotion)', () => {
-    expect(decidePromotion({ ...base, breakerOpen: true, level: 'l4', cleanSinceLastGrant: 100 }).action).toBe('demote')
+    expect(decidePromotion({ ...base, floor: null, breakerOpen: true, level: 'l4', cleanSinceLastGrant: 100 }).action).toBe('demote')
+  })
+
+  it('founder-set floor: a breaker trip HOLDS instead of demoting below the floor', () => {
+    // PhishSim earned L5 and must never fall back to manual. The breaker still halts the work it
+    // applies to; what it may no longer do is strip the product of autonomy entirely.
+    const d = decidePromotion({ ...base, floor: 'l5', breakerOpen: true, level: 'l5', cleanSinceLastGrant: 0 })
+    expect(d.action).toBe('hold')
+    expect(d.to).toBe('l5')
+    expect(d.reason).toBe('breaker_open_but_at_floor:l5')
+  })
+
+  it('founder-set floor: demotion still works ABOVE the floor', () => {
+    const d = decidePromotion({ ...base, floor: 'l3', breakerOpen: true, level: 'l5', cleanSinceLastGrant: 0 })
+    expect(d.action).toBe('demote')
+    expect(d.to).toBe('l4')
   })
 
   it('floor holds: breaker open at the floor → HOLD, never demote below manual', () => {
-    const d = decidePromotion({ ...base, breakerOpen: true, level: AUTONOMY_FLOOR, cleanSinceLastGrant: 0 })
+    const d = decidePromotion({ ...base, floor: null, breakerOpen: true, level: AUTONOMY_FLOOR, cleanSinceLastGrant: 0 })
     expect(d.action).toBe('hold')
     expect(d.to).toBe('manual')
   })
@@ -180,11 +197,16 @@ describe('runAutonomyPromotion — criteria + baseline alignment', () => {
     expect(writes.some((w) => /SET level=/.test(w))).toBe(false)
   })
 
-  it('a breaker trip still demotes — the safety path is untouched by the filter', async () => {
+  // PS-AUTONOMY-FLOOR-01: this asserted that a breaker trip demotes phishsimai from l5 to l4.
+  // The founder's standing instruction changed that contract: PhishSim never loses the autonomy it
+  // earned. The open breaker still halts the work it applies to — that is the breaker's job and it
+  // is unchanged — but it no longer strips the product's level. Verified live: a Neon 402 made the
+  // level unreadable and the old behaviour left Marcus with zero tasks for a day.
+  it('a breaker trip HOLDS at the founder-set floor instead of demoting phishsimai', async () => {
     const { sql } = fakeSql({ level: 'l5', baseline: '2026-07-23', cleanDays: [], breakerOpen: true })
     const r = await runAutonomyPromotion('phishsimai', sql)
-    expect(r.action).toBe('demote')
-    expect(r.to).toBe('l4')
+    expect(r.action).toBe('hold')
+    expect(r.to).toBe('l5')
   })
 
   it('stamps the criteria version on the streak it stores, and syncs a stale one on hold', async () => {
@@ -244,7 +266,7 @@ describe('decidePromotion — watcher-audit gate on acting levels', () => {
   // Safety must never depend on the audit flag: a breaker trip has to step DOWN out of an acting
   // level whether or not anyone has recorded an audit.
   it('does NOT block demotion — a breaker trip still steps down from l3 while unaudited', () => {
-    const d = decidePromotion({ ...unaudited, breakerOpen: true, level: 'l3', cleanSinceLastGrant: 99 })
+    const d = decidePromotion({ ...unaudited, floor: null, breakerOpen: true, level: 'l3', cleanSinceLastGrant: 99 })
     expect(d.action).toBe('demote')
     expect(d.to).toBe('l2')
   })
