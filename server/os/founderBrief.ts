@@ -10,6 +10,8 @@
 //  founder_briefs (one row per brief_date). Rendering is a PURE function so the
 //  null→'no data' rule is directly unit-testable.
 // ─────────────────────────────────────────────────────────────────────────────
+import { existsSync, readFileSync } from 'fs'
+import { join as pathJoin } from 'path'
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { getAutonomyLevel } from './autonomyGate'
@@ -58,6 +60,38 @@ function agePretty(ms: number): string {
 }
 
 // PURE — renders the §J brief. Enforces the honesty invariant.
+
+/**
+ * PS-COMMITMENTS-01 — read docs/OPEN-COMMITMENTS.md.
+ * Deliberately tolerant: a malformed or missing ledger must never break the brief, because the
+ * brief is how the founder learns everything else. Returns [] and the brief prints "none recorded".
+ */
+export function readOpenCommitments(): { since: string; item: string; owner: 'founder' | 'operator'; ageDays: number }[] {
+  try {
+    const file = pathJoin(process.cwd(), 'docs', 'OPEN-COMMITMENTS.md')
+    if (!existsSync(file)) return []
+    const text = readFileSync(file, 'utf8')
+    const out: { since: string; item: string; owner: 'founder' | 'operator'; ageDays: number }[] = []
+    let owner: 'founder' | 'operator' | null = null
+    for (const raw of text.split('\n')) {
+      const line = raw.trim()
+      if (/^##\s+Waiting on the founder/i.test(line)) { owner = 'founder'; continue }
+      if (/^##\s+Operator work/i.test(line)) { owner = 'operator'; continue }
+      if (!owner || !line.startsWith('|')) continue
+      const cells = line.split('|').map((c) => c.trim()).filter((c) => c.length)
+      if (cells.length < 2) continue
+      const since = cells[0]
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) continue // skips the header and separator rows
+      const item = cells[1].replace(/\*\*/g, '')
+      const ageDays = Math.max(0, Math.floor((Date.now() - Date.parse(since + 'T00:00:00Z')) / 86_400_000))
+      out.push({ since, item, owner, ageDays })
+    }
+    return out.sort((a, b) => b.ageDays - a.ageDays)
+  } catch {
+    return []
+  }
+}
+
 export function renderFounderBrief(data: BriefData): string {
   const out: string[] = [`# Founder Brief — ${data.date}`, '']
   if (data.products.length === 0) {
@@ -85,6 +119,30 @@ export function renderFounderBrief(data: BriefData): string {
       out.push(`- **Pending escalations:** ${p.pendingEscalations.length} (oldest ${agePretty(oldest)})`)
       for (const e of p.pendingEscalations) {
         out.push(`  - #${e.id} ${e.category} · ${agePretty(e.ageMs)}`)
+      }
+    }
+
+    // PS-COMMITMENTS-01 (2026-08-24, founder-directed): surface docs/OPEN-COMMITMENTS.md in the
+    // brief. Work agreed in a session and deferred to "next time" was being lost, then resurfacing
+    // weeks later as "why was this never done?". A ledger nobody reads is the same as no ledger, so
+    // it appears next to the metrics every morning, with ages, and separated by who it waits on —
+    // the founder cannot act on operator work, and the operator must not sit on founder decisions.
+    const commitments = readOpenCommitments()
+    if (!commitments.length) {
+      out.push(`- **Open commitments:** none recorded`)
+    } else {
+      const founderItems = commitments.filter((c) => c.owner === 'founder')
+      const operatorItems = commitments.filter((c) => c.owner === 'operator')
+      out.push(`- **Open commitments:** ${commitments.length} (${founderItems.length} awaiting you, ${operatorItems.length} operator)`)
+      for (const c of founderItems.slice(0, 5)) {
+        out.push(`  - ⏳ YOU · ${c.since} (${c.ageDays}d) · ${c.item}`)
+      }
+      for (const c of operatorItems.slice(0, 5)) {
+        out.push(`  - 🔧 operator · ${c.since} (${c.ageDays}d) · ${c.item}`)
+      }
+      const stale = commitments.filter((c) => c.ageDays >= 7)
+      if (stale.length) {
+        out.push(`  - ⚠️ ${stale.length} item(s) older than a week — either not real, or being avoided.`)
       }
     }
     if (p.agentsBelowL5.length > 0) {
