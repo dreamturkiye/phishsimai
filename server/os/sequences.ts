@@ -9,7 +9,7 @@ import { readBreakerThreshold } from './dexBreaker'
 import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
-import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_SPACING_MS } from './outreachThrottle'
+import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_SPACING_MS, COMBINED_DAILY_CAP } from './outreachThrottle'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -414,7 +414,16 @@ export async function runFullSequence() {
   // PS-OUTREACH-THROTTLE-01: touch-1 obeys the SAME combined 100/day ceiling as touch-2, so new +
   // second-touch can never exceed 100 on the domain in a day. Its own type cap stays 50 (the ramp).
   const throttleCounts = await sentTodayCounts(sql)
-  const cap = Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
+  const dailyAllowance = Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
+  // PS-DRIP-01 (2026-08-24, founder-directed): send the day's allowance as a DRIP, not a burst.
+  // This route ran once at 07:00 and fired the entire remaining allowance in one go — 50 messages
+  // from the same domain inside a couple of minutes, which is the pattern spam filtering is built
+  // to catch, and it puts every send into one hour of the day regardless of where the recipient is.
+  // The cron now runs hourly and each run takes at most a 1/24th slice. The DAILY ceiling is
+  // unchanged and still enforced from the database (sentTodayCounts), so this only changes the
+  // SHAPE of the day, never the volume: PS-RAMP-HOLD-01's 50/day hold still binds.
+  const HOURLY_SLICE = Math.max(1, Math.ceil(dailySendCap(now) / 24))
+  const cap = Math.min(dailyAllowance, HOURLY_SLICE)
   let totalSent = 0
   const results: any[] = []
 
@@ -493,8 +502,20 @@ export async function runFullSequence() {
   // Empty by design — the loop below is a no-op and only touch-1 above sends.
   const touchDefs: { touch: number; delayDays: number; final?: boolean }[] = []
 
+  // PS-FOLLOWUP-BUDGET-01 (2026-08-24, founder-directed): follow-ups no longer share touch-1's
+  // counter. As written, `totalSent` was incremented by every touch-1 send and then checked here
+  // against DAILY_SEND_LIMIT (20) — so a full touch-1 day (50) guaranteed ZERO follow-ups, silently,
+  // for the exact touches this file documents as the ones that produce replies. The bug is latent
+  // only because touchDefs is empty; it would have bitten the moment follow-ups were switched on.
+  // Follow-ups now draw their own daily budget and their own hourly slice; the combined domain
+  // ceiling still governs the total across new + follow-up sends.
+  const followUpDailyCap = Math.max(0, COMBINED_DAILY_CAP - dailySendCap(now))
+  const followUpSlice = Math.max(1, Math.ceil(followUpDailyCap / 24))
+  const followUpCap = Math.min(Math.max(0, followUpDailyCap - throttleCounts.secondSentToday), followUpSlice)
+  let followUpSent = 0
+
   for (const def of touchDefs) {
-    if (totalSent >= DAILY_SEND_LIMIT) break
+    if (followUpSent >= followUpCap) break
     const step = SEQUENCE.find(s => s.touch === def.touch)
     if (!step) continue
     const cutoff = new Date(now.getTime() - def.delayDays * 86400000).toISOString()
@@ -511,28 +532,28 @@ export async function runFullSequence() {
         AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-        ORDER BY touch1_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
+        ORDER BY touch1_sent_at ASC LIMIT ${followUpCap - followUpSent}`
     } else if (def.touch === 3) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-        ORDER BY touch2_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
+        ORDER BY touch2_sent_at ASC LIMIT ${followUpCap - followUpSent}`
     } else if (def.touch === 4) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-        ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
+        ORDER BY touch3_sent_at ASC LIMIT ${followUpCap - followUpSent}`
     } else {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
         AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-        ORDER BY touch3_sent_at ASC LIMIT ${DAILY_SEND_LIMIT - totalSent}`
+        ORDER BY touch3_sent_at ASC LIMIT ${followUpCap - followUpSent}`
     }
 
     for (const lead of leads) {
