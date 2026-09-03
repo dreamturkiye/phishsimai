@@ -26,6 +26,7 @@ Last reviewed: 2026-08-24
 | 2026-08-14 | **Escalation #40** — Aria's replacement email variants | Recommendation: REJECT. Live copy already leads with price, 10-min setup, set-and-forget, and its prices are Stripe-verified |
 | 2026-08-24 | **Posture fairness rule** — should a day spoiled by an OPERATOR action count against the product's clean-day streak? | The 2026-08-19 breakers came from an operator test task targeting a protected path. Needs a decision before it is coded |
 | 2026-08-24 | **Raise RAMP_MAX 50 → 100/day?** | `PS-RAMP-HOLD-01` requires evidence that enrichment keeps pace for ~3 consecutive days. Not measured yet |
+| 2026-09-03 | **Subject-line bandit optimizes on opens, but opens can never fire** — switch to `outcomeEvent:'replied'`, or retire the open-pixel path | `touch1Html`/`touch2Html` always return `''` (plain-text doctrine), so `withOpenPixel` is never applied and `computeAdaptiveSplit('touch1_subject')` has returned the 0.5 fallback since it shipped. See `docs/COLD_EMAIL_OUTREACH_STRATEGY_INVESTIGATION.md` Finding 1 |
 
 ## Operator work (no decision needed — just not done yet)
 
