@@ -60,10 +60,16 @@ async function autoResolveStale(sql: any, rows: PendingEscalation[]): Promise<Se
     }
 
     if (reason) {
+      // PS-ESCALATION-STALE-02 (QA 2026-09-06): the write below used status='resolved', but the
+      // escalations_status_check constraint only allows pending/approved/rejected/deferred — so
+      // every auto-resolve since 2026-08-18 threw and was swallowed by the .catch(). That is why
+      // stale marcus_dispatch escalations kept accumulating (10 found live on 2026-09-06) despite
+      // this triage running daily. 'deferred' is the valid terminal status for "closed, no founder
+      // action needed"; the resolved_at/resolved_via audit columns still record the evidence.
       await sql`UPDATE escalations
-        SET status='resolved', resolved_at=NOW(), resolved_via='auto_stale',
+        SET status='deferred', resolved_at=NOW(), resolved_via='auto_stale',
             payload = payload || ${JSON.stringify({ autoResolved: true })}::jsonb
-        WHERE id=${row.id}`.catch(() => {})
+        WHERE id=${row.id}`.catch((e: any) => { console.error(`[escalationTriage] auto-resolve write failed #${row.id}: ${e?.message}`) })
       console.log(`[escalationTriage] auto-resolved #${row.id} (${row.category}): ${reason}`)
       done.add(row.id)
     }
