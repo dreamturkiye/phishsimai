@@ -26,6 +26,16 @@ export interface ProductBrief {
   openBreakers: Array<{ fingerprint: string; state: string; tripReason: string | null }>
   pendingEscalations: Array<{ id: number; category: string; ageMs: number }>
   agentsBelowL5: string[] // O.17: agents below L5 for 2 consecutive weeks
+  // QA-2026-09-06: the true funnel. MRR/tasks read "no data" nightly (snapshot lands after
+  // the brief runs) and $0 MRR taught the founder to ignore the brief. This is what moves.
+  funnel?: {
+    sends7d: number
+    replies7d: number
+    trials: number
+    customers: number
+    sendsToday: number
+    repliesPending: number // interested replies awaiting founder action
+  } | null
 }
 
 export interface BriefData {
@@ -66,6 +76,15 @@ export function renderFounderBrief(data: BriefData): string {
   }
   for (const p of data.products) {
     out.push(`## ${p.productId}`)
+    // QA-2026-09-06: funnel FIRST — this is the number that matters pre-revenue.
+    if (p.funnel) {
+      const f = p.funnel
+      out.push(`- **Funnel (7g):** ${num(f.sends7d)} gönderim → ${num(f.replies7d)} yanıt → ${num(f.trials)} deneme → ${num(f.customers)} müşteri`)
+      out.push(`- **Bugün:** ${num(f.sendsToday)} gönderim`)
+      if (f.repliesPending > 0) {
+        out.push(`- ⚠️ **${f.repliesPending} ilgili yanıt seni bekliyor** (cevaplanmadı)`)
+      }
+    }
     out.push(`- **MRR:** ${money(p.mrrCents)}${moneyDelta(p.mrrDeltaCents)}`)
     out.push(`- **Tasks:** ${num(p.tasksCompleted)} shipped / ${num(p.tasksFailed)} failed`)
     out.push(`- **Agent score:** ${score(p.agentScoreAvg)}`)
@@ -168,6 +187,29 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         WHERE status = 'pending' AND product_id = ${companyId} ORDER BY created_at ASC
       `.catch(() => [] as any[])
       const level = await getAutonomyLevel(companyId).catch(() => null)
+      // QA-2026-09-06: gerçek huni — ps_outreach_leads canlı gönderim/yanıt/deneme gerçeği.
+      const fRows = await sql`
+        SELECT
+          count(*) FILTER (WHERE touch1_sent_at >= now() - interval '7 days')::int AS sends7d,
+          count(*) FILTER (WHERE replied AND replied_at >= now() - interval '7 days')::int AS replies7d,
+          count(*) FILTER (WHERE trial_at IS NOT NULL)::int AS trials,
+          count(*) FILTER (WHERE customer_at IS NOT NULL)::int AS customers,
+          count(*) FILTER (WHERE touch1_sent_at >= date_trunc('day', now()))::int AS sends_today
+        FROM ps_outreach_leads
+      `.catch(() => [] as any[])
+      const pendRows = await sql`
+        SELECT count(*)::int AS n FROM outreach_reply_drafts
+        WHERE status = 'pending_review' AND classification = 'interested'
+      `.catch(() => [] as any[])
+      const fr = (fRows as any[])[0] ?? null
+      const funnel = fr ? {
+        sends7d: Number(fr.sends7d) || 0,
+        replies7d: Number(fr.replies7d) || 0,
+        trials: Number(fr.trials) || 0,
+        customers: Number(fr.customers) || 0,
+        sendsToday: Number(fr.sends_today) || 0,
+        repliesPending: Number((pendRows as any[])[0]?.n) || 0,
+      } : null
       const nowMs = Date.now()
 
       return {
@@ -188,6 +230,7 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
               ageMs: e.created_at ? nowMs - new Date(e.created_at).getTime() : 0,
             })),
             agentsBelowL5: await agentsBelowL5TwoWeeks(sql, companyId).catch(() => []),
+            funnel,
           },
         ],
       }
