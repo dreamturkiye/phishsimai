@@ -11,6 +11,7 @@ export type ReplyIntent =
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 
 import { BRAND_LOGO_FOOTER } from '../email/brandFooter'
+import { wrapMobileEmail } from '../email/mobileOptimization'
 
 async function sendEmail(to: string, subject: string, html: string) {
   await fetch('https://api.resend.com/emails', {
@@ -139,7 +140,17 @@ export async function processReply(fromEmail: string, subject: string, body: str
     await sql`UPDATE ps_outreach_leads SET replied=true, pipeline_stage='engaged', stage_updated_at=${ts} WHERE id=${lead.id}`
     const responseText = await buildAutoResponse(lead, (effectiveIntent as ReplyIntent), body)
     if (responseText) {
-      const html = responseText.split('\n').map((l: string) => l ? '<p style="font-family:-apple-system,sans-serif;font-size:15px;line-height:1.6;color:#111">' + l + '</p>' : '').join('')
+      // PS-EMAIL-MOBILE-01 (2026-08-16): the reply body was bare <p> tags with NO width
+      // constraint, while BRAND_LOGO_FOOTER already centres itself at max-width:600px — so the
+      // text ran the full window width on desktop and the footer did not, in the same message.
+      // wrapMobileEmail (server/email/mobileOptimization.ts) already existed for exactly this and
+      // had no callers at all; this wires it in rather than adding a second layout implementation.
+      const paragraphs = responseText.split('\n').map((l: string) => l ? '<p style="font-family:-apple-system,sans-serif;font-size:15px;line-height:1.6;color:#111;margin:0 0 14px">' + l + '</p>' : '').join('')
+      const html = wrapMobileEmail({
+        bodyHtml: paragraphs,
+        title: subject || 'PhishSim AI',
+        footerHtml: '',
+      })
       await createReplyApproval(sql, lead, { kind: 'text', intent: effectiveIntent, confidence: Number(confidence) || 0, summary, subject: 'Re: ' + subject.replace(/^Re:\s*/i, ''), html })
       held = true
     } else {

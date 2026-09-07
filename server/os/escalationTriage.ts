@@ -10,6 +10,8 @@
 // it. An escalation can no longer just sit silently; it is either resolved or loudly, repeatedly,
 // unmissably flagged as YOUR decision to make.
 import { getSql } from './conn'
+// PS-ESCALATION-STALE-01: reuse the dispatch guard so 'executable?' has ONE definition.
+import { dispatchRefusalReason } from '../lib/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
 import { queueJanetArchitectTask } from './selfHeal'
@@ -28,6 +30,47 @@ const AGE_DAYS = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new
  * brief) to report. Fail-open per item: a triage failure on one row must never block the others or
  * throw — an escalation that can't be triaged just stays pending for tomorrow's pass, same as today.
  */
+/**
+ * PS-ESCALATION-STALE-01 — close escalations whose cause is provably gone.
+ * Deliberately conservative: it resolves ONLY on positive evidence (a breaker that is now closed,
+ * or a dispatch payload the dispatch guard would refuse outright). Anything it cannot prove dead
+ * is left untouched for Janet and, if she cannot decide, for the founder. Silence is not the goal;
+ * an accurate queue is.
+ */
+async function autoResolveStale(sql: any, rows: PendingEscalation[]): Promise<Set<number>> {
+  const done = new Set<number>()
+  for (const row of rows) {
+    const payload: any = row.payload || {}
+    let reason: string | null = null
+
+    if (row.category === 'breaker_trip' && payload.fingerprint) {
+      try {
+        const b = (await sql`SELECT state FROM circuit_breaker_state WHERE fingerprint=${payload.fingerprint} LIMIT 1`) as any[]
+        if (b[0]?.state === 'closed') {
+          reason = `breaker ${String(payload.fingerprint).slice(0, 10)} is closed — the trip that raised this was resolved`
+        }
+      } catch { /* if we cannot check, leave it pending */ }
+    }
+
+    if (!reason && row.category === 'marcus_dispatch' && typeof payload.task === 'string') {
+      const refusal = dispatchRefusalReason(payload.task)
+      if (refusal) {
+        reason = `dispatch is not executable (${refusal}) — nothing to approve; the agent must resend it intact`
+      }
+    }
+
+    if (reason) {
+      await sql`UPDATE escalations
+        SET status='resolved', resolved_at=NOW(), resolved_via='auto_stale',
+            payload = payload || ${JSON.stringify({ autoResolved: true })}::jsonb
+        WHERE id=${row.id}`.catch(() => {})
+      console.log(`[escalationTriage] auto-resolved #${row.id} (${row.category}): ${reason}`)
+      done.add(row.id)
+    }
+  }
+  return done
+}
+
 export async function triageEscalations(companyId: string): Promise<{ reviewed: number; resolved: number; escalatedToFounder: number }> {
   const sql = getSql()
   let rows: PendingEscalation[] = []
@@ -42,10 +85,20 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
   }
   if (!rows.length) return { reviewed: 0, resolved: 0, escalatedToFounder: 0 }
 
-  let resolved = 0
+  // PS-ESCALATION-STALE-01 (2026-08-18): an escalation had no way to become irrelevant. Fixing the
+  // underlying fault resolved nothing, so repaired problems kept escalating at the founder daily
+  // and LOUDER — on 2026-08-17 he received eight, of which seven were already dead: merge-405s
+  // (the daemon was running stale code), Grok format mismatches (max_tokens truncation, fixed),
+  // and a truncated DDL that cannot execute at all. Real signal drowns in that. An escalation
+  // whose cause is demonstrably gone is now closed automatically, with the evidence recorded.
+  const autoResolved = await autoResolveStale(sql, rows)
+  const live = rows.filter((r) => !autoResolved.has(r.id))
+  if (!live.length) return { reviewed: rows.length, resolved: autoResolved.size, escalatedToFounder: 0 }
+
+  let resolved = autoResolved.size
   let escalatedToFounder = 0
 
-  for (const row of rows) {
+  for (const row of live) {
     const age = AGE_DAYS(row.created_at)
     // Already flagged founder-decision-required in a prior pass — just re-alert with growing
     // urgency, do not re-spend an LLM call re-litigating the same item every day.

@@ -128,9 +128,11 @@ describe('topOfFunnelMetric — the constraint, stated first', () => {
     expect(t).not.toMatch(/UNVERIFIED/)
   })
 
-  it('says outreach opens are not instrumented rather than implying a rate', () => {
+  it('says outreach opens are instrumented but inert rather than implying a rate', () => {
     const t = topOfFunnelMetric(LIVE)
-    expect(t).toMatch(/NOT INSTRUMENTED/)
+    expect(t).toMatch(/INSTRUMENTED/)
+    expect(t).toMatch(/INERT/)
+    expect(t).toMatch(/text-only/)
     // The open rate in the brief belongs to internal sims — say so where it is read.
     expect(t).toMatch(/own internal org/i)
   })

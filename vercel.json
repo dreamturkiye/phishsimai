@@ -97,7 +97,7 @@
     },
     {
       "path": "/api/os/sequence",
-      "schedule": "0 7 * * *"
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/os/sequence-touch2",
@@ -223,9 +223,9 @@
       "path": "/api/os/daily-report",
       "schedule": "0 21 * * *"
     },
-        {
-                "path": "/api/os/funnel-health",
-                "schedule": "0 20 * * *"
-        }
+    {
+      "path": "/api/os/funnel-health",
+      "schedule": "0 20 * * *"
+    }
   ]
 }
