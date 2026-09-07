@@ -187,6 +187,23 @@ export async function queueJanetArchitectTask(opts: {
         void dispatchMarcusWake(COMPANY_ID, { taskId: existingId, product: 'phishsim' })
         return existingId
       }
+    } else {
+      // PS-DEDUP-01 (QA 2026-09-06): the closure-loop bug. Without a bugId this path skipped
+      // dedup entirely, so janet_triage / daily-brief re-queued the SAME task string every day
+      // — one queue grew to 75 rows that were really ~8 tasks re-filed 5-11x, and every founder
+      // brief cried "75 pending". An open task with the same text IS the same work: wake it, don't
+      // clone it. Marcus can't "work" until his queue stops regenerating.
+      const dupe = await sql`
+        SELECT id FROM os_architect_tasks
+        WHERE task=${opts.task.slice(0, 4000)}
+          AND status IN ('queued','pending','approved','running')
+        ORDER BY created_at ASC LIMIT 1
+      `
+      if ((dupe as any[])[0]?.id) {
+        const dupeId = (dupe as any[])[0].id as string
+        void dispatchMarcusWake(COMPANY_ID, { taskId: dupeId, product: 'phishsim' })
+        return dupeId
+      }
     }
 
     const id = randomUUID()
