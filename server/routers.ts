@@ -40,6 +40,7 @@ import {
   getGamificationScores,
   getInviteByToken,
   getOrgAnalytics,
+  getFunnelBottleneck,
   getOrgById,
   getOrgBySlug,
   getOrgInvites,
@@ -1059,6 +1060,13 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
           })
         );
         return trend;
+      }),
+
+    funnelBottlenecks: protectedProcedure
+      .input(z.object({ orgId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        await requireOrgMember(input.orgId, ctx.user.id);
+        return getFunnelBottleneck(input.orgId);
       }),
 
     deptBreakdown: protectedProcedure

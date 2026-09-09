@@ -584,6 +584,37 @@ export async function getOrgAnalytics(orgId: number) {
   return { total, sent, opened, clicked, submitted, reported };
 }
 
+export type FunnelStage = { key: string; label: string; count: number; rate: number };
+export type FunnelBottleneck = { fromKey: string; toKey: string; lostCount: number; lostPct: number };
+
+/**
+ * Stage-to-stage drop-off over this org's real campaign_results, sent as the base (matches the
+ * sequential open/click/submit/report rate convention already used by analytics.campaignDetail).
+ * Returns null with sent=0 rather than a 0%/0% funnel — an unsent org has no funnel to analyze yet.
+ */
+export async function getFunnelBottleneck(orgId: number): Promise<{ stages: FunnelStage[]; bottleneck: FunnelBottleneck | null } | null> {
+  const analytics = await getOrgAnalytics(orgId);
+  if (!analytics || analytics.sent === 0) return null;
+  const { sent, opened, clicked, submitted, reported } = analytics;
+  const stages: FunnelStage[] = [
+    { key: "sent", label: "Emails Sent", count: sent, rate: 100 },
+    { key: "opened", label: "Opened", count: opened, rate: Math.round((opened / sent) * 100) },
+    { key: "clicked", label: "Clicked Link", count: clicked, rate: Math.round((clicked / sent) * 100) },
+    { key: "submitted", label: "Submitted Credentials", count: submitted, rate: Math.round((submitted / sent) * 100) },
+    { key: "reported", label: "Reported as Phishing", count: reported, rate: Math.round((reported / sent) * 100) },
+  ];
+  let bottleneck: FunnelBottleneck | null = null;
+  for (let i = 1; i < stages.length; i++) {
+    const prev = stages[i - 1];
+    const cur = stages[i];
+    if (prev.count === 0) continue;
+    const lostCount = prev.count - cur.count;
+    const lostPct = Math.round((lostCount / prev.count) * 100);
+    if (!bottleneck || lostPct > bottleneck.lostPct) bottleneck = { fromKey: prev.key, toKey: cur.key, lostCount, lostPct };
+  }
+  return { stages, bottleneck };
+}
+
 // ─── Training Modules ─────────────────────────────────────────────────────────
 export async function getTrainingModules(language?: string): Promise<TrainingModule[]> {
   const db = await getDb();
