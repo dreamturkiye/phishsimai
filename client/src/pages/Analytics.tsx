@@ -39,6 +39,7 @@ export default function Analytics() {
   const { data: analytics } = trpc.analytics.overview.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: trendData } = trpc.analytics.campaignTrend.useQuery({ orgId: orgId! }, { enabled: !!orgId });
   const { data: deptData } = trpc.analytics.deptBreakdown.useQuery({ orgId: orgId! }, { enabled: !!orgId });
+  const { data: funnelData } = trpc.analytics.funnelBottlenecks.useQuery({ orgId: orgId! }, { enabled: !!orgId });
 
   const stats = analytics?.stats;
   const sent = stats?.sent ?? 0;
@@ -117,6 +118,46 @@ export default function Analytics() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+
+        {/* Funnel bottleneck */}
+        {funnelData ? (
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Funnel Conversion & Bottlenecks</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {funnelData.stages.map((stage) => (
+                  <div key={stage.key} className="flex items-center gap-3">
+                    <div className="w-40 text-xs text-muted-foreground flex-shrink-0 truncate">{stage.label}</div>
+                    <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-primary/70" style={{ width: `${stage.rate}%` }} />
+                    </div>
+                    <div className="text-xs font-medium w-28 text-right text-muted-foreground">
+                      {stage.count.toLocaleString()} ({stage.rate}%)
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {funnelData.bottleneck && (
+                <div className="mt-4 flex items-start gap-2 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg px-3 py-2.5">
+                  <TrendingDown className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <div>
+                    Biggest drop-off: <strong>{funnelData.bottleneck.lostPct}%</strong> of people who reached "
+                    {funnelData.stages.find((s) => s.key === funnelData.bottleneck!.fromKey)?.label}" did not reach "
+                    {funnelData.stages.find((s) => s.key === funnelData.bottleneck!.toKey)?.label}" (
+                    {funnelData.bottleneck.lostCount.toLocaleString()} people) — the highest-leverage stage to improve.
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/50 border border-border/40 rounded-lg px-4 py-2.5">
+            <Info className="w-3.5 h-3.5 flex-shrink-0" />
+            Run a campaign to see where employees drop off in the funnel.
+          </div>
+        )}
 
         {/* Department breakdown */}
         <div className="grid lg:grid-cols-2 gap-6">
