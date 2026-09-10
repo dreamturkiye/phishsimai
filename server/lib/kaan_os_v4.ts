@@ -6,6 +6,7 @@ import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
 import { queueJanetArchitectTask } from '../os/selfHeal'
 import { researchCurrentBestPractice } from '../os/domainResearch'
 import { evaluatePosture, postureLine } from '../os/posture'
+import { formatEvaluationScore, isScoredEvaluation, parseEvaluationScore } from './evaluationScore'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
 // PhishSim's task loop — that is why agentReflection had "no callers". Wiring it here injects an
@@ -75,7 +76,7 @@ export interface AgentTask {
   status: TaskStatus
   result?: string
   janet_feedback?: string
-  performance_score?: number
+  performance_score?: number | null
   created_at?: string
   completed_at?: string
 }
@@ -88,7 +89,7 @@ export interface AgentReport {
   completed_tasks: string[]
   blockers: string[]
   next_actions: string[]
-  performance_score: number
+  performance_score: number | null
   improvement_notes: string
   timestamp: string
 }
@@ -282,7 +283,7 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
         FROM agent_tasks WHERE agent_id=${agentId} AND status IN ('reviewed','completed') AND company_id=${companyId}
         ORDER BY completed_at DESC LIMIT 10`.catch(() => []),
     sql`SELECT strengths, improvement_areas, janet_notes, updated_at
-        FROM agent_performance WHERE agent_id=${agentId} AND company_id=${companyId}
+        FROM agent_performance WHERE agent_id=${agentId} AND company_id=${companyId} AND avg_score IS NOT NULL
         ORDER BY updated_at DESC LIMIT 3`.catch(() => []),
     // PS-RATCHET-01: filter by source in SQL. The previous form filtered AFTER a company-wide
     // LIMIT 20, which Janet's row volume exhausted, so this list was empirically always empty.
@@ -301,7 +302,10 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
     const age = done ? Math.floor((Date.now() - done.getTime()) / 86_400_000) : null
     const when = !done ? 'completed date unknown'
       : `completed ${done.toISOString().slice(0,10)} (${age === 0 ? 'today' : age === 1 ? 'YESTERDAY' : `${age} DAYS AGO — NOT recent`})`
-    return `Task: "${t.title}" | ${when} | Score: ${t.performance_score || '?'}/10 | Feedback: ${t.janet_feedback || 'none'}`
+    const feedback = t.performance_score == null
+      ? 'withheld from learning — review was unscored'
+      : t.janet_feedback || 'none'
+    return `Task: "${t.title}" | ${when} | Score: ${formatEvaluationScore(t.performance_score)} | Feedback: ${feedback}`
   }).join('\n')
 
   const perfHistory = perf.slice(0,2).map((p:any) =>
@@ -339,7 +343,7 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
   // The activity ledger is already the sole authority for what is open; say that here too, so the
   // two halves of the prompt cannot be read as disagreeing.
   return [
-    taskHistory ? `Tasks you have already FINISHED (closed and scored — history only).\n` +
+    taskHistory ? `Tasks you have already FINISHED (closed review history; some may be unscored).\n` +
       `None of these is current work. What you are working on NOW comes ONLY from the ACTIVITY\n` +
       `LEDGER's assigned-tasks list; if that list is empty you are unassigned, and a title below\n` +
       `is NOT a substitute for one:\n${taskHistory}` : '',
@@ -1532,7 +1536,7 @@ Be specific. Janet will review and score your work.`
   return { ...task, status: 'completed', result: finalResult }
 }
 
-export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number; task: any }> {
+export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number | null; task: any }> {
   const sql = neon(process.env.DATABASE_URL!)
   const [task] = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
   if (!task || !task.result) throw new Error('Task not completed yet')
@@ -1558,8 +1562,7 @@ As their manager (CGO), assess:
 Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assignment if any]`
 
   const feedback = await llm(janetSystem, reviewPrompt, 600)
-  const scoreMatch = feedback.match(/SCORE:\s*(\d+)/i)
-  const score = scoreMatch ? parseInt(scoreMatch[1]) : 7
+  const score = parseEvaluationScore(feedback, 'score')
 
   await sql`
     UPDATE agent_tasks
@@ -1574,21 +1577,23 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
     ON CONFLICT DO NOTHING
   `.catch(() => {})
 
-  await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${score}/10\n${feedback.slice(0,200)}`).catch(() => {})
+  await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${formatEvaluationScore(score)}\n${feedback.slice(0,200)}`).catch(() => {})
 
-  // PS-PORT-01: record the outcome — pass OR fail — into the reflection/learning store. This is
-  // the line that ends PS-LEARN-GATE-01: a score below the pass bar (7) records a correction and
-  // drives -0.08 confidence via learnFromOutcome, so the agent learns from a loss on a cold start.
-  const { correction, lesson } = parseReviewForReflection(feedback, score)
-  await recordAgentReflection(sql, companyId, {
-    agentId: task.agent_id,
-    taskId,
-    success: score >= 7,
-    score,
-    outputPreview: String(task.result).slice(0, 500),
-    correction,
-    lesson,
-  }).catch(() => {})
+  // A malformed evaluation is not evidence of either success or failure. Keep the
+  // task and review text for audit, but never turn an unscored response into a
+  // correction, lesson, or confidence update.
+  if (isScoredEvaluation(score)) {
+    const { correction, lesson } = parseReviewForReflection(feedback, score)
+    await recordAgentReflection(sql, companyId, {
+      agentId: task.agent_id,
+      taskId,
+      success: score >= 7,
+      score,
+      outputPreview: String(task.result).slice(0, 500),
+      correction,
+      lesson,
+    }).catch(() => {})
+  }
 
   return { feedback, score, task: { ...task, janet_feedback: feedback, performance_score: score } }
 }
@@ -1610,14 +1615,14 @@ const PASS_BAR = 7
 export type DrainResult = {
   claimed: number; succeeded: number; failed: number; requeued: number; parked: number
   remaining: number; budget_exhausted: boolean
-  results: { id: string; title: string; agent: string; ok: boolean; score?: number; error?: string }[]
+  results: { id: string; title: string; agent: string; ok: boolean; score?: number | null; error?: string }[]
 }
 
 /** V7.3 L5.x item 4: score, and on a sub-bar score run ONE redo with the feedback attached. */
-async function executeReviewWithRedo(taskId: string, companyId: string): Promise<{ score: number }> {
+async function executeReviewWithRedo(taskId: string, companyId: string): Promise<{ score: number | null }> {
   await executeTask(taskId, companyId)
   let review = await reviewTask(taskId, companyId)
-  if (review.score < PASS_BAR) {
+  if (isScoredEvaluation(review.score) && review.score < PASS_BAR) {
     // One-shot redo: hand the task back and re-execute. The reflection loop wired above means
     // the agent's own miss is now injected into its retry prompt.
     const sql = neon(process.env.DATABASE_URL!)
@@ -1679,8 +1684,20 @@ export async function drainAgentTasks(
 
     try {
       const review = await executeReviewWithRedo(task.id, companyId)
-      out.succeeded++
-      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: true, score: review.score })
+      if (isScoredEvaluation(review.score)) {
+        out.succeeded++
+        out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: true, score: review.score })
+      } else {
+        out.failed++
+        out.results.push({
+          id: task.id,
+          title: task.title,
+          agent: task.agent_id,
+          ok: false,
+          score: null,
+          error: 'review unscored: score missing, malformed, or outside 0..10',
+        })
+      }
     } catch (e: any) {
       out.failed++
       const err = String(e?.message || e).slice(0, 200)
@@ -1754,7 +1771,7 @@ async function buildActivityLedger(
 
   const completedBlock = last24.length
     ? `COMPLETED IN THE LAST 24 HOURS (this, and only this, is "yesterday"):\n` +
-      last24.map(r => `  - "${r.title}" — ${new Date(r.completed_at).toISOString()} (scored ${r.performance_score ?? '?'}/10)`).join('\n')
+      last24.map(r => `  - "${r.title}" — ${new Date(r.completed_at).toISOString()} (${formatEvaluationScore(r.performance_score)})`).join('\n')
     : `COMPLETED IN THE LAST 24 HOURS: NOTHING. You finished no task yesterday. Report exactly that — do not reach further back and present older work as if it were yesterday's.`
 
   const earlierBlock = earlier.length
@@ -1965,8 +1982,7 @@ ${todayItem}
 5. Confidence level on hitting your targets this week (0-10)`
 
     const report_text = await llm(system, standupPrompt, 400)
-    const scoreMatch = report_text.match(/(\d+)\/10|confidence.*?(\d+)/i)
-    const score = scoreMatch ? parseInt(scoreMatch[1] || scoreMatch[2]) : 7
+    const score = parseEvaluationScore(report_text, 'confidence')
 
     reports.push({
       agent_id: agentId, agent_name: agent.name,
@@ -2208,7 +2224,7 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   // Pull performance data for the week
   const weeklyTasks = await sql`
     SELECT agent_id, count(*) as completed, round(avg(performance_score)::numeric, 1) as avg_score,
-           string_agg(title || ' (score: ' || coalesce(performance_score::text, '?') || ')', ', ') as task_list
+           string_agg(title || ' (score: ' || coalesce(performance_score::text || '/10', 'unscored') || ')', ', ') as task_list
     FROM agent_tasks
     WHERE status='reviewed' AND created_at > NOW() - interval '7 days' AND company_id=${companyId}
     GROUP BY agent_id
@@ -2225,7 +2241,7 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
     // Agent self-review
     const agentSystem = buildAgentSystem(agent, memory, context)
     const selfReview = await llm(agentSystem,
-      `Weekly performance review with Janet. Be honest — she knows the numbers.\n\nYour week: ${weekData ? `${weekData.completed} tasks completed, avg score ${weekData.avg_score}/10. Tasks: ${weekData.task_list}` : 'No completed tasks this week.'}\n\n1. Your honest assessment of your performance this week\n2. What you learned that you'll apply going forward\n3. Where you fell short and why\n4. What resources or changes would make you more effective\n5. Your top priority proposal for next week`, 500)
+      `Weekly performance review with Janet. Be honest — she knows the numbers.\n\nYour week: ${weekData ? `${weekData.completed} tasks completed, avg score ${formatEvaluationScore(weekData.avg_score)}. Tasks: ${weekData.task_list}` : 'No completed tasks this week.'}\n\n1. Your honest assessment of your performance this week\n2. What you learned that you'll apply going forward\n3. Where you fell short and why\n4. What resources or changes would make you more effective\n5. Your top priority proposal for next week`, 500)
 
     // Janet reviews each agent
     const janetMemory = await getAgentMemory('janet', sql, companyId)
@@ -2237,10 +2253,9 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
       // own priority proposal never reached the manager writing their review. A performance
       // review is the worst possible place to read a third of the evidence: the sections that
       // get cut are exactly the ones an agent would use to explain a bad week.
-      `Weekly performance review: ${agent.name} (${agent.title})\n\nWeek data: ${weekData ? `${weekData.completed} tasks, avg ${weekData.avg_score}/10` : 'No completed tasks'}\n${agent.name}'s self-review: ${trimToLineBoundary(selfReview, AGENT_REPORT_LIMIT)}\n\nAs their manager:\n1. Your honest assessment of their performance (be direct)\n2. Specific improvement required with how-to\n3. New priority assignment for next week\n4. Are they performing at the level needed? (yes/needs improvement/critical)\n5. Score: X/10`, 500)
+      `Weekly performance review: ${agent.name} (${agent.title})\n\nWeek data: ${weekData ? `${weekData.completed} tasks, avg ${formatEvaluationScore(weekData.avg_score)}` : 'No completed tasks'}\n${agent.name}'s self-review: ${trimToLineBoundary(selfReview, AGENT_REPORT_LIMIT)}\n\nAs their manager:\n1. Your honest assessment of their performance (be direct)\n2. Specific improvement required with how-to\n3. New priority assignment for next week\n4. Are they performing at the level needed? (yes/needs improvement/critical)\n5. Score: X/10`, 500)
 
-    const scoreMatch = janetReview.match(/Score:\s*(\d+)\/10/i)
-    const score = scoreMatch ? parseInt(scoreMatch[1]) : 6
+    const score = parseEvaluationScore(janetReview, 'score')
 
     // Update performance record
     await sql`
@@ -2260,13 +2275,15 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
         improvement_areas = EXCLUDED.improvement_areas, janet_notes = EXCLUDED.janet_notes, updated_at = NOW()
     `.catch(() => {})
 
-    // Agent writes to their own memory
-    await rememberFact({
-      company_id: companyId, type: 'strategic',
-      key: `weekly_review:${new Date().toISOString().slice(0,10)}`,
-      value: `Self: ${selfReview.slice(0,200)} | Janet: ${janetReview.slice(0,200)}`,
-      confidence: 1.0, source: agentId
-    }).catch(() => {})
+    // Only a successfully parsed evaluation may become durable performance learning.
+    if (isScoredEvaluation(score)) {
+      await rememberFact({
+        company_id: companyId, type: 'strategic',
+        key: `weekly_review:${new Date().toISOString().slice(0,10)}`,
+        value: `Self: ${selfReview.slice(0,200)} | Janet: ${janetReview.slice(0,200)}`,
+        confidence: 1.0, source: agentId
+      }).catch(() => {})
+    }
 
     performanceReviews.push({ agent_id: agentId, name: agent.name, score, self_review: selfReview, janet_review: janetReview, week_data: weekData })
   }
@@ -2283,7 +2300,7 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   // a line-boundary trim that keeps the substance, with the marker saying when it bit.
   const WEEKLY_REVIEW_PROMPT_LIMIT = 1200 // ~8 agents × 1.2k chars ≈ 2.4k tokens, well inside the cap
   const reviewSummary = performanceReviews
-    .map(r => `${r.name} (${r.score}/10): ${trimToLineBoundary(r.janet_review, WEEKLY_REVIEW_PROMPT_LIMIT)}`)
+    .map(r => `${r.name} (${formatEvaluationScore(r.score)}): ${trimToLineBoundary(r.janet_review, WEEKLY_REVIEW_PROMPT_LIMIT)}`)
     .join('\n')
   const janetSystem2 = buildAgentSystem(AGENTS.janet, await getAgentMemory('janet', sql, companyId), context)
 
@@ -2314,14 +2331,14 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
 
   // PS-TRUNCATE-01: same amputation the daily standup had — the weekly PLAN is the entire point
   // of this meeting, and 600 chars cut it mid-thought. sendTelegram splits now; send it whole.
-  const scores = performanceReviews.map(r => `${r.name}: ${r.score}/10`).join(' | ')
+  const scores = performanceReviews.map(r => `${r.name}: ${formatEvaluationScore(r.score)}`).join(' | ')
   await sendTelegram(`📊 *WEEKLY REVIEW — ${TELEGRAM_PRODUCT}*\n\nScores: ${scores}\n\n${weeklyPlan}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
 
   return {
     meeting_id: meeting?.id || '',
     performance_reviews: performanceReviews,
     janet_decisions: weeklyPlan,
-    adjustments: performanceReviews.filter(r => r.score < 7).map(r => `${r.name}: ${r.janet_review.slice(0,100)}`),
+    adjustments: performanceReviews.filter(r => isScoredEvaluation(r.score) && r.score < 7).map(r => `${r.name}: ${r.janet_review.slice(0,100)}`),
     new_assignments: newAssignments,
     timestamp: new Date().toISOString()
   }
