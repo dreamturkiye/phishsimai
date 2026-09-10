@@ -68,6 +68,8 @@ describe('coded enforcers are wired', () => {
     expect(os).toContain('does NOT forbid converting')
     expect(os).toContain('runCgoConversionShift')
     expect(os).toContain('convert_warm')
+    expect(os).toContain('sendWarmTrialCtas')
+    expect(os).not.toMatch(/Your team is TEXT-ONLY/)
     expect(readFileSync('vercel.json', 'utf8')).toContain('/api/os/task-runner')
     expect(os).not.toMatch(/Do NOT assign conversion/)
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)
