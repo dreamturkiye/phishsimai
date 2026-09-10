@@ -62,6 +62,7 @@ export const SEND_PATHS: SendPath[] = [
   { key: 'touch1', file: 'server/os/sequences.ts', where: 'runFullSequence touch-1 loop', cls: 'prospect' },
   { key: 'touch2_batch', file: 'server/os/sequences.ts', where: 'runTouch2Batch (PS-TOUCH2-PRICE-01)', cls: 'prospect' },
   { key: 'touch3_5', file: 'server/os/sequences.ts', where: 'runFullSequence touchDefs loop (touch 2-5)', cls: 'prospect' },
+  { key: 'warm_conversion', file: 'server/os/sequences.ts', where: 'sendWarmTrialCtas (replied/engaged trial CTA)', cls: 'prospect' },
   {
     key: 'reply_send',
     file: 'server/os/replyParser.ts',

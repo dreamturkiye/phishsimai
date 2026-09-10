@@ -122,7 +122,7 @@ describe('EMPTY QUEUE — the anti-ghost guarantee', () => {
     const sql = spySql([])
     const run = await runSalesReplyAgent(sql)
     expect(run).toMatchObject({
-      queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, noAction: 0,
+      queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, trialCtasSent: 0, noAction: 0,
     })
     expect(run.byClass).toEqual({})
   })
@@ -162,8 +162,8 @@ describe('ASYMMETRIC SAFETY — ambiguity drafts, it never suppresses', () => {
     expect(decideAction({ cls: 'hostile', confidence: 0.5, why: 'uncertain' })).toBe('draft_for_kaan')
   })
 
-  it('interest and objections never auto-act, at any confidence', () => {
-    expect(decideAction({ cls: 'interested', confidence: 1, why: '' })).toBe('draft_for_kaan')
+  it('interest converts via the frozen trial CTA; objections still draft', () => {
+    expect(decideAction({ cls: 'interested', confidence: 1, why: '' })).toBe('send_trial_cta')
     expect(decideAction({ cls: 'objection', confidence: 1, why: '' })).toBe('draft_for_kaan')
   })
 

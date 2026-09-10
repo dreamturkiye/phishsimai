@@ -125,6 +125,14 @@ export const PERMANENT_LESSONS: { signature: string; lesson: string }[] = [
       '$49/mo founding rate that exists in NO Stripe account. NEVER quote a price not read from ' +
       'server/stripe/prices.ts, never discount or invent one, never propose a pricing change.',
   },
+  {
+    signature: 'phishsim:warm-replies-must-get-trial-cta',
+    lesson:
+      'A REPLIED LEAD THAT ONLY GETS A DRAFT FOR KAAN DOES NOT CONVERT. Interested replies ' +
+      'must receive the frozen 30-day no-card trial CTA at https://phishsimai.com/login?mode=register ' +
+      'through sendWarmTrialCtas (Dex MX + assertSendable + suppression). Objections still draft. ' +
+      'Never use /register (dead). Never skip Dex. Never fake a trial row.',
+  },
 ]
 
 /** Write the permanent doctrine lessons once. Safe to call on every boot. */

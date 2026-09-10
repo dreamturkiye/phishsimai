@@ -161,19 +161,19 @@ export async function cronFounderBrief(req: Request, res: Response) {
   }
 }
 
-// PS-PORT-01 executor endpoint. MANUAL trigger only — deliberately NOT in vercel.json crons.
-// V7.3's own posture: ScrollFuel's task-runner cron is "OFF deliberately until it drains clean."
-// The drain is non-destructive (executeTask produces reviewed text, no sends/deploys/spend) and
-// only touches tasks already 'assigned' — and issueTask is autonomy-gated at 'manual', so the
-// queue only holds what a human/founder deliberately seeds. Returns honest counts; a run that
-// claimed tasks and failed all of them is NOT reported as healthy.
+// PS-PORT-01 executor endpoint. Every 10 minutes — Janet assigns conversion work; this drain
+// actually runs it AND fires the Dex-gated warm trial CTA even when the queue is empty.
 export async function osTaskRunner(req: Request, res: Response) {
   if (!okCronOrHq(req, res)) return
   try {
+    const { runCgoConversionShift } = await import('./conversionEngine')
+    const conversion = await runCgoConversionShift({ cap: 8 }).catch((e: any) => ({
+      sent: 0, error: String(e?.message || e).slice(0, 120),
+    }))
     const maxTasks = Math.min(Number((req.query.max as string) || 10), 25)
     const result = await drainAgentTasks(COMPANY, { maxTasks })
     const healthy = result.claimed === 0 || result.succeeded > 0
-    return res.status(healthy ? 200 : 500).json({ ok: healthy, ...result })
+    return res.status(healthy ? 200 : 500).json({ ok: healthy, conversion, ...result })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: formatOsError(e) })
   }

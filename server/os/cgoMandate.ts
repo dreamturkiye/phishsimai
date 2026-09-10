@@ -80,7 +80,7 @@ export function employeeExecutionMandate(): string {
     'You are a full-time employee, not a reporter. Do the work in your lane today.',
     'If a real next step exists, analysis-only output is a miss. Name what you DID, the evidence ID, and the next conversion step toward a verified 30-day trial.',
     'If you cannot act, name the blocker, the owner, and the ask — then stop. Do not narrate work you did not do.',
-    'You still cannot fake metrics, change price, email customers directly, or deploy around Marcus/Dex gates.',
+    'You still cannot fake metrics, change price, skip Dex send-safety, or deploy around Marcus. Warm trial CTAs go through ACTION: convert_warm, never a raw send.',
   ].join('\n')
 }
 
@@ -98,10 +98,11 @@ Do the work now. You are a full-time employee. Provide:
 5. Confidence (0-10) and why the evidence supports it
 
 You may take ONE real action to advance this (under Janet's supervision) by ending with a single line:
+- ACTION: convert_warm: <email or "hottest"> — sends the frozen 30-day no-card trial CTA through Dex rails (MX, suppression, bounce breaker). Use this for replied/engaged leads.
 - ACTION: queue_marcus: <specific code/infra change> — routes into the verified deploy pipeline (you never touch prod directly).
-- ACTION: escalate: <title> | <why a human must decide> — for pricing, spend, legal, contacting real customers, or cross-team calls.
+- ACTION: escalate: <title> | <why a human must decide> — for pricing, spend, legal, or a Dex-blocked send. Do not escalate a send you could convert_warm.
 Only ONE action, only if a concrete step should genuinely HAPPEN now, not just be recommended. Omit the ACTION line if nothing should execute.
-Never invent an action to look busy. Acknowledgements are not execution.`
+Never invent an action to look busy. Acknowledgements are not execution. Mason and Aria conversion tasks also fire the coded conversion shift even if you omit ACTION.`
 }
 
 const CONVERSION_DEFAULTS: Record<WorkerAgentId, string> = {

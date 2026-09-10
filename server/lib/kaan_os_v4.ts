@@ -1553,7 +1553,7 @@ export function dispatchRefusalReason(arg: string): string | null {
 }
 
 async function executeAgentAction(sql: any, task: AgentTask, resultText: string, companyId: string): Promise<string> {
-  const m = resultText.match(/ACTION:\s*(queue_marcus|escalate)\s*:\s*([^\n]+)/i)
+  const m = resultText.match(/ACTION:\s*(queue_marcus|escalate|convert_warm)\s*:\s*([^\n]+)/i)
   if (!m) return ''
   const verb = m[1].toLowerCase()
   const arg = m[2].trim()
@@ -1563,7 +1563,16 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
     action TEXT, arg TEXT, result TEXT, created_at TIMESTAMPTZ DEFAULT NOW())`.catch(() => {})
   let outcome = ''
   try {
-    if (verb === 'queue_marcus') {
+    if (verb === 'convert_warm') {
+      const { runCgoConversionShift } = await import('../os/conversionEngine')
+      const emails = arg.split(/[,\s]+/).filter((e) => e.includes('@'))
+      const shift = await runCgoConversionShift({
+        emails: emails.length ? emails : undefined,
+        cap: emails.length ? Math.min(8, emails.length) : 8,
+      })
+      outcome = `convert_warm sent=${shift.sent} blocked=${shift.blocked} skipped=${shift.skipped}` +
+        (shift.reason ? ` (${shift.reason})` : '') + ` — ${shift.lesson}`
+    } else if (verb === 'queue_marcus') {
       // PS-AGENT-DISPATCH-01 (2026-08-17): `arg.slice(0, 400)` silently truncated the dispatched
       // task, and the ACTION regex already stops at the first newline. Both cuts landed MID-
       // STATEMENT on real DDL: escalations went out reading "...THEN true ELSE f" and
@@ -1734,7 +1743,16 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   // PS-AGENT-ACT-01: if the agent proposed a real action, execute it (gated + logged) and append
   // the outcome so the stored result records what actually happened, not just what was recommended.
   const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
-  const finalResult = result + actionSummary
+  let conversionNote = ''
+  if (durable.owner === 'mason' || durable.owner === 'aria') {
+    const { runCgoConversionShift } = await import('../os/conversionEngine')
+    const shift = await runCgoConversionShift({ cap: 5 }).catch(() => null)
+    if (shift) {
+      conversionNote = `\n\n---\n**CONVERSION SHIFT:** sent=${shift.sent} blocked=${shift.blocked} skipped=${shift.skipped}` +
+        (shift.reason ? ` ${shift.reason}` : '') + `\n${shift.lesson}`
+    }
+  }
+  const finalResult = result + actionSummary + conversionNote
   const execution = buildVerifiedTaskExecution(durable, finalResult)
   await store.persistExecution(
     execution.completedTask,
@@ -1745,12 +1763,16 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
     companyId,
     agentId: durable.owner,
     taskId,
-    action: actionSummary ? 'queue_or_escalate' : 'report',
+    action: actionSummary.includes('convert_warm') || conversionNote ? 'convert_warm' : actionSummary ? 'queue_or_escalate' : 'report',
     promptVersion: AGENT_PROMPT_VERSION,
     schemaValid: true,
     liveness: true,
     usefulness: true,
-    businessOutcome: 'typed_artifact_verified',
+    businessOutcome: conversionNote.includes('sent=0') && !actionSummary.includes('sent=')
+      ? 'typed_artifact_verified'
+      : conversionNote.includes('sent=') && !conversionNote.includes('sent=0')
+        ? 'trial_cta_sent'
+        : 'typed_artifact_verified',
   }).catch(() => {})
 
   // Save to agent memory
@@ -1802,11 +1824,12 @@ ${agent.name.toUpperCase()}'S OUTPUT:
 ${task.result}
 
 As their manager (CGO), assess:
-1. Quality of analysis (specific, actionable, correct?)
-2. What they got right
-3. What needs improvement (be specific)
-4. Performance score: X/10 with rationale
-5. Follow-up task or adjustment to give them
+1. Did they move a verified 30-day trial or a real send (convert_warm / trial CTA) — or only write analysis?
+2. If a conversion shift ran, was the number real (sent/blocked/tripped)? A report with no send is a miss when warm leads exist.
+3. What they got right
+4. What needs improvement (be specific)
+5. Performance score: X/10 with rationale — analysis-only on a conversion task scores below 7
+6. Follow-up task that produces a trial or paid MRR
 
 Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assignment if any]`
 
