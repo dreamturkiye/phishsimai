@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "package": {
+    "name": "@kaan/os-core",
+    "version": "7.4.0",
+    "dependency": "file:vendor/kaan-os-core-7.4.0.tgz",
+    "artifact": "vendor/kaan-os-core-7.4.0.tgz",
+    "sha256": "afacdc6039789f175f91c38c702e1abcf4d9edcaa90b88559e74e4164b691f12",
+    "integrity": "sha512-XmcQzg/ilvUU7iUiXLXJjqJsuEzLbckeexMxs2sJIMTBiz8Jag/qjxFNOOc0r4aar3VUEb39FQiRcW/59hFvdA=="
+  },
+  "canonicalSource": {
+    "repository": "dreamturkiye/kaan-os-core",
+    "commit": "39f53b3f6a6e37d308df8b83a024f622aac9ef0a",
+    "tree": "d283b15fd62a303161a1d6e81a76e3d2f20e37f7"
+  },
+  "legacySnapshot": {
+    "path": "server/os/kaan-os-core",
+    "classification": "legacy-product-diverged-pre-v7",
+    "canonical": false,
+    "vintage": "pre-v7",
+    "recursiveSha256": "644936a08c8f388b3fa01a7a29452b1138c1bcbe85ce703e1d7104f407b115c3",
+    "hashAlgorithm": "sha256(relative-path + NUL + file-bytes + NUL, sorted recursively, excluding .core-version)"
+  }
+}

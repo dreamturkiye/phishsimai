@@ -31,6 +31,9 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.4.0(react-hook-form@7.64.0(react@19.2.1))
+      '@kaan/os-core':
+        specifier: file:vendor/kaan-os-core-7.4.0.tgz
+        version: file:vendor/kaan-os-core-7.4.0.tgz
       '@neondatabase/serverless':
         specifier: ^1.1.0
         version: 1.1.0
@@ -1354,6 +1357,11 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@kaan/os-core@file:vendor/kaan-os-core-7.4.0.tgz':
+    resolution: {integrity: sha512-XmcQzg/ilvUU7iUiXLXJjqJsuEzLbckeexMxs2sJIMTBiz8Jag/qjxFNOOc0r4aar3VUEb39FQiRcW/59hFvdA==, tarball: file:vendor/kaan-os-core-7.4.0.tgz}
+    version: 7.4.0
+    engines: {node: '>=20'}
 
   '@livekit/mutex@1.1.1':
     resolution: {integrity: sha512-EsshAucklmpuUAfkABPxJNhzj9v2sG7JuzFDL4ML1oJQSV14sqrpTYnsaOudMAw9yOaW53NU3QQTlUQoRs4czw==}
@@ -6329,6 +6337,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@kaan/os-core@file:vendor/kaan-os-core-7.4.0.tgz': {}
 
   '@livekit/mutex@1.1.1': {}
 

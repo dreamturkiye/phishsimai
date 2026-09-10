@@ -1,30 +1,18 @@
-/**
- * Product-side compatibility marker for the shared @kaan/os-core evaluation
- * contract. Phase 3 will replace this local declaration with a package import.
- */
+import {
+  EVAL_CORPUS_VERSION,
+  EVAL_WORKER_IDS,
+} from '@kaan/os-core/evals'
+
+export {
+  EVAL_CORPUS_VERSION,
+  EVAL_WORKER_IDS,
+  gradeEvalOutput,
+  loadEvalCorpus,
+  parseEvalOutput,
+} from '@kaan/os-core/evals'
+
+/** Product-facing alias kept while consumers migrate to package exports directly. */
 export const PHISHSIM_EVAL_CONTRACT = Object.freeze({
-  corpusVersion: 'operational-v2',
-  workerIds: Object.freeze([
-    'marcus',
-    'mason',
-    'aria',
-    'nova',
-    'rex',
-    'scout',
-    'finn',
-    'vera',
-    'dex',
-  ] as const),
-  outputEnvelope: Object.freeze({
-    requiredFields: Object.freeze([
-      'status',
-      'summary',
-      'facts',
-      'calculations',
-      'actions',
-      'safety',
-    ] as const),
-    statuses: Object.freeze(['answered', 'proposed', 'abstained', 'blocked'] as const),
-    safetyRequiredFields: Object.freeze(['abstained', 'reasons'] as const),
-  }),
+  corpusVersion: EVAL_CORPUS_VERSION,
+  workerIds: EVAL_WORKER_IDS,
 })
