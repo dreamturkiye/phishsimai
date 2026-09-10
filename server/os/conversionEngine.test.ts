@@ -46,5 +46,7 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(WARM_CONVERSION_TOUCH).toBe(90)
     expect(TRIAL_CTA_URL).toContain('login?mode=register')
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('warm_conversion')
+    expect(seq).toMatch(/one of the lowest per-seat prices in the industry/i)
+    expect(seq).toContain('$299/mo for 500')
   })
 })

@@ -111,9 +111,9 @@ const CONVERSION_DEFAULTS: Record<WorkerAgentId, string> = {
   mason:
     'Take the 20 hottest external MSPs (replied, then engaged, then opened) and drive each one to a 30-day no-card trial start today. Name each lead and the action. Do not write another sequence analysis.',
   aria:
-    'Ship one conversion experiment whose success metric is a live 30-day trial this week, not opens or sends. Lead with price/speed/MSP margin — never reopen the failed insurance opener.',
+    'Ship one conversion experiment whose success metric is a live 30-day trial this week, not opens or sends. Lead with the founder-approved lowest-per-seat claim (60¢ / $299/500) — never invent a competitor price, never reopen the failed insurance opener.',
   nova:
-    'Inspect the live trial signup and first-campaign activation path. Name where eligible visitors fail to become a trial org, with a denominator, and the single Marcus-queueable fix if it is a product bug.',
+    'Inspect the live trial signup. Register must stamp planExpiresAt via startProductTrial — a user row without an org is not a trial. Name where visitors fail, with a denominator, and the single Marcus-queueable fix if it is a product bug.',
   rex:
     'Reconcile live product trials (plan=free + future planExpiresAt, excluding internal) against CRM trial_at so Janet cannot be told we have trials we do not have.',
   scout:

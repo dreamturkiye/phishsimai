@@ -15,6 +15,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +33,7 @@ export default function Login() {
       const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
       const body: Record<string, string> = { email, password };
       if (mode === "register" && name) body.name = name;
+      if (mode === "register" && company.trim()) body.company = company.trim();
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -62,23 +64,36 @@ export default function Login() {
           <CardDescription>
             {mode === "login"
               ? "Enter your email and password to continue"
-              : "Start your free trial — no credit card required"}
+              : "30-day trial. No credit card. Full access — one of the lowest per-seat prices in the industry."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === "register" && (
-              <div className="space-y-1">
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="Your name"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  autoComplete="name"
-                />
-              </div>
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    type="text"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    autoComplete="name"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="company">Company (optional)</Label>
+                  <Input
+                    id="company"
+                    type="text"
+                    placeholder="Your MSP / company"
+                    value={company}
+                    onChange={e => setCompany(e.target.value)}
+                    autoComplete="organization"
+                  />
+                </div>
+              </>
             )}
             <div className="space-y-1">
               <Label htmlFor="email">Email</Label>
@@ -108,7 +123,7 @@ export default function Login() {
               <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
             )}
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}
+              {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Start 30-day trial"}
             </Button>
           </form>
           <p className="mt-4 text-center text-sm text-gray-500">

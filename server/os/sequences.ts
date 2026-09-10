@@ -869,19 +869,20 @@ export async function sendWarmTrialCtas(opts: {
 
 You wrote back. Shortest path from here:
 
-PhishSim AI is flat MSP pricing: $149/mo (100 users), $299/mo (500 users, about 60 cents), $749/mo (2,500, about 30 cents), $1,499/mo Enterprise. Add a client and your margin widens.
+One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Drops to 30¢ on Pro. Flat MSP pricing — every client you add widens your margin instead of eating it.
 
-Start the 30-day no-card trial here: ${TRIAL_CTA_URL}
+Live in 10 minutes, no engineer. 30-day trial, no card, full access.
 
-About ten minutes to set up. Cancel anytime.
+Start here: ${TRIAL_CTA_URL}
 
 Sarah
 ${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
       const html = `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
 <p>Hi ${greet},</p>
 <p>You wrote back. Shortest path from here:</p>
-<p>PhishSim AI is flat MSP pricing: $149/mo (100 users), $299/mo (500 users, about 60 cents), $749/mo (2,500, about 30 cents), $1,499/mo Enterprise. Add a client and your margin widens.</p>
-<p><a href="${TRIAL_CTA_URL}">Start the 30-day no-card trial</a> — about ten minutes to set up. Cancel anytime.</p>
+<p>One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Drops to 30¢ on Pro. Flat MSP pricing — every client you add widens your margin instead of eating it.</p>
+<p>Live in 10 minutes, no engineer. 30-day trial, no card, full access.</p>
+<p><a href="${TRIAL_CTA_URL}">Start the 30-day no-card trial</a></p>
 <p>Sarah</p>
 <hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
 <p style="color:#666;font-size:12px;margin:0">Sarah Mitchell · PhishSim AI</p>

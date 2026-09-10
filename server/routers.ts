@@ -155,6 +155,11 @@ export const appRouter = router({
 
         const slug = input.name.toLowerCase().replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-").slice(0, 50) + "-" + nanoid(6);
         const org = await createOrganization({ name: input.name, slug, userId: ctx.user.id });
+        if (ctx.user.email) {
+          markLeadTrial(ctx.user.email).catch((e) =>
+            console.error("[CRM] markLeadTrial failed (org create, signup unaffected):", e),
+          );
+        }
         import('./email/janet').then(({ sendWelcomeEmail }) =>
           sendWelcomeEmail(ctx.user.email ?? '', org.name).catch(console.error)
         );

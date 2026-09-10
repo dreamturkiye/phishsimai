@@ -69,6 +69,8 @@ describe('coded enforcers are wired', () => {
     expect(os).toContain('runCgoConversionShift')
     expect(os).toContain('convert_warm')
     expect(os).toContain('sendWarmTrialCtas')
+    expect(readFileSync('server/_core/oauth.ts', 'utf8')).toContain('startProductTrial')
+    expect(readFileSync('server/os/startProductTrial.ts', 'utf8')).toContain('createOrganization')
     expect(os).not.toMatch(/Your team is TEXT-ONLY/)
     expect(readFileSync('vercel.json', 'utf8')).toContain('/api/os/task-runner')
     expect(os).not.toMatch(/Do NOT assign conversion/)
