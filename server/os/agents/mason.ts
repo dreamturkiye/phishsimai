@@ -34,6 +34,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
 import { withHealth } from './withHealth'; import { assertAutonomyAllows, isAutonomyDenied } from '../autonomyGate'
+import { requireTrustedCron } from '../cronAuth'
 import { getSequenceHealth } from '../sequences'
 import { runSalesReplyAgent, replyToTrialMetric, type SalesReplyRun } from './salesReplies'
 import { INTERNAL_EXCLUSION_SQL, type Incident, type Severity } from './rex'
@@ -465,11 +466,7 @@ export function buildMasonLine(a: {
 
 /** GET /api/os/mason — 06:20 UTC, after Rex (05:45), Dex (05:50) and Aria (06:10). */
 export async function cronMason(req: any, res: any) {
-  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
-  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
-  const viaVercel = !!req.headers?.['x-vercel-cron']
-  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  if (!requireTrustedCron(req, res)) return
   try {
     return res.json({ success: true, ...(await (async () => { const r = await withHealth('mason', () => runMasonAgent()); const reasoning = await (await import('./reason')).reasonAndAct('mason', r, `You are Mason, Sales Director for PhishSim AI, a phishing-simulation SaaS for MSPs. You classify and prioritize real inbound replies; you never auto-send anything to a prospect. Given today's real pipeline data, decide the single most useful sales action -- which lead or stage needs attention -- or state plainly that the queue is empty and there is nothing to act on.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {

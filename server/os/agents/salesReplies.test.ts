@@ -26,6 +26,7 @@ vi.mock('../conn', () => ({ getSql: () => { throw new Error('tests must pass an 
 
 import {
   fetchReplyQueue,
+  claimReplyQueue,
   runSalesReplyAgent,
   INTERNAL_EXCLUSION_SQL,
   classifyByRules,
@@ -46,11 +47,34 @@ const REAL_INTERNAL_ROW = {
 /** Records every SQL string it is asked to run, and returns whatever the test scripted. */
 function spySql(rows: any[] = []) {
   const queries: string[] = []
+  const params: any[][] = []
   const fn: any = (..._args: any[]) => Promise.resolve([])
-  fn.query = async (q: string) => { queries.push(q); return rows }
+  fn.query = async (q: string, values: any[] = []) => { queries.push(q); params.push(values); return rows }
   fn.queries = queries
+  fn.params = params
   return fn
 }
+
+describe('ATOMIC CLAIM — overlapping runs cannot classify the same reply', () => {
+  it('claims with update-returning, SKIP LOCKED, and an expiring lease', async () => {
+    const sql = spySql([])
+    await claimReplyQueue(sql)
+    const q = sql.queries[0]
+    expect(q).toContain('FOR UPDATE OF d SKIP LOCKED')
+    expect(q).toContain('UPDATE outreach_reply_drafts')
+    expect(q).toContain('classification_claim_expires_at')
+    expect(q).toContain('RETURNING')
+    expect(sql.params[0][0]).toBe(50)
+    expect(sql.params[0][1]).toMatch(/^[0-9a-f-]{36}$/)
+  })
+
+  it('keeps the external-address exclusion inside the atomic candidate query', async () => {
+    const sql = spySql([])
+    await claimReplyQueue(sql)
+    expect(sql.queries[0]).toContain("pipeline_stage <> 'internal_test'")
+    expect(sql.queries[0]).toContain('kaanari@mac.com')
+  })
+})
 
 describe('EXCLUSION — the internal row never enters the classifier input set', () => {
   it('the exclusion predicate is present in the QUERY TEXT, not applied afterwards', async () => {

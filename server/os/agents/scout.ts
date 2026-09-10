@@ -26,6 +26,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
 import { withHealth } from './withHealth'; import { COMPETITORS } from '../competitorIntel'
+import { requireTrustedCron } from '../cronAuth'
 import { INTERNAL_EXCLUSION_SQL, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
@@ -417,11 +418,7 @@ export function buildScoutLine(a: {
 
 /** GET /api/os/scout — 06:30 UTC, after Rex/Dex/Aria/Mason. */
 export async function cronScout(req: any, res: any) {
-  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
-  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
-  const viaVercel = !!req.headers?.['x-vercel-cron']
-  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  if (!requireTrustedCron(req, res)) return
   try {
     return res.json({ success: true, ...(await (async () => { const r = await withHealth('scout', () => runScoutAgent()); const reasoning = await (await import('./reason')).reasonAndAct('scout', r, `You are Scout, VP Market Intelligence for PhishSim AI, a phishing-simulation SaaS for MSPs. You NEVER state a competitor fact that is not present in the data given to you -- if intel is stale or missing you say NOT CHECKED, never a remembered figure. Given today's real ICP and competitor data, decide the single most useful action: which segment to prioritize outreach toward, or state plainly that n is too small to judge yet. Never invent a number.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {

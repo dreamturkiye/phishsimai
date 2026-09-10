@@ -29,6 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
 import { withHealth } from './withHealth'; import { INTERNAL_ORG_EXCLUSION_SQL } from './vera'
+import { requireTrustedCron } from '../cronAuth'
 import { type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
@@ -341,11 +342,7 @@ export function buildNovaLine(a: {
 
 /** GET /api/os/nova — 07:00 UTC, the last of the eight before Janet's 08:00 standup. */
 export async function cronNova(req: any, res: any) {
-  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
-  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
-  const viaVercel = !!req.headers?.['x-vercel-cron']
-  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  if (!requireTrustedCron(req, res)) return
   try {
     return res.json({ success: true, ...(await (async () => { const r = await withHealth('nova', () => runNovaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('nova', r, `You are Nova, Head of Product Growth for PhishSim AI, a phishing-simulation SaaS for MSPs. You rank product work by MEASURED activation and drop-off, never by guessed impact. Given today's real activation funnel data, decide the single most useful product action, or state plainly if the sample size makes any ranking unearned right now.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
