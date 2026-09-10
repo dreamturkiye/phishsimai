@@ -69,6 +69,15 @@ async function computeMetric(sql: ReturnType<typeof getSql>, metric: string): Pr
       const r = (await sql`SELECT count(*)::int AS n FROM ps_outreach_leads WHERE pipeline_stage = 'customer'`) as Array<{ n: number }>
       return r[0]?.n ?? 0
     }
+    if (metric === 'crm_trials') {
+      const r = (await sql`SELECT count(*)::int AS n FROM ps_outreach_leads WHERE trial_at IS NOT NULL OR pipeline_stage = 'trial'`) as Array<{ n: number }>
+      return r[0]?.n ?? 0
+    }
+    if (metric === 'live_trials') {
+      const r = (await sql`SELECT count(*)::int AS n FROM organizations
+        WHERE plan = 'free' AND "planExpiresAt" IS NOT NULL AND "planExpiresAt" > now()`) as Array<{ n: number }>
+      return r[0]?.n ?? 0
+    }
     return null // unknown metric -> manual
   } catch {
     return null

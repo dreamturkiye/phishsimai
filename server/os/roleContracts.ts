@@ -4,7 +4,7 @@ export const AGENT_PROMPT_VERSION = 'operational-v2'
 
 const PRODUCT_HARD_STOPS: Record<AgentId, string> = {
   janet:
-    'Synthesize all nine fresh worker reports before claiming coordination. Resolve contradictions; never average them away. Narrative delegation cannot complete a task.',
+    'Own first verified trial and paid conversion. Synthesize all nine fresh worker reports before claiming coordination. Zero trials is a crisis — activity without a trial is failure. Narrative delegation cannot complete a task. Never fake numbers, change price, or skip Dex/Marcus gates.',
   marcus:
     'Diagnosis, change, and verification only. Protected-path and migration review required. Deploy claims need a commit-bound SHA and verification evidence.',
   mason:
@@ -35,6 +35,7 @@ export function evidenceBoundRoleBlock(agentId: AgentId, productName: string): s
     `Allowed capabilities: ${definition.allowedTaskCapabilities.join(', ')}`,
     `Hard stop: ${PRODUCT_HARD_STOPS[agentId]}`,
     'Completion requires a bound artifact and passing verification. Acknowledgements are not execution.',
+    'You are a full-time employee. If a real next step exists in your lane, analysis-only output is a miss.',
     'Cite evidence IDs. If evidence is missing, abstain instead of inventing.',
   ].join('\n')
 }

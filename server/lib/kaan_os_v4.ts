@@ -41,6 +41,20 @@ import { getAgentLessonsForPrompt } from '../os/kaan-os-core/outcomeLearning'
 // IMPORTED, not re-declared. A second local COMPANY_ID constant is precisely the
 // duplicate-that-drifts pattern this fix exists to eliminate.
 import { evidenceBoundRoleBlock, AGENT_PROMPT_VERSION } from '../os/roleContracts'
+import {
+  cgoScorecard,
+  cgoStandupDirective,
+  conversionDefaultTask,
+  employeeExecutePrompt,
+  employeeExecutionMandate,
+  goalsForWeek,
+  isTrialCrisis,
+  janetCgoMandate,
+  researchGroundedConversionTask,
+  verifiedTrialCount,
+  zeroTrialCrisisTasks,
+  type TrialFacts,
+} from '../os/cgoMandate'
 import { persistOutcomeTrace } from '../os/outcomeTrace'
 import { ensureMarcusProposalBugId } from '../os/marcusProposal'
 import { COMPANY_ID } from '../os/version'
@@ -119,7 +133,7 @@ export interface AgentReport {
 // Product-local voice and expertise augment the canonical identity/ownership contract.
 const PRODUCT_AGENT_DETAILS: Record<AgentId, Pick<AgentProfile, 'personality' | 'expertise'>> = {
   janet: {
-    personality: 'Decisive, data-driven, holds team accountable, pushes for measurable outcomes. Runs meetings efficiently. Gives direct feedback.',
+    personality: 'Aggressive CGO. Zero trials is a crisis. Holds the nine workers like full-time employees. Owns first 30-day trial and paid MRR. Evidence-led — never fakes the number.',
     expertise: ['B2B SaaS growth', 'team management', 'revenue strategy', 'go-to-market', 'CEO communication']
   },
   marcus: {
@@ -370,15 +384,17 @@ Your domain: ${agent.domain}
 
 ${evidenceBoundRoleBlock(agent.id, TELEGRAM_PRODUCT)}
 
+${agent.id === 'janet' ? janetCgoMandate() : employeeExecutionMandate()}
+
 Company context:
 ${companyContext}
 
 Your professional memory (what you've learned, your track record, Janet's feedback):
 ${memory || 'You are new. Show what you can do.'}
 
-You are a full-time senior professional. You give concrete, specific, actionable output — not vague advice.
-When reporting to Janet, be precise: what you did, what the numbers say, what your recommendation is.
-You improve based on feedback. Your goal is to be indispensable.`
+You are a full-time senior professional. You give concrete, specific, actionable output — not vague advice. Do the work; do not only describe it.
+When reporting to Janet, be precise: what you did, what the numbers say, what the next conversion step is.
+You improve based on feedback. Your goal is a verified 30-day trial this week and to be indispensable.`
 }
 
 /**
@@ -889,7 +905,7 @@ export async function getCompanyContext(sql: any): Promise<string> {
       return fallback
     })
 
-  const [orgRows, camps, results, orgAges, leadOrgs, unflagged, outreach, replyDrafts, newSignups] = await Promise.all([
+  const [orgRows, camps, results, orgAges, leadOrgs, unflagged, outreach, replyDrafts, newSignups, liveTrials] = await Promise.all([
     q('organizations', sql`SELECT plan::text AS plan, "stripePriceId" AS price_id, count(*)::int AS n
         FROM organizations GROUP BY plan, "stripePriceId"`, [] as any[]),
     q('campaigns', sql`SELECT count(*)::int AS total,
@@ -1016,6 +1032,7 @@ export async function getCompanyContext(sql: any): Promise<string> {
              count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at > now() - interval '24 hours')::int AS touched_today,
              count(*) FILTER (WHERE NOT is_internal AND touch2_sent_at IS NOT NULL)::int AS touch2,
              count(*) FILTER (WHERE NOT is_internal AND replied)::int AS replied,
+             count(*) FILTER (WHERE NOT is_internal AND (trial_at IS NOT NULL OR pipeline_stage = 'trial'))::int AS crm_trials,
              count(*) FILTER (WHERE NOT is_internal AND bounced)::int AS bounced,
              count(*) FILTER (WHERE NOT is_internal AND unsubscribed)::int AS unsubscribed,
              count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at IS NULL AND pipeline_stage = 'prospect')::int AS ready_pool,
@@ -1023,13 +1040,13 @@ export async function getCompanyContext(sql: any): Promise<string> {
              count(*) FILTER (WHERE is_internal AND replied)::int AS internal_replies,
              max(touch1_sent_at) FILTER (WHERE NOT is_internal) AS last_send
         FROM (
-          SELECT touch1_sent_at, touch2_sent_at, replied, bounced, unsubscribed, pipeline_stage,
+          SELECT touch1_sent_at, touch2_sent_at, replied, bounced, unsubscribed, pipeline_stage, trial_at,
                  (lower(email) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS})
                   OR lower(split_part(email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS})
                   OR pipeline_stage = 'internal_test') AS is_internal
           FROM ps_outreach_leads
         ) t`,
-      [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, internal_excl: 0, internal_replies: 0, last_send: null }]),
+      [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, crm_trials: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, internal_excl: 0, internal_replies: 0, last_send: null }]),
     // PS-TOPFUNNEL-01: has inbound reply capture EVER received anything? Distinguishes "no one
     // replied" from "we cannot hear replies" — see topOfFunnelMetric.
     q('reply_drafts', sql`SELECT count(*)::int AS n FROM outreach_reply_drafts`, [{ n: 0 }]),
@@ -1042,6 +1059,18 @@ export async function getCompanyContext(sql: any): Promise<string> {
           WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
           ORDER BY m.id ASC LIMIT 1
         )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) = false`, [{ n: 0 }]),
+    q('live_trials', sql`
+      SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
+      FROM (
+        SELECT
+          o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
+          COALESCE(lower((
+            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+            ORDER BY m.id ASC LIMIT 1
+          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
+        FROM organizations o
+      ) t`, [{ n: 0 }]),
   ])
 
   const annual = annualPriceIds()
@@ -1141,7 +1170,17 @@ export async function getCompanyContext(sql: any): Promise<string> {
     unknown: Number(s.unknown_sent ?? 0),
   }
 
+  const trialFacts: TrialFacts = {
+    liveProductTrials: Number((liveTrials as any[])[0]?.n ?? 0),
+    crmTrials: Number(of_.crm_trials ?? 0),
+  }
+  const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
+  const goals = goalsForWeek(weekNum)
+
   return `${topFunnel}
+
+── CGO NORTH STAR ──
+${cgoScorecard(trialFacts, goals)}
 
 ── BOTTOM OF FUNNEL (orgs already signed up) ──
 Orgs: ${free + paying} total | Paying: ${paying} (${mix}) | Free/trial leads: ${freeLeads}${pipelineNote}
@@ -1156,6 +1195,37 @@ ${submittedMetric(ext.submitted, ext.clicked)}` : ''}
 ${simProvenanceNote(internalSent, ext.sent, excluded.unknown)}
 ⚠️ SAMPLE SIZE: every figure above is over ${ext.sent} EXTERNAL sent email(s). These are counts, not
 trends — do not reason about a percentage without saying the raw number it came from.${unflaggedInternalOrgWarning(suspectedInternal)}${infra}${warn}`
+}
+
+async function loadTrialFacts(sql: any): Promise<TrialFacts> {
+  const failedLive = [{ n: 0 }]
+  const [live, crm] = await Promise.all([
+    sql`
+      SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
+      FROM (
+        SELECT
+          o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
+          COALESCE(lower((
+            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+            ORDER BY m.id ASC LIMIT 1
+          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
+        FROM organizations o
+      ) t`.catch(() => failedLive),
+    sql`
+      SELECT count(*) FILTER (WHERE NOT is_internal AND (trial_at IS NOT NULL OR pipeline_stage = 'trial'))::int AS n
+      FROM (
+        SELECT trial_at, pipeline_stage,
+               (lower(email) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS})
+                OR lower(split_part(email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS})
+                OR pipeline_stage = 'internal_test') AS is_internal
+        FROM ps_outreach_leads
+      ) t`.catch(() => failedLive),
+  ])
+  return {
+    liveProductTrials: Number((live as any[])[0]?.n ?? 0),
+    crmTrials: Number((crm as any[])[0]?.n ?? 0),
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1648,23 +1718,11 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   const system = [buildAgentSystem(agent, memory, context), reflectionBlock, lessonsBlock]
     .filter(Boolean)
     .join('\n\n')
-  const user = `TASK ASSIGNED BY JANET:
-Title: ${task.title}
-Priority: ${task.priority.toUpperCase()}
-Description: ${task.description}
-
-Execute this task now. Provide:
-1. What you did / your analysis
-2. Specific findings or outputs
-3. Recommendations with exact next steps
-4. Any blockers or things you need from Janet
-5. Self-assessment: how confident are you in this output? (0-10)
-
-You may take ONE real action to advance this (under Janet's supervision) by ending with a single line:
-- ACTION: queue_marcus: <specific code/infra change> — routes into the verified deploy pipeline (you never touch prod directly).
-- ACTION: escalate: <title> | <why a human must decide> — for pricing, spend, legal, contacting real customers, or cross-team calls.
-Only ONE action, only if a concrete step should genuinely HAPPEN now, not just be recommended. Omit the ACTION line for analysis-only work. Never invent an action to look busy.
-Be specific. Janet will review and score your work.`
+  const user = employeeExecutePrompt({
+    title: task.title,
+    description: task.description,
+    priority: String(task.priority || 'medium'),
+  })
 
   const result = await llm(system, user, 1200)
   if (!isSubstantiveTaskOutput(result)) {
@@ -2220,22 +2278,21 @@ Distinguish, in your own output, "X reported that..." from "X did...". Only writ
 system record backs it.
 
 `
-  // PS-GOAL-ALIGN-01: the founder's real_pipeline fact is the binding constraint on WHAT to assign.
-  // It lived in memory but the standup ignored it and kept assigning conversion work over a
-  // 1-prospect funnel. Read it and turn it into a hard gate on task generation, so the standup
-  // proposes ACQUISITION work (fill the funnel) instead of conversion work (a denominator of 1).
+  // CGO mandate (2026-09-10, founder): zero trials is a crisis. Fill the funnel AND convert
+  // whoever is already engaged. The old acquisition-only gate forbade conversion on a small
+  // list; that produced a company that never asked for a trial. Founder pipeline notes are
+  // context, not a ban on conversion work.
   const pipelineFact = (await sql`SELECT value FROM janet_memory
     WHERE company_id=${companyId} AND type='company' AND key='real_pipeline' LIMIT 1`.catch(() => [])) as any[]
-  const acquisitionGate = pipelineFact[0]?.value
-    ? `TODAY'S BINDING CONSTRAINT — founder directive, and it OVERRIDES any instinct to work the existing funnel:\n${pipelineFact[0].value}\n\n` +
-      `THEREFORE every task you assign must aim at ACQUISITION / TOP OF FUNNEL: contacting more MSPs, ` +
-      `expanding and enriching the lead list, opening new outreach channels, discovery of new prospects. ` +
-      `Do NOT assign conversion, follow-up-copy, re-engagement, lead-scoring, or CRM/free-tier-cadence ` +
-      `work over this near-empty funnel — it cannot move revenue when the denominator is 1. Assign work ` +
-      `that FILLS the funnel.\n\n`
+  const trialFacts = await loadTrialFacts(sql).catch(() => ({ liveProductTrials: 0, crmTrials: 0 }))
+  const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
+  const goals = goalsForWeek(weekNum)
+  const pipelineNote = pipelineFact[0]?.value
+    ? `Founder pipeline note (context — does NOT forbid converting existing replies into a 30-day trial):\n${pipelineFact[0].value}\n\n`
     : ''
+  const acquisitionGate = `${pipelineNote}${cgoStandupDirective(trialFacts, goals)}`
 
-  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO you run this company:\n1. Call out the trial/revenue crisis or progress — not activity theater\n2. Issue 1-3 conversion-critical task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern — an employee who only reported is failing\n4. Your ONE focus for the company today must move verified trials or paid MRR\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
@@ -2278,6 +2335,26 @@ system record backs it.
     `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
 
+  if (isTrialCrisis(trialFacts)) {
+    for (const crisis of zeroTrialCrisisTasks()) {
+      try {
+        const t = await issueTask(crisis.agentId, {
+          title: crisis.title.slice(0, 100),
+          description: crisis.description,
+          priority: crisis.priority,
+          due_in_hours: 24,
+        }, companyId)
+        if (t.voided) refusedVoid++
+        else if (t.deduped) skippedDuplicate++
+        else newTasks.push(t)
+      } catch (e: any) {
+        if (isAutonomyDenied(e)) deniedByGate++
+        else console.error(`[kaan_os_v4] crisis issueTask failed for ${crisis.agentId}: ${String(e?.message || e).slice(0, 200)}`)
+      }
+    }
+    console.log(`[kaan_os_v4] standup: zero-trial crisis pack attempted (verified=${verifiedTrialCount(trialFacts)})`)
+  }
+
   // PS-OWNERSHIP-01: restore agent OWNERSHIP. Any specialist left with NO open task after Janet's
   // 1-3 assignments SELF-ORIGINATES its own proposed next step (issued_by = the agent, not 'janet').
   // Root cause of the regression: every task was Janet-assigned, so self-originated % (the L5 bar)
@@ -2289,7 +2366,7 @@ system record backs it.
     const aId = report.agent_id as AgentId
     if (aId === 'marcus' || aId === 'janet') continue
     const openN = ((await sql`SELECT count(*)::int AS n FROM agent_tasks
-      WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('assigned','in_progress')`) as any[])[0]?.n ?? 0
+      WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('queued','executing','assigned','in_progress')`) as any[])[0]?.n ?? 0
     if (openN > 0) continue
     let taskText = extractProposal(report.summary)
     let source = 'standup proposal'
@@ -2306,9 +2383,9 @@ system record backs it.
       // Fails open to the original generic wording if research is unavailable/inert/finds nothing.
       const research = await researchCurrentBestPractice(aId, a.domain, a.title, companyId).catch(() => null)
       taskText = research
-        ? `As ${a.title}: current best practice (verified ${new Date().toISOString().slice(0, 10)}) — ${research.summary} Apply this to your domain (${a.domain}) to advance the company's current top goal. Sources: ${research.sources.map((x) => x.url).join(', ')}`
-        : `As ${a.title}, identify and begin the single highest-impact improvement in your domain (${a.domain}) that advances the company's current top goal. Use real company data; propose and start the concrete next step.`
-      source = research ? 'domain-default ownership (current best practice)' : 'domain-default ownership'
+        ? researchGroundedConversionTask(a.title, a.domain, research.summary, research.sources.map((x) => x.url).join(', '), new Date().toISOString().slice(0, 10))
+        : conversionDefaultTask(aId, a.domain, a.title)
+      source = research ? 'domain-default conversion (current best practice)' : 'domain-default conversion'
     }
     try {
       const t = await issueTask(aId, {
@@ -2479,7 +2556,7 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   const janetSystem2 = buildAgentSystem(AGENTS.janet, await getAgentMemory('janet', sql, companyId), context)
 
   const weeklyPlan = await llm(janetSystem2,
-    `Weekly review complete. Team performance:\n${reviewSummary}\n\nAs CGO, issue next week's priorities:\n1. Top 3 company-level goals for next week\n2. Specific assignment for each agent (name + task + why it matters)\n3. Any agent on a performance improvement path\n4. What you're telling Kaan in tomorrow's brief\n5. One strategic decision you're making autonomously this week`, 1000)
+    `Weekly review complete. Team performance:\n${reviewSummary}\n\nAs CGO you run this company. Issue next week's priorities:\n1. Top 3 goals — verified trials and paid conversion first, never activity theater\n2. Specific assignment for each employee (name + task + why it moves a trial or paid MRR)\n3. Any employee who only reported is on a performance path\n4. What you're telling Kaan in tomorrow's brief — lead with the trial count\n5. One strategic decision you're making autonomously this week`, 1000)
 
   // Parse and issue assignments
   const newAssignments: any[] = []
