@@ -53,8 +53,8 @@ export async function detectGrowthOpportunities(
     opps.push({
       kind: 'growth',
       agentId: 'aria',
-      title: 'Launch a conversion experiment whose KPI is a live 30-day trial',
-      description: 'No Aria tasks in 7 days. Auto-start one message/channel test whose success metric is a verified trial start, not opens. Lead with price/speed/MSP margin.',
+      title: 'Launch weekly growth content sprint',
+      description: 'No Aria tasks in 7 days. Auto-start LinkedIn + email sequence aligned to current ICP and top funnel metric.',
       autoExecute: true,
     })
   }
@@ -67,8 +67,8 @@ export async function detectGrowthOpportunities(
     opps.push({
       kind: 'sales',
       agentId: 'mason',
-      title: 'Convert engaged MSPs into verified 30-day trial starts',
-      description: 'No Mason activity in 5 days. Work every replied/engaged lead into the 30-day no-card trial CTA with a named next step.',
+      title: 'Outbound pipeline refresh',
+      description: 'No Mason activity in 5 days. Queue 20-target outbound sequence with personalized hooks.',
       autoExecute: true,
     })
   }
