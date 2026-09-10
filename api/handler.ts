@@ -186,7 +186,7 @@ async function dispatchOsRoute(req: any, res: any) {
     // api/index.js -> api/handler.ts, which routes by explicit path match. A route mounted
     // in _core is a route that 404s in prod, which is how "mountProductApi defined but never
     // called" happened: code that exists, looks wired, and is unreachable.
-    if (path === "/api/os/architect/autonomy" && method === "get") return routes.architectAutonomy(req, res);
+    if (path === "/api/os/architect/autonomy") return routes.architectAutonomy(req, res);
     // PS-AUTONOMY-BRIDGE-01: daily earned-autonomy promotion (token-audited). Scheduled AFTER the
     // clean-day compute so it reads the finalized result. Emits the daily autonomy Telegram line.
     if (path === "/api/os/autonomy-promote") return routes.cronAutonomyPromotion(req, res);

@@ -17,16 +17,17 @@ import { readFileSync } from 'node:fs'
 describe('Janet CGO mandate', () => {
   it('requires verified 30-day trials in week 1 instead of sandbagging to zero', () => {
     expect(GOALS_BY_WEEK[0].week).toBe(1)
-    expect(GOALS_BY_WEEK[0].trialsTarget).toBeGreaterThanOrEqual(3)
+    expect(GOALS_BY_WEEK[0].trialsTarget).toBeGreaterThanOrEqual(20)
     expect(goalsForWeek(1).trialsTarget).toBe(GOALS_BY_WEEK[0].trialsTarget)
     expect(GOALS_BY_WEEK.every((g) => g.trialsTarget > 0)).toBe(true)
   })
 
-  it('treats zero live product trials and zero CRM trials as a crisis', () => {
+  it('treats fewer than 20 verified trials as a sprint crisis', () => {
     expect(verifiedTrialCount({ liveProductTrials: 0, crmTrials: 0 })).toBe(0)
     expect(isTrialCrisis({ liveProductTrials: 0, crmTrials: 0 })).toBe(true)
-    expect(isTrialCrisis({ liveProductTrials: 1, crmTrials: 0 })).toBe(false)
-    expect(isTrialCrisis({ liveProductTrials: 0, crmTrials: 2 })).toBe(false)
+    expect(isTrialCrisis({ liveProductTrials: 1, crmTrials: 0 })).toBe(true)
+    expect(isTrialCrisis({ liveProductTrials: 19, crmTrials: 19 })).toBe(true)
+    expect(isTrialCrisis({ liveProductTrials: 20, crmTrials: 0 })).toBe(false)
   })
 
   it('forces Mason, Aria, and Nova conversion work when trials are zero', () => {
@@ -40,8 +41,8 @@ describe('Janet CGO mandate', () => {
 
   it('tells Janet she owns paid MRR and forbids fake trials', () => {
     const mandate = janetCgoMandate()
-    expect(mandate).toMatch(/Chief Growth Officer/)
-    expect(mandate).toMatch(/crisis/)
+    expect(mandate).toMatch(/shrewd/)
+    expect(mandate).toMatch(/20 verified/)
     expect(mandate).toMatch(/cannot fake numbers/)
     expect(employeeExecutionMandate()).toMatch(/full-time employee/)
   })
@@ -61,6 +62,7 @@ describe('coded enforcers are wired', () => {
     expect(os).toContain('conversionDefaultTask')
     expect(os).toContain('employeeExecutePrompt')
     expect(os).toContain('janetCgoMandate')
+    expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('applyOwnerAutonomyRuling')
     expect(os).toContain('does NOT forbid converting')
     expect(os).not.toMatch(/Do NOT assign conversion/)
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)
@@ -68,8 +70,8 @@ describe('coded enforcers are wired', () => {
 
   it('live report names the crisis enforcer', () => {
     const janet = readFileSync('server/os/janet.ts', 'utf8')
-    expect(janet).toMatch(/Zero verified free trials is a company crisis/)
-    expect(janet).toContain('cgoMandate.ts')
+    expect(janet).toMatch(/20 verified free trials NOW/)
+    expect(janet).toContain('ownerRuling.ts')
   })
 
   it('keeps nine-report synthesis and adds the trial-crisis hard stop', () => {

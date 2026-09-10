@@ -21,12 +21,14 @@ export type CrisisTask = {
   priority: 'high'
 }
 
-/** Aggressive CGO targets. Week 1 requires live 30-day trials — sandbagging to 0 is forbidden. */
+export const TRIAL_SPRINT_TARGET = 20
+
+/** Aggressive CGO targets. Founder sprint: 20 verified 30-day trials now — sandbagging is forbidden. */
 export const GOALS_BY_WEEK: WeeklyGoals[] = [
-  { week: 1, leadsTarget: 50, emailsSentTarget: 60, repliesTarget: 4, trialsTarget: 3, revenueTarget: 0 },
-  { week: 2, leadsTarget: 80, emailsSentTarget: 90, repliesTarget: 8, trialsTarget: 5, revenueTarget: 149 },
-  { week: 3, leadsTarget: 100, emailsSentTarget: 120, repliesTarget: 12, trialsTarget: 8, revenueTarget: 299 },
-  { week: 4, leadsTarget: 120, emailsSentTarget: 150, repliesTarget: 16, trialsTarget: 12, revenueTarget: 749 },
+  { week: 1, leadsTarget: 200, emailsSentTarget: 250, repliesTarget: 25, trialsTarget: TRIAL_SPRINT_TARGET, revenueTarget: 149 },
+  { week: 2, leadsTarget: 250, emailsSentTarget: 300, repliesTarget: 35, trialsTarget: TRIAL_SPRINT_TARGET, revenueTarget: 299 },
+  { week: 3, leadsTarget: 300, emailsSentTarget: 350, repliesTarget: 45, trialsTarget: 30, revenueTarget: 749 },
+  { week: 4, leadsTarget: 350, emailsSentTarget: 400, repliesTarget: 55, trialsTarget: 40, revenueTarget: 1499 },
 ]
 
 export const CGO_NORTH_STAR =
@@ -45,31 +47,31 @@ export function verifiedTrialCount(facts: TrialFacts): number {
 }
 
 export function isTrialCrisis(facts: TrialFacts): boolean {
-  return verifiedTrialCount(facts) === 0
+  return verifiedTrialCount(facts) < TRIAL_SPRINT_TARGET
 }
 
 export function cgoScorecard(facts: TrialFacts, goals: WeeklyGoals): string {
   const trials = verifiedTrialCount(facts)
-  const crisis = trials === 0
+  const crisis = isTrialCrisis(facts)
   return [
     `CGO SCORECARD — Janet owns this number.`,
     `Verified 30-day trials (live product entitlement, excluding internal/test orgs): ${facts.liveProductTrials}.`,
     `CRM trial_at (external): ${facts.crmTrials}. Operating count = ${trials} (week ${goals.week} target: ${goals.trialsTarget}).`,
     crisis
-      ? `CRISIS: zero verified free trials. A week with more emails and no trial is a failed week. Today's one company focus is the first live 30-day trial.`
-      : `Keep converting trials to paid MRR. Do not celebrate activity that does not add a trial or paid MRR.`,
+      ? `SPRINT CRISIS: ${trials}/${goals.trialsTarget} verified free trials. The number is ${TRIAL_SPRINT_TARGET}. Activity without a trial is failure. Convert the hottest existing leads today AND fill the top of funnel.`
+      : `Keep converting. Do not celebrate activity that does not add a trial or paid MRR. Gap to sprint: ${Math.max(0, goals.trialsTarget - trials)}.`,
     `Revenue target this week: $${goals.revenueTarget} from live Stripe only. Pricing is frozen.`,
   ].join('\n')
 }
 
 export function janetCgoMandate(): string {
   return [
-    'You are Janet, Chief Growth Officer. You run this startup. Kaan is CEO; you own paid MRR and the trial count.',
-    'SUCCESS GOALS: this week = first verified 30-day no-card trials (target in the scorecard). 14 days = compounding trials. 30 days = paid MRR from Stripe, or a named close reason with evidence.',
-    'Zero verified free trials is a company crisis, not a status report. Do not congratulate sends, standups, or ONLINE.',
-    'Every day you assign work that produces a trial start. "I delegated" is not a result. Hold Mason, Aria, and Nova accountable for conversion.',
-    'Fill the funnel AND convert every existing reply/engagement into the 30-day no-card trial. Do not choose one and ignore the other.',
-    'You still cannot fake numbers, change price, skip Dex send-safety, or bypass Marcus approval. Aggression is about prioritization and follow-through, not gates.',
+    'You are Janet, Chief Growth Officer. You run this startup like a hungry operator, not a coordinator. Kaan is CEO; you own paid MRR and the trial count.',
+    `SUCCESS GOAL, NON-NEGOTIABLE: ${TRIAL_SPRINT_TARGET} verified 30-day no-card trials now. Then paid MRR from Stripe. Sends, standups, and ONLINE are not results.`,
+    'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened). Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
+    'Hold Mason, Aria, and Nova to a daily conversion number. An employee who only reported failed. Follow up the same day. "I delegated" is not a result.',
+    'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Do not choose one and ignore the other.',
+    'You still cannot fake numbers, change price, skip Dex send-safety, or bypass Marcus approval. Shrewd means sequencing and follow-through, not breaking gates.',
   ].join('\n')
 }
 
@@ -106,7 +108,7 @@ const CONVERSION_DEFAULTS: Record<WorkerAgentId, string> = {
   marcus:
     'Only if a named signup/trial-path product bug exists: diagnose it, propose a bounded change, and wait for approval. Do not open speculative refactors.',
   mason:
-    'Convert every replied or engaged MSP into a 30-day no-card trial start. Name each lead and the action. Do not write another sequence analysis.',
+    'Take the 20 hottest external MSPs (replied, then engaged, then opened) and drive each one to a 30-day no-card trial start today. Name each lead and the action. Do not write another sequence analysis.',
   aria:
     'Ship one conversion experiment whose success metric is a live 30-day trial this week, not opens or sends. Lead with price/speed/MSP margin — never reopen the failed insurance opener.',
   nova:
@@ -145,30 +147,30 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
   return [
     {
       agentId: 'mason',
-      title: 'Convert every engaged/replied MSP into a 30-day trial start',
+      title: 'Drive the 20 hottest MSPs to a 30-day trial start today',
       description:
-        'CRISIS: zero verified free trials. Work every external replied or engaged lead. CTA is the 30-day no-card trial at frozen prices. Name each lead, stage, and next action. Do not produce another outreach analysis.',
+        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
       priority: 'high',
     },
     {
       agentId: 'aria',
-      title: 'Ship one experiment whose KPI is a live 30-day trial this week',
+      title: 'Ship one experiment whose KPI is live 30-day trials this week',
       description:
-        'CRISIS: zero verified free trials. One conversion-focused message or channel test. Success is a live trial org, not opens. Lead with price/speed/MSP margin. If you cannot run a test, name the Dex/Marcus blocker.',
+        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. One conversion-focused message or channel test. Success is a live trial org, not opens. Lead with price/speed/MSP margin. Kill anything that does not ask for the trial in the first screen.`,
       priority: 'high',
     },
     {
       agentId: 'nova',
-      title: 'Find and close the signup hole blocking the first 30-day trial',
+      title: 'Make the 30-day trial start take under 60 seconds',
       description:
-        'CRISIS: zero verified free trials. Inspect the live 30-day trial signup and first-campaign path. Name where eligible visitors fail to become a trial org, with a denominator. Queue Marcus only for a named product bug.',
+        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Inspect the live signup and first-campaign path. Name where eligible visitors fail to become a trial org, with a denominator. Queue Marcus only for a named product bug.`,
       priority: 'high',
     },
     {
       agentId: 'rex',
-      title: 'Certify the verified trial count from entitlements + CRM',
+      title: 'Publish the 20-trial scoreboard from entitlements + CRM',
       description:
-        'CRISIS: Janet cannot run the company on a fake zero or a fake trial. Reconcile live product trials (excluding internal/test orgs) against CRM trial_at. Report the verified integer and mismatches.',
+        `SPRINT: operating count must be N/${TRIAL_SPRINT_TARGET}. Reconcile live product trials (excluding internal/test orgs) against CRM trial_at. Report the verified integer and mismatches. Do not let Janet run on a fake number.`,
       priority: 'high',
     },
   ]
@@ -176,15 +178,14 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
 
 export function cgoStandupDirective(facts: TrialFacts, goals: WeeklyGoals): string {
   const trials = verifiedTrialCount(facts)
-  if (trials === 0) {
+  if (trials < TRIAL_SPRINT_TARGET) {
     return (
-      `TODAY'S BINDING CONSTRAINT — CGO crisis, not a suggestion:\n` +
-      `Verified 30-day trials = 0 against a week-${goals.week} target of ${goals.trialsTarget}. ` +
-      `ONE company focus: the first live no-card trial.\n` +
-      `Assign Mason, Aria, and Nova conversion work. Also fill the top of funnel. ` +
+      `TODAY'S BINDING CONSTRAINT — owner sprint, not a suggestion:\n` +
+      `Verified 30-day trials = ${trials} / ${goals.trialsTarget}. Gap = ${goals.trialsTarget - trials}. ` +
+      `ONE company focus: close that gap with live no-card trials.\n` +
+      `Be shrewd: convert the warmest leads first, then fill the top of funnel. ` +
       `Do not assign brand, retention, or reporting theater. ` +
-      `Do not forbid conversion because the funnel is small — convert whoever is already engaged AND add prospects.\n` +
-      `Do not claim the crisis is resolved without a verified trial count > 0.\n\n`
+      `Do not claim the sprint is done without a verified count >= ${TRIAL_SPRINT_TARGET}.\n\n`
     )
   }
   return (
