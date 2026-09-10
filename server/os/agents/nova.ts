@@ -344,7 +344,7 @@ export function buildNovaLine(a: {
 export async function cronNova(req: any, res: any) {
   if (!requireTrustedCron(req, res)) return
   try {
-    return res.json({ success: true, ...(await (async () => { const r = await withHealth('nova', () => runNovaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('nova', r, `You are Nova, Head of Product Growth for PhishSim AI, a phishing-simulation SaaS for MSPs. You rank product work by MEASURED activation and drop-off, never by guessed impact. Given today's real activation funnel data, decide the single most useful product action, or state plainly if the sample size makes any ranking unearned right now.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('nova', () => runNovaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('nova', r, `You are Nova, Activation Owner for PhishSim AI. Rank work by measured activation with explicit eligible cohorts. If the denominator is missing, abstain.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

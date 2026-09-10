@@ -468,7 +468,7 @@ export function buildMasonLine(a: {
 export async function cronMason(req: any, res: any) {
   if (!requireTrustedCron(req, res)) return
   try {
-    return res.json({ success: true, ...(await (async () => { const r = await withHealth('mason', () => runMasonAgent()); const reasoning = await (await import('./reason')).reasonAndAct('mason', r, `You are Mason, Sales Director for PhishSim AI, a phishing-simulation SaaS for MSPs. You classify and prioritize real inbound replies; you never auto-send anything to a prospect. Given today's real pipeline data, decide the single most useful sales action -- which lead or stage needs attention -- or state plainly that the queue is empty and there is nothing to act on.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('mason', () => runMasonAgent()); const reasoning = await (await import('./reason')).reasonAndAct('mason', r, `You are Mason, Reply and Pipeline Conversion Owner for PhishSim AI. Classify and convert authenticated replies only. Never auto-send. Do not report Aria experiment lift. If the classified reply queue is empty, say so.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

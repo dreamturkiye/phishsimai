@@ -27,8 +27,8 @@ function copyFixture() {
   }
   mkdirSync(join(target, 'vendor'), { recursive: true })
   cpSync(
-    join(root, 'vendor/kaan-os-core-7.4.0.tgz'),
-    join(target, 'vendor/kaan-os-core-7.4.0.tgz'),
+    join(root, 'vendor/kaan-os-core-7.5.0.tgz'),
+    join(target, 'vendor/kaan-os-core-7.5.0.tgz'),
   )
   cpSync(
     join(root, 'server/os/kaan-os-core'),
@@ -46,14 +46,14 @@ function copyFixture() {
 test('core provenance guard accepts the package and legacy snapshot', () => {
   const result = runGuard(root)
   assert.equal(result.status, 0, result.stderr)
-  assert.match(result.stdout, /@kaan\/os-core@7\.4\.0 exact artifact/)
+  assert.match(result.stdout, /@kaan\/os-core@7\.5\.0 exact artifact/)
 })
 
 test('core provenance guard rejects package ranges', () => {
   const target = copyFixture()
   const pkgPath = join(target, 'package.json')
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-  pkg.dependencies['@kaan/os-core'] = '^7.4.0'
+  pkg.dependencies['@kaan/os-core'] = '^7.5.0'
   writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
 
   const result = runGuard(target)
@@ -63,7 +63,7 @@ test('core provenance guard rejects package ranges', () => {
 
 test('core provenance guard rejects artifact and canonical source drift', () => {
   const target = copyFixture()
-  appendFileSync(join(target, 'vendor/kaan-os-core-7.4.0.tgz'), 'tampered')
+  appendFileSync(join(target, 'vendor/kaan-os-core-7.5.0.tgz'), 'tampered')
   const provenancePath = join(target, 'core-provenance.json')
   const provenance = JSON.parse(readFileSync(provenancePath, 'utf8'))
   provenance.canonicalSource.commit = '0000000000000000000000000000000000000000'

@@ -541,7 +541,7 @@ export function buildAriaLine(a: {
 export async function cronAria(req: any, res: any) {
   if (!requireTrustedCron(req, res)) return
   try {
-    return res.json({ success: true, ...(await (async () => { const r = await withHealth('aria', () => runAriaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('aria', r, `You are Aria, VP Marketing for PhishSim AI, a phishing-simulation SaaS for MSPs. You may NEVER propose changing price or price-adjacent copy -- that is a hard stop; if you see a price problem, say it must go to the founder. Given today's real outreach funnel data, decide the single most useful non-price marketing action, or say plainly that there is insufficient data to change the current approach.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('aria', () => runAriaAgent()); const reasoning = await (await import('./reason')).reasonAndAct('aria', r, `You are Aria, Marketing Experiment Owner for PhishSim AI. Own controlled message/channel experiments. NEVER change price. Do not use Mason reply conversion as your KPI.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

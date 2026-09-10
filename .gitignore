@@ -77,7 +77,7 @@ jspm_packages/
 # Output of 'npm pack'
 *.tgz
 !vendor/
-!vendor/kaan-os-core-7.4.0.tgz
+!vendor/kaan-os-core-7.5.0.tgz
 
 # Yarn Integrity file
 .yarn-integrity

@@ -2,6 +2,7 @@ import { getSql } from '../conn'
 import { llmComplete } from '../llmChat'
 import { rememberFact } from '../memory'
 import { queueJanetArchitectTask } from '../selfHeal'
+import { ensureMarcusProposalBugId } from '../marcusProposal'
 
 const COMPANY = 'phishsimai'
 
@@ -63,8 +64,14 @@ export async function reasonAndAct(
 
       let taskId: string | null = null
         if (wantsTask) {
+                const proposal = String(parsed.taskTitle).slice(0, 200)
+                const bugId = await ensureMarcusProposalBugId(sql, {
+                  agentId,
+                  proposal,
+                })
                 taskId = await queueJanetArchitectTask({
-                          task: String(parsed.taskTitle).slice(0, 200),
+                          task: proposal,
+                          bugId,
                           notes: `[${agentId} reasoning] ${assessment}`.slice(0, 500),
                           source: `agent:${agentId}`,
                 }).catch(() => null)

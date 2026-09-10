@@ -7,13 +7,13 @@
   "canonical_package_provenance": "../../../core-provenance.json",
   "canonical_package": {
     "name": "@kaan/os-core",
-    "version": "7.4.0",
-    "artifact_sha256": "afacdc6039789f175f91c38c702e1abcf4d9edcaa90b88559e74e4164b691f12",
-    "integrity": "sha512-XmcQzg/ilvUU7iUiXLXJjqJsuEzLbckeexMxs2sJIMTBiz8Jag/qjxFNOOc0r4aar3VUEb39FQiRcW/59hFvdA==",
-    "commit": "39f53b3f6a6e37d308df8b83a024f622aac9ef0a",
-    "tree": "d283b15fd62a303161a1d6e81a76e3d2f20e37f7"
+    "version": "7.5.0",
+    "artifact_sha256": "9671f770923040075cd60c31f1ab85f4d21b1452a1476b26d71a8bd38effb4a2",
+    "integrity": "sha512-boaQlmI07p9X+GznR5iL+tEIFE9EXoS4vZ1rxOl/kvM1i9VluvLRc5cInpThjExqeugmHzjgU7reGI5Gt9SXtA==",
+    "commit": "15dc3d849caa07d7ed3be1d5abd6de671cb414f4",
+    "tree": "027a937f656ab056aa13dc546d8c4db5306a1ef1"
   },
-  "note": "Legacy migration snapshot only. This pre-v7 PhishSim product-diverged directory is not canonical @kaan/os-core 7.4.0 source.",
+  "note": "Legacy migration snapshot only. This pre-v7 PhishSim product-diverged directory is not canonical @kaan/os-core 7.5.0 source.",
   "recursive_sha256": "644936a08c8f388b3fa01a7a29452b1138c1bcbe85ce703e1d7104f407b115c3",
   "combined_sha256": "89143f736481e4f92048c89f4bdc6951f6662c19bb79c5a7032c96c341e9dfa3",
   "files": {

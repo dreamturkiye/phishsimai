@@ -21,7 +21,7 @@
     "@elevenlabs/client": "^1.12.0",
     "@fontsource/inter": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
-    "@kaan/os-core": "file:vendor/kaan-os-core-7.4.0.tgz",
+    "@kaan/os-core": "file:vendor/kaan-os-core-7.5.0.tgz",
     "@neondatabase/serverless": "^1.1.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",

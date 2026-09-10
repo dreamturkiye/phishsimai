@@ -4,13 +4,13 @@ import { basename, join, relative, resolve } from 'node:path'
 
 const EXPECTED = Object.freeze({
   name: '@kaan/os-core',
-  version: '7.4.0',
-  dependency: 'file:vendor/kaan-os-core-7.4.0.tgz',
-  artifact: 'vendor/kaan-os-core-7.4.0.tgz',
-  sha256: 'afacdc6039789f175f91c38c702e1abcf4d9edcaa90b88559e74e4164b691f12',
-  integrity: 'sha512-XmcQzg/ilvUU7iUiXLXJjqJsuEzLbckeexMxs2sJIMTBiz8Jag/qjxFNOOc0r4aar3VUEb39FQiRcW/59hFvdA==',
-  commit: '39f53b3f6a6e37d308df8b83a024f622aac9ef0a',
-  tree: 'd283b15fd62a303161a1d6e81a76e3d2f20e37f7',
+  version: '7.5.0',
+  dependency: 'file:vendor/kaan-os-core-7.5.0.tgz',
+  artifact: 'vendor/kaan-os-core-7.5.0.tgz',
+  sha256: '9671f770923040075cd60c31f1ab85f4d21b1452a1476b26d71a8bd38effb4a2',
+  integrity: 'sha512-boaQlmI07p9X+GznR5iL+tEIFE9EXoS4vZ1rxOl/kvM1i9VluvLRc5cInpThjExqeugmHzjgU7reGI5Gt9SXtA==',
+  commit: '15dc3d849caa07d7ed3be1d5abd6de671cb414f4',
+  tree: '027a937f656ab056aa13dc546d8c4db5306a1ef1',
 })
 
 const root = resolve(process.cwd())

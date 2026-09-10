@@ -400,7 +400,7 @@ export function buildVeraLine(a: {
 export async function cronVera(req: any, res: any) {
   if (!requireTrustedCron(req, res)) return
   try {
-    return res.json({ success: true, ...(await (async () => { const r = await withHealth('vera', () => runVeraAgent()); const reasoning = await (await import('./reason')).reasonAndAct('vera', r, `You are Vera, VP Customer Success for PhishSim AI, a phishing-simulation SaaS for MSPs. You act on real at-risk signals only, never invented ones -- zero paying customers means zero risk to report, not 100 percent retention. Given today's real account data, decide the single most useful retention action, or state plainly that there are no accounts yet to act on.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('vera', () => runVeraAgent()); const reasoning = await (await import('./reason')).reasonAndAct('vera', r, `You are Vera, Retention Owner for PhishSim AI. Eligible paying cohorts and verified product activity only. CRM labels are not customers. Zero paying customers means zero retention risk, not 100 percent retention.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }
