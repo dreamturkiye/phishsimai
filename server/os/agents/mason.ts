@@ -38,6 +38,7 @@ import { requireTrustedCron } from '../cronAuth'
 import { getSequenceHealth } from '../sequences'
 import { runSalesReplyAgent, replyToTrialMetric, type SalesReplyRun } from './salesReplies'
 import { INTERNAL_EXCLUSION_SQL, type Incident, type Severity } from './rex'
+import { verifiedTrialCount } from '../cgoMandate'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
 const COMPANY = 'phishsimai'
@@ -163,7 +164,10 @@ export type Funnel = {
   contacted: number
   replied: number
   engaged: number
+  /** Operating trial count: max(live product entitlement, CRM trial_at). Same as Janet. */
   trials: number
+  liveProductTrials?: number
+  crmTrials?: number
   customers: number
   lines: string[]
 }
@@ -173,6 +177,9 @@ export function stepLine(label: string, num: number, den: number): string {
   if (den < MIN_N) return `${label}: ${num}/${den} — counts only, no rate below n=${MIN_N}`
   return `${label}: ${num}/${den} (${((num / den) * 100).toFixed(1)}%)`
 }
+
+/** Must match NON_LEAD_ORG_ADMIN_EMAILS in server/lib/kaan_os_v4.ts — Janet's live-trial exclusion. */
+const INTERNAL_ORG_ADMIN_EMAILS = ['kaanari@mac.com', 'asadbek.munasar@forliion.com']
 
 export async function measureFunnel(sql: any): Promise<Funnel> {
   try {
@@ -187,14 +194,34 @@ export async function measureFunnel(sql: any): Promise<Funnel> {
     const contacted = Number(r[0]?.contacted ?? 0)
     const replied = Number(r[0]?.replied ?? 0)
     const engaged = Number(r[0]?.engaged ?? 0)
-    const trials = Number(r[0]?.trials ?? 0)
+    const crmTrials = Number(r[0]?.trials ?? 0)
     const customers = Number(r[0]?.customers ?? 0)
+    let liveProductTrials = 0
+    try {
+      const live = (await sql`
+        SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
+        FROM (
+          SELECT
+            o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
+            COALESCE(lower((
+              SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+              WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+              ORDER BY m.id ASC LIMIT 1
+            )) = ANY(${INTERNAL_ORG_ADMIN_EMAILS}), false) AS is_excluded
+          FROM organizations o
+        ) t`) as any[]
+      liveProductTrials = Number(live[0]?.n ?? 0)
+    } catch {
+      liveProductTrials = 0
+    }
+    const trials = verifiedTrialCount({ liveProductTrials, crmTrials })
     return {
-      checked: true, contacted, replied, engaged, trials, customers,
+      checked: true, contacted, replied, engaged, trials, liveProductTrials, crmTrials, customers,
       lines: [
         stepLine('touched→replied', replied, contacted),
         replyToTrialMetric(trials, replied),
         stepLine('trial→paid', customers, trials),
+        `live product trials: ${liveProductTrials} | CRM trial_at: ${crmTrials} — operating count ${trials}`,
       ],
     }
   } catch {

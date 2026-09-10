@@ -68,6 +68,11 @@ vi.mock("./seed", () => ({
   BUILT_IN_TRAINING_MODULES: [],
 }));
 
+vi.mock("./os/crmLink", () => ({
+  markLeadTrial: vi.fn().mockResolvedValue(false),
+  linkStripeCustomerToLead: vi.fn().mockResolvedValue(false),
+}));
+
 vi.mock("./_core/heartbeat", () => ({
   createHeartbeatJob: vi.fn().mockResolvedValue({ uid: "test-uid" }),
   deleteHeartbeatJob: vi.fn(),

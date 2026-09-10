@@ -229,6 +229,15 @@ describe('conversion math obeys the denominator rule', () => {
   it('gives a rate at n>=30', () => {
     expect(stepLine('touched→replied', 3, 100)).toContain('(3.0%)')
   })
+
+  it('uses Janet\'s verified trial count (live product vs CRM) and the same internal admin exclusion', () => {
+    expect(MASON_SRC).toContain('verifiedTrialCount')
+    expect(MASON_SRC).toContain('liveProductTrials')
+    expect(MASON_SRC).toContain('kaanari@mac.com')
+    expect(MASON_SRC).toContain('asadbek.munasar@forliion.com')
+    expect(fs.readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain("'kaanari@mac.com'")
+    expect(fs.readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain("'asadbek.munasar@forliion.com'")
+  })
 })
 
 describe('the report never hides a deferral', () => {

@@ -130,8 +130,17 @@ export const PERMANENT_LESSONS: { signature: string; lesson: string }[] = [
     lesson:
       'A REPLIED LEAD THAT ONLY GETS A DRAFT FOR KAAN DOES NOT CONVERT. Interested replies ' +
       'must receive the frozen 30-day no-card trial CTA at https://phishsimai.com/login?mode=register ' +
-      'through sendWarmTrialCtas (Dex MX + assertSendable + suppression). Objections still draft. ' +
+      'through sendWarmTrialCtas (Dex MX + assertSendable + suppression). Lead with the founder-' +
+      'approved lowest-per-seat claim (60¢ / $299/500 / 30¢ on Pro). Objections still draft. ' +
       'Never use /register (dead). Never skip Dex. Never fake a trial row.',
+  },
+  {
+    signature: 'phishsim:register-must-stamp-trial-org',
+    lesson:
+      'A USER ROW IS NOT A TRIAL. /api/auth/register must call startProductTrial so ' +
+      'createOrganization stamps planExpiresAt (30 days, no Stripe). Then markLeadTrial on the ' +
+      'matching outreach email. A second /setup form after signup is a conversion hole. ' +
+      'Never claim a trial that is only a login. Never fake an org row.',
   },
 ]
 

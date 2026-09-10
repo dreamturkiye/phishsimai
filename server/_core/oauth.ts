@@ -6,6 +6,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import * as db from "../db";
 import { sdk } from "./sdk";
+import { startProductTrial } from "../os/startProductTrial";
 
 // Simple password hashing using Node.js built-in crypto (no bcrypt dependency)
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
@@ -41,7 +42,7 @@ export function registerOAuthRoutes(app: any) {
   // POST /api/auth/register
   app.post("/api/auth/register", async (req: any, res: any) => {
     try {
-      const { email, password, name } = req.body ?? {};
+      const { email, password, name, company } = req.body ?? {};
       if (!email || !password) {
         return res.status(400).json({ error: "email and password are required" });
       }
@@ -65,6 +66,18 @@ export function registerOAuthRoutes(app: any) {
       });
       const user = await db.getUserByOpenId(openId);
       if (!user) return res.status(500).json({ error: "Failed to create user" });
+      // PS-TRIAL-AT-REGISTER-01: the 30-day trial is stamped on the org, not the user.
+      // A register that only creates a login dumped prospects onto /setup after they
+      // already believed they had started a trial. Best-effort: never fail the account
+      // if org creation misses — /setup remains the fallback.
+      await startProductTrial({
+        userId: user.id,
+        email: String(email),
+        name: typeof name === "string" ? name : user.name ?? undefined,
+        company: typeof company === "string" ? company : undefined,
+      }).catch((err) => {
+        console.error("[Auth] startProductTrial failed (account created, /setup remains):", err);
+      });
       const token = await sdk.createSessionToken(openId, { name: user.name ?? "" });
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, token, cookieOptions);
