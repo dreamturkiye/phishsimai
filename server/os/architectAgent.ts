@@ -237,6 +237,9 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
     const bypassHeaders: Record<string, string> = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
       ? { 'x-vercel-protection-bypass': process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
           : {}
+  const hqHeaders: Record<string, string> = process.env.HQ_SECRET
+    ? { ...bypassHeaders, 'x-hq-secret': process.env.HQ_SECRET }
+    : bypassHeaders
   const tests = [
     {
       name: 'Homepage styled (CSS + assets)',
@@ -251,12 +254,12 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
       if (!r.ok) throw new Error('Status ' + r.status)
     }},
     { name: 'HQ data responds', test: async () => {
-      const r = await fetch(`${root}/api/os/hq?secret=${process.env.HQ_SECRET}`, { headers: bypassHeaders })
+      const r = await fetch(`${root}/api/os/hq`, { headers: hqHeaders })
       const d = await r.json()
       if (!d.ok) throw new Error('HQ not ok: ' + (d.error || r.status))
     }},
     { name: 'Agent watchdog status', test: async () => {
-      const r = await fetch(`${root}/api/os/agent-watchdog?secret=${process.env.HQ_SECRET}&action=status`, { headers: bypassHeaders })
+      const r = await fetch(`${root}/api/os/agent-watchdog?action=status`, { headers: hqHeaders })
       const d = await r.json()
       if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},

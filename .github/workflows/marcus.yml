@@ -72,45 +72,99 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude -p "You are Marcus, the autonomous engineer for PhishSimAI. TASK: $TASK  Make the minimal correct change to accomplish the task. Create or edit files only. If the change needs a new DB column/table, add an additive idempotent drizzle/pg migration (use IF NOT EXISTS). Do NOT run git, do NOT commit, do NOT open a PR - the workflow does that. Do NOT edit .github/, ci/, vercel.json, scripts/, server/os/kaan-os-core/, or any path containing billing, stripe, price, pricing, or legal. When done, stop." --model claude-sonnet-5 --dangerously-skip-permissions
-      - name: Apply pending migrations to PROD DB (before code can deploy)
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-        run: node scripts/apply-migrations.mjs
-      - name: Open PR + enable auto-merge
-        env:
-          GH_TOKEN: ${{ secrets.MARCUS_PAT }}
+      - name: Commit proposed changes
         run: |
           BR="marcus/task-${{ github.run_id }}"
           git add -A
-          git commit -m "marcus: ${{ needs.pick.outputs.task_id }}" || true
+          git commit -m "marcus: ${{ needs.pick.outputs.task_id }}"
           if [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
             echo "::error::Marcus made no changes"; exit 1
           fi
-          git push origin "$BR"
-          gh pr create --base main --head "$BR" \
-            --title "marcus: task ${{ needs.pick.outputs.task_id }}" \
-            --body "task_id=${{ needs.pick.outputs.task_id }}" --label marcus
-          gh pr merge "$BR" --auto --squash
           echo "PR_BR=$BR" >> "$GITHUB_ENV"
-      - name: Wait for gate + merge, then mark task done
+      - name: Enforce path guard before publishing
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD)
+          echo "Marcus changed files:"; echo "$FILES"
+          BLOCKED=$(echo "$FILES" | grep -Ei '(^\.github/|^ci/|^vercel\.json$|^scripts/|^server/os/kaan-os-core/|billing|stripe|price|pricing|legal)' || true)
+          if [ -n "$BLOCKED" ]; then
+            echo "::error::Marcus touched hard-stop path(s):"; echo "$BLOCKED"; exit 1
+          fi
+      - name: Open PR and enable gated auto-merge
         env:
           GH_TOKEN: ${{ secrets.MARCUS_PAT }}
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          TASK_ID: ${{ needs.pick.outputs.task_id }}
         run: |
-          for i in $(seq 1 16); do
+          git push origin "$PR_BR"
+          PR_URL=$(gh pr create --base main --head "$PR_BR" \
+            --title "marcus: task ${{ needs.pick.outputs.task_id }}" \
+            --body "task_id=${{ needs.pick.outputs.task_id }}" --label marcus)
+          echo "PR_URL=$PR_URL" >> "$GITHUB_ENV"
+          gh pr merge "$PR_URL" --auto --squash
+      - name: Wait for required gates and merge
+        env:
+          GH_TOKEN: ${{ secrets.MARCUS_PAT }}
+        run: |
+          for i in $(seq 1 40); do
             ST=$(gh pr view "$PR_BR" --json state --jq .state 2>/dev/null || echo UNKNOWN)
             if [ "$ST" = "MERGED" ]; then
-              echo "PR merged to prod; marking task done."
-              node scripts/mark-task.mjs
+              MERGED_SHA=$(gh pr view "$PR_BR" --json mergeCommit --jq .mergeCommit.oid)
+              if ! echo "$MERGED_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+                echo "::error::Merged commit SHA could not be proven."; exit 1
+              fi
+              echo "MERGED_COMMIT_SHA=$MERGED_SHA" >> "$GITHUB_ENV"
+              git fetch origin main
+              git checkout --detach "$MERGED_SHA"
               exit 0
             fi
             if [ "$ST" = "CLOSED" ]; then
               echo "::error::PR was closed without merging."; exit 1
             fi
-            echo "waiting for gate + merge... state=$ST [$i/16]"
+            echo "waiting for gate + merge... state=$ST [$i/40]"
             sleep 30
           done
-          echo "::error::PR did not merge within ~8min (gate likely failed). Cleaning up; task left for retry."
+          echo "::error::PR did not merge within ~20min (gate likely failed). Task remains retryable."
           gh pr close "$PR_BR" --delete-branch 2>/dev/null || true
           exit 1
+      - name: Validate merged migrations are additive
+        run: |
+          MIGRATIONS=$(git diff-tree --no-commit-id --name-only -r "$MERGED_COMMIT_SHA" -- 'drizzle/pg/*.sql')
+          if [ -z "$MIGRATIONS" ]; then
+            echo "No migration in merged commit."; exit 0
+          fi
+          for FILE in $MIGRATIONS; do
+            if grep -Eiq '(^|[[:space:]])(DROP|TRUNCATE|DELETE)[[:space:]]|ALTER[[:space:]]+TABLE.*DROP|RENAME[[:space:]]' "$FILE"; then
+              echo "::error::$FILE is not additive."; exit 1
+            fi
+            if grep -Eiq 'CREATE[[:space:]]+(TABLE|INDEX)' "$FILE" && ! grep -Eiq 'IF[[:space:]]+NOT[[:space:]]+EXISTS' "$FILE"; then
+              echo "::error::$FILE has non-idempotent CREATE."; exit 1
+            fi
+            if grep -Ei 'ADD[[:space:]]+COLUMN' "$FILE" | grep -Eivq 'IF[[:space:]]+NOT[[:space:]]+EXISTS'; then
+              echo "::error::$FILE has non-idempotent ADD COLUMN."; exit 1
+            fi
+          done
+      - name: Apply additive migrations after merge
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: node scripts/apply-migrations.mjs
+      - name: Verify Vercel production is Ready for merged SHA
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: node scripts/verify-vercel-deploy.mjs
+      - name: Run post-deploy health and canary
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error https://phishsimai.com/api/health > health.json
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "https://phishsimai.com/api/os/qa-smoke?trigger=marcus-$MERGED_COMMIT_SHA" > canary.json
+          CANARY_EVIDENCE=$(node -e "const d=require('./canary.json'); if(!d.ok || d.status!=='passed' || d.failed!==0) process.exit(1); process.stdout.write(JSON.stringify(d))")
+          echo "CANARY_STATUS=passed" >> "$GITHUB_ENV"
+          echo "CANARY_URL=https://phishsimai.com/api/os/qa-smoke" >> "$GITHUB_ENV"
+          echo "CANARY_EVIDENCE=$CANARY_EVIDENCE" >> "$GITHUB_ENV"
+      - name: Mark task completed with production proof
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          TASK_ID: ${{ needs.pick.outputs.task_id }}
+        run: node scripts/mark-task.mjs

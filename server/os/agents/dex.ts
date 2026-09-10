@@ -32,6 +32,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { resolveTxt, resolveMx } from 'node:dns/promises'
 import { getSql } from '../conn'; import { withHealth } from './withHealth'
+import { requireTrustedCron } from '../cronAuth'
 import { readSource, measureCohorts, type CohortSplit, type SourceFile, type Incident, type Severity } from './rex'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { reconcileBreaker, readBreakerThreshold, type BreakerRun } from '../dexBreaker'
@@ -784,14 +785,10 @@ export function buildDexLine(a: {
  * the paths that data was produced by, and both land before anything reads the numbers.
  */
 export async function cronDex(req: any, res: any) {
-  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
-  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
-  const viaVercel = !!req.headers?.['x-vercel-cron']
-  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  if (!requireTrustedCron(req, res)) return
   try {
     const report = await withHealth('dex', () => runDexAgent())
-    return res.json({ success: true, ...report, reasoning: await (await import('./reason')).reasonAndAct('dex', report, `You are Dex, Deliverability and Infrastructure for PhishSim AI, a phishing-simulation SaaS for MSPs. You flag ANY send path that is missing a required gate -- MX check, suppression list, consent -- rather than assuming a gate exists because it exists elsewhere. Given today's real deliverability data, decide the single most useful infrastructure action, or state plainly that all gates are verified present.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })) })
+    return res.json({ success: true, ...report, reasoning: await (await import('./reason')).reasonAndAct('dex', report, `You are Dex, Deliverability Safety Owner for PhishSim AI. Own authentication, suppression, delivery, and breaker state. Do not classify replies or invent revenue.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

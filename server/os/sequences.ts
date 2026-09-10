@@ -10,6 +10,7 @@ import { assertAutonomyAllows, isAutonomyDenied } from './autonomyGate'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
 import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_SPACING_MS, COMBINED_DAILY_CAP } from './outreachThrottle'
+import { randomUUID } from 'node:crypto'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -74,6 +75,7 @@ async function sendEmail(
   tags: { name: string; value: string }[] = [],
   unsubToken?: string,
   text?: string,
+  idempotencyKey?: string,
 ) {
   // PS-COPY-REWRITE-01: List-Unsubscribe + one-click (RFC 8058). Gmail/Outlook require these for
   // bulk senders and they directly affect inbox placement. The URL is the same token-based
@@ -99,10 +101,84 @@ async function sendEmail(
   if (!html && !text) throw new Error('sendEmail: refusing to send an email with no body')
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + process.env.RESEND_API_KEY },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + process.env.RESEND_API_KEY,
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
     body: JSON.stringify(payload),
   })
   return res.json()
+}
+
+export function sequenceIdempotencyKey(leadId: string, touch: number): string {
+  return `phishsimai:outreach:${leadId}:touch:${touch}`
+}
+
+type SequenceSendClaim = {
+  claimed: boolean
+  claimToken: string | null
+  providerMessageId: string | null
+}
+
+export async function claimSequenceSend(
+  sql: any,
+  leadId: string,
+  touch: number,
+  recipient: string,
+): Promise<SequenceSendClaim> {
+  const key = sequenceIdempotencyKey(leadId, touch)
+  const claimToken = randomUUID()
+  const claimed = await sql`
+    INSERT INTO outreach_sequence_outbox
+      (idempotency_key, lead_id, touch, recipient, status, claim_token, claim_expires_at, attempts)
+    VALUES
+      (${key}, ${leadId}::uuid, ${touch}, ${recipient}, 'sending', ${claimToken}::uuid,
+       NOW() + INTERVAL '15 minutes', 1)
+    ON CONFLICT (idempotency_key) DO UPDATE
+    SET status='sending',
+        claim_token=EXCLUDED.claim_token,
+        claim_expires_at=EXCLUDED.claim_expires_at,
+        attempts=outreach_sequence_outbox.attempts + 1,
+        updated_at=NOW()
+    WHERE outreach_sequence_outbox.provider_message_id IS NULL
+      AND (outreach_sequence_outbox.claim_expires_at IS NULL
+           OR outreach_sequence_outbox.claim_expires_at <= NOW())
+    RETURNING claim_token::text AS claim_token, provider_message_id`
+
+  if ((claimed as any[])[0]?.claim_token === claimToken) {
+    return { claimed: true, claimToken, providerMessageId: null }
+  }
+
+  const existing = await sql`
+    SELECT provider_message_id
+    FROM outreach_sequence_outbox
+    WHERE idempotency_key=${key}
+    LIMIT 1`
+  return {
+    claimed: false,
+    claimToken: null,
+    providerMessageId: String((existing as any[])[0]?.provider_message_id || '') || null,
+  }
+}
+
+export async function completeSequenceSend(
+  sql: any,
+  leadId: string,
+  touch: number,
+  claimToken: string,
+  providerMessageId: string,
+): Promise<void> {
+  const updated = await sql`
+    UPDATE outreach_sequence_outbox
+    SET status='sent', provider_message_id=${providerMessageId},
+        claim_token=NULL, claim_expires_at=NULL, last_error=NULL, updated_at=NOW()
+    WHERE idempotency_key=${sequenceIdempotencyKey(leadId, touch)}
+      AND claim_token=${claimToken}::uuid
+    RETURNING idempotency_key`
+  if (!(updated as any[]).length) {
+    throw new Error(`sequence outbox claim lost before provider id persisted: ${leadId}/touch-${touch}`)
+  }
 }
 
 // PS-COPY-REWRITE-01: touches 2-5 DELETED. The old bodies were end-user pitches with an invented
@@ -327,15 +403,24 @@ export async function runTouch2Batch(sqlOverride?: any): Promise<{
       const greet = deriveFirstName(String(lead.email))
       const co = String(lead.company || '')
       const ind = String(lead.industry || 'technology')
-      const result = await sendEmail(
-        String(lead.email),
-        TOUCH2_VARIANT.subject(greet, co),
-        TOUCH2_VARIANT.html(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
-        [{ name: 'touch', value: '2' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: TOUCH2_VARIANT.id }],
-        token,
-        TOUCH2_VARIANT.text(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
-      )
+      const sendClaim = await claimSequenceSend(sql, String(lead.id), 2, String(lead.email))
+      if (!sendClaim.claimed && !sendClaim.providerMessageId) continue
+      const idempotencyKey = sequenceIdempotencyKey(String(lead.id), 2)
+      const result = sendClaim.providerMessageId
+        ? { id: sendClaim.providerMessageId }
+        : await sendEmail(
+            String(lead.email),
+            TOUCH2_VARIANT.subject(greet, co),
+            TOUCH2_VARIANT.html(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
+            [{ name: 'touch', value: '2' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: TOUCH2_VARIANT.id }],
+            token,
+            TOUCH2_VARIANT.text(greet, co, ind).replace(/\{\{TOKEN\}\}/g, token),
+            idempotencyKey,
+          )
       if (!result?.id) { out.failed++; continue }
+      if (sendClaim.claimed) {
+        await completeSequenceSend(sql, String(lead.id), 2, sendClaim.claimToken!, String(result.id))
+      }
       await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${now.toISOString()}, stage_updated_at=${now.toISOString()} WHERE id=${lead.id}`
       out.sent++
     } catch { out.failed++ }
@@ -533,10 +618,18 @@ export async function runFullSequence() {
         const greetName = deriveFirstName(String(lead.email))
         const html = v.html(greetName, String(lead.company), ind).replace(/{{TOKEN}}/g, token)
         const text = v.text(greetName, String(lead.company), ind).replace(/{{TOKEN}}/g, token)
-        const result = await sendEmail(String(lead.email), subject, html, [
-          { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
-        ], token, text)
+        const sendClaim = await claimSequenceSend(sql, String(lead.id), 1, String(lead.email))
+        if (!sendClaim.claimed && !sendClaim.providerMessageId) continue
+        const idempotencyKey = sequenceIdempotencyKey(String(lead.id), 1)
+        const result = sendClaim.providerMessageId
+          ? { id: sendClaim.providerMessageId }
+          : await sendEmail(String(lead.email), subject, html, [
+              { name: 'touch', value: '1' }, { name: 'lead_id', value: String(lead.id) }, { name: 'variant', value: v.id },
+            ], token, text, idempotencyKey)
         if (!result?.id) continue
+        if (sendClaim.claimed) {
+          await completeSequenceSend(sql, String(lead.id), 1, sendClaim.claimToken!, String(result.id))
+        }
         const ts = now.toISOString()
         await sql`UPDATE ps_outreach_leads SET touch1_sent_at=${ts}, pipeline_stage='prospect', stage_updated_at=${ts} WHERE id=${lead.id}`
         await recordImpression(String(lead.id), 'touch1_subject', sentVariant)
@@ -614,7 +707,7 @@ export async function runFullSequence() {
     }
 
     for (const lead of leads) {
-      if (totalSent >= DAILY_SEND_LIMIT) break
+      if (followUpSent >= followUpCap) break
       try {
         // PS-TOUCH-GATE-01 / PS-SALUTATION-01 / PS-COPY-REWRITE-01: touch-2..5 inherit EVERY rail
         // touch-1 has. Built now so re-adding follow-up COPY (SEQUENCE + touchDefs, founder's job)
@@ -643,16 +736,25 @@ export async function runFullSequence() {
         // PS-FOLLOWUP-COPY-01: follow-ups are text-only. html is '' and sendEmail omits the empty
         // part, so this goes out as a single text/plain body — same doctrine as touch-1 and -2.
         const bodyText = step.text(deriveFirstName(String(lead.email)), String(lead.company))
-        const result = await sendEmail(String(lead.email), subject, html, [
-          { name: 'touch', value: String(def.touch) }, { name: 'lead_id', value: String(lead.id) },
-        ], token, bodyText)
+        const sendClaim = await claimSequenceSend(sql, String(lead.id), def.touch, String(lead.email))
+        if (!sendClaim.claimed && !sendClaim.providerMessageId) continue
+        const idempotencyKey = sequenceIdempotencyKey(String(lead.id), def.touch)
+        const result = sendClaim.providerMessageId
+          ? { id: sendClaim.providerMessageId }
+          : await sendEmail(String(lead.email), subject, html, [
+              { name: 'touch', value: String(def.touch) }, { name: 'lead_id', value: String(lead.id) },
+            ], token, bodyText, idempotencyKey)
         if (!result?.id) continue
+        if (sendClaim.claimed) {
+          await completeSequenceSend(sql, String(lead.id), def.touch, sendClaim.claimToken!, String(result.id))
+        }
         const ts = now.toISOString()
         if (def.touch === 2) await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts} WHERE id=${lead.id}`
         else if (def.touch === 3) await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
         else if (def.touch === 4) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
         else if (def.final) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts}, pipeline_stage='dead', stage_updated_at=${ts} WHERE id=${lead.id}`
         totalSent++
+        followUpSent++
         results.push({ touch: def.touch, company: lead.company, email: lead.email, subject })
         await new Promise(r => setTimeout(r, 2000))
       } catch (e: any) {

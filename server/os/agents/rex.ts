@@ -30,6 +30,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { getSql } from '../conn'; import { withHealth } from './withHealth'
+import { requireTrustedCron } from '../cronAuth'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 import { scanVerdict, scanVerdictReason } from './scanVerdict'
 
@@ -817,11 +818,7 @@ export function buildRexLine(a: {
  * cronOrdering.test.ts so it cannot drift.
  */
 export async function cronRex(req: any, res: any) {
-  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
-  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
-  const viaVercel = !!req.headers?.['x-vercel-cron']
-  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  if (!requireTrustedCron(req, res)) return
 
   try {
     // Live Stripe prices strengthen the drift finding but are never required for it.
@@ -837,7 +834,7 @@ export async function cronRex(req: any, res: any) {
     }
 
     const report = await withHealth('rex', () => runRexAgent({ livePricesUsd }))
-    return res.json({ success: true, ...report, reasoning: await (await import('./reason')).reasonAndAct('rex', report, `You are Rex, Revenue Operations for PhishSim AI -- the agent that makes the other seven trustworthy by catching fabricated values before they reach the founder's standup. Given today's real detector results, decide the single most useful data-integrity action, or state plainly that no incidents were found and the funnel data is clean.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })) })
+    return res.json({ success: true, ...report, reasoning: await (await import('./reason')).reasonAndAct('rex', report, `You are Rex, Reconciled Data Truth Owner for PhishSim AI. Catch fabricated values before they reach the founder brief. Do not own outbound or billing.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

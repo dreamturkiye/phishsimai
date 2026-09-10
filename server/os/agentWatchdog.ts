@@ -8,9 +8,8 @@ import { getSql } from './conn'
 import { queueJanetArchitectTask } from './selfHeal'
 import { alertMarcusPipelineIssues } from './marcusPipelineHealth'
 import { runL5MarcusScan } from './l5Autonomy'
+import { requireTrustedCron } from './cronAuth'
 
-const HQ = process.env.HQ_SECRET
-const CRON = process.env.CRON_SECRET || ''
 const COMPANY = 'phishsimai'
 
 const HEALTH_PROMPTS: Record<AgentId, string> = {
@@ -26,12 +25,7 @@ const HEALTH_PROMPTS: Record<AgentId, string> = {
   scout: 'Health ping. Respond with: ONLINE plus key market signal this week in one sentence.',
   finn: 'Health ping. Respond with: ONLINE plus revenue status in one sentence.',
   vera: 'Health ping. Respond with: ONLINE plus customer health in one sentence.',
-  max: 'Health ping. Respond with: ONLINE plus Kaan top priority today in one sentence.',
-}
-
-function auth(req: Request): boolean {
-  return req.headers.authorization === `Bearer ${CRON}` ||
-    (!!HQ && (req.query.secret as string) === HQ)
+  dex: 'Health ping. Respond with: ONLINE plus deliverability and send-safety status in one sentence.',
 }
 
 async function pingAgent(agentId: AgentId, companyId: string) {
@@ -91,13 +85,31 @@ function priorityOf(status: string): number {
 }
 
 export async function cronAgentWatchdog(req: Request, res: Response) {
-  if (!auth(req)) { res.status(401).json({ error: 'Unauthorized' }); return }
+  if (!requireTrustedCron(req, res)) return
 
   const action = (req.query.action as string) || 'check'
   const companyId = (req.query.company_id as string) || COMPANY
   await ensureAgentHealthTable(getSql())
 
   const opsRecovery = action === 'check' ? await runOpsRecoveryTick(companyId).catch(() => ({ checked: 0, restarts: [] })) : null
+
+  if (action === 'check') {
+    const agents = await getAllAgentHealth(companyId)
+    const healthy = agents.filter((a) => a.status === 'healthy').length
+    const critical = agents.filter((a) => a.status === 'critical' || a.status === 'unknown').length
+    res.json({
+      ok: critical === 0,
+      action,
+      company_id: companyId,
+      recovery: opsRecovery,
+      healthy,
+      critical,
+      total: agents.length,
+      agents: formatAgentList(agents),
+      timestamp: new Date().toISOString(),
+    })
+    return
+  }
 
   if (action === 'status') {
     const agents = await getAllAgentHealth(companyId)

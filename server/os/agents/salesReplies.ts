@@ -32,6 +32,8 @@
 import { getSql } from '../conn'
 import { llmComplete } from '../llmChat'
 import { sendTelegram } from '../telegram'
+import { requireTrustedCron } from '../cronAuth'
+import { randomUUID } from 'node:crypto'
 
 const COMPANY = 'phishsimai'
 export const TRIAL_URL = 'https://phishsimai.com/register'
@@ -137,6 +139,7 @@ export const INTERNAL_EXCLUSION_SQL = `
       AND lower(split_part(l.email, '@', 2)) <> 'phishsimai.com'`
 
 export type QueuedReply = { id: string; lead_id: string; from_email: string; inbound_snippet: string; company: string | null }
+export type ClaimedReply = QueuedReply & { claim_token: string }
 
 // Schema for these columns is drizzle/pg/0016_reply_classification.sql — a REVIEWED migration, not
 // invocation-time DDL. Founder directive 2026-08-03: no silent DDL on prod invocation. The earlier
@@ -159,6 +162,41 @@ export async function fetchReplyQueue(sql: any): Promise<QueuedReply[]> {
      LIMIT 50`,
   )
   return (rows as QueuedReply[]) ?? []
+}
+
+/**
+ * Atomically leases replies for one worker. FOR UPDATE SKIP LOCKED plus the
+ * update-returning CTE means two overlapping invocations cannot both receive
+ * the same classification-null row. Expired leases make interrupted work
+ * retryable instead of permanently hiding it.
+ */
+export async function claimReplyQueue(sql: any, limit = 50): Promise<ClaimedReply[]> {
+  const claimToken = randomUUID()
+  const rows = await sql.query(
+    `WITH candidates AS (
+       SELECT d.id
+       FROM outreach_reply_drafts d
+       JOIN ps_outreach_leads l ON l.id = d.lead_id
+       WHERE d.classification IS NULL
+         AND (d.classification_claim_expires_at IS NULL OR d.classification_claim_expires_at < NOW())
+         ${INTERNAL_EXCLUSION_SQL}
+       ORDER BY d.created_at ASC
+       FOR UPDATE OF d SKIP LOCKED
+       LIMIT $1
+     )
+     UPDATE outreach_reply_drafts d
+     SET classification_claim_token = $2,
+         classification_claimed_at = NOW(),
+         classification_claim_expires_at = NOW() + INTERVAL '15 minutes'
+     FROM candidates c
+     WHERE d.id = c.id
+     RETURNING d.id::text AS id, d.lead_id::text AS lead_id, d.from_email,
+               COALESCE(d.inbound_snippet,'') AS inbound_snippet,
+               (SELECT l.company FROM ps_outreach_leads l WHERE l.id = d.lead_id) AS company,
+               d.classification_claim_token AS claim_token`,
+    [Math.max(1, Math.min(50, Math.floor(limit))), claimToken],
+  )
+  return (rows as ClaimedReply[]) ?? []
 }
 
 // ─── DRAFTING ────────────────────────────────────────────────────────────────
@@ -229,7 +267,7 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
     queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, noAction: 0,
     byClass: {}, line: EMPTY_LINE,
   }
-  const queue = await fetchReplyQueue(sql)
+  const queue = await claimReplyQueue(sql)
   res.queued = queue.length
   if (queue.length === 0) return res // no queue, no work, no output. The anti-ghost path.
 
@@ -265,11 +303,19 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
       res.noAction++
     }
 
-    await sql`UPDATE outreach_reply_drafts
-              SET classification=${c.cls}, classification_confidence=${c.confidence},
-                  classified_at=NOW(), action_taken=${action},
-                  draft_body=COALESCE(${draft}, draft_body)
-              WHERE id=${r.id}::uuid`.catch(() => {})
+    const updated = await sql`UPDATE outreach_reply_drafts
+                              SET classification=${c.cls}, classification_confidence=${c.confidence},
+                                  classified_at=NOW(), action_taken=${action},
+                                  draft_body=COALESCE(${draft}, draft_body),
+                                  classification_claim_token=NULL,
+                                  classification_claim_expires_at=NULL
+                              WHERE id=${r.id}::uuid
+                                AND classification IS NULL
+                                AND classification_claim_token=${r.claim_token}::uuid
+                              RETURNING id`
+    if (!(updated as any[]).length) {
+      throw new Error(`reply claim lost before classification persisted: ${r.id}`)
+    }
   }
 
   const parts = Object.entries(res.byClass).map(([k, v]) => `${v} ${k}`).join(', ')
@@ -288,15 +334,12 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
  * latency is seconds and the cron only catches what the inline path missed (a failed trigger, a
  * row written while a deploy was rolling).
  *
- * Idempotent by construction: the queue is `classification IS NULL`, so a row already handled is
- * invisible to the next run. Overlapping runs cannot double-draft or double-suppress.
+ * Idempotent by construction: classification-null rows are atomically leased with
+ * FOR UPDATE SKIP LOCKED, so overlapping runs cannot double-draft or
+ * double-suppress. Interrupted leases expire and become retryable.
  */
 export async function cronSalesReplies(req: any, res: any) {
-  const secret = req.query?.secret ?? req.headers?.['x-cron-secret']
-  const okCron = !!process.env.CRON_SECRET && secret === process.env.CRON_SECRET
-  const okHq = !!process.env.HQ_SECRET && secret === process.env.HQ_SECRET
-  const viaVercel = !!req.headers?.['x-vercel-cron']
-  if (!okCron && !okHq && !viaVercel) return res.status(401).json({ error: 'Unauthorized' })
+  if (!requireTrustedCron(req, res)) return
   try {
     const run = await runSalesReplyAgent()
     return res.json({ success: true, ...run })

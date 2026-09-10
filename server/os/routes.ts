@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { getCleanStreak, recordIncident } from './cleanDays'
+import { applyOwnerAutonomyRuling } from './ownerRuling'
 import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
@@ -1221,6 +1222,14 @@ export async function architectAutonomy(req: Request, res: Response) {
       const alarm = buildPostureAlarm(day, result, ev)
       if (alarm) await sendTelegram(alarm).catch(() => {})
       return res.json({ product: 'phishsimai', day, ...result, posture: ev.posture, next: ev.nextStep, alarmed: !!alarm })
+    }
+    if (action === 'owner-ruling') {
+      const by = String(req.query.by || '')
+      if (by !== 'kaan') {
+        return res.status(403).json({ ok: false, error: 'owner ruling requires by=kaan' })
+      }
+      const out = await applyOwnerAutonomyRuling(sql, 'phishsimai', declarePosture, { declaredBy: by })
+      return res.status(out.ok ? 200 : 409).json(out)
     }
     if (action === 'declare') {
       // GRADUATION IS DECLARED, NOT AUTO-PROMOTED (spec + the 07-18 lesson). A named human is

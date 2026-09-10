@@ -1,11 +1,27 @@
 import { llmComplete } from '../os/llmChat'
 import { neon } from '@neondatabase/serverless'
+import { createHash, randomUUID } from 'node:crypto'
+import {
+  AGENT_IDS,
+  AGENT_REGISTRY,
+  WORKER_AGENT_IDS,
+  createTaskIdempotencyKey,
+  validateDurableTask,
+  type AgentId,
+  type DurableTask,
+  type DurableTaskStatus,
+  type TaskArtifact,
+  type TaskCapability,
+  type TaskIssuer,
+  type TaskVerificationResult,
+} from '@kaan/os-core'
 import { rememberFact, recallMemory } from '../os/memory'
 import { sendTelegram, TELEGRAM_PRODUCT } from '../os/telegram'
 import { assertAutonomyAllows, isAutonomyDenied } from '../os/autonomyGate'
 import { queueJanetArchitectTask } from '../os/selfHeal'
 import { researchCurrentBestPractice } from '../os/domainResearch'
 import { evaluatePosture, postureLine } from '../os/posture'
+import { formatEvaluationScore, isScoredEvaluation, parseEvaluationScore } from './evaluationScore'
 // PS-PORT-01: the reflection/learning loop V7.3 says ScrollFuel ships live (os_agent_reflections
 // 66 rows). The module was vendored at server/os/kaan-os-core/ all along and never wired into
 // PhishSim's task loop — that is why agentReflection had "no callers". Wiring it here injects an
@@ -24,7 +40,25 @@ import { getAgentLessonsForPrompt } from '../os/kaan-os-core/outcomeLearning'
 //
 // IMPORTED, not re-declared. A second local COMPANY_ID constant is precisely the
 // duplicate-that-drifts pattern this fix exists to eliminate.
+import { evidenceBoundRoleBlock, AGENT_PROMPT_VERSION } from '../os/roleContracts'
+import {
+  cgoScorecard,
+  cgoStandupDirective,
+  conversionDefaultTask,
+  employeeExecutePrompt,
+  employeeExecutionMandate,
+  goalsForWeek,
+  isTrialCrisis,
+  janetCgoMandate,
+  researchGroundedConversionTask,
+  verifiedTrialCount,
+  zeroTrialCrisisTasks,
+  type TrialFacts,
+} from '../os/cgoMandate'
+import { persistOutcomeTrace } from '../os/outcomeTrace'
+import { ensureMarcusProposalBugId } from '../os/marcusProposal'
 import { COMPANY_ID } from '../os/version'
+import { createNeonTaskStore, durableTaskFromRow, DURABLE_TASK_CONTRACT_VERSION } from '../os/neonTaskStore'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 9 Full-Time AI Employees
@@ -40,19 +74,8 @@ import { COMPANY_ID } from '../os/version'
 //  95% of operations happen without Kaan's involvement.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type AgentId =
-  | 'janet'
-  | 'marcus'    // Principal Software Architect
-  | 'mason'     // Sales
-  | 'aria'      // Marketing
-  | 'nova'      // Product Growth
-  | 'rex'       // CRM & Pipeline
-  | 'scout'     // Research
-  | 'finn'      // Finance
-  | 'vera'      // Customer Success
-  | 'max'       // Executive Assistant
-
-export type TaskStatus = 'assigned' | 'in_progress' | 'completed' | 'reviewed' | 'reassigned'
+export type { AgentId } from '@kaan/os-core'
+export type TaskStatus = DurableTaskStatus
 export type MeetingType = 'daily_standup' | 'weekly_review' | 'monthly_strategy' | 'ad_hoc'
 
 export interface AgentProfile {
@@ -62,12 +85,15 @@ export interface AgentProfile {
   domain: string
   personality: string
   expertise: string[]
+  kpi: string
+  cadence_ms: number
+  capabilities: readonly TaskCapability[]
 }
 
 export interface AgentTask {
   id?: string
   agent_id: AgentId
-  issued_by: AgentId
+  issued_by: TaskIssuer
   title: string
   description: string
   priority: 'critical' | 'high' | 'medium' | 'low'
@@ -75,9 +101,20 @@ export interface AgentTask {
   status: TaskStatus
   result?: string
   janet_feedback?: string
-  performance_score?: number
+  performance_score?: number | null
   created_at?: string
+  updated_at?: string
+  started_at?: string
   completed_at?: string
+  evidence_ids?: string[]
+  dependency_reports?: DurableTask['dependencyReports']
+  permitted_capability?: TaskCapability
+  expected_kpi_effect?: DurableTask['expectedKpiEffect']
+  acceptance_test?: DurableTask['acceptanceTest']
+  idempotency_key?: string
+  artifact?: TaskArtifact
+  verification?: TaskVerificationResult
+  contract_version?: string
 }
 
 export interface AgentReport {
@@ -88,92 +125,71 @@ export interface AgentReport {
   completed_tasks: string[]
   blockers: string[]
   next_actions: string[]
-  performance_score: number
+  performance_score: number | null
   improvement_notes: string
   timestamp: string
 }
 
-// ── Agent profiles — who they are as professionals ──────────────────────────
-export const AGENTS: Record<AgentId, AgentProfile> = {
+// Product-local voice and expertise augment the canonical identity/ownership contract.
+const PRODUCT_AGENT_DETAILS: Record<AgentId, Pick<AgentProfile, 'personality' | 'expertise'>> = {
   janet: {
-    id: 'janet', name: 'Janet', title: 'Chief Growth Officer',
-    domain: 'Company-wide strategy, growth, team management',
-    personality: 'Decisive, data-driven, holds team accountable, pushes for measurable outcomes. Runs meetings efficiently. Gives direct feedback.',
+    personality: 'Shrewd, aggressive CGO. 20 trials is the number. Holds the nine workers like full-time employees. Owns first 30-day trial and paid MRR. Evidence-led — never fakes the number.',
     expertise: ['B2B SaaS growth', 'team management', 'revenue strategy', 'go-to-market', 'CEO communication']
   },
-  // Marcus is the ARCHITECT. This entry previously held ScrollFuel's *Mason* profile
-  // verbatim (title 'Senior Sales Director', a cold-email/pipeline domain), even
-  // though every code path treats Marcus as the architect: marcusBreaker, architectCode,
-  // "JANET → MARCUS — Architect queued". The result was that a self-heal code-fix prompt
-  // described the agent as a quota-obsessed sales director — degrading the diagnosis it
-  // was being asked to produce. Restored to the real architect profile, with the stack
-  // LOCALISED to PhishSim (React + Vite + Express on Vercel) rather than ScrollFuel's
-  // Next.js — copying that verbatim would hand Marcus the wrong stack.
   marcus: {
-    id: 'marcus', name: 'Marcus', title: 'Principal Software Architect',
-    domain: 'Production code quality, bug diagnosis, self-healing pipeline, system architecture',
     personality: 'Decisive, root-cause obsessed, writes production code on the first attempt. Thinks like a startup CTO who has shipped under pressure. Learns from every bug pattern in architect_memory.',
     expertise: ['TypeScript', 'React + Vite', 'Express on Vercel', 'Neon Postgres', 'bug diagnosis', 'self-healing systems', 'SaaS architecture', 'security-first fixes']
   },
-  // Mason is Sales. This is the profile that was previously (incorrectly) filed under
-  // 'marcus'. Its absence from AGENTS is what caused the orphan-row crash: kaan-os-core
-  // dispatches to 'mason', and issueTask INSERTs the row and only then reads
-  // AGENTS[agentId].name — throwing on undefined. Mason existing fixes that structurally.
   mason: {
-    id: 'mason', name: 'Mason', title: 'Senior Sales Director',
-    domain: 'Outbound sales, pipeline, cold email, LinkedIn, sequences',
     personality: 'Relentless, competitive, quota-obsessed. Talks in numbers. Always asking: what moves the deal forward today?',
     expertise: ['cold email', 'LinkedIn outreach', 'pipeline velocity', 'objection handling', 'B2B SaaS sales', 'Apollo outreach', 'sequence optimization']
   },
-  // LOCALISED to PhishSim. Aria's domain/expertise previously read 'UGC, DTC marketing,
-  // UGC content' — ScrollFuel's AI-ads business. buildAgentSystem() injects domain+expertise
-  // straight into the system prompt, so this was re-poisoning her output on EVERY cycle: even
-  // after the company description was corrected and the stale memory rows deleted, Aria wrote
-  // a fresh standup about "UGC ad scripts for DTC brands" the very next run. Fixing the
-  // company description alone was not enough; the profile is a second, independent source.
   aria: {
-    id: 'aria', name: 'Aria', title: 'VP of Marketing',
-    domain: 'Content strategy, demand gen, brand, MSP channel marketing, email marketing',
     personality: 'Creative but analytical. Tests everything. Obsessed with conversion. Thinks in full funnels.',
     expertise: ['B2B SaaS marketing', 'security awareness content', 'MSP channel marketing', 'email campaigns', 'brand positioning', 'demand generation', 'content calendar']
   },
   nova: {
-    id: 'nova', name: 'Nova', title: 'Head of Product Growth',
-    domain: 'PLG, onboarding, feature adoption, activation, retention',
     personality: 'User-obsessed. Finds friction others miss. Maps every user journey. Speaks in activation rates and retention curves.',
     expertise: ['product-led growth', 'onboarding optimization', 'feature adoption', 'user research', 'retention mechanics', 'A/B testing', 'growth loops']
   },
   rex: {
-    id: 'rex', name: 'Rex', title: 'Revenue Operations Manager',
-    domain: 'CRM hygiene, pipeline management, HubSpot, lead scoring',
     personality: 'Process-oriented, systematic. Finds leaks in the pipeline. Obsessed with data integrity and stage transitions.',
     expertise: ['HubSpot', 'Salesforce', 'pipeline management', 'lead scoring', 'CRM hygiene', 'revenue forecasting', 'deal velocity']
   },
   scout: {
-    id: 'scout', name: 'Scout', title: 'VP Market Intelligence (L5 Supervisor)',
-    domain: 'Competitive research, market trends, ICP profiling, lead discovery',
     personality: 'Curious, thorough, connects dots across sources. Spots trends before they peak. Thinks like a VC analyst.',
     expertise: ['competitive intelligence', 'market analysis', 'ICP definition', 'trend spotting', 'lead research', 'win/loss analysis']
   },
   finn: {
-    id: 'finn', name: 'Finn', title: 'CFO (L4 Finance Supervisor)',
-    domain: 'Revenue tracking, MRR/ARR, forecasting, pricing, unit economics',
     personality: 'Precise, no-fluff, everything has a number. Flags financial risk early. Thinks in scenarios and probabilities.',
     expertise: ['SaaS metrics', 'MRR/ARR modeling', 'LTV/CAC', 'pricing strategy', 'financial forecasting', 'runway management', 'unit economics']
   },
   vera: {
-    id: 'vera', name: 'Vera', title: 'VP of Customer Success',
-    domain: 'Onboarding, retention, churn prevention, upsells, advocacy',
     personality: 'Empathetic but results-driven. Champions the customer internally. Finds the upsell opportunity in every relationship.',
     expertise: ['customer onboarding', 'churn prevention', 'expansion revenue', 'NPS', 'customer health scoring', 'QBRs', 'advocacy programs']
   },
-  max: {
-    id: 'max', name: 'Max', title: 'Chief of Staff',
-    domain: 'Founder support, priority management, cross-team coordination, briefs',
-    personality: 'Anticipatory, organized, protects Kaan\'s time ruthlessly. Translates chaos into clarity. Filters signal from noise.',
-    expertise: ['executive communications', 'project management', 'cross-functional coordination', 'priority triage', 'founder operations', 'strategic briefs']
-  }
+  dex: {
+    personality: 'Safety-first, evidence-driven, and decisive about suppressions and circuit breakers.',
+    expertise: ['email authentication', 'deliverability', 'suppression safety', 'bounce analysis', 'circuit breakers'],
+  },
 }
+
+export const AGENTS = Object.freeze(Object.fromEntries(
+  AGENT_IDS.map((id) => {
+    const canonical = AGENT_REGISTRY[id]
+    return [id, {
+      id,
+      name: canonical.name,
+      title: canonical.title,
+      domain: canonical.ownership,
+      personality: PRODUCT_AGENT_DETAILS[id].personality,
+      expertise: PRODUCT_AGENT_DETAILS[id].expertise,
+      kpi: canonical.kpi.name,
+      cadence_ms: canonical.healthCadenceMs,
+      capabilities: canonical.allowedTaskCapabilities,
+    }]
+  }),
+) as unknown as Record<AgentId, AgentProfile>)
 
 // ── Database: ensure all OS tables exist ──────────────────────────────────────
 //
@@ -282,7 +298,7 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
         FROM agent_tasks WHERE agent_id=${agentId} AND status IN ('reviewed','completed') AND company_id=${companyId}
         ORDER BY completed_at DESC LIMIT 10`.catch(() => []),
     sql`SELECT strengths, improvement_areas, janet_notes, updated_at
-        FROM agent_performance WHERE agent_id=${agentId} AND company_id=${companyId}
+        FROM agent_performance WHERE agent_id=${agentId} AND company_id=${companyId} AND avg_score IS NOT NULL
         ORDER BY updated_at DESC LIMIT 3`.catch(() => []),
     // PS-RATCHET-01: filter by source in SQL. The previous form filtered AFTER a company-wide
     // LIMIT 20, which Janet's row volume exhausted, so this list was empirically always empty.
@@ -301,7 +317,10 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
     const age = done ? Math.floor((Date.now() - done.getTime()) / 86_400_000) : null
     const when = !done ? 'completed date unknown'
       : `completed ${done.toISOString().slice(0,10)} (${age === 0 ? 'today' : age === 1 ? 'YESTERDAY' : `${age} DAYS AGO — NOT recent`})`
-    return `Task: "${t.title}" | ${when} | Score: ${t.performance_score || '?'}/10 | Feedback: ${t.janet_feedback || 'none'}`
+    const feedback = t.performance_score == null
+      ? 'withheld from learning — review was unscored'
+      : t.janet_feedback || 'none'
+    return `Task: "${t.title}" | ${when} | Score: ${formatEvaluationScore(t.performance_score)} | Feedback: ${feedback}`
   }).join('\n')
 
   const perfHistory = perf.slice(0,2).map((p:any) =>
@@ -339,7 +358,7 @@ async function getAgentMemory(agentId: AgentId, sql: any, companyId = COMPANY_ID
   // The activity ledger is already the sole authority for what is open; say that here too, so the
   // two halves of the prompt cannot be read as disagreeing.
   return [
-    taskHistory ? `Tasks you have already FINISHED (closed and scored — history only).\n` +
+    taskHistory ? `Tasks you have already FINISHED (closed review history; some may be unscored).\n` +
       `None of these is current work. What you are working on NOW comes ONLY from the ACTIVITY\n` +
       `LEDGER's assigned-tasks list; if that list is empty you are unassigned, and a title below\n` +
       `is NOT a substitute for one:\n${taskHistory}` : '',
@@ -363,15 +382,19 @@ Your personality: ${agent.personality}
 Your expertise: ${agent.expertise.join(', ')}
 Your domain: ${agent.domain}
 
+${evidenceBoundRoleBlock(agent.id, TELEGRAM_PRODUCT)}
+
+${agent.id === 'janet' ? janetCgoMandate() : employeeExecutionMandate()}
+
 Company context:
 ${companyContext}
 
 Your professional memory (what you've learned, your track record, Janet's feedback):
 ${memory || 'You are new. Show what you can do.'}
 
-You are a full-time senior professional. You give concrete, specific, actionable output — not vague advice.
-When reporting to Janet, be precise: what you did, what the numbers say, what your recommendation is.
-You improve based on feedback. Your goal is to be indispensable.`
+You are a full-time senior professional. You give concrete, specific, actionable output — not vague advice. Do the work; do not only describe it.
+When reporting to Janet, be precise: what you did, what the numbers say, what the next conversion step is.
+You improve based on feedback. Your goal is a verified 30-day trial this week and to be indispensable.`
 }
 
 /**
@@ -882,7 +905,7 @@ export async function getCompanyContext(sql: any): Promise<string> {
       return fallback
     })
 
-  const [orgRows, camps, results, orgAges, leadOrgs, unflagged, outreach, replyDrafts, newSignups] = await Promise.all([
+  const [orgRows, camps, results, orgAges, leadOrgs, unflagged, outreach, replyDrafts, newSignups, liveTrials] = await Promise.all([
     q('organizations', sql`SELECT plan::text AS plan, "stripePriceId" AS price_id, count(*)::int AS n
         FROM organizations GROUP BY plan, "stripePriceId"`, [] as any[]),
     q('campaigns', sql`SELECT count(*)::int AS total,
@@ -1009,6 +1032,7 @@ export async function getCompanyContext(sql: any): Promise<string> {
              count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at > now() - interval '24 hours')::int AS touched_today,
              count(*) FILTER (WHERE NOT is_internal AND touch2_sent_at IS NOT NULL)::int AS touch2,
              count(*) FILTER (WHERE NOT is_internal AND replied)::int AS replied,
+             count(*) FILTER (WHERE NOT is_internal AND (trial_at IS NOT NULL OR pipeline_stage = 'trial'))::int AS crm_trials,
              count(*) FILTER (WHERE NOT is_internal AND bounced)::int AS bounced,
              count(*) FILTER (WHERE NOT is_internal AND unsubscribed)::int AS unsubscribed,
              count(*) FILTER (WHERE NOT is_internal AND touch1_sent_at IS NULL AND pipeline_stage = 'prospect')::int AS ready_pool,
@@ -1016,13 +1040,13 @@ export async function getCompanyContext(sql: any): Promise<string> {
              count(*) FILTER (WHERE is_internal AND replied)::int AS internal_replies,
              max(touch1_sent_at) FILTER (WHERE NOT is_internal) AS last_send
         FROM (
-          SELECT touch1_sent_at, touch2_sent_at, replied, bounced, unsubscribed, pipeline_stage,
+          SELECT touch1_sent_at, touch2_sent_at, replied, bounced, unsubscribed, pipeline_stage, trial_at,
                  (lower(email) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS})
                   OR lower(split_part(email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS})
                   OR pipeline_stage = 'internal_test') AS is_internal
           FROM ps_outreach_leads
         ) t`,
-      [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, internal_excl: 0, internal_replies: 0, last_send: null }]),
+      [{ touched_ever: 0, touched_7d: 0, touched_today: 0, touch2: 0, replied: 0, crm_trials: 0, bounced: 0, unsubscribed: 0, ready_pool: 0, internal_excl: 0, internal_replies: 0, last_send: null }]),
     // PS-TOPFUNNEL-01: has inbound reply capture EVER received anything? Distinguishes "no one
     // replied" from "we cannot hear replies" — see topOfFunnelMetric.
     q('reply_drafts', sql`SELECT count(*)::int AS n FROM outreach_reply_drafts`, [{ n: 0 }]),
@@ -1035,6 +1059,18 @@ export async function getCompanyContext(sql: any): Promise<string> {
           WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
           ORDER BY m.id ASC LIMIT 1
         )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) = false`, [{ n: 0 }]),
+    q('live_trials', sql`
+      SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
+      FROM (
+        SELECT
+          o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
+          COALESCE(lower((
+            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+            ORDER BY m.id ASC LIMIT 1
+          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
+        FROM organizations o
+      ) t`, [{ n: 0 }]),
   ])
 
   const annual = annualPriceIds()
@@ -1134,7 +1170,17 @@ export async function getCompanyContext(sql: any): Promise<string> {
     unknown: Number(s.unknown_sent ?? 0),
   }
 
+  const trialFacts: TrialFacts = {
+    liveProductTrials: Number((liveTrials as any[])[0]?.n ?? 0),
+    crmTrials: Number(of_.crm_trials ?? 0),
+  }
+  const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
+  const goals = goalsForWeek(weekNum)
+
   return `${topFunnel}
+
+── CGO NORTH STAR ──
+${cgoScorecard(trialFacts, goals)}
 
 ── BOTTOM OF FUNNEL (orgs already signed up) ──
 Orgs: ${free + paying} total | Paying: ${paying} (${mix}) | Free/trial leads: ${freeLeads}${pipelineNote}
@@ -1151,6 +1197,37 @@ ${simProvenanceNote(internalSent, ext.sent, excluded.unknown)}
 trends — do not reason about a percentage without saying the raw number it came from.${unflaggedInternalOrgWarning(suspectedInternal)}${infra}${warn}`
 }
 
+async function loadTrialFacts(sql: any): Promise<TrialFacts> {
+  const failedLive = [{ n: 0 }]
+  const [live, crm] = await Promise.all([
+    sql`
+      SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
+      FROM (
+        SELECT
+          o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
+          COALESCE(lower((
+            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+            ORDER BY m.id ASC LIMIT 1
+          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
+        FROM organizations o
+      ) t`.catch(() => failedLive),
+    sql`
+      SELECT count(*) FILTER (WHERE NOT is_internal AND (trial_at IS NOT NULL OR pipeline_stage = 'trial'))::int AS n
+      FROM (
+        SELECT trial_at, pipeline_stage,
+               (lower(email) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS})
+                OR lower(split_part(email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS})
+                OR pipeline_stage = 'internal_test') AS is_internal
+        FROM ps_outreach_leads
+      ) t`.catch(() => failedLive),
+  ])
+  return {
+    liveProductTrials: Number((live as any[])[0]?.n ?? 0),
+    crmTrials: Number((crm as any[])[0]?.n ?? 0),
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TASK SYSTEM — Janet assigns work, agents execute, Janet reviews
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1160,8 +1237,15 @@ trends — do not reason about a percentage without saying the raw number it cam
 // the DB. `agent_id` is still accepted (several call sites pass it for readability) but
 // it is not read — the row is written with `agentId`.
 export type NewAgentTask =
-  Omit<AgentTask, 'id' | 'agent_id' | 'status' | 'issued_by' | 'created_at'>
-  & { agent_id?: AgentId }
+  Pick<AgentTask, 'title' | 'description' | 'priority' | 'due_in_hours'>
+  & {
+    agent_id?: AgentId
+    evidenceIds?: string[]
+    dependencyReports?: DurableTask['dependencyReports']
+    permittedCapability?: TaskCapability
+    expectedKpiEffect?: DurableTask['expectedKpiEffect']
+    acceptanceTest?: DurableTask['acceptanceTest']
+  }
 
 // PS-DUE-01: scale a task's SLA to its size, not a flat 48h. Most standup / L5 tasks are ~1h routine
 // work (review, scan, snapshot, update, refresh); a flat multi-day clock makes fast work look slow
@@ -1322,7 +1406,7 @@ export async function issueTask(
   agentId: AgentId,
   task: NewAgentTask,
   companyId = COMPANY_ID,
-  opts: { force?: boolean; issuedBy?: string } = {},
+  opts: { force?: boolean; issuedBy?: TaskIssuer } = {},
 ): Promise<{ task_id: string; agent: string; title: string; deduped?: boolean; voided?: boolean; reason?: string }> {
   // AUTONOMY GATE — no agent task is written unless this company's earned level
   // permits it. At 'manual' this throws AutonomyDenied (audited) before any write.
@@ -1366,16 +1450,71 @@ export async function issueTask(
     return { task_id: dup.id, agent: agent.name, title: task.title, deduped: true }
   }
 
-  const [inserted] = await sql`
-    INSERT INTO agent_tasks (agent_id, issued_by, title, description, priority, due_in_hours, status, company_id)
-    VALUES (${agentId}, ${opts.issuedBy ?? 'janet'}, ${task.title}, ${task.description}, ${task.priority}, ${task.due_in_hours}, 'assigned', ${companyId})
-    RETURNING id
-  `
+  const now = new Date().toISOString()
+  const evidenceId = `issuance:${companyId}:${agentId}:${createHash('sha256').update(`${normalizeTaskTitle(task.title)}:${now.slice(0, 10)}`).digest('hex').slice(0, 16)}`
+  const evidenceIds = task.evidenceIds?.length ? task.evidenceIds : [evidenceId]
+  const dependencyReports = task.dependencyReports?.length
+    ? task.dependencyReports
+    : evidenceIds.map((reportId) => ({
+        reportId,
+        generatedAt: now,
+        maxAgeMs: Math.max(AGENT_REGISTRY[agentId].healthCadenceMs * 2, 60 * 60 * 1000),
+      }))
+  const permittedCapability =
+    task.permittedCapability ?? AGENT_REGISTRY[agentId].allowedTaskCapabilities[0]
+  const token = createHash('sha256')
+    .update(`${companyId}:${agentId}:${normalizeTaskTitle(task.title)}`)
+    .digest('hex')
+    .slice(0, 16)
+  const durableTask: DurableTask = {
+    id: randomUUID(),
+    companyId,
+    productId: companyId,
+    owner: agentId,
+    issuer: opts.issuedBy ?? 'janet',
+    evidenceIds,
+    dependencyReports,
+    permittedCapability,
+    expectedKpiEffect: task.expectedKpiEffect ?? {
+      kpiName: AGENT_REGISTRY[agentId].kpi.name,
+      direction: 'increase',
+      rationale: `Advance ${AGENT_REGISTRY[agentId].kpi.definition}`,
+    },
+    acceptanceTest: task.acceptanceTest ?? {
+      description: `Persist a typed ${agentId} artifact with task-bound evidence and deterministic verification`,
+      expectedResult: 'Artifact digest matches the persisted output and all task bindings validate',
+    },
+    idempotencyKey: createTaskIdempotencyKey({
+      companyId,
+      productId: companyId,
+      owner: agentId,
+      capability: permittedCapability,
+      token,
+    }),
+    createdAt: now,
+    updatedAt: now,
+    status: 'queued',
+    title: task.title,
+    description: task.description,
+  }
+  const validation = validateDurableTask(durableTask, { now })
+  if (validation.length > 0) {
+    throw new TypeError(`Refusing invalid DurableTask: ${validation.map(i => i.code).join(', ')}`)
+  }
+  const store = createNeonTaskStore(sql as any)
+  await store.createTask(durableTask)
+  const persisted = await store.getTaskByIdempotencyKey(companyId, durableTask.idempotencyKey)
+  if (!persisted) throw new Error(`DurableTask ${durableTask.id} was not persisted`)
 
   const _issuerLabel = (opts.issuedBy && opts.issuedBy !== 'janet') ? `Self-Originated by ${agent.name}` : 'Task Assigned by Janet'
   await sendTelegram(`📋 *${_issuerLabel}*\n\nTo: ${agent.name} (${agent.title})\nTask: ${task.title}\nPriority: ${task.priority.toUpperCase()}\nDue: ${task.due_in_hours}h`).catch(() => {})
 
-  return { task_id: inserted.id, agent: agent.name, title: task.title, deduped: false }
+  return {
+    task_id: persisted.id,
+    agent: agent.name,
+    title: task.title,
+    deduped: persisted.id !== durableTask.id,
+  }
 }
 
 /**
@@ -1440,10 +1579,16 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
           VALUES (${companyId}, ${agentId}, ${String(task.id)}, ${verb}, ${arg.slice(0, 2000)}, ${outcome})`.catch(() => {})
         return `\n\n---\n**ACTION REFUSED (${agentId}):** ${outcome}`
       }
+      const bugId = await ensureMarcusProposalBugId(sql, {
+        agentId,
+        taskId: String(task.id ?? ''),
+        proposal: arg,
+      })
       const id = await queueJanetArchitectTask({
         task: arg.slice(0, 2000),
+        bugId,
         source: `agent:${agentId}`,
-        notes: `Self-originated action from ${agentId} on task "${task.title.slice(0, 60)}"`,
+        notes: `Self-originated action from ${agentId} on task "${task.title.slice(0, 60)}" evidence=${bugId ?? 'none'}`,
       })
       outcome = id
         ? `queued engineering task to Marcus via the verified pipeline (id ${id})`
@@ -1465,79 +1610,187 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
   return `\n\n---\n**ACTION TAKEN (${agentId}, under Janet's review):** ${outcome}`
 }
 
+export function isSubstantiveTaskOutput(output: string): boolean {
+  const text = output.trim()
+  if (text.length < 200) return false
+  if (/^(acknowledged|received|understood|will do|working on it|done)[.! ]*$/i.test(text)) return false
+  const evidenceSections = [
+    /\b(findings?|outputs?)\b/i,
+    /\b(recommendations?|next steps?)\b/i,
+    /\b(confidence|self-assessment)\b/i,
+  ].filter((pattern) => pattern.test(text)).length
+  return evidenceSections >= 2
+}
+
+export function buildVerifiedTaskExecution(
+  task: DurableTask,
+  output: string,
+  at = new Date().toISOString(),
+): { completedTask: DurableTask; artifact: TaskArtifact; verification: TaskVerificationResult } {
+  if (!isSubstantiveTaskOutput(output)) {
+    throw new Error('Task output is prose acknowledgement or lacks substantive evidence sections')
+  }
+  const digest = `sha256:${createHash('sha256').update(output).digest('hex')}` as const
+  const artifact: TaskArtifact = {
+    id: `artifact:${task.id}`,
+    taskId: task.id,
+    idempotencyKey: task.idempotencyKey,
+    kind: 'report',
+    locator: `agent-task://${task.companyId}/${task.id}/report`,
+    digest,
+    producedBy: task.owner,
+    evidenceIds: [...task.evidenceIds],
+    createdAt: at,
+  }
+  const digestVerified =
+    artifact.digest === `sha256:${createHash('sha256').update(output).digest('hex')}`
+  const verification: TaskVerificationResult = {
+    id: `verification:${task.id}`,
+    taskId: task.id,
+    artifactId: artifact.id,
+    idempotencyKey: task.idempotencyKey,
+    verifier: 'system',
+    passed: digestVerified && isSubstantiveTaskOutput(output),
+    acceptanceTestDescription: task.acceptanceTest.description,
+    evidenceIds: [...task.evidenceIds],
+    verifiedAt: at,
+  }
+  const completedTask: DurableTask = {
+    ...task,
+    status: 'completed',
+    updatedAt: at,
+    completedAt: at,
+  }
+  const issues = validateDurableTask(completedTask, {
+    now: at,
+    artifact,
+    verification,
+  })
+  if (issues.length > 0) {
+    throw new Error(`Task execution failed DurableTask verification: ${issues.map(i => i.code).join(', ')}`)
+  }
+  return { completedTask, artifact, verification }
+}
+
 export async function executeTask(taskId: string, companyId = COMPANY_ID): Promise<AgentTask> {
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
+  const store = createNeonTaskStore(sql as any)
 
-  // agent_tasks rows carry exactly the AgentTask columns (see ensureOSTables); neon
-  // types every row as Record<string, any>, so name the row shape here.
-  const rows = (await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`) as AgentTask[]
-  const [task] = rows
-  if (!task) throw new Error(`Task ${taskId} not found`)
+  const rows = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
+  const [row] = rows as any[]
+  if (!row) throw new Error(`Task ${taskId} not found`)
+  if (row.contract_version !== DURABLE_TASK_CONTRACT_VERSION) {
+    await sql`UPDATE agent_tasks SET status='failed', failed_at=NOW(), updated_at=NOW(),
+      janet_feedback='Legacy untyped task cannot execute as DurableTask v1'
+      WHERE id=${taskId} AND company_id=${companyId} AND status NOT IN ('completed','cancelled')`
+    throw new Error(`Task ${taskId} is an untyped legacy row`)
+  }
+  let durable = durableTaskFromRow(row)
+  if (durable.status === 'queued') {
+    const claimed = await store.claimTaskById(taskId, companyId)
+    if (!claimed) throw new Error(`Task ${taskId} could not be atomically claimed`)
+    durable = claimed
+  } else if (durable.status !== 'executing') {
+    throw new Error(`Task ${taskId} is not executable from status ${durable.status}`)
+  }
+  const initialIssues = validateDurableTask(durable, { now: new Date() })
+  if (initialIssues.length > 0) {
+    await sql`UPDATE agent_tasks SET status='blocked', blocked_at=NOW(), updated_at=NOW(),
+      janet_feedback=${`Blocked invalid DurableTask: ${initialIssues.map(i => i.code).join(', ')}`}
+      WHERE id=${taskId} AND company_id=${companyId} AND status='executing'`
+    throw new Error(`Task ${taskId} failed DurableTask validation`)
+  }
 
-  const agent = AGENTS[task.agent_id as AgentId]
+  const task = row as AgentTask
+  const agent = AGENTS[durable.owner]
   const [memory, context] = await Promise.all([
-    getAgentMemory(task.agent_id as AgentId, sql, companyId),
+    getAgentMemory(durable.owner, sql, companyId),
     getCompanyContext(sql)
   ])
-
-  await sql`UPDATE agent_tasks SET status='in_progress' WHERE id=${taskId}`
 
   // PS-PORT-01: inject this agent's recent misses + learned lessons so it does not repeat them.
   // Empty string on a cold start (no reflections yet) — additive, never blocks execution.
   const [reflectionBlock, lessonsBlock] = await Promise.all([
-    getAgentReflectionPrompt(sql, companyId, task.agent_id).catch(() => ''),
-    getAgentLessonsForPrompt(sql, companyId, task.agent_id).catch(() => ''),
+    getAgentReflectionPrompt(sql, companyId, durable.owner).catch(() => ''),
+    getAgentLessonsForPrompt(sql, companyId, durable.owner).catch(() => ''),
   ])
   const system = [buildAgentSystem(agent, memory, context), reflectionBlock, lessonsBlock]
     .filter(Boolean)
     .join('\n\n')
-  const user = `TASK ASSIGNED BY JANET:
-Title: ${task.title}
-Priority: ${task.priority.toUpperCase()}
-Description: ${task.description}
-
-Execute this task now. Provide:
-1. What you did / your analysis
-2. Specific findings or outputs
-3. Recommendations with exact next steps
-4. Any blockers or things you need from Janet
-5. Self-assessment: how confident are you in this output? (0-10)
-
-You may take ONE real action to advance this (under Janet's supervision) by ending with a single line:
-- ACTION: queue_marcus: <specific code/infra change> — routes into the verified deploy pipeline (you never touch prod directly).
-- ACTION: escalate: <title> | <why a human must decide> — for pricing, spend, legal, contacting real customers, or cross-team calls.
-Only ONE action, only if a concrete step should genuinely HAPPEN now, not just be recommended. Omit the ACTION line for analysis-only work. Never invent an action to look busy.
-Be specific. Janet will review and score your work.`
+  const user = employeeExecutePrompt({
+    title: task.title,
+    description: task.description,
+    priority: String(task.priority || 'medium'),
+  })
 
   const result = await llm(system, user, 1200)
+  if (!isSubstantiveTaskOutput(result)) {
+    await sql`UPDATE agent_tasks SET status='failed', failed_at=NOW(), updated_at=NOW(),
+      janet_feedback='Execution output was acknowledgement/prose without acceptance evidence'
+      WHERE id=${taskId} AND company_id=${companyId} AND status='executing'`
+    throw new Error(`Task ${taskId} produced no verifiable artifact`)
+  }
   // PS-AGENT-ACT-01: if the agent proposed a real action, execute it (gated + logged) and append
   // the outcome so the stored result records what actually happened, not just what was recommended.
   const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
   const finalResult = result + actionSummary
-
-  await sql`
-    UPDATE agent_tasks
-    SET status='completed', result=${finalResult}, completed_at=NOW()
-    WHERE id=${taskId}
-  `
+  const execution = buildVerifiedTaskExecution(durable, finalResult)
+  await store.persistExecution(
+    execution.completedTask,
+    execution.artifact,
+    execution.verification,
+  )
+  await persistOutcomeTrace({
+    companyId,
+    agentId: durable.owner,
+    taskId,
+    action: actionSummary ? 'queue_or_escalate' : 'report',
+    promptVersion: AGENT_PROMPT_VERSION,
+    schemaValid: true,
+    liveness: true,
+    usefulness: true,
+    businessOutcome: 'typed_artifact_verified',
+  }).catch(() => {})
 
   // Save to agent memory
   await rememberFact({
     company_id: companyId, type: 'strategic',
     key: `task:${task.title.slice(0,50)}`, value: finalResult.slice(0,500),
-    confidence: 0.8, source: task.agent_id
+    confidence: 0.8, source: durable.owner
   }).catch(() => {})
 
-  return { ...task, status: 'completed', result: finalResult }
+  return {
+    ...task,
+    status: 'completed',
+    result: finalResult,
+    artifact: execution.artifact,
+    verification: execution.verification,
+  }
 }
 
-export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number; task: any }> {
+export async function reviewTask(taskId: string, companyId = COMPANY_ID): Promise<{ feedback: string; score: number | null; task: any }> {
   const sql = neon(process.env.DATABASE_URL!)
   const [task] = await sql`SELECT * FROM agent_tasks WHERE id=${taskId} AND company_id=${companyId}`
-  if (!task || !task.result) throw new Error('Task not completed yet')
+  if (!task || task.contract_version !== DURABLE_TASK_CONTRACT_VERSION) throw new Error('Task is missing the DurableTask v1 contract')
+  const store = createNeonTaskStore(sql as any)
+  const [durable, execution] = await Promise.all([
+    store.getTask(taskId),
+    store.getExecution(taskId),
+  ])
+  if (!durable || !execution || durable.status !== 'completed') {
+    throw new Error('Task has no typed completed artifact and verification')
+  }
+  const completionIssues = validateDurableTask(durable, {
+    now: new Date(),
+    artifact: execution.artifact,
+    verification: execution.verification,
+  })
+  if (completionIssues.length > 0) {
+    throw new Error(`Task completion is invalid: ${completionIssues.map(i => i.code).join(', ')}`)
+  }
 
-  const agent = AGENTS[task.agent_id as AgentId]
+  const agent = AGENTS[durable.owner]
   const janetMemory = await getAgentMemory('janet', sql, companyId)
 
   const janetSystem = buildAgentSystem(AGENTS.janet, janetMemory, await getCompanyContext(sql))
@@ -1558,13 +1811,12 @@ As their manager (CGO), assess:
 Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assignment if any]`
 
   const feedback = await llm(janetSystem, reviewPrompt, 600)
-  const scoreMatch = feedback.match(/SCORE:\s*(\d+)/i)
-  const score = scoreMatch ? parseInt(scoreMatch[1]) : 7
+  const score = parseEvaluationScore(feedback, 'score')
 
   await sql`
     UPDATE agent_tasks
-    SET status='reviewed', janet_feedback=${feedback}, performance_score=${score}
-    WHERE id=${taskId}
+    SET janet_feedback=${feedback}, performance_score=${score}, updated_at=NOW()
+    WHERE id=${taskId} AND status='completed' AND contract_version=${DURABLE_TASK_CONTRACT_VERSION}
   `
 
   // Update performance record
@@ -1574,21 +1826,23 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
     ON CONFLICT DO NOTHING
   `.catch(() => {})
 
-  await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${score}/10\n${feedback.slice(0,200)}`).catch(() => {})
+  await sendTelegram(`✅ *Task Reviewed by Janet*\n\n${agent.name}: "${task.title}"\nScore: ${formatEvaluationScore(score)}\n${feedback.slice(0,200)}`).catch(() => {})
 
-  // PS-PORT-01: record the outcome — pass OR fail — into the reflection/learning store. This is
-  // the line that ends PS-LEARN-GATE-01: a score below the pass bar (7) records a correction and
-  // drives -0.08 confidence via learnFromOutcome, so the agent learns from a loss on a cold start.
-  const { correction, lesson } = parseReviewForReflection(feedback, score)
-  await recordAgentReflection(sql, companyId, {
-    agentId: task.agent_id,
-    taskId,
-    success: score >= 7,
-    score,
-    outputPreview: String(task.result).slice(0, 500),
-    correction,
-    lesson,
-  }).catch(() => {})
+  // A malformed evaluation is not evidence of either success or failure. Keep the
+  // task and review text for audit, but never turn an unscored response into a
+  // correction, lesson, or confidence update.
+  if (isScoredEvaluation(score)) {
+    const { correction, lesson } = parseReviewForReflection(feedback, score)
+    await recordAgentReflection(sql, companyId, {
+      agentId: task.agent_id,
+      taskId,
+      success: score >= 7,
+      score,
+      outputPreview: String(task.result).slice(0, 500),
+      correction,
+      lesson,
+    }).catch(() => {})
+  }
 
   return { feedback, score, task: { ...task, janet_feedback: feedback, performance_score: score } }
 }
@@ -1610,18 +1864,18 @@ const PASS_BAR = 7
 export type DrainResult = {
   claimed: number; succeeded: number; failed: number; requeued: number; parked: number
   remaining: number; budget_exhausted: boolean
-  results: { id: string; title: string; agent: string; ok: boolean; score?: number; error?: string }[]
+  results: { id: string; title: string; agent: string; ok: boolean; score?: number | null; error?: string }[]
 }
 
 /** V7.3 L5.x item 4: score, and on a sub-bar score run ONE redo with the feedback attached. */
-async function executeReviewWithRedo(taskId: string, companyId: string): Promise<{ score: number }> {
+async function executeReviewWithRedo(taskId: string, companyId: string): Promise<{ score: number | null }> {
   await executeTask(taskId, companyId)
   let review = await reviewTask(taskId, companyId)
-  if (review.score < PASS_BAR) {
+  if (isScoredEvaluation(review.score) && review.score < PASS_BAR) {
     // One-shot redo: hand the task back and re-execute. The reflection loop wired above means
     // the agent's own miss is now injected into its retry prompt.
     const sql = neon(process.env.DATABASE_URL!)
-    await sql`UPDATE agent_tasks SET status='assigned', updated_at=NOW() WHERE id=${taskId}`.catch(() => {})
+    await sql`UPDATE agent_tasks SET status='queued', artifact=NULL, verification=NULL, result=NULL, updated_at=NOW() WHERE id=${taskId}`.catch(() => {})
     await executeTask(taskId, companyId)
     review = await reviewTask(taskId, companyId)
   }
@@ -1638,13 +1892,15 @@ export async function drainAgentTasks(
   const sql = neon(process.env.DATABASE_URL!)
   await ensureOSTables(sql)
 
+  const store = createNeonTaskStore(sql as any)
+
   const out: DrainResult = { claimed: 0, succeeded: 0, failed: 0, requeued: 0, parked: 0, remaining: 0, budget_exhausted: false, results: [] }
 
-  // Reaper: recover tasks stranded 'in_progress' by a killed run; park after max attempts.
   const reaped = await sql`
     UPDATE agent_tasks
-    SET status = CASE WHEN attempts >= ${TASK_MAX_ATTEMPTS} THEN 'failed' ELSE 'assigned' END, updated_at = NOW()
-    WHERE company_id = ${companyId} AND status = 'in_progress'
+    SET status = CASE WHEN attempts >= ${TASK_MAX_ATTEMPTS} THEN 'failed' ELSE 'queued' END, updated_at = NOW()
+    WHERE company_id = ${companyId} AND status = 'executing'
+      AND contract_version = ${DURABLE_TASK_CONTRACT_VERSION}
       AND COALESCE(updated_at, created_at) < NOW() - (${STUCK_IN_PROGRESS_MINUTES} || ' minutes')::interval
     RETURNING status
   `.catch(() => [] as any[])
@@ -1654,51 +1910,44 @@ export async function drainAgentTasks(
   while (out.claimed < maxTasks) {
     if (Date.now() - startedAt > budgetMs) { out.budget_exhausted = true; break }
 
-    // Atomic claim — one statement, WHERE re-checks status='assigned'. The Neon HTTP driver has
-    // no read-your-own-write guarantee, so trust ONLY the RETURNING post-image, never a re-read.
-    const claimedRows = await sql`
-      UPDATE agent_tasks
-      SET status='in_progress', attempts = COALESCE(attempts, 0) + 1, updated_at = NOW()
-      WHERE id = (
-        SELECT id FROM agent_tasks
-        WHERE company_id = ${companyId} AND status = 'assigned' AND COALESCE(attempts, 0) < ${TASK_MAX_ATTEMPTS}
-        ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC
-        LIMIT 1
-      ) AND status = 'assigned'
-      RETURNING id, title, agent_id, status AS claimed_status
-    `.catch(() => [] as any[])
-    const task = (claimedRows as any[])[0]
-    if (!task) break
-    if (task.claimed_status !== 'in_progress') {
-      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: false, error: 'claim did not take effect' })
-      out.failed++; break
-    }
-    if (attemptedThisRun.has(task.id)) break
-    attemptedThisRun.add(task.id)
+    const claimed = await store.claimTask(companyId)
+    if (!claimed) break
+    if (attemptedThisRun.has(claimed.id)) break
+    attemptedThisRun.add(claimed.id)
     out.claimed++
 
     try {
-      const review = await executeReviewWithRedo(task.id, companyId)
-      out.succeeded++
-      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: true, score: review.score })
+      const review = await executeReviewWithRedo(claimed.id, companyId)
+      if (isScoredEvaluation(review.score)) {
+        out.succeeded++
+        out.results.push({ id: claimed.id, title: claimed.title, agent: claimed.owner, ok: true, score: review.score })
+      } else {
+        out.failed++
+        out.results.push({
+          id: claimed.id,
+          title: claimed.title,
+          agent: claimed.owner,
+          ok: false,
+          score: null,
+          error: 'review unscored: score missing, malformed, or outside 0..10',
+        })
+      }
     } catch (e: any) {
       out.failed++
       const err = String(e?.message || e).slice(0, 200)
-      out.results.push({ id: task.id, title: task.title, agent: task.agent_id, ok: false, error: err })
-      // Hand back unless attempts are burned. `AND status='in_progress'` is load-bearing: if
-      // executeTask committed a deliverable and a LATER stage threw, do NOT revert a finished task.
+      out.results.push({ id: claimed.id, title: claimed.title, agent: claimed.owner, ok: false, error: err })
       await sql`
         UPDATE agent_tasks
-        SET status = CASE WHEN attempts >= ${TASK_MAX_ATTEMPTS} THEN 'failed' ELSE 'assigned' END,
+        SET status = CASE WHEN attempts >= ${TASK_MAX_ATTEMPTS} THEN 'failed' ELSE 'queued' END,
             janet_feedback = ${'runner error: ' + err}, updated_at = NOW()
-        WHERE id = ${task.id} AND status = 'in_progress'
+        WHERE id = ${claimed.id} AND status = 'executing'
       `.catch(() => {})
     }
   }
 
   const rest = await sql`
     SELECT count(*)::int AS n FROM agent_tasks
-    WHERE company_id = ${companyId} AND status = 'assigned' AND COALESCE(attempts, 0) < ${TASK_MAX_ATTEMPTS}
+    WHERE company_id = ${companyId} AND status = 'queued' AND contract_version = ${DURABLE_TASK_CONTRACT_VERSION} AND COALESCE(attempts, 0) < ${TASK_MAX_ATTEMPTS}
   `.catch(() => [{ n: 0 }])
   out.remaining = ((rest as any[])[0]?.n as number) ?? 0
   return out
@@ -1754,7 +2003,7 @@ async function buildActivityLedger(
 
   const completedBlock = last24.length
     ? `COMPLETED IN THE LAST 24 HOURS (this, and only this, is "yesterday"):\n` +
-      last24.map(r => `  - "${r.title}" — ${new Date(r.completed_at).toISOString()} (scored ${r.performance_score ?? '?'}/10)`).join('\n')
+      last24.map(r => `  - "${r.title}" — ${new Date(r.completed_at).toISOString()} (${formatEvaluationScore(r.performance_score)})`).join('\n')
     : `COMPLETED IN THE LAST 24 HOURS: NOTHING. You finished no task yesterday. Report exactly that — do not reach further back and present older work as if it were yesterday's.`
 
   const earlierBlock = earlier.length
@@ -1916,7 +2165,7 @@ export async function runDailyStandup(companyId = COMPANY_ID): Promise<{
   const context = await getCompanyContext(sql)
 
   // Each agent reports their standup
-  const standupAgents: AgentId[] = ['marcus', 'aria', 'finn', 'vera', 'rex']
+  const standupAgents: AgentId[] = [...WORKER_AGENT_IDS]
   const reports: AgentReport[] = []
 
   for (const agentId of standupAgents) {
@@ -1924,7 +2173,7 @@ export async function runDailyStandup(companyId = COMPANY_ID): Promise<{
     const memory = await getAgentMemory(agentId, sql, companyId)
     const pendingTasks = await sql`
       SELECT title, description, priority FROM agent_tasks
-      WHERE agent_id=${agentId} AND status IN ('assigned','in_progress') AND company_id=${companyId}
+      WHERE agent_id=${agentId} AND status IN ('queued','executing','assigned','in_progress') AND company_id=${companyId}
       ORDER BY priority, created_at
       LIMIT 5
     `.catch(() => [])
@@ -1965,8 +2214,7 @@ ${todayItem}
 5. Confidence level on hitting your targets this week (0-10)`
 
     const report_text = await llm(system, standupPrompt, 400)
-    const scoreMatch = report_text.match(/(\d+)\/10|confidence.*?(\d+)/i)
-    const score = scoreMatch ? parseInt(scoreMatch[1] || scoreMatch[2]) : 7
+    const score = parseEvaluationScore(report_text, 'confidence')
 
     reports.push({
       agent_id: agentId, agent_name: agent.name,
@@ -2030,22 +2278,21 @@ Distinguish, in your own output, "X reported that..." from "X did...". Only writ
 system record backs it.
 
 `
-  // PS-GOAL-ALIGN-01: the founder's real_pipeline fact is the binding constraint on WHAT to assign.
-  // It lived in memory but the standup ignored it and kept assigning conversion work over a
-  // 1-prospect funnel. Read it and turn it into a hard gate on task generation, so the standup
-  // proposes ACQUISITION work (fill the funnel) instead of conversion work (a denominator of 1).
+  // CGO mandate (2026-09-10, founder): zero trials is a crisis. Fill the funnel AND convert
+  // whoever is already engaged. The old acquisition-only gate forbade conversion on a small
+  // list; that produced a company that never asked for a trial. Founder pipeline notes are
+  // context, not a ban on conversion work.
   const pipelineFact = (await sql`SELECT value FROM janet_memory
     WHERE company_id=${companyId} AND type='company' AND key='real_pipeline' LIMIT 1`.catch(() => [])) as any[]
-  const acquisitionGate = pipelineFact[0]?.value
-    ? `TODAY'S BINDING CONSTRAINT — founder directive, and it OVERRIDES any instinct to work the existing funnel:\n${pipelineFact[0].value}\n\n` +
-      `THEREFORE every task you assign must aim at ACQUISITION / TOP OF FUNNEL: contacting more MSPs, ` +
-      `expanding and enriching the lead list, opening new outreach channels, discovery of new prospects. ` +
-      `Do NOT assign conversion, follow-up-copy, re-engagement, lead-scoring, or CRM/free-tier-cadence ` +
-      `work over this near-empty funnel — it cannot move revenue when the denominator is 1. Assign work ` +
-      `that FILLS the funnel.\n\n`
+  const trialFacts = await loadTrialFacts(sql).catch(() => ({ liveProductTrials: 0, crmTrials: 0 }))
+  const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
+  const goals = goalsForWeek(weekNum)
+  const pipelineNote = pipelineFact[0]?.value
+    ? `Founder pipeline note (context — does NOT forbid converting existing replies into a 30-day trial):\n${pipelineFact[0].value}\n\n`
     : ''
+  const acquisitionGate = `${pipelineNote}${cgoStandupDirective(trialFacts, goals)}`
 
-  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO:\n1. Call out anything that needs immediate attention\n2. Issue 1-3 new specific task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern to address directly with a team member\n4. Your ONE focus for the company today\n5. What to tell Kaan in 2 sentences`, 800)
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO you run this company:\n1. Call out the trial/revenue crisis or progress — not activity theater\n2. Issue 1-3 conversion-critical task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern — an employee who only reported is failing\n4. Your ONE focus for the company today must move verified trials or paid MRR\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
@@ -2088,6 +2335,26 @@ system record backs it.
     `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
 
+  if (isTrialCrisis(trialFacts)) {
+    for (const crisis of zeroTrialCrisisTasks()) {
+      try {
+        const t = await issueTask(crisis.agentId, {
+          title: crisis.title.slice(0, 100),
+          description: crisis.description,
+          priority: crisis.priority,
+          due_in_hours: 24,
+        }, companyId)
+        if (t.voided) refusedVoid++
+        else if (t.deduped) skippedDuplicate++
+        else newTasks.push(t)
+      } catch (e: any) {
+        if (isAutonomyDenied(e)) deniedByGate++
+        else console.error(`[kaan_os_v4] crisis issueTask failed for ${crisis.agentId}: ${String(e?.message || e).slice(0, 200)}`)
+      }
+    }
+    console.log(`[kaan_os_v4] standup: zero-trial crisis pack attempted (verified=${verifiedTrialCount(trialFacts)})`)
+  }
+
   // PS-OWNERSHIP-01: restore agent OWNERSHIP. Any specialist left with NO open task after Janet's
   // 1-3 assignments SELF-ORIGINATES its own proposed next step (issued_by = the agent, not 'janet').
   // Root cause of the regression: every task was Janet-assigned, so self-originated % (the L5 bar)
@@ -2099,7 +2366,7 @@ system record backs it.
     const aId = report.agent_id as AgentId
     if (aId === 'marcus' || aId === 'janet') continue
     const openN = ((await sql`SELECT count(*)::int AS n FROM agent_tasks
-      WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('assigned','in_progress')`) as any[])[0]?.n ?? 0
+      WHERE company_id=${companyId} AND agent_id=${aId} AND status IN ('queued','executing','assigned','in_progress')`) as any[])[0]?.n ?? 0
     if (openN > 0) continue
     let taskText = extractProposal(report.summary)
     let source = 'standup proposal'
@@ -2116,9 +2383,9 @@ system record backs it.
       // Fails open to the original generic wording if research is unavailable/inert/finds nothing.
       const research = await researchCurrentBestPractice(aId, a.domain, a.title, companyId).catch(() => null)
       taskText = research
-        ? `As ${a.title}: current best practice (verified ${new Date().toISOString().slice(0, 10)}) — ${research.summary} Apply this to your domain (${a.domain}) to advance the company's current top goal. Sources: ${research.sources.map((x) => x.url).join(', ')}`
-        : `As ${a.title}, identify and begin the single highest-impact improvement in your domain (${a.domain}) that advances the company's current top goal. Use real company data; propose and start the concrete next step.`
-      source = research ? 'domain-default ownership (current best practice)' : 'domain-default ownership'
+        ? researchGroundedConversionTask(a.title, a.domain, research.summary, research.sources.map((x) => x.url).join(', '), new Date().toISOString().slice(0, 10))
+        : conversionDefaultTask(aId, a.domain, a.title)
+      source = research ? 'domain-default conversion (current best practice)' : 'domain-default conversion'
     }
     try {
       const t = await issueTask(aId, {
@@ -2208,13 +2475,13 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   // Pull performance data for the week
   const weeklyTasks = await sql`
     SELECT agent_id, count(*) as completed, round(avg(performance_score)::numeric, 1) as avg_score,
-           string_agg(title || ' (score: ' || coalesce(performance_score::text, '?') || ')', ', ') as task_list
+           string_agg(title || ' (score: ' || coalesce(performance_score::text || '/10', 'unscored') || ')', ', ') as task_list
     FROM agent_tasks
     WHERE status='reviewed' AND created_at > NOW() - interval '7 days' AND company_id=${companyId}
     GROUP BY agent_id
   `.catch(() => [])
 
-  const allAgents: AgentId[] = ['marcus', 'aria', 'nova', 'rex', 'scout', 'finn', 'vera', 'max']
+  const allAgents: AgentId[] = [...WORKER_AGENT_IDS]
   const performanceReviews: any[] = []
 
   for (const agentId of allAgents) {
@@ -2225,7 +2492,7 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
     // Agent self-review
     const agentSystem = buildAgentSystem(agent, memory, context)
     const selfReview = await llm(agentSystem,
-      `Weekly performance review with Janet. Be honest — she knows the numbers.\n\nYour week: ${weekData ? `${weekData.completed} tasks completed, avg score ${weekData.avg_score}/10. Tasks: ${weekData.task_list}` : 'No completed tasks this week.'}\n\n1. Your honest assessment of your performance this week\n2. What you learned that you'll apply going forward\n3. Where you fell short and why\n4. What resources or changes would make you more effective\n5. Your top priority proposal for next week`, 500)
+      `Weekly performance review with Janet. Be honest — she knows the numbers.\n\nYour week: ${weekData ? `${weekData.completed} tasks completed, avg score ${formatEvaluationScore(weekData.avg_score)}. Tasks: ${weekData.task_list}` : 'No completed tasks this week.'}\n\n1. Your honest assessment of your performance this week\n2. What you learned that you'll apply going forward\n3. Where you fell short and why\n4. What resources or changes would make you more effective\n5. Your top priority proposal for next week`, 500)
 
     // Janet reviews each agent
     const janetMemory = await getAgentMemory('janet', sql, companyId)
@@ -2237,10 +2504,9 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
       // own priority proposal never reached the manager writing their review. A performance
       // review is the worst possible place to read a third of the evidence: the sections that
       // get cut are exactly the ones an agent would use to explain a bad week.
-      `Weekly performance review: ${agent.name} (${agent.title})\n\nWeek data: ${weekData ? `${weekData.completed} tasks, avg ${weekData.avg_score}/10` : 'No completed tasks'}\n${agent.name}'s self-review: ${trimToLineBoundary(selfReview, AGENT_REPORT_LIMIT)}\n\nAs their manager:\n1. Your honest assessment of their performance (be direct)\n2. Specific improvement required with how-to\n3. New priority assignment for next week\n4. Are they performing at the level needed? (yes/needs improvement/critical)\n5. Score: X/10`, 500)
+      `Weekly performance review: ${agent.name} (${agent.title})\n\nWeek data: ${weekData ? `${weekData.completed} tasks, avg ${formatEvaluationScore(weekData.avg_score)}` : 'No completed tasks'}\n${agent.name}'s self-review: ${trimToLineBoundary(selfReview, AGENT_REPORT_LIMIT)}\n\nAs their manager:\n1. Your honest assessment of their performance (be direct)\n2. Specific improvement required with how-to\n3. New priority assignment for next week\n4. Are they performing at the level needed? (yes/needs improvement/critical)\n5. Score: X/10`, 500)
 
-    const scoreMatch = janetReview.match(/Score:\s*(\d+)\/10/i)
-    const score = scoreMatch ? parseInt(scoreMatch[1]) : 6
+    const score = parseEvaluationScore(janetReview, 'score')
 
     // Update performance record
     await sql`
@@ -2260,13 +2526,15 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
         improvement_areas = EXCLUDED.improvement_areas, janet_notes = EXCLUDED.janet_notes, updated_at = NOW()
     `.catch(() => {})
 
-    // Agent writes to their own memory
-    await rememberFact({
-      company_id: companyId, type: 'strategic',
-      key: `weekly_review:${new Date().toISOString().slice(0,10)}`,
-      value: `Self: ${selfReview.slice(0,200)} | Janet: ${janetReview.slice(0,200)}`,
-      confidence: 1.0, source: agentId
-    }).catch(() => {})
+    // Only a successfully parsed evaluation may become durable performance learning.
+    if (isScoredEvaluation(score)) {
+      await rememberFact({
+        company_id: companyId, type: 'strategic',
+        key: `weekly_review:${new Date().toISOString().slice(0,10)}`,
+        value: `Self: ${selfReview.slice(0,200)} | Janet: ${janetReview.slice(0,200)}`,
+        confidence: 1.0, source: agentId
+      }).catch(() => {})
+    }
 
     performanceReviews.push({ agent_id: agentId, name: agent.name, score, self_review: selfReview, janet_review: janetReview, week_data: weekData })
   }
@@ -2283,12 +2551,12 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
   // a line-boundary trim that keeps the substance, with the marker saying when it bit.
   const WEEKLY_REVIEW_PROMPT_LIMIT = 1200 // ~8 agents × 1.2k chars ≈ 2.4k tokens, well inside the cap
   const reviewSummary = performanceReviews
-    .map(r => `${r.name} (${r.score}/10): ${trimToLineBoundary(r.janet_review, WEEKLY_REVIEW_PROMPT_LIMIT)}`)
+    .map(r => `${r.name} (${formatEvaluationScore(r.score)}): ${trimToLineBoundary(r.janet_review, WEEKLY_REVIEW_PROMPT_LIMIT)}`)
     .join('\n')
   const janetSystem2 = buildAgentSystem(AGENTS.janet, await getAgentMemory('janet', sql, companyId), context)
 
   const weeklyPlan = await llm(janetSystem2,
-    `Weekly review complete. Team performance:\n${reviewSummary}\n\nAs CGO, issue next week's priorities:\n1. Top 3 company-level goals for next week\n2. Specific assignment for each agent (name + task + why it matters)\n3. Any agent on a performance improvement path\n4. What you're telling Kaan in tomorrow's brief\n5. One strategic decision you're making autonomously this week`, 1000)
+    `Weekly review complete. Team performance:\n${reviewSummary}\n\nAs CGO you run this company. Issue next week's priorities:\n1. Top 3 goals — verified trials and paid conversion first, never activity theater\n2. Specific assignment for each employee (name + task + why it moves a trial or paid MRR)\n3. Any employee who only reported is on a performance path\n4. What you're telling Kaan in tomorrow's brief — lead with the trial count\n5. One strategic decision you're making autonomously this week`, 1000)
 
   // Parse and issue assignments
   const newAssignments: any[] = []
@@ -2314,14 +2582,14 @@ export async function runWeeklyReview(companyId = COMPANY_ID): Promise<{
 
   // PS-TRUNCATE-01: same amputation the daily standup had — the weekly PLAN is the entire point
   // of this meeting, and 600 chars cut it mid-thought. sendTelegram splits now; send it whole.
-  const scores = performanceReviews.map(r => `${r.name}: ${r.score}/10`).join(' | ')
+  const scores = performanceReviews.map(r => `${r.name}: ${formatEvaluationScore(r.score)}`).join(' | ')
   await sendTelegram(`📊 *WEEKLY REVIEW — ${TELEGRAM_PRODUCT}*\n\nScores: ${scores}\n\n${weeklyPlan}\n\n_${newAssignments.length} new assignments issued_`).catch(() => {})
 
   return {
     meeting_id: meeting?.id || '',
     performance_reviews: performanceReviews,
     janet_decisions: weeklyPlan,
-    adjustments: performanceReviews.filter(r => r.score < 7).map(r => `${r.name}: ${r.janet_review.slice(0,100)}`),
+    adjustments: performanceReviews.filter(r => isScoredEvaluation(r.score) && r.score < 7).map(r => `${r.name}: ${r.janet_review.slice(0,100)}`),
     new_assignments: newAssignments,
     timestamp: new Date().toISOString()
   }
@@ -2401,7 +2669,7 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   // 2. Execute any overdue pending tasks
   const overdueTasks = await sql`
     SELECT id FROM agent_tasks
-    WHERE status='assigned' AND company_id=${companyId}
+    WHERE status IN ('queued','assigned') AND company_id=${companyId}
     AND created_at < NOW() - interval '4 hours'
     LIMIT 5
   `.catch(() => [])
@@ -2414,8 +2682,8 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   }
 
   // 3. Janet writes CEO brief for Kaan
-  const maxMemory = await getAgentMemory('max', sql, companyId)
-  const maxSystem = buildAgentSystem(AGENTS.max, maxMemory, await getCompanyContext(sql))
+  const janetMemory = await getAgentMemory('janet', sql, companyId)
+  const janetSystem = buildAgentSystem(AGENTS.janet, janetMemory, await getCompanyContext(sql))
   // MEMORY CONTRACT (PS-BRIEF-01): live facts probed at generation time. Recall (standup
   // summaries, agent memories) is UNVERIFIED and may be stale or false -- the 2026-07-15
   // "empty repository" fossil (Marcus's revoked-access blank probe stored as fact, recited
@@ -2440,7 +2708,7 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     // PS-BRIEF-HONESTY-01 (D2): do not elevate unverified recall into decisions.
     "- Do NOT elevate UNVERIFIED RECALL (agent claims, or metrics like CAC/LTV/pipeline numbers) into 'Top 3 things' or the 'Decision' item -- those may draw ONLY from LIVE FACTS. An unverified figure may appear only as 'unverified agent memory claims: <claim>'.",
   ].join('\n')
-  const kaanBrief = await llm(maxSystem,
+  const kaanBrief = await llm(janetSystem,
     `${memoryContract}\n\nLIVE FACTS (probed now, safe to state):\n${liveFacts}\n\nUNVERIFIED RECALL -- standup summary: ${standup.janet_summary.slice(0,500)}\n\nPrepare Kaan's morning brief:\n1. What happened overnight / this morning\n2. Top 3 things Kaan needs to know\n3. Decision that requires Kaan's input (only if truly necessary)\n4. OS health: all agents operating normally? (yes/issues)\n5. 2-sentence bottom line`, 400)
 
   // ☀️ is also in prefixMessage()'s skip list, so this one arrived with NO product name at

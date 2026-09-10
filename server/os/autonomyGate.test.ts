@@ -145,12 +145,13 @@ describe("no autonomous writer bypasses the gate (static guard)", () => {
   }
   const norm = (p: string) => p.split(sep).join("/");
 
-  it("INSERT INTO agent_tasks appears only in kaan_os_v4.ts (issueTask)", () => {
+  it("INSERT INTO agent_tasks appears only in the gated TaskStore adapter", () => {
     const offenders: string[] = [];
     for (const file of walkTs(serverDir)) {
       const f = norm(file);
       if (f.endsWith(".test.ts") || f.endsWith(".test.tsx")) continue;
-      if (f.endsWith("/server/lib/kaan_os_v4.ts")) continue; // the sole gated writer
+      if (f.endsWith("/server/lib/kaan_os_v4.ts")) continue;
+      if (f.endsWith("/server/os/neonTaskStore.ts")) continue;
       if (/INSERT\s+INTO\s+agent_tasks/i.test(readFileSync(file, "utf8"))) offenders.push(f);
     }
     expect(offenders).toEqual([]);
@@ -173,7 +174,7 @@ describe("no autonomous writer bypasses the gate (static guard)", () => {
     expect(/assertAutonomyAllows\s*\(\s*['"]issue_agent_task['"]/.test(v4)).toBe(true);
     expect(/assertAutonomyAllows\s*\(\s*['"]queue_architect_task['"]/.test(sh)).toBe(true);
     expect(v4.indexOf("assertAutonomyAllows('issue_agent_task'"))
-      .toBeLessThan(v4.indexOf("INSERT INTO agent_tasks"));
+      .toBeLessThan(v4.indexOf("store.createTask"));
     expect(sh.indexOf("assertAutonomyAllows('queue_architect_task'"))
       .toBeLessThan(sh.indexOf("INSERT INTO os_architect_tasks"));
   });

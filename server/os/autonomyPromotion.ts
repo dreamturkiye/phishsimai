@@ -17,6 +17,7 @@
 // distrust, and the two surfaces then disagreed (streak 5 vs 0) with no way to tell which ladder a
 // number belonged to. Every clean-day read below now goes through the same v2 + baseline filter,
 // and every streak written is stamped with the version that produced it.
+import { walkEnforcementRungs } from './ownerRuling'
 import { getSql } from './conn'
 import { autonomyFloorFor } from './autonomyGate'
 import { CRITERIA_VERSION, getPostureState, currentStreak } from './posture'
@@ -278,11 +279,15 @@ async function restoreFloorIfBelow(sql: any, companyId: string, storedLevel: str
   }
 
   try {
-    await sql`INSERT INTO autonomy_grants (company_id, granted_level, granted_by, reason, created_at)
-      VALUES (${companyId}, ${floor}, 'founder_floor_policy',
-              ${'PS-AUTONOMY-FLOOR-01: restoring founder-set floor after an accidental demotion'}, NOW())`
-    await sql`UPDATE os_autonomy_state SET level=${floor} WHERE company_id=${companyId}`
-    console.warn(`[autonomyPromotion] ${companyId}: restored level '${storedLevel}' -> floor '${floor}'`)
+    const walked = await walkEnforcementRungs(sql, companyId, floor, {
+      createdBy: 'founder_floor_policy',
+      reason: 'PS-AUTONOMY-FLOOR-01: restoring founder-set floor after an accidental demotion',
+    })
+    if (!walked.ok) {
+      console.error(`[autonomyPromotion] ${companyId}: FAILED to restore floor '${floor}' from '${storedLevel}': ${walked.reason}`)
+      return null
+    }
+    console.warn(`[autonomyPromotion] ${companyId}: restored level '${storedLevel}' -> floor '${floor}' via ${walked.trail.length} grant rung(s)`)
     return floor
   } catch (e) {
     console.error(`[autonomyPromotion] ${companyId}: FAILED to restore floor '${floor}' from '${storedLevel}': ` +

@@ -1,5 +1,20 @@
 {
-  "tag": "phishsim-pinned-2026-07-14 (pre-v7 vintage; diverges from v7.0.0-rc3; core adoption scheduled Phase 2)",
+  "schemaVersion": 2,
+  "tag": "phishsim-pinned-2026-07-14",
+  "classification": "legacy-product-diverged-pre-v7",
+  "canonical": false,
+  "vintage": "pre-v7",
+  "canonical_package_provenance": "../../../core-provenance.json",
+  "canonical_package": {
+    "name": "@kaan/os-core",
+    "version": "7.5.0",
+    "artifact_sha256": "9671f770923040075cd60c31f1ab85f4d21b1452a1476b26d71a8bd38effb4a2",
+    "integrity": "sha512-boaQlmI07p9X+GznR5iL+tEIFE9EXoS4vZ1rxOl/kvM1i9VluvLRc5cInpThjExqeugmHzjgU7reGI5Gt9SXtA==",
+    "commit": "15dc3d849caa07d7ed3be1d5abd6de671cb414f4",
+    "tree": "027a937f656ab056aa13dc546d8c4db5306a1ef1"
+  },
+  "note": "Legacy migration snapshot only. This pre-v7 PhishSim product-diverged directory is not canonical @kaan/os-core 7.5.0 source.",
+  "recursive_sha256": "644936a08c8f388b3fa01a7a29452b1138c1bcbe85ce703e1d7104f407b115c3",
   "combined_sha256": "89143f736481e4f92048c89f4bdc6951f6662c19bb79c5a7032c96c341e9dfa3",
   "files": {
     "abExperiment.ts": "9768a799b95397853f1daa7fd6d7036abebb451cea36ae8c0de07953c3fb04ad",
