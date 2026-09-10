@@ -50,8 +50,10 @@ describe('Janet CGO mandate', () => {
   it('makes execute prompts do the work instead of writing an analysis', () => {
     const prompt = employeeExecutePrompt({ title: 'Convert engaged MSPs', description: '30-day no-card trial', priority: 'high' })
     expect(prompt).toMatch(/Do the work now/)
+    expect(prompt).toMatch(/convert_warm/)
     expect(prompt).not.toMatch(/What you did \/ your analysis/)
     expect(conversionDefaultTask('mason', 'pipeline', 'Sales')).toMatch(/30-day/)
+    expect(employeeExecutionMandate()).not.toMatch(/email customers directly/)
   })
 })
 
@@ -64,6 +66,9 @@ describe('coded enforcers are wired', () => {
     expect(os).toContain('janetCgoMandate')
     expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('applyOwnerAutonomyRuling')
     expect(os).toContain('does NOT forbid converting')
+    expect(os).toContain('runCgoConversionShift')
+    expect(os).toContain('convert_warm')
+    expect(readFileSync('vercel.json', 'utf8')).toContain('/api/os/task-runner')
     expect(os).not.toMatch(/Do NOT assign conversion/)
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)
   })

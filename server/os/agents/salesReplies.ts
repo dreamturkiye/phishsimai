@@ -19,15 +19,14 @@
 //
 //  ASYMMETRIC SAFETY ON THE ACTIONS.
 //  The two failure directions are NOT equally bad:
-//    • classify a hostile reply as interested -> a draft is written and gated to Kaan, who reads it
-//      and deletes it. Recoverable, costs one human glance.
+//    • classify a hostile reply as interested -> a Dex-gated trial CTA may go out. Recoverable:
+//      they already wrote to us; Dex still blocks unsub/bounce/suppression.
 //    • classify an interested prospect as hostile -> we AUTO-SUPPRESS them and never contact them
 //      again. Unrecoverable, and it silently destroys the scarcest thing we have.
-//  So suppression requires HIGH CONFIDENCE and an explicit signal; ambiguity never suppresses. The
-//  autonomous action only ever runs in the direction that removes us from someone's inbox.
+//  So suppression requires HIGH CONFIDENCE and an explicit signal; ambiguity never suppresses.
 //
-//  NOTHING IS AUTO-SENT TO A PROSPECT. interested/objection produce a DRAFT for Kaan. The brand-risk
-//  gate stays human; that is the one gate earned autonomy does not open.
+//  INTERESTED REPLIES GET THE FROZEN 30-DAY TRIAL CTA (Dex rails). Objections still draft for Kaan.
+//  Hostile/unsub still auto-suppress at ≥0.8. If Dex blocks the CTA, we fall back to a draft.
 // ─────────────────────────────────────────────────────────────────────────────
 import { getSql } from '../conn'
 import { llmComplete } from '../llmChat'
@@ -36,10 +35,10 @@ import { requireTrustedCron } from '../cronAuth'
 import { randomUUID } from 'node:crypto'
 
 const COMPANY = 'phishsimai'
-export const TRIAL_URL = 'https://phishsimai.com/register'
+export const TRIAL_URL = 'https://phishsimai.com/login?mode=register'
 
 export type ReplyClass = 'interested' | 'objection' | 'unsubscribe' | 'auto_reply' | 'hostile'
-export type ReplyAction = 'draft_for_kaan' | 'auto_suppress' | 'no_action'
+export type ReplyAction = 'draft_for_kaan' | 'auto_suppress' | 'no_action' | 'send_trial_cta'
 
 export type Classification = { cls: ReplyClass; confidence: number; why: string }
 
@@ -116,13 +115,14 @@ export async function classifyReply(subject: string, body: string): Promise<Clas
   return classifyByRules(subject, body) ?? (await classifyByModel(subject, body))
 }
 
-/** What we do with a classification. Suppression is gated on confidence; drafts never are. */
+/** What we do with a classification. Suppression is gated on confidence; interest converts. */
 export function decideAction(c: Classification): ReplyAction {
   if (SUPPRESSING.includes(c.cls)) {
     // Below the bar we still surface it — we just refuse to make the irreversible move on a guess.
     return c.confidence >= SUPPRESS_MIN_CONFIDENCE ? 'auto_suppress' : 'draft_for_kaan'
   }
   if (c.cls === 'auto_reply') return 'no_action' // a bounce is not a conversation
+  if (c.cls === 'interested') return 'send_trial_cta'
   return 'draft_for_kaan'
 }
 
@@ -247,6 +247,7 @@ export type SalesReplyRun = {
   tasksIssued: number
   suppressed: number
   draftsForKaan: number
+  trialCtasSent: number
   noAction: number
   byClass: Record<string, number>
   line: string
@@ -264,7 +265,7 @@ const EMPTY_LINE =
 export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyRun> {
   const sql = sqlOverride ?? getSql()
   const res: SalesReplyRun = {
-    queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, noAction: 0,
+    queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, trialCtasSent: 0, noAction: 0,
     byClass: {}, line: EMPTY_LINE,
   }
   const queue = await claimReplyQueue(sql)
@@ -278,14 +279,33 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
     res.byClass[c.cls] = (res.byClass[c.cls] ?? 0) + 1
 
     let draft: string | null = null
-    if (action === 'draft_for_kaan') {
+    if (action === 'send_trial_cta') {
+      const { sendWarmTrialCtas } = await import('../sequences')
+      const shift = await sendWarmTrialCtas({ emails: [r.from_email], cap: 1 }).catch(() => null)
+      if (shift && shift.sent > 0) {
+        res.trialCtasSent += shift.sent
+        res.tasksIssued++
+        await sendTelegram(
+          `✅ <b>TRIAL CTA SENT [${c.cls}] — ${r.from_email}</b> ${r.company ? '· ' + r.company : ''}\n` +
+          `confidence ${c.confidence.toFixed(2)} — ${c.why}\nLink: ${TRIAL_URL}`,
+        ).catch(() => {})
+      } else {
+        draft = await draftResponse(c, r.company, r.inbound_snippet)
+        res.draftsForKaan++
+        res.tasksIssued++
+        await sendTelegram(
+          `✍️ <b>REPLY [${c.cls}] DEX-BLOCKED — ${r.from_email}</b> ${r.company ? '· ' + r.company : ''}\n` +
+          `CTA did not send (${shift?.reason || shift?.results[0]?.outcome || 'unknown'}). Draft for you:\n${(draft || '(draft unavailable)').slice(0, 600)}`,
+        ).catch(() => {})
+      }
+    } else if (action === 'draft_for_kaan') {
       draft = await draftResponse(c, r.company, r.inbound_snippet)
       res.draftsForKaan++
       res.tasksIssued++
       await sendTelegram(
         `✍️ <b>REPLY [${c.cls}] — ${r.from_email}</b> ${r.company ? '· ' + r.company : ''}\n` +
         `confidence ${c.confidence.toFixed(2)} — ${c.why}\n\n` +
-        `THEM: ${r.inbound_snippet.slice(0, 200)}\n\nDRAFT (not sent — you send it):\n${(draft || '(draft unavailable)').slice(0, 600)}`,
+        `THEM: ${r.inbound_snippet.slice(0, 200)}\n\nDRAFT (objection — you send it):\n${(draft || '(draft unavailable)').slice(0, 600)}`,
       ).catch(() => {})
     } else if (action === 'auto_suppress') {
       // The one autonomous action, and it only ever removes us from an inbox.
@@ -320,8 +340,8 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
 
   const parts = Object.entries(res.byClass).map(([k, v]) => `${v} ${k}`).join(', ')
   res.line =
-    `Sales replies: ${res.classified}/${res.queued} classified (${parts}) · ${res.draftsForKaan} draft(s) awaiting ` +
-    `your send · ${res.suppressed} auto-suppressed · ${res.noAction} no-action. No draft was sent to a prospect.`
+    `Sales replies: ${res.classified}/${res.queued} classified (${parts}) · ${res.trialCtasSent} trial CTA(s) sent · ` +
+    `${res.draftsForKaan} objection draft(s) · ${res.suppressed} auto-suppressed · ${res.noAction} no-action.`
   return res
 }
 

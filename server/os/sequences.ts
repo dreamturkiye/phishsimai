@@ -773,3 +773,161 @@ export async function runFullSequence() {
 }
 
 export const runSequence = runFullSequence
+
+/** Outbox touch reserved for warm conversion CTAs — never collides with sequence touches 1–5. */
+export const WARM_CONVERSION_TOUCH = 90
+export const TRIAL_CTA_URL = 'https://phishsimai.com/login?mode=register'
+
+export type WarmCtaResult = {
+  sent: number
+  skipped: number
+  blocked: number
+  tripped: boolean
+  paused?: boolean
+  reason?: string
+  results: { email: string; company: string; outcome: string }[]
+}
+
+/**
+ * CGO conversion tool: send the frozen 30-day no-card trial CTA to people who already
+ * wrote back (or are engaged). This is NOT cold outreach. Dex rails still bind:
+ * MX, assertSendable, suppression SELECT, outbox idempotency. Stand down only when
+ * the bounce breaker is MEASURED-tripped — an unmeasured window must not freeze a
+ * human who already replied.
+ */
+export async function sendWarmTrialCtas(opts: {
+  emails?: string[]
+  cap?: number
+  sql?: any
+} = {}): Promise<WarmCtaResult> {
+  const sql = opts.sql ?? getSql()
+  const cap = Math.max(1, Math.min(8, Math.floor(opts.cap ?? 8)))
+  const out: WarmCtaResult = { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }
+
+  const health = await getSequenceHealth(sql).catch(() => null)
+  if (health?.tripped) {
+    out.tripped = true
+    out.paused = true
+    out.reason = `bounce breaker tripped ${(health.rate * 100).toFixed(1)}% over ${health.sent} live 7d sends`
+    return out
+  }
+
+  const founderRamp = await isFounderRampEnabled(sql).catch(() => false)
+  if (!founderRamp) {
+    try {
+      await assertAutonomyAllows('send_simulation', COMPANY_ID)
+    } catch (e) {
+      if (isAutonomyDenied(e)) {
+        out.reason = 'autonomy: ' + (e as Error).message
+        return out
+      }
+      throw e
+    }
+  }
+
+  const wanted = (opts.emails || []).map((e) => String(e).trim().toLowerCase()).filter(Boolean)
+  const leads = wanted.length
+    ? await sql`SELECT l.id, l.name, l.company, l.email, l.industry FROM ps_outreach_leads l
+        WHERE lower(l.email) = ANY(${wanted})
+        AND bounced=false AND l.unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer','internal_test')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+        LIMIT ${cap}`
+    : await sql`SELECT l.id, l.name, l.company, l.email, l.industry FROM ps_outreach_leads l
+        WHERE bounced=false AND l.unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer','internal_test')
+        AND (replied=true OR pipeline_stage='engaged')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+        AND NOT EXISTS (
+          SELECT 1 FROM outreach_sequence_outbox o
+          WHERE o.lead_id = l.id AND o.touch = ${WARM_CONVERSION_TOUCH} AND o.status='sent'
+        )
+        ORDER BY CASE WHEN replied=true THEN 0 ELSE 1 END, replied_at DESC NULLS LAST
+        LIMIT ${cap}`
+
+  const now = new Date()
+  for (const lead of leads as any[]) {
+    if (out.sent >= cap) break
+    try {
+      const dom = domainOf(String(lead.email))
+      if (!dom || !(await hasMx(dom))) {
+        out.skipped++
+        out.results.push({ email: String(lead.email), company: String(lead.company || ''), outcome: 'no_mx' })
+        continue
+      }
+      const gateW = await assertSendable(sql, String(lead.email))
+      if (!gateW.allowed) {
+        out.blocked++
+        out.results.push({ email: String(lead.email), company: String(lead.company || ''), outcome: 'blocked_dex' })
+        continue
+      }
+      const token = Buffer.from(String(lead.email)).toString('base64url')
+      const greet = deriveFirstName(String(lead.email))
+      const co = String(lead.company || 'your MSP')
+      const subject = `${greet}, start the 30-day trial — no card`
+      const text = `Hi ${greet},
+
+You wrote back. Shortest path from here:
+
+PhishSim AI is flat MSP pricing: $149/mo (100 users), $299/mo (500 users, about 60 cents), $749/mo (2,500, about 30 cents), $1,499/mo Enterprise. Add a client and your margin widens.
+
+Start the 30-day no-card trial here: ${TRIAL_CTA_URL}
+
+About ten minutes to set up. Cancel anytime.
+
+Sarah
+${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
+      const html = `<div style="font-family:-apple-system,sans-serif;max-width:580px;padding:24px;color:#111">
+<p>Hi ${greet},</p>
+<p>You wrote back. Shortest path from here:</p>
+<p>PhishSim AI is flat MSP pricing: $149/mo (100 users), $299/mo (500 users, about 60 cents), $749/mo (2,500, about 30 cents), $1,499/mo Enterprise. Add a client and your margin widens.</p>
+<p><a href="${TRIAL_CTA_URL}">Start the 30-day no-card trial</a> — about ten minutes to set up. Cancel anytime.</p>
+<p>Sarah</p>
+<hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
+<p style="color:#666;font-size:12px;margin:0">Sarah Mitchell · PhishSim AI</p>
+<p style="color:#666;font-size:12px;margin:0">240 Queen Street N.E., Leesburg, VA 20176</p>
+<p style="color:#666;font-size:12px;margin:12px 0 0">You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? <a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a> — one click, no hard feelings.</p>
+</div>`.replace(/\{\{TOKEN\}\}/g, token)
+      const sendClaim = await claimSequenceSend(sql, String(lead.id), WARM_CONVERSION_TOUCH, String(lead.email))
+      if (!sendClaim.claimed && !sendClaim.providerMessageId) {
+        out.skipped++
+        out.results.push({ email: String(lead.email), company: co, outcome: 'already_sent' })
+        continue
+      }
+      const idempotencyKey = sequenceIdempotencyKey(String(lead.id), WARM_CONVERSION_TOUCH)
+      const result = sendClaim.providerMessageId
+        ? { id: sendClaim.providerMessageId }
+        : await sendEmail(
+            String(lead.email),
+            subject,
+            html,
+            [{ name: 'touch', value: 'warm_cta' }, { name: 'lead_id', value: String(lead.id) }],
+            token,
+            text,
+            idempotencyKey,
+          )
+      if (!result?.id) {
+        out.skipped++
+        continue
+      }
+      if (sendClaim.claimed) {
+        await completeSequenceSend(sql, String(lead.id), WARM_CONVERSION_TOUCH, sendClaim.claimToken!, String(result.id))
+      }
+      await sql`UPDATE ps_outreach_leads SET pipeline_stage='engaged', stage_updated_at=${now.toISOString()}
+                WHERE id=${lead.id} AND pipeline_stage NOT IN ('dead','customer','internal_test')`.catch(() => {})
+      out.sent++
+      out.results.push({ email: String(lead.email), company: co, outcome: 'trial_cta_sent' })
+      await new Promise(r => setTimeout(r, 2000))
+    } catch (e: any) {
+      out.skipped++
+      out.results.push({ email: String(lead.email || ''), company: String(lead.company || ''), outcome: 'error' })
+      await sendTelegram('PS warm CTA error: ' + (e?.message?.slice(0, 80) || '')).catch(() => {})
+    }
+  }
+
+  if (out.sent > 0) {
+    const lines = out.results.filter(r => r.outcome === 'trial_cta_sent').map(r => r.company + ' <' + r.email + '>').join('\n')
+    await sendTelegram('PHISHSIMAI WARM TRIAL CTA: ' + out.sent + ' sent\n' + lines).catch(() => {})
+  }
+  return out
+}

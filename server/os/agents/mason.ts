@@ -6,7 +6,7 @@
 //    CALLS it — he does not reimplement the classifier, and none of its guarantees are relaxed here:
 //      · suppression still needs >= 0.8 confidence AND an explicit signal; ambiguity still drafts;
 //      · an empty queue still reports empty and issues nothing;
-//      · nothing is ever auto-sent to a prospect — interested/objection still gate to Kaan.
+//      · interested replies get a Dex-gated 30-day trial CTA; objections still draft for Kaan.
 //    What Mason adds sits strictly ON TOP: sequence-health judgement, lead prioritisation, and
 //    pipeline retirement. A test asserts he imports the live agent rather than carrying a second copy
 //    of the classification logic, because two classifiers is two answers.
@@ -447,7 +447,7 @@ export function buildMasonLine(a: {
   const rep = a.replies
     ? a.replies.queued === 0
       ? '0 replies queued (correct at the current funnel state — nothing to classify)'
-      : `${a.replies.classified}/${a.replies.queued} replies classified, ${a.replies.draftsForKaan} draft(s) awaiting your send, ${a.replies.suppressed} auto-suppressed`
+      : `${a.replies.classified}/${a.replies.queued} replies classified, ${a.replies.trialCtasSent ?? 0} trial CTA(s) sent, ${a.replies.draftsForKaan} objection draft(s), ${a.replies.suppressed} auto-suppressed`
     : 'replies not run this cycle'
   const prio = a.priority.length
     ? `${a.priority.length} engaged lead(s) prioritised${a.priority.some((p) => p.daysInStage >= 3) ? ' (some OVERDUE)' : ''}`
@@ -460,7 +460,7 @@ export function buildMasonLine(a: {
   const prop = a.hygiene.proposals.length ? ` · PROPOSAL: ${a.hygiene.proposals.join(' ')}` : ''
   return (
     `Mason (Sales): ${a.funnel.lines.join(' · ')}. ${rep}. ${prio}. ${hyg}.${prop}${defer} ` +
-    `No draft was sent to a prospect — that gate stays human.`
+    `Interested replies get a Dex-gated 30-day trial CTA. Objections still draft for Kaan.`
   )
 }
 
@@ -468,7 +468,7 @@ export function buildMasonLine(a: {
 export async function cronMason(req: any, res: any) {
   if (!requireTrustedCron(req, res)) return
   try {
-    return res.json({ success: true, ...(await (async () => { const r = await withHealth('mason', () => runMasonAgent()); const reasoning = await (await import('./reason')).reasonAndAct('mason', r, `You are Mason, Reply and Pipeline Conversion Owner for PhishSim AI. Classify and convert authenticated replies only. Never auto-send. Do not report Aria experiment lift. If the classified reply queue is empty, say so.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
+    return res.json({ success: true, ...(await (async () => { const r = await withHealth('mason', () => runMasonAgent()); const reasoning = await (await import('./reason')).reasonAndAct('mason', r, `You are Mason, Reply and Pipeline Conversion Owner for PhishSim AI. Classify authenticated replies. Interested replies get the Dex-gated 30-day trial CTA. Objections draft for Kaan. Do not report Aria experiment lift. If the classified reply queue is empty, say so.`).catch((e: any) => ({ assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e) })); return { ...r, reasoning }; })()) })
   } catch (e: any) {
     return res.status(500).json({ success: false, error: String(e?.message || e) })
   }

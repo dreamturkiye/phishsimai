@@ -51,16 +51,16 @@ describe('the expansion does not loosen anything the live agent guarantees', () 
     expect(classifyByRules('', 'maybe later, we already use something')).toMatchObject({ cls: 'objection' })
   })
 
-  it('interested and objection still gate to a human — never auto-sent', () => {
-    expect(decideAction({ cls: 'interested', confidence: 0.99, why: '' })).toBe('draft_for_kaan')
+  it('interested replies get the Dex-gated trial CTA; objections still draft', () => {
+    expect(decideAction({ cls: 'interested', confidence: 0.99, why: '' })).toBe('send_trial_cta')
     expect(decideAction({ cls: 'objection', confidence: 0.99, why: '' })).toBe('draft_for_kaan')
-    expect(MASON_SRC).toContain('No draft was sent to a prospect')
+    expect(MASON_SRC).toContain('Dex-gated 30-day trial CTA')
   })
 
   it('an empty reply queue is reported as correct, not as a failure', () => {
     const line = buildMasonLine({
       status: 'ACTIVE', verdicts: verdicts(), permissions: decideActions(verdicts()),
-      replies: { queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, noAction: 0, byClass: {}, line: '' },
+      replies: { queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, trialCtasSent: 0, noAction: 0, byClass: {}, line: '' },
       funnel: { checked: true, contacted: 933, replied: 0, engaged: 0, trials: 0, customers: 0, lines: ['touched→replied: 0/933 (0.0%)'] },
       priority: [],
       hygiene: { bouncedActive: 0, retired: 0, staleProposed: 0, gate: 'allowed', gateReason: 'nothing to retire', proposals: [] },
