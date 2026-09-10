@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getCleanStreak, recordIncident } from './cleanDays'
 import { applyOwnerAutonomyRuling } from './ownerRuling'
+import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'

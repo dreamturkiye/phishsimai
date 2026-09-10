@@ -189,7 +189,7 @@ export const AGENTS = Object.freeze(Object.fromEntries(
       capabilities: canonical.allowedTaskCapabilities,
     }]
   }),
-) as Record<AgentId, AgentProfile>)
+) as unknown as Record<AgentId, AgentProfile>)
 
 // ── Database: ensure all OS tables exist ──────────────────────────────────────
 //

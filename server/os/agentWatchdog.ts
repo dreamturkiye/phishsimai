@@ -25,7 +25,7 @@ const HEALTH_PROMPTS: Record<AgentId, string> = {
   scout: 'Health ping. Respond with: ONLINE plus key market signal this week in one sentence.',
   finn: 'Health ping. Respond with: ONLINE plus revenue status in one sentence.',
   vera: 'Health ping. Respond with: ONLINE plus customer health in one sentence.',
-  max: 'Health ping. Respond with: ONLINE plus Kaan top priority today in one sentence.',
+  dex: 'Health ping. Respond with: ONLINE plus deliverability and send-safety status in one sentence.',
 }
 
 async function pingAgent(agentId: AgentId, companyId: string) {
