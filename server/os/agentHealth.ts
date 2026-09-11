@@ -121,5 +121,17 @@ export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<str
       await resolveSystemAlert('agent_stale:' + agentName, 'running within threshold', companyId)
     }
   }
+
+  const watched = new Set(Object.keys(expected))
+  const leftover = await sql`
+    SELECT key FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key LIKE 'system_alert:agent_stale:%'
+  `.catch(() => [] as any[])
+  for (const row of leftover as Array<{ key: string }>) {
+    const name = String(row.key || '').slice('system_alert:agent_stale:'.length)
+    if (name && !watched.has(name)) {
+      await resolveSystemAlert('agent_stale:' + name, 'no longer on ops watch', companyId, { notify: false })
+    }
+  }
   return alerts
 }

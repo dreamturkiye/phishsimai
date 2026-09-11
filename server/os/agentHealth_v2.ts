@@ -146,7 +146,9 @@ export async function getAllAgentHealth(companyId = 'phishsimai'): Promise<Agent
   ])
   const actMap = new Map((activity as any[]).map((a) => [a.agent_id, a]))
   const ranRecently = new Set((meetingRows as any[]).map((m) => m.agent_id))
-  return (rows as any[]).map((r: any) => {
+  return (rows as any[])
+    .filter((r: any) => Boolean(AGENTS[r.agent_id as AgentId]))
+    .map((r: any) => {
     const a = actMap.get(r.agent_id)
     const done7 = Number(a?.done_7d ?? 0)
     const issued7 = Number(a?.issued_7d ?? 0)
@@ -202,7 +204,7 @@ export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<
   const sql = getSql()
   await ensureAgentHealthTable(sql)
   const rows = await sql`
-    SELECT agent_id, last_success_at, status, consecutive_failures
+    SELECT agent_id, last_success_at, status, consecutive_failures, total_runs
     FROM agent_health_v2 WHERE company_id = ${companyId}
   `.catch(() => [] as any[])
 
@@ -234,6 +236,18 @@ export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<
       await openSystemAlert('employee_stale:' + agentId, `${label} last ping ${age}`)
     } else {
       await resolveSystemAlert('employee_stale:' + agentId, 'employee responding within threshold')
+    }
+  }
+
+  const watched = new Set(expectedIds as string[])
+  const leftover = await sql`
+    SELECT key FROM janet_memory
+    WHERE company_id=${companyId} AND type='operating' AND key LIKE 'system_alert:employee_stale:%'
+  `.catch(() => [] as any[])
+  for (const row of leftover as Array<{ key: string }>) {
+    const id = String(row.key || '').slice('system_alert:employee_stale:'.length)
+    if (id && !watched.has(id)) {
+      await resolveSystemAlert('employee_stale:' + id, 'retired from roster', companyId, { notify: false })
     }
   }
   return alerts

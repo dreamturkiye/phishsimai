@@ -11,7 +11,7 @@ import {
   productFeedback,
   targets,
 } from '../../drizzle/schema'
-import { llmComplete } from '../os/llmChat'
+import { isProviderRefusal, llmComplete } from '../os/llmChat'
 import { sendTelegram } from '../os/telegram'
 import { rememberFact } from '../os/memory'
 import {
@@ -455,16 +455,22 @@ Rules:
 ACTION RESULTS FOR THIS MESSAGE — these are the ONLY action claims you may make:
 ${actionBlock}`
 
-  const chat = await llmComplete({
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: input.message },
-    ],
-    max_tokens: 350,
-    temperature: 0.65,
-  })
-
-  const reply = chat.text || "I'm here to help — try asking how to launch your first campaign."
+  const fallback = "I'm here to help you launch your first campaign. Go to /targets to add employees, then /campaigns to launch."
+  let reply = fallback
+  try {
+    const chat = await llmComplete({
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: input.message },
+      ],
+      max_tokens: 350,
+      temperature: 0.65,
+    })
+    const text = chat.text?.trim() || ''
+    reply = !text || isProviderRefusal(text) ? fallback : text
+  } catch {
+    reply = fallback
+  }
 
   try {
     const memUpdate = await llmComplete({

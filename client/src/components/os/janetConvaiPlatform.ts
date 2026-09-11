@@ -19,5 +19,6 @@ export function connectionErrorHelp(detail?: string): string {
   const base = 'Connection failed. Tap to try again.'
   if (!detail) return base
   if (/denied|not-allowed|permission/i.test(detail)) return micPermissionHelp()
+  if (/forbidden/i.test(detail)) return 'Voice session was rejected. Tap to try again.'
   return `${base} (${detail.slice(0, 80)})`
 }

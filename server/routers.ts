@@ -1414,7 +1414,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const { mspTenants, mspCustomerOrgs, mspActivityLog } = await import("../drizzle/schema");
         const { eq, and } = await import("drizzle-orm");
         const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
-        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Not an MSP" });
         await db.update(mspCustomerOrgs)
           .set({ status: input.status })
           .where(and(eq(mspCustomerOrgs.id, input.customerOrgId), eq(mspCustomerOrgs.mspTenantId, tenantRows[0].id)));
@@ -1548,7 +1548,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const { mspTenants, templates } = await import("../drizzle/schema");
         const { eq, and } = await import("drizzle-orm");
         const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
-        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Not an MSP" });
         await db.delete(templates).where(and(eq(templates.id, input.templateId), eq(templates.mspTenantId, tenantRows[0].id)));
         return { success: true };
       }),
@@ -1564,7 +1564,7 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
         const { mspTenants, mspCustomerOrgs } = await import("../drizzle/schema");
         const { eq } = await import("drizzle-orm");
         const tenantRows = await db.select().from(mspTenants).where(eq(mspTenants.ownerUserId, ctx.user.id)).limit(1);
-        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN" });
+        if (!tenantRows[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Not an MSP" });
         // SECURITY: this input carries no orgId, so getTemplateById's optional requestingOrgId
         // stays unset (as it already did at runtime); MSP ownership is enforced by the
         // source.mspTenantId check on the next line.
@@ -1740,21 +1740,21 @@ Respond with ONLY valid JSON (no markdown, no code fences, no prose) matching EX
     // PS-MARKETPLACE-GATE-01 — the review queue + the approve/reject action. A shared template is
     // NOT in the community pool until an admin approves it here.
     pendingCommunity: protectedProcedure.query(async ({ ctx }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
       const { getPendingCommunityTemplates } = await import("./db");
       return getPendingCommunityTemplates();
     }),
     moderate: protectedProcedure
       .input(z.object({ templateId: z.number(), status: z.enum(["approved", "rejected"]) }))
       .mutation(async ({ ctx, input }) => {
-        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+        if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
         const { moderateTemplate } = await import("./db");
         await moderateTemplate(input.templateId, input.status);
         return { ok: true, templateId: input.templateId, status: input.status };
       }),
 
     seedBuiltIns: protectedProcedure.mutation(async ({ ctx }) => {
-      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN" });
+      if (ctx.user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
       // Seed templates
       type TemplateInsert = Parameters<typeof createTemplate>[0];
       for (const t of BUILT_IN_TEMPLATES) {
