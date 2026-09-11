@@ -120,4 +120,29 @@ export async function ensureHqTables() {
     lead_id TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`
+  // PS-SEQ-OUTBOX-01: mirrors drizzle/pg/0031_agent_safety_containment.sql. That file
+  // shipped in git but was never applied (Marcus runner only runs after Marcus merges).
+  await sql`
+    CREATE TABLE IF NOT EXISTS outreach_sequence_outbox (
+      idempotency_key TEXT PRIMARY KEY,
+      lead_id UUID NOT NULL,
+      touch INTEGER NOT NULL,
+      recipient TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      claim_token UUID,
+      claim_expires_at TIMESTAMPTZ,
+      provider_message_id TEXT,
+      last_error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  await sql`
+    CREATE INDEX IF NOT EXISTS outreach_sequence_outbox_retry_idx
+      ON outreach_sequence_outbox (claim_expires_at)
+      WHERE provider_message_id IS NULL`
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS outreach_sequence_outbox_provider_id_uniq
+      ON outreach_sequence_outbox (provider_message_id)
+      WHERE provider_message_id IS NOT NULL`
 }

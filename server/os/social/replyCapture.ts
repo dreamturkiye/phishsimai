@@ -26,6 +26,10 @@ async function ensureReplyTables() {
     status TEXT NOT NULL DEFAULT 'pending_review',
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`.catch(() => {})
+  await sql`ALTER TABLE outreach_reply_drafts
+    ADD COLUMN IF NOT EXISTS classification_claim_token UUID,
+    ADD COLUMN IF NOT EXISTS classification_claimed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS classification_claim_expires_at TIMESTAMPTZ`.catch(() => {})
 }
 
 // Reply-trust flag — same pattern as outreach_ramp_enabled / linkedin_autopost. '1' = graduated to
