@@ -101,15 +101,21 @@ export async function checkAgentStaleness(companyId = 'phishsimai'): Promise<str
     const lastRun = lastRunAt ? new Date(lastRunAt as string).getTime() : 0
     const stale = !lastRun || now - lastRun > threshold
     const healable = HEALABLE_OPS_AGENTS.includes(agentName as any)
+    if (!lastRun) {
+      // Never instrumented — not a missed ping. Closing silently avoids a
+      // "✅ RESOLVED" burst for phantom names like agent_watchdog / janet.
+      await resolveSystemAlert('agent_stale:' + agentName, 'no heartbeat instrumented — not a missed ping', companyId, { notify: false })
+      continue
+    }
     if (stale) {
-      const h = lastRun ? ((now - lastRun) / 3600000).toFixed(1) : 'never'
-      alerts.push(`${agentName}: stale ${h}h`)
+      const age = `${((now - lastRun) / 3600000).toFixed(1)}h ago`
+      alerts.push(`${agentName}: stale ${age}`)
       await sql`INSERT INTO agent_health (company_id, agent_name, status, updated_at)
         VALUES (${companyId}, ${agentName}, 'critical', NOW())
         ON CONFLICT (company_id, agent_name) DO UPDATE SET
           status='critical', updated_at=NOW()`
       if (!healable) {
-        await openSystemAlert('agent_stale:' + agentName, `stale ${h}h`, companyId)
+        await openSystemAlert('agent_stale:' + agentName, `stale ${age}`, companyId)
       }
     } else {
       await resolveSystemAlert('agent_stale:' + agentName, 'running within threshold', companyId)

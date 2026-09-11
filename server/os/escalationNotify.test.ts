@@ -82,4 +82,20 @@ describe("deliverPendingEscalations", () => {
     expect(msg).toContain("&lt;script&gt;");
     expect(msg).not.toContain("<script>");
   });
+
+  it("marcus_dispatch is an UPDATE, not a hard-stop ESCALATION", () => {
+    const row: EscalationRow = {
+      id: 4,
+      productId: "phishsimai",
+      category: "marcus_dispatch",
+      status: "pending",
+      createdAtMs: NOW,
+      payload: { task: "Implement domain verification simplification", source: "agent:nova" },
+    };
+    const msg = formatEscalation(row, NOW);
+    expect(msg).toContain("UPDATE — marcus_dispatch");
+    expect(msg).not.toContain("ESCALATION — marcus_dispatch");
+    expect(msg).toContain("📋");
+    expect(msg).not.toContain("⛔");
+  });
 });

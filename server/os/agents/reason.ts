@@ -74,6 +74,7 @@ export async function reasonAndAct(
                           bugId,
                           notes: `[${agentId} reasoning] ${assessment}`.slice(0, 500),
                           source: `agent:${agentId}`,
+                          notify: false,
                 }).catch(() => null)
         }
 
