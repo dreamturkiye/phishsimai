@@ -77,12 +77,16 @@ export function ageStr(createdMs: number, nowMs: number): string {
 
 // PURE — one concise HTML message per escalation. breaker_trip carries the RAW
 // underlying error; hard-stop categories summarize the payload.
+const FAULT_CATEGORIES = new Set(['breaker_trip', 'agent_critical', 'protected_path'])
+
 export function formatEscalation(row: EscalationRow, nowMs: number): string {
   const age = ageStr(row.createdAtMs, nowMs)
   const p = row.payload || {}
-  const emoji = row.category === 'breaker_trip' ? '🔴' : '⛔'
+  const isFault = FAULT_CATEGORIES.has(row.category)
+  const emoji = row.category === 'breaker_trip' ? '🔴' : isFault ? '⛔' : '📋'
+  const headline = isFault ? 'ESCALATION' : 'UPDATE'
   const lines = [
-    `${emoji} <b>ESCALATION — ${escapeHtml(row.category)}</b>`,
+    `${emoji} <b>${headline} — ${escapeHtml(row.category)}</b>`,
     `Product: ${escapeHtml(row.productId)} | Age: ${age} | Status: ${escapeHtml(row.status)}`,
   ]
   if (row.category === 'breaker_trip') {

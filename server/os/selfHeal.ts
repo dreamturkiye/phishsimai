@@ -75,7 +75,12 @@ export async function openSystemAlert(key: string, detail: string, companyId = C
   }
 }
 
-export async function resolveSystemAlert(key: string, detail: string, companyId = COMPANY_ID) {
+export async function resolveSystemAlert(
+  key: string,
+  detail: string,
+  companyId = COMPANY_ID,
+  opts?: { notify?: boolean },
+) {
   const wasOpen = await isAlertOpen(key, companyId)
   if (!wasOpen) return
   const sql = getSql()
@@ -83,6 +88,7 @@ export async function resolveSystemAlert(key: string, detail: string, companyId 
     DELETE FROM janet_memory
     WHERE company_id=${companyId} AND type='operating' AND key=${'system_alert:' + key}
   `.catch(() => {})
+  if (opts?.notify === false) return
   await sendTelegram(`✅ <b>JANET — RESOLVED</b>\n${key}: ${detail}`)
 }
 
@@ -212,7 +218,11 @@ export async function queueJanetArchitectTask(opts: {
       VALUES (${id}, ${opts.task.slice(0, 4000)}, ${opts.source || 'janet'}, 'queued', ${opts.notes || 'Janet → Marcus: autonomous self-heal'}, ${opts.bugId || null})
     `
 
-    if (opts.notify !== false) {
+    // SME reasonAndAct uses source `agent:<id>`. Those are ideas, not production
+    // faults. Paging both JANET→MARCUS and ⛔ ESCALATION for each one is how the
+    // founder Telegram filled with "errors" that were not errors.
+    const agentSourced = String(opts.source || '').startsWith('agent:')
+    if (opts.notify !== false && !agentSourced) {
       await sendTelegram(
         `<b>JANET → MARCUS</b>\n` +
         `Marcus (Architect) queued autonomously.\n` +
@@ -222,7 +232,10 @@ export async function queueJanetArchitectTask(opts: {
     }
     // PS-ESCALATION-COVERAGE-01: a real Marcus/architect dispatch is a high-signal event — route it
     // to the founder early-warning path (escalation-notify), not just an easily-missed Telegram line.
-    await raiseEscalation('marcus_dispatch', { task: opts.task.slice(0, 200), taskId: id, source: opts.source || 'janet', bugId: opts.bugId ?? null })
+    // Agent-sourced proposals stay on the HQ queue without a second ⛔ page.
+    if (!agentSourced) {
+      await raiseEscalation('marcus_dispatch', { task: opts.task.slice(0, 200), taskId: id, source: opts.source || 'janet', bugId: opts.bugId ?? null })
+    }
     void dispatchMarcusWake(COMPANY_ID, { taskId: id, product: 'phishsim' })
     return id
   } catch (e: any) {

@@ -217,11 +217,21 @@ export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<
     const stale = !lastSuccess || now - lastSuccess > threshold
     const critical = row?.status === 'critical' || (row?.consecutive_failures ?? 0) >= 3
 
+    if (!lastSuccess && Number(row?.total_runs ?? 0) === 0) {
+      // Never called reportAgentHealth — Janet/Marcus/leftover Max. Not a missed ping.
+      await resolveSystemAlert(
+        'employee_stale:' + agentId,
+        'no heartbeat instrumented — not a missed ping',
+        companyId,
+        { notify: false },
+      )
+      continue
+    }
     if (stale || critical) {
-      const h = lastSuccess ? ((now - lastSuccess) / 3600000).toFixed(1) : 'never'
+      const age = lastSuccess ? `${((now - lastSuccess) / 3600000).toFixed(1)}h ago` : 'never'
       const label = AGENTS[agentId]?.name || agentId
-      alerts.push(`employee:${agentId}: ${h}h${critical ? ' critical' : ''}`)
-      await openSystemAlert('employee_stale:' + agentId, `${label} last ping ${h}h ago`)
+      alerts.push(`employee:${agentId}: ${age}${critical ? ' critical' : ''}`)
+      await openSystemAlert('employee_stale:' + agentId, `${label} last ping ${age}`)
     } else {
       await resolveSystemAlert('employee_stale:' + agentId, 'employee responding within threshold')
     }

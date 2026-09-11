@@ -13,10 +13,10 @@ export const EXPECTED_OPS_AGENTS: Record<string, Record<string, number>> = {
     researcher: 90 * 60 * 1000,
     discover: 7 * 60 * 60 * 1000,
     aria: 26 * 60 * 60 * 1000,
-    janet: 26 * 60 * 60 * 1000,
+    // janet / agent_watchdog never call reportAgentRun under those names, so a
+    // threshold here produced perpetual "stale neverh" Telegram pages.
     watchdog: 2 * 60 * 60 * 1000,
     heartbeat: 2 * 60 * 60 * 1000,
-    agent_watchdog: 60 * 60 * 1000,
   },
 }
 
