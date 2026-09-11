@@ -32,25 +32,30 @@ describe('outbound sequence idempotency and caps', () => {
     const source = read('server/os/sequences.ts')
     expect(source).toContain("'Idempotency-Key': idempotencyKey")
     expect(source).toContain('INSERT INTO outreach_sequence_outbox')
+    expect(source).toContain('CREATE TABLE IF NOT EXISTS outreach_sequence_outbox')
   })
 
   it('atomically claims an unsent outbox key', async () => {
     const calls: string[] = []
     const sql = async (strings: TemplateStringsArray, ...values: any[]) => {
-      calls.push(strings.join('?'))
+      const q = strings.join('?')
+      calls.push(q)
+      if (!q.includes('INSERT INTO outreach_sequence_outbox')) return []
       return [{ claim_token: values[4], provider_message_id: null }]
     }
     const claim = await claimSequenceSend(sql, '00000000-0000-4000-8000-000000000001', 1, 'lead@example.com')
     expect(claim.claimed).toBe(true)
     expect(claim.claimToken).toMatch(/^[0-9a-f-]{36}$/)
-    expect(calls[0]).toContain('ON CONFLICT (idempotency_key) DO UPDATE')
+    expect(calls.some((c) => c.includes('ON CONFLICT (idempotency_key) DO UPDATE'))).toBe(true)
   })
 
   it('reconciles an already accepted provider message without sending again', async () => {
-    let call = 0
-    const sql = async () => {
-      call++
-      return call === 1 ? [] : [{ provider_message_id: 'resend-existing-id' }]
+    let claimCalls = 0
+    const sql = async (strings: TemplateStringsArray) => {
+      const q = strings.join('?')
+      if (q.includes('CREATE ')) return []
+      claimCalls++
+      return claimCalls === 1 ? [] : [{ provider_message_id: 'resend-existing-id' }]
     }
     const claim = await claimSequenceSend(sql, '00000000-0000-4000-8000-000000000001', 1, 'lead@example.com')
     expect(claim).toEqual({

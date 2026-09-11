@@ -121,12 +121,44 @@ type SequenceSendClaim = {
   providerMessageId: string | null
 }
 
+let sequenceOutboxReady = false
+
+/** Mirrors drizzle/pg/0031_agent_safety_containment.sql so a send cron never depends on Marcus applying the file. */
+export async function ensureSequenceOutbox(sql: any = getSql()): Promise<void> {
+  if (sequenceOutboxReady) return
+  await sql`
+    CREATE TABLE IF NOT EXISTS outreach_sequence_outbox (
+      idempotency_key TEXT PRIMARY KEY,
+      lead_id UUID NOT NULL,
+      touch INTEGER NOT NULL,
+      recipient TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      claim_token UUID,
+      claim_expires_at TIMESTAMPTZ,
+      provider_message_id TEXT,
+      last_error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`
+  await sql`
+    CREATE INDEX IF NOT EXISTS outreach_sequence_outbox_retry_idx
+      ON outreach_sequence_outbox (claim_expires_at)
+      WHERE provider_message_id IS NULL`
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS outreach_sequence_outbox_provider_id_uniq
+      ON outreach_sequence_outbox (provider_message_id)
+      WHERE provider_message_id IS NOT NULL`
+  sequenceOutboxReady = true
+}
+
 export async function claimSequenceSend(
   sql: any,
   leadId: string,
   touch: number,
   recipient: string,
 ): Promise<SequenceSendClaim> {
+  await ensureSequenceOutbox(sql)
   const key = sequenceIdempotencyKey(leadId, touch)
   const claimToken = randomUUID()
   const claimed = await sql`
@@ -348,6 +380,7 @@ export async function runTouch2Batch(sqlOverride?: any): Promise<{
   attempted: number; sent: number; failed: number; noMx: number; suppressed: number; headroom: number; holding: boolean; reason?: string
 }> {
   const sql = sqlOverride ?? getSql()
+  await ensureSequenceOutbox(sql)
   const out = { attempted: 0, sent: 0, failed: 0, noMx: 0, suppressed: 0, headroom: 0, holding: false as boolean, reason: undefined as string | undefined }
 
   const health = await getSequenceHealth(sql).catch(() => null)
@@ -512,6 +545,7 @@ const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 
 export async function runFullSequence() {
   const sql = getSql()
+  await ensureSequenceOutbox(sql)
   const health = await getSequenceHealth(sql)
       // PS-RAMP-DECOUPLE-01: one flag decides autonomous-mode vs founder-directed-mode. In
       // founder-directed mode the ramp's own rails (cap + geo + MX + consent, still enforced
@@ -801,6 +835,7 @@ export async function sendWarmTrialCtas(opts: {
   sql?: any
 } = {}): Promise<WarmCtaResult> {
   const sql = opts.sql ?? getSql()
+  await ensureSequenceOutbox(sql)
   const cap = Math.max(1, Math.min(8, Math.floor(opts.cap ?? 8)))
   const out: WarmCtaResult = { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }
 
