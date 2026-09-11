@@ -75,6 +75,20 @@ function providerChain(): string[] {
   return raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
 }
 
+/**
+ * GLM / safety filters sometimes return HTTP 200 with the literal body FORBIDDEN.
+ * Treat that as a failed provider so the chain can answer, instead of showing it
+ * to the user as Mia/Janet's reply.
+ */
+export function isProviderRefusal(text: string): boolean {
+  return /^(FORBIDDEN|UNAUTHORIZED|UNAVAILABLE|DENIED)[\s.!*]*$/i.test((text || '').trim())
+}
+
+function assertUsableCompletion(text: string): string {
+  if (isProviderRefusal(text)) throw new Error(`provider refusal: ${text.trim().slice(0, 40)}`)
+  return text
+}
+
 /** Coarse token estimate (~4 chars/token) — only used for pre-emptive size guards. */
 function estimateTokens(messages: LlmMessage[]): number {
   const chars = messages.reduce((n, m) => {
@@ -123,7 +137,7 @@ async function openAiStyleComplete(
   }
   const message = data.choices?.[0]?.message
   const text = message?.content?.trim()
-  if (res.ok && text) return { text, usage: data.usage }
+  if (res.ok && text) return { text: assertUsableCompletion(text), usage: data.usage }
 
   // Reasoning-suppression safety net: a reasoning model that ignored (or was never sent)
   // the suppression param returns its answer in `reasoning`/`reasoning_content` with an
@@ -132,7 +146,7 @@ async function openAiStyleComplete(
   const reasoning = (message?.reasoning || message?.reasoning_content)?.trim()
   if (res.ok && reasoning) {
     console.warn(`[llm] recovered from reasoning field (${opts.provider || 'unknown'}/${model}) — reasoning suppression is not working`)
-    return { text: reasoning, usage: data.usage }
+    return { text: assertUsableCompletion(reasoning), usage: data.usage }
   }
 
   const err = new Error(data.error?.message || `HTTP ${res.status}`) as Error & { status?: number }
@@ -277,7 +291,7 @@ async function geminiComplete(opts: {
     error?: { message?: string }
   }
   const nativeText = nativeData.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim()
-  if (nativeRes.ok && nativeText) return nativeText
+  if (nativeRes.ok && nativeText) return assertUsableCompletion(nativeText)
 
   // Fallback: OpenAI-compatible surface (some keys only work here).
   try {
@@ -369,7 +383,7 @@ export async function llmComplete(opts: {
       if (provider === 'groq') {
         if (!process.env.GROQ_API_KEY?.trim()) continue
         const text = await groqComplete(opts)
-        return { text, provider: 'groq', model: GROQ_DEFAULT_MODEL }
+        return { text: assertUsableCompletion(text), provider: 'groq', model: GROQ_DEFAULT_MODEL }
       }
       if (provider === 'ollama') {
         if (!ollamaApiKey()) continue
@@ -387,6 +401,9 @@ export async function llmComplete(opts: {
     }
   }
 
+  if (/provider refusal|^FORBIDDEN$/i.test(lastError)) {
+    throw new Error('AI is temporarily unavailable')
+  }
   throw new Error(lastError)
 }
 

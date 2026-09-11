@@ -21,17 +21,31 @@ async function requireOrgAccess(userId: number, orgId: number) {
   }
 }
 
+function errStatus(e: unknown): number | undefined {
+  const err = e as { status?: number; statusCode?: number }
+  return err.status ?? err.statusCode
+}
+
+export function miaClientError(e: unknown): { status: number; error: string } {
+  const status = errStatus(e)
+  const msg = e instanceof Error ? e.message : String(e)
+  // authenticateRequest throws ForbiddenError("Invalid session") with statusCode 403.
+  // That is a missing login, not a workspace ACL miss — check it first.
+  if (status === 401 || /invalid session|user not found|unauthorized/i.test(msg)) {
+    return { status: 401, error: 'Please sign in again.' }
+  }
+  if (status === 403 || /^forbidden$/i.test(msg)) {
+    return { status: 403, error: 'You do not have access to this workspace. Refresh the page.' }
+  }
+  if (/provider refusal|temporarily unavailable|^FORBIDDEN$/i.test(msg)) {
+    return { status: 503, error: 'Assistant is temporarily unavailable. Try again in a moment.' }
+  }
+  return { status: 500, error: 'Something went wrong. Try again.' }
+}
+
 function handleErr(res: Response, e: unknown) {
-  const err = e as Error & { status?: number }
-  if (err.status === 403) {
-    res.status(403).json({ error: 'Forbidden' })
-    return
-  }
-  if (err.message?.includes('Unauthorized') || err.message?.includes('UNAUTHORIZED')) {
-    res.status(401).json({ error: 'Unauthorized' })
-    return
-  }
-  res.status(500).json({ error: err.message || 'Server error' })
+  const body = miaClientError(e)
+  res.status(body.status).json({ error: body.error })
 }
 
 export async function miaHttpChat(req: Request, res: Response) {

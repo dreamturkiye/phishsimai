@@ -81,10 +81,6 @@ export function JanetConvaiPanel({
       const conversation = await Conversation.startSession({
         signedUrl: body.signed_url,
         connectionType: 'websocket',
-        dynamicVariables: {
-          ops_context: String(body.ops_context || 'Live ops snapshot unavailable — use get_live_ops tool.'),
-          user_name: 'Kaan',
-        },
         onConnect: () => {
           setStatusAll('listening')
           setErrorMsg('')

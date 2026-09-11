@@ -144,8 +144,16 @@ export default function MiaWidget({ orgId, orgName, hidden }: MiaWidgetProps) {
       if (d.activation) setActivation(d.activation)
       setLoading(false)
       await speak(reply)
-    } catch {
-      setMessages(m => [...m, { role: 'mia', text: 'Oops, something went wrong. Try again!' }])
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : ''
+      const text = /sign in/i.test(raw)
+        ? 'Please refresh and sign in again.'
+        : /workspace/i.test(raw)
+          ? 'I cannot see this workspace yet — refresh the page.'
+          : /temporarily unavailable|FORBIDDEN/i.test(raw)
+            ? 'I had a moment — try that again.'
+            : 'Oops, something went wrong. Try again!'
+      setMessages(m => [...m, { role: 'mia', text }])
       setLoading(false)
       setRing('idle')
     }

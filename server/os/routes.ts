@@ -39,7 +39,7 @@ import { composeFounderBrief, makeSqlBriefDeps } from './founderBrief'
 import { triageEscalations } from './escalationTriage'
 import { runAgentLevels } from './agentLevels'
 import { runJanetReport } from './janetReport'
-import { getAllAgentHealth } from './agentHealth_v2'
+import { getAllAgentHealth, reportAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
 import { runSarahSocialCron, listSocialQueue, queueSocialItem } from './social/sarahSocial'
 import { buildAnalyticsView, ingestAnalyticsEvent } from './siteAnalytics'
@@ -108,10 +108,17 @@ export async function cronJanet(req: Request, res: Response) {
 // gate-denied. The optional `deps` param is for tests only (Express passes none).
 export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoDeps) {
   if (!okCronOrHq(req, res)) return
+  const started = Date.now()
   const summary = await buildJanetCgoSummary(COMPANY, deps).catch((e: any) => ({
     ok: false, ran: [] as string[], orchestration: null, l5: null, gateDeniedCount: 0,
     errors: [`fatal: ${String(e?.message).slice(0, 200)}`],
   }))
+  await reportAgentHealth(
+    'janet',
+    summary.ok !== false,
+    Date.now() - started,
+    summary.ok === false ? String((summary as { errors?: string[] }).errors?.[0] || 'cgo failed') : undefined,
+  ).catch(() => {})
   res.json(summary)
 }
 
