@@ -3,6 +3,7 @@ import { llmComplete } from '../llmChat'
 import { rememberFact } from '../memory'
 import { queueJanetArchitectTask } from '../selfHeal'
 import { ensureMarcusProposalBugId } from '../marcusProposal'
+import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from '../agentRuntime'
 
 const COMPANY = 'phishsimai'
 
@@ -22,6 +23,7 @@ export async function reasonAndAct(
   ): Promise<AgentDecision> {
     const sql = getSql()
     const memKey = `${agentId}_latest_reasoning`
+    const runtime = await loadAgentRuntime(sql, COMPANY, agentId).catch(() => null)
 
   let priorNote = 'none (first run)'
     try {
@@ -30,16 +32,18 @@ export async function reasonAndAct(
     } catch {}
 
   const reportJson = JSON.stringify(report, null, 0).slice(0, 4000)
+  const runtimeBlock = runtime?.contextBlock ? `\n\n${runtime.contextBlock}` : ''
 
   try {
         const result = await llmComplete({
                 messages: [
-                  { role: 'system', content: systemPrompt },
+                  { role: 'system', content: systemPrompt + runtimeBlock },
                   {
                               role: 'user',
                               content:
                                             `Your last reflection: ${priorNote}\n\n` +
                                             `Today's real, measured data (do not invent anything beyond this):\n${reportJson}\n\n` +
+                                            `Resume the OPEN THREAD next action unless today's data invalidates it.\n` +
                                             `Reply with ONLY a JSON object, no other text: {"assessment": "1-2 sentence honest read of the data", ` +
                                             `"action": "the single most useful next action, or literally the string none if nothing is actionable today", ` +
                                             `"queueTask": true or false -- true ONLY if a concrete task should be queued for the architect to build/fix, ` +
@@ -60,7 +64,8 @@ export async function reasonAndAct(
 
       const assessment = String(parsed.assessment || 'no assessment produced').slice(0, 500)
         const action = String(parsed.action || 'none').slice(0, 300)
-        const wantsTask = !!parsed.queueTask && String(parsed.taskTitle || '').trim().length > 3
+        const kind = classifySelfModification(action)
+        const wantsTask = kind !== 'hard_stop' && !!parsed.queueTask && String(parsed.taskTitle || '').trim().length > 3
 
       let taskId: string | null = null
         if (wantsTask) {
@@ -85,6 +90,14 @@ export async function reasonAndAct(
               value: JSON.stringify({ assessment, action, queued: !!taskId, ts: new Date().toISOString() }),
               confidence: 0.7,
               source: agentId,
+      }).catch(() => {})
+
+      await persistAgentRuntime(sql, COMPANY, agentId, {
+              currentGoal: runtime?.working.currentGoal || `${agentId} daily mandate`,
+              nextAction: action,
+              lastAssessment: assessment,
+              success: action !== 'none' && kind !== 'hard_stop',
+              lesson: assessment,
       }).catch(() => {})
 
       return { assessment, action, queued: !!taskId, taskId, provider: result.provider }
