@@ -15,6 +15,9 @@ import { dispatchRefusalReason } from '../lib/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
 import { queueJanetArchitectTask } from './selfHeal'
+import { isOperatorOwnedEscalation } from './escalationTriagePolicy'
+
+export { isOperatorOwnedEscalation }
 
 interface PendingEscalation {
   id: number
@@ -50,6 +53,19 @@ async function autoResolveStale(sql: any, rows: PendingEscalation[]): Promise<Se
           reason = `breaker ${String(payload.fingerprint).slice(0, 10)} is closed — the trip that raised this was resolved`
         }
       } catch { /* if we cannot check, leave it pending */ }
+    }
+
+    if (!reason && isOperatorOwnedEscalation(row)) {
+      reason = /protected path/i.test(String(payload.last_error || ''))
+        ? 'protected-path preflight — Marcus cannot dispatch this; a human PR is the only close, not a founder legal decision'
+        : 'stale Grok format-mismatch breaker — known-fixed LLM refusal, not a founder spend/legal decision'
+      if (payload.fingerprint) {
+        await sql`
+          UPDATE circuit_breaker_state
+          SET state='closed', consecutive_failures=0, trip_reason=NULL, updated_at=NOW()
+          WHERE fingerprint=${payload.fingerprint} AND state='open'
+        `.catch(() => {})
+      }
     }
 
     if (!reason && row.category === 'marcus_dispatch' && typeof payload.task === 'string') {
@@ -108,6 +124,13 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
     const age = AGE_DAYS(row.created_at)
     // Already flagged founder-decision-required in a prior pass — just re-alert with growing
     // urgency, do not re-spend an LLM call re-litigating the same item every day.
+    if (isOperatorOwnedEscalation(row)) {
+      const extra = await autoResolveStale(sql, [row])
+      if (extra.has(row.id)) {
+        resolved++
+        continue
+      }
+    }
     const already = String(row.payload?.janetTriage ?? '')
     if (already === 'founder_required') {
       await reAlertFounder(row, age, companyId)

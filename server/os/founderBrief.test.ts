@@ -1,5 +1,6 @@
 // Founder brief — the honesty invariant's last stand: null ⇒ 'no data', never $0.
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import { renderFounderBrief, composeFounderBrief, type BriefData, type BriefDeps, type ProductBrief } from "./founderBrief";
 
 const base = (over: Partial<ProductBrief> = {}): ProductBrief => ({
@@ -34,6 +35,29 @@ describe("renderFounderBrief — honesty (null ⇒ 'no data')", () => {
     expect(md).toContain("MRR:** $0"); // a real, counted zero
     expect(md).toContain("0 shipped / 0 failed");
   });
+
+  it("renders operating trials as max(live product, CRM), never CRM-only", () => {
+    const md = renderFounderBrief({
+      date: "2026-09-13",
+      products: [base({
+        funnel: {
+          sends7d: 236, replies7d: 4, trials: 76, customers: 0, sendsToday: 1, repliesPending: 0,
+          liveProductTrials: 76, crmTrials: 0,
+        },
+      })],
+    })
+    expect(md).toContain("76 deneme")
+    expect(md).toContain("canlı ürün 76")
+    expect(md).toContain("CRM trial_at 0")
+    expect(md).not.toMatch(/Funnel \(7g\): 236 gönderim → 4 yanıt → 0 deneme/)
+  })
+
+  it("gather uses Janet's operating trial count, not CRM-only trial_at", () => {
+    const src = readFileSync("server/os/founderBrief.ts", "utf8")
+    expect(src).toContain("verifiedTrialCount")
+    expect(src).toContain("liveProductTrials")
+    expect(src).toContain('snapshot_date::date = ${date}::date')
+  })
 
   it("real metrics render as values, with delta and breaker/escalation lines", () => {
     const md = renderFounderBrief({
