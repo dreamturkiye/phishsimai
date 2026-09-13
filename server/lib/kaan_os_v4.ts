@@ -30,6 +30,7 @@ import { formatEvaluationScore, isScoredEvaluation, parseEvaluationScore } from 
 // failure). This is the root kill of PS-LEARN-GATE-01: no `if (replied > 0)` success precondition.
 import { getAgentReflectionPrompt, recordAgentReflection, parseReviewForReflection } from '../os/kaan-os-core/agentReflection'
 import { getAgentLessonsForPrompt } from '../os/kaan-os-core/outcomeLearning'
+import { loadAgentRuntime, persistAgentRuntime } from '../os/agentRuntime'
 // This file was copied from ScrollFuel and never localised: every function signature
 // defaulted companyId to 'scrollfuel', and the DDL below defaulted the COLUMN to it too.
 // No caller ever relied on those defaults — all 8 routes.ts call sites and
@@ -1713,18 +1714,17 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
 
   const task = row as AgentTask
   const agent = AGENTS[durable.owner]
-  const [memory, context] = await Promise.all([
+  const [memory, context, runtime] = await Promise.all([
     getAgentMemory(durable.owner, sql, companyId),
-    getCompanyContext(sql)
+    getCompanyContext(sql),
+    loadAgentRuntime(sql, companyId, durable.owner).catch(() => null),
   ])
 
   // PS-PORT-01: inject this agent's recent misses + learned lessons so it does not repeat them.
   // Empty string on a cold start (no reflections yet) — additive, never blocks execution.
-  const [reflectionBlock, lessonsBlock] = await Promise.all([
-    getAgentReflectionPrompt(sql, companyId, durable.owner).catch(() => ''),
-    getAgentLessonsForPrompt(sql, companyId, durable.owner).catch(() => ''),
-  ])
-  const system = [buildAgentSystem(agent, memory, context), reflectionBlock, lessonsBlock]
+  const reflectionBlock = runtime?.reflections || await getAgentReflectionPrompt(sql, companyId, durable.owner).catch(() => '')
+  const lessonsBlock = runtime?.lessons || await getAgentLessonsForPrompt(sql, companyId, durable.owner).catch(() => '')
+  const system = [buildAgentSystem(agent, memory, context), runtime?.contextBlock || [reflectionBlock, lessonsBlock].filter(Boolean).join('\n\n')]
     .filter(Boolean)
     .join('\n\n')
   const user = employeeExecutePrompt({
@@ -1780,6 +1780,13 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
     company_id: companyId, type: 'strategic',
     key: `task:${task.title.slice(0,50)}`, value: finalResult.slice(0,500),
     confidence: 0.8, source: durable.owner
+  }).catch(() => {})
+  await persistAgentRuntime(sql, companyId, durable.owner, {
+    currentGoal: task.title,
+    nextAction: 'report outcome to Janet and continue the same thread',
+    lastAssessment: finalResult.slice(0, 400),
+    success: true,
+    lesson: finalResult.slice(0, 200),
   }).catch(() => {})
 
   return {
