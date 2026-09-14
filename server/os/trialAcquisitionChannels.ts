@@ -13,7 +13,7 @@ import { sendTelegram } from './telegram'
 import { rememberFact } from './memory'
 import { TRIAL_CTA_URL } from './sequences'
 import { PUBLIC_SOCIAL_POSTING_ENABLED } from './social/publicPostingLockout'
-import { previewPublicUrl, savePreviewForReview } from './social/socialPreviewPage'
+import { previewPublicUrl, savePreviewForReview, linkedInPreviewTelegramHtml } from './social/socialPreviewPage'
 
 export const TRIAL_ACQUISITION_CHANNELS = [
   {
@@ -51,6 +51,8 @@ export const TRIAL_ACQUISITION_CHANNELS = [
 const DRAFT_MEMORY_KEY = 'trial_acq_linkedin_draft_day'
 const ESCALATE_MEMORY_KEY = 'trial_acq_linkedin_escalate_at'
 export const LINKEDIN_PENDING_ESCALATE_HOURS = 2
+
+export { linkedInPreviewTelegramHtml } from './social/socialPreviewPage'
 
 export const TRIAL_LINKEDIN_DRAFT_BODY =
   `MSPs: 30-day no-card trial. One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Live in 10 minutes.\n\nStart: ${TRIAL_CTA_URL}`
@@ -145,12 +147,12 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
         `.catch(() => [])) as Array<{ preview_token?: string; title?: string }>
         const token = String(pending[0]?.preview_token || '')
         const url = token ? previewPublicUrl(token) : 'https://phishsimai.com/preview/social'
-        await sendTelegram(
-          `📋 LINKEDIN TRIAL DRAFT still pending founder review (${hours}h).\n` +
-          `${String(pending[0]?.title || '30-day no-card trial for MSPs').slice(0, 80)}\n` +
-          `Approve to publish (lockout still on until you approve):\n${url}\n` +
-          `This is not a dead end — crisis ticks keep escalating until reviewed.`,
-        ).catch(() => {})
+        await sendTelegram(linkedInPreviewTelegramHtml({
+          title: String(pending[0]?.title || '30-day no-card trial for MSPs'),
+          previewUrl: url,
+          hours,
+          kind: 'pending',
+        })).catch(() => {})
         await sql`
           INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
           VALUES ('phishsimai', 'operating', ${ESCALATE_MEMORY_KEY}, ${new Date().toISOString()}, 1, 'trial_acquisition')
@@ -203,10 +205,11 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
         funnel,
       }
     }
-    await sendTelegram(
-      `📋 LINKEDIN TRIAL DRAFT memory said queued today but pending_review=0 — re-queueing preview (lockout stays on).\n` +
-      `Approve in Safari when the preview lands.`,
-    ).catch(() => {})
+    await sendTelegram(linkedInPreviewTelegramHtml({
+      title: '30-day no-card trial for MSPs',
+      previewUrl: 'https://phishsimai.com/preview/social',
+      kind: 'retry',
+    })).catch(() => {})
     await sql`
       INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
       VALUES ('phishsimai', 'operating', ${ESCALATE_MEMORY_KEY}, ${new Date().toISOString()}, 1, 'trial_acquisition')

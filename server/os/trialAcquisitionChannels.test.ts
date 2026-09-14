@@ -5,6 +5,7 @@ import {
   TRIAL_ACQUISITION_CHANNELS,
   TRIAL_LINKEDIN_DRAFT_BODY,
   linkedInFunnelLine,
+  linkedInPreviewTelegramHtml,
 } from './trialAcquisitionChannels'
 import { TRIAL_CTA_URL } from './sequences'
 import { PUBLIC_SOCIAL_POSTING_ENABLED } from './social/publicPostingLockout'
@@ -49,5 +50,14 @@ describe('trial acquisition besides cold email', () => {
     const acq = readFileSync('server/os/trialAcquisitionChannels.ts', 'utf8')
     expect(acq).toContain('pending_review=0')
     expect(acq).not.toMatch(/return \{[\s\S]*already queued a founder-review trial draft today[\s\S]*funnel[\s\S]*\}/)
+    const html = linkedInPreviewTelegramHtml({
+      title: '30-day no-card trial for MSPs',
+      previewUrl: 'https://phishsimai.com/preview/social/abc123',
+      hours: 3,
+      kind: 'pending',
+    })
+    expect(html).toContain('<a href="https://phishsimai.com/preview/social/abc123">')
+    expect(html).toContain('lockout stays on')
+    expect(PUBLIC_SOCIAL_POSTING_ENABLED).toBe(false)
   })
 })

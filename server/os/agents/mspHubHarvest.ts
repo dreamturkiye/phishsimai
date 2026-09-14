@@ -30,6 +30,8 @@ const TIME_BUDGET_MS = 240_000
 /** Walk this many listings looking for real domains so a noDomain streak cannot burn the quota. */
 export const HARVEST_SCAN_MULTIPLIER = 8
 export const HARVEST_SCAN_CAP_MAX = 400
+/** If a run still has zero queued after scanCap, keep walking — parse misses must not burn 400 and stop. */
+export const HARVEST_EMPTY_SCAN_CAP = 1200
 
 export function harvestScanCap(perRun: number): number {
   const target = Math.max(1, Math.floor(perRun) || PER_RUN_DEFAULT)
@@ -43,9 +45,12 @@ export function harvestShouldStop(opts: {
   scanCap: number
   elapsedMs: number
   timeBudgetMs: number
+  emptyScanCap?: number
 }): boolean {
   if (opts.elapsedMs >= opts.timeBudgetMs) return true
   if (opts.domainsQueued >= opts.queueTarget) return true
+  const emptyCap = opts.emptyScanCap ?? HARVEST_EMPTY_SCAN_CAP
+  if (opts.domainsQueued === 0) return opts.scanned >= emptyCap
   if (opts.scanned >= opts.scanCap) return true
   return false
 }
@@ -53,10 +58,19 @@ export function harvestShouldStop(opts: {
 function jsonLdItems(html: string): any[] {
   const blocks = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
   const items: any[] = []
+  const walk = (node: any) => {
+    if (!node) return
+    if (Array.isArray(node)) {
+      for (const n of node) walk(n)
+      return
+    }
+    if (typeof node !== 'object') return
+    items.push(node)
+    if (node['@graph']) walk(node['@graph'])
+  }
   for (const b of blocks) {
     try {
-      const parsed = JSON.parse(b.trim())
-      for (const it of Array.isArray(parsed) ? parsed : [parsed]) items.push(it)
+      walk(JSON.parse(b.trim()))
     } catch {
       /* skip broken JSON-LD */
     }
@@ -69,39 +83,53 @@ function acceptExternalHost(url: string | undefined | null): string | null {
   return hostnameOf(url)
 }
 
+const BLOCKED_HOSTS = /^(mymsphub\.com|google\.com|www\.google\.com|fonts\.googleapis\.com|fonts\.gstatic\.com|googletagmanager\.com|schema\.org|example\.com)$/i
+
+/** Bare hostname or URL → company host. Rejects directory / tracker hosts. */
+export function hostFromListing(raw: string | undefined | null): string | null {
+  if (!raw) return null
+  let s = String(raw).trim()
+  try { s = decodeURIComponent(s) } catch { /* keep raw */ }
+  s = s.replace(/^https?:\/\//i, '').replace(/^\/\//, '').split('/')[0].split('?')[0].replace(/^www\./i, '').toLowerCase()
+  if (!s || BLOCKED_HOSTS.test(s) || /mymsphub\.com$/i.test(s)) return null
+  if (!/^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/i.test(s)) return null
+  return s
+}
+
 /**
- * Parse a mymsphub company profile. JSON-LD LocalBusiness.url first; if the listing has
- * no JSON-LD site (live: 50 consecutive noDomain), fall back to sameAs / og:url / Website link.
+ * Live 2026-09-14: MyMSPHub pointed LocalBusiness.url at the DIRECTORY page, so every
+ * listing looked like noDomain (prod: 400/400, cursor 3500→3900). The company site is
+ * on the first Google favicon: s2/favicons?domain=realhost. Later favicons are "similar MSPs".
  */
 export function parseMspHubProfileHtml(html: string): { domain: string; name: string | null } | null {
   if (!html) return null
   let name: string | null = null
   for (const it of jsonLdItems(html)) {
     const t = it?.['@type']
-    const isLocal = t === 'LocalBusiness' || (Array.isArray(t) && t.includes('LocalBusiness'))
-    if (typeof it?.name === 'string' && it.name.trim()) name = name || it.name.trim()
+    const types = Array.isArray(t) ? t : t ? [t] : []
+    const isLocal = types.includes('LocalBusiness') || types.includes('Organization')
+    if (typeof it?.name === 'string' && it.name.trim() && !/mymsphub/i.test(it.name)) {
+      name = name || it.name.trim()
+    }
     if (isLocal) {
-      const dom = acceptExternalHost(typeof it.url === 'string' ? it.url : null)
+      const dom = hostFromListing(typeof it.url === 'string' ? it.url : null)
+        || acceptExternalHost(typeof it.url === 'string' ? it.url : null)
       if (dom) {
         const n = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : name
         return { domain: dom, name: n }
       }
       const same = it.sameAs
       for (const u of Array.isArray(same) ? same : same ? [same] : []) {
-        const d = acceptExternalHost(typeof u === 'string' ? u : null)
-        if (d) return { domain: d, name: name }
+        const d = hostFromListing(typeof u === 'string' ? u : null) || acceptExternalHost(typeof u === 'string' ? u : null)
+        if (d) return { domain: d, name }
       }
     }
   }
-  const og = html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i)
-    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:url["']/i)
-  const ogDom = acceptExternalHost(og?.[1])
-  if (ogDom) return { domain: ogDom, name }
-  const canonical = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
-  const canDom = acceptExternalHost(canonical?.[1])
-  if (canDom) return { domain: canDom, name }
+  const favs = [...html.matchAll(/google\.com\/s2\/favicons\?domain=([^&"'>\s]+)/gi)].map((m) => hostFromListing(m[1]))
+  const fav = favs.find(Boolean) || null
+  if (fav) return { domain: fav, name }
   const website = html.match(/<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>\s*(?:Website|Visit (?:site|website)|Company (?:site|website))/i)
-  const webDom = acceptExternalHost(website?.[1])
+  const webDom = acceptExternalHost(website?.[1]) || hostFromListing(website?.[1])
   if (webDom) return { domain: webDom, name }
   return null
 }
@@ -188,9 +216,11 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
       if (harvestShouldStop({
         domainsQueued, queueTarget, scanned: idx, scanCap,
         elapsedMs: Date.now() - started, timeBudgetMs: TIME_BUDGET_MS,
+        emptyScanCap: HARVEST_EMPTY_SCAN_CAP,
       })) return
       const i = idx++
-      if (i >= scanCap) return
+      const hardCap = domainsQueued > 0 ? scanCap : HARVEST_EMPTY_SCAN_CAP
+      if (i >= hardCap) return
       processed++
       const url = urls[(cursorFrom + i) % total]
       const prof = await domainFromProfile(url)
@@ -216,7 +246,7 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, scanCap) || 1 }, () => worker()))
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(scanCap, HARVEST_EMPTY_SCAN_CAP)) || 1 }, () => worker()))
 
   const cursorTo = cursorFrom + processed
   await sql`UPDATE msp_hub_harvest_state SET cursor = ${cursorTo}, total = ${total}, updated_at = now() WHERE id = 1`.catch(() => {})

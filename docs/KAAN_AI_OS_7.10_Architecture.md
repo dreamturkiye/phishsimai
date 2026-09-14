@@ -482,7 +482,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | O.30 / O.32.8 | `already_at_l5_floor` auto-defer; no founder nag loop for raise_refused while live L5 / posture drill_3+; trigger INSERT seed | #202 approved false raise_refused→manual. Owner: stop nagging. Do not demote. Breaker/hard-stop/spend/protected_path stay loud. |
 | 2026-09-14 | O.32.9 | Crisis 6h 91/92 follow-up when eligible=0 and cooldown=sendable; reopenFalseAutoReplies crisis-clears false auto_reply on convert_warm | Live `bad6786` 19:24Z: cooldown=14 eligible=0 autoReplyPending=12 sent=0. Dex/CAN-SPAM/geo unchanged. |
 | 2026-09-14 | O.32.10 | Sequence drain (crisis T2 unlock + price-era skip-T2→T3 + stale suppress + pause T1); Grey Box 24h D25 paid loop; LinkedIn preview+6h escalate; warm CTA→TRUE trial rate; convert_warm queued when eligible>0 | Live: ~1565 T1-no-T2>5d (T2 hold + T3 required T2); LinkedIn `already queued today` dead end; 1 TRUE trial / $0 MRR. No invented cold copy. Do not demote L5/drill_3. |
-| 2026-09-14 | O.32.11 | Post-cutoff T1 ≥5d eligible on `/api/os/sequence-touch2` using approved T3 copy (stamp T2+T3); harvest walks scanCap not a 50-noDomain slice; Grey Box D25 from `runTrialNudges`; LinkedIn 2h escalate + retry if pending_review=0 | Live cron: sequence-touch2 attempted:0 sent:0 headroom:10 holding:false; msp-harvest processed 50 domainsQueued:0 noDomain:50; trialNudges scanned:2 sent:0. Safety: no invented copy; Dex/MX/suppression/breaker/throttles unchanged. |
+| 2026-09-14 | O.32.11 | Harvest: MyMSPHub now sets LocalBusiness.url to the directory page; take first `s2/favicons?domain=` host. Empty-scan cap 1200 so noDomain≠batch. LinkedIn Telegram uses clickable `<a href>`. Publish stays locked. | Live after #317: harvest domainsQueued=0 noDomain=400 cursor 3500→3900. Founder skipped unlock widget. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -908,11 +908,11 @@ Production cron (pre-#317 merge, still true of `touch2Eligible` on that branch):
 4. **New epoch / measured batch:** `TOUCH2_POST_ERA_EPOCH=2026-09-14T22:00:00Z`, `TOUCH2_POST_ERA_BATCH1_LIMIT=150`. Counts only post-cutoff T1 that received T2 since that instant — the 796 old T2s do not fill this batch. `touch2_scale_approved='1'` does **not** unlock this list. After 150: HOLD unless dual crisis, which continues at Dex caps (≤10/run, ≤50/day, combined 100) — drain toward heartbeat healthy, never a 1600-in-one-day blast. Founder key for faster scale: `touch2_post_cutoff_scale_approved='1'`.
 5. Dex still binds on every send: bounce breaker, `assertSendable`, MX, suppression, geo US/GB/AU, `SEND_SPACING_MS=10s`. Heartbeat takes at most 2 T2s (spacing). Silent 45d no-open unreplied leads stay excluded. New T1 stays paused while drainable overdue ≥50.
 
-**Harvest:** do not treat `perRun` as a fixed sitemap slice. Walk up to `harvestScanCap` (8×, max 400) or until `domainsQueued` hits the target. Parse JSON-LD first, then `sameAs` / og:url / Website link. Cursor still advances over skips so we do not re-scrape the same empty window forever; wrap + ON CONFLICT remain the de-dup.
+**Harvest:** MyMSPHub (2026-09-14 live) now sets `LocalBusiness.url` to the **directory page**. Treat that as no domain. The company host is the first `google.com/s2/favicons?domain=` (later favicons are related MSPs). Do not stop at 400 empty scans (`noDomain:400` / cursor 3500→3900). Walk until `domainsQueued` hits the target, or `HARVEST_EMPTY_SCAN_CAP` / time budget. ON CONFLICT de-dup unchanged.
 
-**Grey Box:** `runTrialNudges` always calls `runGreyBoxPaidNudge` (existing D25 checkout `/settings?tab=billing`, `nudge_day=181`, 24h). Match org id 11 **or** name ILIKE `%grey%box%`. TRUE-trial exclusions unchanged.
+**Grey Box:** `runTrialNudges` still fires existing D25 checkout (`nudge_day=181`, 24h).
 
-**LinkedIn:** PS-SOCIAL-LOCKOUT-01 stays. Escalate pending drafts every **2h** with the Safari preview URL (one-tap approve). If memory says queued today but `pending_review=0`, retry the preview queue on that cadence — do not return `already queued today` as a terminal state. Trial starts still come from Dex-gated warm CTA + working MSP harvest + Grey Box checkout, not illegal auto-publish.
+**LinkedIn:** PS-SOCIAL-LOCKOUT-01 stays (founder skipped unlock). Escalate with a clickable `<a href>` Safari preview. Do not auto-publish.
 
 Do not declare L5.8. Do not demote L5 / drill_3.
 
