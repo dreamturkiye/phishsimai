@@ -16,9 +16,10 @@ export type AgentDecision = {
     assessment: string
     action: string
     queued: boolean
+    executed?: boolean
     taskId: string | null
     converted?: boolean
-    conversion?: { sent: number; blocked: number; skipped: number; reason?: string }
+    conversion?: { sent: number; blocked: number; skipped: number; reason?: string; eligible?: number }
     provider?: string
     error?: string
 }
@@ -35,8 +36,9 @@ export function wantsWarmConversion(agentId: string, action: string): boolean {
  * Idle conversion agents must still fire the Dex-gated shift. Today's brief
  * (2026-09-14) was "Nothing completed" because reasonAndAct treated `none` as rest.
  */
-export function shouldFireConversionShift(agentId: string, action: string): boolean {
+export function shouldFireConversionShift(agentId: string, action: string, operatingCrisis = false): boolean {
   if (!CONVERSION_AGENTS.has(agentId)) return false
+  if (operatingCrisis) return true
   const a = String(action || '').trim()
   if (!a || /^none$/i.test(a)) return true
   return wantsWarmConversion(agentId, action)
@@ -153,13 +155,23 @@ export async function reasonAndAct(
         }
 
       let converted = false
+      let executed = false
+      let queuedWork = !!taskId
       let conversion: AgentDecision['conversion']
-      if (kind !== 'hard_stop' && shouldFireConversionShift(agentId, action)) {
+      if (kind !== 'hard_stop' && shouldFireConversionShift(agentId, action, operatingCrisis)) {
         const { runCgoConversionShift } = await import('../conversionEngine')
         const shift = await runCgoConversionShift({ cap: 8 }).catch(() => null)
         if (shift) {
           converted = shift.sent > 0
-          conversion = { sent: shift.sent, blocked: shift.blocked, skipped: shift.skipped, reason: shift.reason }
+          executed = !!shift.executed
+          queuedWork = queuedWork || !!shift.queued
+          conversion = {
+            sent: shift.sent,
+            blocked: shift.blocked,
+            skipped: shift.skipped,
+            reason: shift.reason,
+            eligible: shift.pool?.eligible,
+          }
         }
       }
 
@@ -167,7 +179,7 @@ export async function reasonAndAct(
               company_id: COMPANY,
               type: 'operating',
               key: memKey,
-              value: JSON.stringify({ assessment, action, queued: !!taskId, converted, conversion, ts: new Date().toISOString() }),
+              value: JSON.stringify({ assessment, action, queued: queuedWork, executed, converted, conversion, ts: new Date().toISOString() }),
               confidence: 0.7,
               source: agentId,
       }).catch(() => {})
@@ -176,7 +188,7 @@ export async function reasonAndAct(
               currentGoal: runtime?.working.currentGoal || `${agentId} daily mandate`,
               nextAction: action,
               lastAssessment: assessment,
-              success: (action !== 'none' && kind !== 'hard_stop') || converted || resolved.rewritten || !!taskId,
+              success: (action !== 'none' && kind !== 'hard_stop') || converted || executed || queuedWork || resolved.rewritten || !!taskId,
               lesson: conversion
                 ? `convert_warm sent=${conversion.sent}`
                 : resolved.rewritten
@@ -184,7 +196,7 @@ export async function reasonAndAct(
                   : assessment,
       }).catch(() => {})
 
-      return { assessment, action, queued: !!taskId, taskId, converted, conversion, provider: result.provider }
+      return { assessment, action, queued: queuedWork, executed, taskId, converted, conversion, provider: result.provider }
   } catch (e: any) {
         const error = String(e?.message || e).slice(0, 300)
         return { assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error }

@@ -17,7 +17,7 @@ import { sendTelegram } from './telegram'
 import { applyAutonomyFloor, autonomyFloorFor, getAutonomyLevel } from './autonomyGate'
 import { shouldPageFounderForEscalation } from './escalationTriagePolicy'
 import { agentsBelowL5TwoWeeks } from './agentLevels'
-import { verifiedTrialCount } from './cgoMandate'
+import { verifiedTrialCount, diagnoseRevenueFailure } from './cgoMandate'
 import { getWatcherHeartbeatAgeMinutes } from './marcusPipelineHealth'
 import { measureTrueOrgCounts } from './trueTrials'
 
@@ -50,6 +50,11 @@ export interface ProductBrief {
     crmTrials?: number
     rawLiveTrials?: number
     excludedNonCustomerTrials?: number
+    revenueBlocker?: string | null
+    warmCensus?: string | null
+    warmCtaToTrial?: string | null
+    sequenceDrainable?: number | null
+    linkedinFunnel?: string | null
   } | null
 }
 
@@ -137,6 +142,21 @@ export function renderFounderBrief(data: BriefData): string {
       out.push(`- **Bugün:** ${num(f.sendsToday)} gönderim`)
       if (f.repliesPending > 0) {
         out.push(`- ⚠️ **${f.repliesPending} ilgili yanıt seni bekliyor** (cevaplanmadı)`)
+      }
+      if (f.revenueBlocker) {
+        out.push(`- ⚠️ **REVENUE BLOCKER:** ${f.revenueBlocker}`)
+      }
+      if (f.warmCensus) {
+        out.push(`- **Warm census:** ${f.warmCensus}`)
+      }
+      if (f.warmCtaToTrial) {
+        out.push(`- **Close:** ${f.warmCtaToTrial}`)
+      }
+      if (f.sequenceDrainable != null) {
+        out.push(`- **Sequence drainable overdue:** ${num(f.sequenceDrainable)}`)
+      }
+      if (f.linkedinFunnel) {
+        out.push(`- **LinkedIn:** ${f.linkedinFunnel}`)
       }
     }
     out.push(`- **MRR:** ${money(p.mrrCents)}${moneyDelta(p.mrrDeltaCents)}`)
@@ -307,7 +327,41 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         customers: Number(fr.customers) || 0,
         sendsToday: Number(fr.sends_today) || 0,
         repliesPending: Number((pendRows as any[])[0]?.n) || 0,
+        revenueBlocker: null as string | null,
+        warmCensus: null as string | null,
+        warmCtaToTrial: null as string | null,
+        sequenceDrainable: null as number | null,
+        linkedinFunnel: null as string | null,
       } : null
+      if (funnel) {
+        try {
+          const { warmCtaPoolCensus } = await import('./sequences')
+          const { countSequenceBacklog } = await import('./sequenceBacklog')
+          const { measureWarmCtaToTrial, formatWarmCtaTrialRate } = await import('./warmCloseMetrics')
+          const { measureLinkedInFunnel, linkedInFunnelLine } = await import('./trialAcquisitionChannels')
+          const pool = await warmCtaPoolCensus(sql).catch(() => null)
+          const backlog = await countSequenceBacklog(sql).catch(() => null)
+          const rate = await measureWarmCtaToTrial(sql).catch(() => null)
+          const li = await measureLinkedInFunnel(sql).catch(() => null)
+          if (pool) {
+            funnel.warmCensus =
+              `eligible=${pool.eligible} cooldown=${pool.cooldown} sent-pool sendable=${pool.sendable} autoReplyPending=${pool.autoReplyPending}`
+            const d = diagnoseRevenueFailure({
+              trueTrials: liveProductTrials,
+              paying: liveCounts.truePaying,
+              rawTrials: liveCounts.rawLiveTrials,
+              excluded: liveCounts.excludedLiveTrials,
+              warm: pool,
+            })
+            funnel.revenueBlocker = d.crisis ? d.line : null
+          }
+          if (backlog) funnel.sequenceDrainable = backlog.drainableOverdue
+          if (rate) funnel.warmCtaToTrial = formatWarmCtaTrialRate(rate)
+          if (li) funnel.linkedinFunnel = linkedInFunnelLine(li)
+        } catch {
+          // Brief must still send if census instruments fail.
+        }
+      }
       const nowMs = Date.now()
       const pending = (pendingRaw as any[]).filter((e) => shouldPageFounderForEscalation({
         category: e.category,

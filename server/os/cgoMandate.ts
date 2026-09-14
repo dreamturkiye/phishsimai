@@ -129,8 +129,8 @@ export function diagnoseRevenueFailure(input: {
   const w = input.warm
   if (w) {
     if (w.replied === 0 && w.engaged === 0) {
-      bottlenecks.push('TOF empty: 0 replied/engaged — MSP harvest + founder-review LinkedIn drafts')
-      nextActions.push('Run MSP harvest and queue one founder-review LinkedIn trial draft')
+      bottlenecks.push('TOF empty: 0 replied/engaged — MSP harvest + LinkedIn founder-review (queue + escalate, not draft theater)')
+      nextActions.push('Run MSP harvest and advance LinkedIn trial draft (queue or escalate pending review)')
     } else if (w.eligible === 0 && (w.replied > 0 || w.engaged > 0)) {
       bottlenecks.push(
         `${w.replied} replied / ${w.engaged} engaged but eligible=${w.eligible} ` +
@@ -183,7 +183,7 @@ export function droughtIdleAction(agentId: string): string {
   const map: Record<string, string> = {
     janet: 'convert_warm: hottest',
     mason: 'convert_warm: hottest',
-    aria: 'convert_warm: hottest',
+    aria: 'convert_warm: hottest + advance LinkedIn trial draft',
     nova: 'convert_warm: hottest',
     vera: 'convert_warm: hottest',
     rex: 'Publish TRUE-trial vs paying integers (canary excluded)',
@@ -289,7 +289,7 @@ export function janetCgoMandate(): string {
     'Convert Grey Box Consulting (the only TRUE trial) to paid via the existing upgrade/checkout path. Do not wait for day-25 if they have ~10 days left.',
     'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened). Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
     'Hold Mason, Aria, and Nova to a daily conversion number. An employee who only reported failed. Follow up the same day. "I delegated" is not a result.',
-    'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Do not choose one and ignore the other.',
+    'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Multi-channel (LinkedIn founder-review with preview + escalate) executes every crisis tick — not optional, not "already queued today" as a dead end.',
     'You still cannot fake numbers, change price, skip Dex send-safety, or bypass Marcus approval. Shrewd means sequencing and follow-through, not breaking gates.',
   ].join('\n')
 }
@@ -369,7 +369,7 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
       agentId: 'mason',
       title: 'Drive the 20 hottest MSPs to a 30-day trial start today',
       description:
-        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now (canary/test/walkthrough/Adeo excluded). Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Also use MSP harvest + founder-review LinkedIn drafts. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
+        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now (canary/test/walkthrough/Adeo excluded). Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Also use MSP harvest + LinkedIn founder-review (queue preview, escalate if pending >6h — do not stop at already-queued-today). Drain stuck sequences (approved T2/T3) before scaling T1. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
       priority: 'high',
     },
     {

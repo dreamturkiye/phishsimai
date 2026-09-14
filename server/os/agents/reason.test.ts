@@ -29,6 +29,13 @@ describe('shouldFireConversionShift — idle conversion agents still convert', (
     expect(shouldFireConversionShift('nova', 'none')).toBe(true)
     expect(shouldFireConversionShift('rex', 'none')).toBe(false)
   })
+
+  it('fires convert_warm during operating crisis even if the agent said analyze', () => {
+    expect(shouldFireConversionShift('mason', 'analyze the funnel', true)).toBe(true)
+    expect(shouldFireConversionShift('aria', 'write a blog post about pricing', true)).toBe(true)
+    expect(shouldFireConversionShift('rex', 'analyze the funnel', true)).toBe(false)
+    expect(shouldFireConversionShift('mason', 'analyze the funnel', false)).toBe(false)
+  })
 })
 
 describe('resolveRuntimeAction — refuse idle none during operating crisis', () => {

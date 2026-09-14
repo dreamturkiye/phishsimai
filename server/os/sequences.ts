@@ -13,6 +13,18 @@ import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_S
 import { randomUUID } from 'node:crypto'
 import { isOperatingCrisis } from './cgoMandate'
 import { measureTrueOrgCounts } from './trueTrials'
+import {
+  DRAIN_STALE_MARK_CAP,
+  FOLLOWUP_DAILY_CAP,
+  TOUCH2_COPY_ERA_CUTOFF,
+  countSequenceBacklog,
+  followUpHourlySlice,
+  shouldCrisisUnlockTouch2,
+  shouldPauseTouch1,
+  type SequenceBacklogCensus,
+} from './sequenceBacklog'
+
+export { TOUCH2_COPY_ERA_CUTOFF } from './sequenceBacklog'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -313,9 +325,15 @@ export async function touch2SentInBatch(sql: any): Promise<number> {
  * not unlocked scaling — a hard stop, not a warning. Exported so the caller can report the hold
  * rather than silently sending nothing.
  */
-export async function touch2Headroom(sql: any): Promise<{ headroom: number; sentInBatch: number; holding: boolean }> {
+export async function touch2Headroom(sql: any): Promise<{ headroom: number; sentInBatch: number; holding: boolean; crisisDrain?: boolean }> {
   const sentInBatch = await touch2SentInBatch(sql)
   if (await isTouch2ScaleApproved(sql)) return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch, holding: false }
+  // Owner 2026-09-14: dual crisis (TRUE<20 or paying<4) unlocks remaining approved T2.
+  // Dex daily caps still bind. Do not invent copy.
+  const crisis = await readOperatingCrisis(sql).catch(() => true)
+  if (shouldCrisisUnlockTouch2(crisis, false)) {
+    return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch, holding: false, crisisDrain: true }
+  }
   const headroom = Math.max(0, TOUCH2_BATCH1_LIMIT - sentInBatch)
   return { headroom, sentInBatch, holding: headroom === 0 }
 }
@@ -339,10 +357,6 @@ export async function touch2Headroom(sql: any): Promise<{ headroom: number; sent
  * (-50 wrong copy era, -1 internal, -0 replied, -38 bounced, -25 unsubscribed, -16 already touch-2,
  *  -dead/customer). 797 matches the founder-approved count exactly.
  */
-/** Instant PS-COPY-PRICE-01 (price-led touch-1) reached production. Only recipients BEFORE this
- *  point received the compliance pitch that touch-2's opening line refers to. */
-export const TOUCH2_COPY_ERA_CUTOFF = '2026-08-03T01:36:00Z'
-
 export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
   if (limit <= 0) return []
   return (await sql.query(
@@ -355,10 +369,14 @@ export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
        AND l.bounced = false
        AND l.unsubscribed = false
        AND l.pipeline_stage NOT IN ('dead','customer','internal_test')
+       AND l.country = ANY(ARRAY['US','GB','AU'])
        AND lower(l.email) <> ALL (ARRAY['kaanari@mac.com','asadbek.munasar@forliion.com'])
        AND lower(split_part(l.email, '@', 2)) <> 'phishsimai.com'
        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-     ORDER BY l.touch1_sent_at ASC
+       AND NOT (COALESCE(l.open_count, 0) = 0 AND l.touch1_sent_at < NOW() - INTERVAL '45 days')
+     ORDER BY CASE WHEN l.industry IN (
+       SELECT DISTINCT industry FROM ps_outreach_leads WHERE replied = true AND industry IS NOT NULL
+     ) THEN 0 ELSE 1 END, l.touch1_sent_at ASC
      LIMIT ${Math.floor(limit)}`,
   ).catch(() => [])) as any[]
 }
@@ -403,7 +421,7 @@ export async function runTouch2Batch(sqlOverride?: any): Promise<{
   if (h.holding) {
     out.headroom = 0
     out.reason = `BATCH 1 COMPLETE — ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent. Holding for founder read; ` +
-      `set janet_memory ${TOUCH2_SCALE_KEY}='1' to release the remainder.`
+      `set janet_memory ${TOUCH2_SCALE_KEY}='1' to release the remainder. Dual crisis auto-unlocks remaining approved T2.`
     return out
   }
 
@@ -588,10 +606,20 @@ export async function runFullSequence() {
   }
 
   const now = new Date()
+  const operatingCrisis = await readOperatingCrisis(sql).catch(() => true)
+  const backlog = await countSequenceBacklog(sql).catch(() => null)
+  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis)
+  if (operatingCrisis) {
+    await runTouch2Batch(sql).catch(() => {})
+  }
   // PS-OUTREACH-THROTTLE-01: touch-1 obeys the SAME combined 100/day ceiling as touch-2, so new +
   // second-touch can never exceed 100 on the domain in a day. Its own type cap stays 50 (the ramp).
+  // Dual crisis + large overdue follow-up pool: pause NEW T1 this hour so Dex budget drains
+  // stuck sequences first (2/136 7d reply rate — do not scale bad TOF).
   const throttleCounts = await sentTodayCounts(sql)
-  const dailyAllowance = Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
+  const dailyAllowance = pauseNewTouch1
+    ? 0
+    : Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
   // PS-DRIP-01 (2026-08-24, founder-directed): send the day's allowance as a DRIP, not a burst.
   // This route ran once at 07:00 and fired the entire remaining allowance in one go — 50 messages
   // from the same domain inside a couple of minutes, which is the pattern spam filtering is built
@@ -702,8 +730,10 @@ export async function runFullSequence() {
   // only because touchDefs is empty; it would have bitten the moment follow-ups were switched on.
   // Follow-ups now draw their own daily budget and their own hourly slice; the combined domain
   // ceiling still governs the total across new + follow-up sends.
-  const followUpDailyCap = Math.max(0, COMBINED_DAILY_CAP - dailySendCap(now))
-  const followUpSlice = Math.max(1, Math.ceil(followUpDailyCap / 24))
+  const followUpDailyCap = pauseNewTouch1
+    ? FOLLOWUP_DAILY_CAP
+    : Math.max(0, COMBINED_DAILY_CAP - dailySendCap(now))
+  const followUpSlice = followUpHourlySlice(operatingCrisis, Math.max(1, Math.ceil(followUpDailyCap / 24)))
   const followUpCap = Math.min(Math.max(0, followUpDailyCap - throttleCounts.secondSentToday), followUpSlice)
   let followUpSent = 0
 
@@ -727,12 +757,26 @@ export async function runFullSequence() {
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         ORDER BY touch1_sent_at ASC LIMIT ${followUpCap - followUpSent}`
     } else if (def.touch === 3) {
+      // Price-era T1 (touch1_sent_at >= TOUCH2_COPY_ERA_CUTOFF) skips T2 (same pitch) and
+      // enters T3 after 5 days. Pre-cutoff leads still wait for the dedicated T2 batch.
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
-        WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL AND touch2_sent_at < ${cutoff}
+        WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL
         AND replied=false AND bounced=false AND l.unsubscribed=false
         AND pipeline_stage NOT IN ('dead','customer')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-        ORDER BY touch2_sent_at ASC LIMIT ${followUpCap - followUpSent}`
+        AND (
+          (touch2_sent_at IS NOT NULL AND touch2_sent_at < ${cutoff})
+          OR (
+            touch2_sent_at IS NULL
+            AND touch1_sent_at >= ${TOUCH2_COPY_ERA_CUTOFF}::timestamptz
+            AND touch1_sent_at < ${cutoff}
+            AND NOT (COALESCE(open_count, 0) = 0 AND touch1_sent_at < NOW() - INTERVAL '45 days')
+          )
+        )
+        ORDER BY CASE WHEN industry IN (
+          SELECT DISTINCT industry FROM ps_outreach_leads WHERE replied = true AND industry IS NOT NULL
+        ) THEN 0 ELSE 1 END, COALESCE(touch2_sent_at, touch1_sent_at) ASC
+        LIMIT ${followUpCap - followUpSent}`
     } else if (def.touch === 4) {
       leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
         WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
@@ -812,10 +856,187 @@ export async function runFullSequence() {
   }
   await reportAgentRun('aria', totalSent >= 0, { sent: totalSent }, undefined, 'phishsimai').catch(() => {})
   await reportAgentHealth('aria', true, 0, undefined, 'phishsimai').catch(() => {})
-  return { sent: totalSent, results, bounceRate: health.rate }
+  return {
+    sent: totalSent,
+    results,
+    bounceRate: health.rate,
+    pauseNewTouch1,
+    drainableOverdue: backlog?.drainableOverdue ?? null,
+    followUpSent,
+  }
 }
 
 export const runSequence = runFullSequence
+
+export type SequenceDrainResult = {
+  sent: number
+  t2: number
+  t3: number
+  t4: number
+  staleMarked: number
+  skipped: number
+  blocked: number
+  tripped: boolean
+  pauseNewTouch1: boolean
+  backlog: SequenceBacklogCensus
+  reason?: string
+}
+
+/**
+ * Automatic drain tick: suppress silent stale, resume approved T2 under crisis unlock,
+ * send approved T3 (including price-era skip-T2) and T4. Called from heartbeat and
+ * available to the sequence cron. Dex / MX / suppression / geo / outbox still bind.
+ */
+export async function runSequenceDrainTick(opts: {
+  sql?: any
+  includeTouch2?: boolean
+  followUpCap?: number
+} = {}): Promise<SequenceDrainResult> {
+  const sql = opts.sql ?? getSql()
+  await ensureSequenceOutbox(sql)
+  const includeTouch2 = opts.includeTouch2 !== false
+  const emptyBacklog = await countSequenceBacklog(sql).catch(() => ({
+    rawUnsentTouch2Over5d: 0, drainableOverdue: 0, waitingTouch2: 0,
+    waitingTouch3SkipT2: 0, waitingTouch3AfterT2: 0, waitingTouch4: 0,
+    staleSilent: 0, geoOrSuppressed: 0,
+  }))
+  const out: SequenceDrainResult = {
+    sent: 0, t2: 0, t3: 0, t4: 0, staleMarked: 0, skipped: 0, blocked: 0,
+    tripped: false, pauseNewTouch1: false, backlog: emptyBacklog,
+  }
+
+  const health = await getSequenceHealth(sql).catch(() => null)
+  if (health?.tripped) {
+    out.tripped = true
+    out.reason = `bounce breaker tripped ${(health.rate * 100).toFixed(1)}%`
+    return out
+  }
+
+  const stale = (await sql`
+    UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=NOW()
+    WHERE id IN (
+      SELECT id FROM ps_outreach_leads
+      WHERE touch1_sent_at IS NOT NULL
+        AND COALESCE(replied, false) = false
+        AND COALESCE(pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test','engaged')
+        AND COALESCE(open_count, 0) = 0
+        AND touch1_sent_at < NOW() - INTERVAL '45 days'
+        AND COALESCE(bounced, false) = false
+        AND COALESCE(unsubscribed, false) = false
+      ORDER BY touch1_sent_at ASC
+      LIMIT ${DRAIN_STALE_MARK_CAP}
+    )
+    RETURNING id
+  `.catch(() => [])) as any[]
+  out.staleMarked = stale.length
+
+  const operatingCrisis = await readOperatingCrisis(sql).catch(() => true)
+  out.backlog = await countSequenceBacklog(sql).catch(() => emptyBacklog)
+  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis)
+
+  if (includeTouch2) {
+    const t2 = await runTouch2Batch(sql).catch((e: any) => ({ sent: 0, reason: String(e?.message || e).slice(0, 120) }))
+    out.t2 = Number((t2 as any).sent) || 0
+    if ((t2 as any).reason && !out.reason) out.reason = String((t2 as any).reason).slice(0, 200)
+  }
+
+  const now = new Date()
+  const cap = Math.max(1, Math.min(FOLLOWUP_DAILY_CAP, Math.floor(opts.followUpCap ?? followUpHourlySlice(operatingCrisis, 3))))
+  const touchDefs: { touch: 3 | 4; delayDays: number }[] = [
+    { touch: 3, delayDays: 5 },
+    { touch: 4, delayDays: 6 },
+  ]
+
+  for (const def of touchDefs) {
+    if (out.t3 + out.t4 >= cap) break
+    const step = SEQUENCE.find(s => s.touch === def.touch)
+    if (!step) continue
+    const cutoff = new Date(now.getTime() - def.delayDays * 86400000).toISOString()
+    const remaining = cap - (out.t3 + out.t4)
+    let leads: any[] = []
+    if (def.touch === 3) {
+      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
+        WHERE country = ANY(${GEO}) AND touch3_sent_at IS NULL
+        AND replied=false AND bounced=false AND l.unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+        AND (
+          (touch2_sent_at IS NOT NULL AND touch2_sent_at < ${cutoff})
+          OR (
+            touch2_sent_at IS NULL
+            AND touch1_sent_at >= ${TOUCH2_COPY_ERA_CUTOFF}::timestamptz
+            AND touch1_sent_at < ${cutoff}
+            AND NOT (COALESCE(open_count, 0) = 0 AND touch1_sent_at < NOW() - INTERVAL '45 days')
+          )
+        )
+        ORDER BY CASE WHEN industry IN (
+          SELECT DISTINCT industry FROM ps_outreach_leads WHERE replied = true AND industry IS NOT NULL
+        ) THEN 0 ELSE 1 END, COALESCE(touch2_sent_at, touch1_sent_at) ASC
+        LIMIT ${remaining}`
+    } else {
+      leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
+        WHERE country = ANY(${GEO}) AND touch4_sent_at IS NULL AND touch3_sent_at < ${cutoff}
+        AND replied=false AND bounced=false AND l.unsubscribed=false
+        AND pipeline_stage NOT IN ('dead','customer')
+        AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+        ORDER BY CASE WHEN industry IN (
+          SELECT DISTINCT industry FROM ps_outreach_leads WHERE replied = true AND industry IS NOT NULL
+        ) THEN 0 ELSE 1 END, touch3_sent_at ASC
+        LIMIT ${remaining}`
+    }
+
+    for (const lead of leads) {
+      if (out.t3 + out.t4 >= cap) break
+      try {
+        const dom = domainOf(String(lead.email))
+        if (!dom || !(await hasMx(dom))) {
+          const ts0 = now.toISOString()
+          await sql`UPDATE ps_outreach_leads SET pipeline_stage='dead', stage_updated_at=${ts0} WHERE id=${lead.id}`
+          out.skipped++
+          continue
+        }
+        const gateN = await assertSendable(sql, String(lead.email))
+        if (!gateN.allowed) {
+          out.blocked++
+          continue
+        }
+        const token = Buffer.from(String(lead.email)).toString('base64url')
+        const greet = deriveFirstName(String(lead.email))
+        const subject = step.subject(greet, String(lead.company))
+        const html = step.html(greet, String(lead.company), String(lead.industry || 'technology'), token)
+        const bodyText = step.text(greet, String(lead.company))
+        const sendClaim = await claimSequenceSend(sql, String(lead.id), def.touch, String(lead.email))
+        if (!sendClaim.claimed && !sendClaim.providerMessageId) {
+          out.skipped++
+          continue
+        }
+        const idempotencyKey = sequenceIdempotencyKey(String(lead.id), def.touch)
+        const result = sendClaim.providerMessageId
+          ? { id: sendClaim.providerMessageId }
+          : await sendEmail(String(lead.email), subject, html, [
+              { name: 'touch', value: String(def.touch) }, { name: 'lead_id', value: String(lead.id) }, { name: 'drain', value: '1' },
+            ], token, bodyText, idempotencyKey)
+        if (!result?.id) { out.skipped++; continue }
+        if (sendClaim.claimed) {
+          await completeSequenceSend(sql, String(lead.id), def.touch, sendClaim.claimToken!, String(result.id))
+        }
+        const ts = now.toISOString()
+        if (def.touch === 3) await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
+        else await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
+        out.sent++
+        if (def.touch === 3) out.t3++
+        else out.t4++
+        await new Promise(r => setTimeout(r, 2000))
+      } catch {
+        out.skipped++
+      }
+    }
+  }
+
+  out.backlog = await countSequenceBacklog(sql).catch(() => out.backlog)
+  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis)
+  return out
+}
 
 /** Outbox touches reserved for warm conversion CTAs — never collide with sequence touches 1–5.
  *  90 = first Dex-gated trial CTA. 91/92 = follow-ups after WARM_CTA_COOLDOWN_DAYS.

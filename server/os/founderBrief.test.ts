@@ -36,6 +36,28 @@ describe("renderFounderBrief — honesty (null ⇒ 'no data')", () => {
     expect(md).toContain("0 shipped / 0 failed");
   });
 
+  it("renders REVENUE BLOCKER and warm census when present", () => {
+    const md = renderFounderBrief({
+      date: "2026-09-14",
+      products: [base({
+        funnel: {
+          sends7d: 136, replies7d: 2, trials: 1, customers: 0, sendsToday: 8, repliesPending: 0,
+          liveProductTrials: 1, crmTrials: 0, rawLiveTrials: 105, excludedNonCustomerTrials: 104,
+          revenueBlocker: "REVENUE FAILURE: paying=0; TRUE trials=1. Never declare healthy.",
+          warmCensus: "eligible=0 cooldown=13 sent-pool sendable=13 autoReplyPending=0",
+          warmCtaToTrial: "warm CTA→TRUE trial: 0/8 = 0.0% (14d)",
+          sequenceDrainable: 1565,
+          linkedinFunnel: "LinkedIn funnel queued=0 pending_review=1 approved=0 posted=0 (oldest pending 9h)",
+        },
+      })],
+    })
+    expect(md).toContain("REVENUE BLOCKER")
+    expect(md).toContain("eligible=0")
+    expect(md).toContain("Sequence drainable overdue:** 1565")
+    expect(md).toContain("LinkedIn funnel")
+    expect(md).toContain("canlı ürün TRUE 1")
+  })
+
   it("renders operating trials as max(live product, CRM), never CRM-only", () => {
     const md = renderFounderBrief({
       date: "2026-09-13",

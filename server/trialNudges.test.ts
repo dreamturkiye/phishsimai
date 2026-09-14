@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { nudgeFor } from "./os/trialNudges";
+import { GREY_BOX_CRISIS_NUDGE_DAY, GREY_BOX_CRISIS_NUDGE_HOURS, GREY_BOX_ORG_NAME } from "./os/trialNudges";
 import { TRIAL_DAYS } from "./lib/entitlements";
 
 describe("nudgeFor (30-day trial, by days-left)", () => {
@@ -40,5 +41,14 @@ describe("nudgeFor (30-day trial, by days-left)", () => {
   it("skips canary/test/walkthrough/Adeo orgs (true-trial exclusion)", () => {
     const src = readFileSync("server/os/trialNudges.ts", "utf8");
     expect(src).toContain("isNonCustomerOrg");
+  });
+  it("Grey Box paid loop reuses D25 checkout copy on a 24h crisis cadence", () => {
+    expect(GREY_BOX_ORG_NAME).toBe("Grey Box Consulting");
+    expect(GREY_BOX_CRISIS_NUDGE_HOURS).toBe(24);
+    expect(GREY_BOX_CRISIS_NUDGE_DAY).toBe(181);
+    const src = readFileSync("server/os/trialNudges.ts", "utf8");
+    expect(src).toContain("runGreyBoxPaidNudge");
+    expect(src).toContain("sendTrialDay25");
+    expect(readFileSync("server/os/conversionEngine.ts", "utf8")).toContain("runGreyBoxPaidNudge");
   });
 });

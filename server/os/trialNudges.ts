@@ -5,7 +5,13 @@
 import { getSql } from "./conn";
 import { sendTelegram } from "./telegram";
 import { sendTrialDay14, sendTrialDay25, sendTrialDay30, type TrialStats } from "../email/janet";
-import { isNonCustomerOrg } from "./trueTrials";
+import { isNonCustomerOrg, measureTrueOrgCounts } from "./trueTrials";
+import { isPaidConversionCrisis } from "./cgoMandate";
+
+export const GREY_BOX_ORG_NAME = "Grey Box Consulting";
+export const GREY_BOX_CRISIS_NUDGE_HOURS = 24;
+export const GREY_BOX_CRISIS_NUDGE_MEMORY = "greybox_crisis_nudge_at";
+export const GREY_BOX_CRISIS_NUDGE_DAY = 181;
 
 const DAY_MS = 86_400_000;
 
@@ -83,6 +89,96 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
   return { scanned, sent };
 }
 
+export type GreyBoxPaidNudgeResult = {
+  attempted: boolean
+  sent: boolean
+  orgId?: number
+  daysLeft?: number
+  reason: string
+}
+
+/**
+ * Personalized Grey Box → paid loop. Dual-crisis ticks re-send the existing D25
+ * checkout copy every 24h even after D18 is claimed, so the only TRUE trial is
+ * not left in a one-and-done nudge. No invented copy. Canary/test still excluded.
+ */
+export async function runGreyBoxPaidNudge(sqlOverride?: any): Promise<GreyBoxPaidNudgeResult> {
+  const sql = sqlOverride ?? getSql();
+  await sql`CREATE TABLE IF NOT EXISTS trial_nudges_sent (
+    org_id INTEGER NOT NULL, nudge_day INTEGER NOT NULL, sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (org_id, nudge_day))`.catch(() => {});
+
+  let payingCrisis = true;
+  try {
+    const counts = await measureTrueOrgCounts(sql);
+    payingCrisis = isPaidConversionCrisis({
+      liveProductTrials: counts.trueLiveTrials,
+      crmTrials: 0,
+      payingCustomers: counts.truePaying,
+    });
+  } catch {
+    payingCrisis = true;
+  }
+  if (!payingCrisis) {
+    return { attempted: false, sent: false, reason: 'paying crisis not active — no extra Grey Box nudge' };
+  }
+
+  const orgs = (await sql`
+    SELECT o.id, o.name, o."planExpiresAt",
+      (SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+       WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+       ORDER BY m.id ASC LIMIT 1) AS admin_email
+    FROM organizations o
+    WHERE o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > NOW()
+      AND lower(o.name) = ${GREY_BOX_ORG_NAME.toLowerCase()}
+    LIMIT 1`) as Array<{ id: number; name: string; planExpiresAt: string; admin_email: string | null }>;
+
+  const org = orgs[0];
+  if (!org) return { attempted: false, sent: false, reason: 'Grey Box Consulting not a live TRUE trial org' };
+  if (isNonCustomerOrg({ name: org.name, adminEmail: org.admin_email, orgId: org.id })) {
+    return { attempted: false, sent: false, reason: 'Grey Box matched non-customer exclusion — refusing' };
+  }
+  if (!org.admin_email) return { attempted: false, sent: false, reason: 'Grey Box has no admin email' };
+
+  const last = (await sql`
+    SELECT sent_at FROM trial_nudges_sent
+    WHERE org_id = ${org.id} AND nudge_day = ${GREY_BOX_CRISIS_NUDGE_DAY}
+    LIMIT 1
+  `.catch(() => [])) as Array<{ sent_at: string }>;
+  if (last[0]?.sent_at) {
+    const ageH = (Date.now() - new Date(last[0].sent_at).getTime()) / 3_600_000;
+    if (ageH < GREY_BOX_CRISIS_NUDGE_HOURS) {
+      return {
+        attempted: false, sent: false, orgId: org.id,
+        reason: `Grey Box crisis nudge cooling down (${Math.round(ageH)}h/${GREY_BOX_CRISIS_NUDGE_HOURS}h)`,
+      };
+    }
+  }
+
+  const daysLeft = Math.ceil((new Date(org.planExpiresAt).getTime() - Date.now()) / DAY_MS);
+  const row = (await sql`SELECT
+    count(*) FILTER (WHERE "emailSentAt" IS NOT NULL)::int AS sent,
+    count(*) FILTER (WHERE "emailOpenedAt" IS NOT NULL)::int AS opened,
+    count(*) FILTER (WHERE "linkClickedAt" IS NOT NULL)::int AS clicked,
+    count(*) FILTER (WHERE "reportedAt" IS NOT NULL)::int AS reported
+    FROM campaign_results WHERE "orgId" = ${org.id}`) as Array<TrialStats>;
+  const stats: TrialStats = row[0] ?? { sent: 0, opened: 0, clicked: 0, reported: 0 };
+
+  try {
+    const ok = await sendTrialDay25(org.admin_email, org.name, stats, Math.max(1, daysLeft));
+    if (!ok) return { attempted: true, sent: false, orgId: org.id, daysLeft, reason: 'D25 checkout send returned false' };
+    await sql`
+      INSERT INTO trial_nudges_sent (org_id, nudge_day, sent_at)
+      VALUES (${org.id}, ${GREY_BOX_CRISIS_NUDGE_DAY}, NOW())
+      ON CONFLICT (org_id, nudge_day) DO UPDATE SET sent_at = NOW()
+    `.catch(() => {});
+    await sendTelegram(`✉️ Grey Box paid nudge (existing D25 checkout) — org ${org.id}, ${daysLeft}d left`).catch(() => {});
+    return { attempted: true, sent: true, orgId: org.id, daysLeft, reason: 'sent existing D25 checkout copy to Grey Box' };
+  } catch (e: any) {
+    return { attempted: true, sent: false, orgId: org.id, daysLeft, reason: String(e?.message || e).slice(0, 160) };
+  }
+}
+
 export async function cronTrialNudges(req: any, res: any) {
   const secret = process.env.CRON_SECRET;
   const okCron = !!secret && req.headers?.authorization === `Bearer ${secret}`;
@@ -90,10 +186,11 @@ export async function cronTrialNudges(req: any, res: any) {
   if (!okCron && !okHq) return res.status(401).json({ error: "Unauthorized" });
   try {
     const r = await runTrialNudges(getSql());
+    const grey = await runGreyBoxPaidNudge(getSql()).catch(() => null);
     if (r.sent.length > 0) {
       await sendTelegram(`✉️ <b>PhishSim trial nudges</b> — sent ${r.sent.length}: ${r.sent.map(s => `org ${s.orgId} (D${s.nudge})`).join(", ")}`).catch(() => {});
     }
-    return res.json({ ok: true, ...r });
+    return res.json({ ok: true, ...r, greyBox: grey });
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }

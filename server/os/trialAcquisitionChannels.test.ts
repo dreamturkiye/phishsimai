@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { TRIAL_ACQUISITION_CHANNELS, TRIAL_LINKEDIN_DRAFT_BODY } from './trialAcquisitionChannels'
+import {
+  EMPTY_LINKEDIN_FUNNEL,
+  LINKEDIN_PENDING_ESCALATE_HOURS,
+  TRIAL_ACQUISITION_CHANNELS,
+  TRIAL_LINKEDIN_DRAFT_BODY,
+  linkedInFunnelLine,
+} from './trialAcquisitionChannels'
 import { TRIAL_CTA_URL } from './sequences'
 import { PUBLIC_SOCIAL_POSTING_ENABLED } from './social/publicPostingLockout'
+import { readFileSync } from 'node:fs'
 
 describe('trial acquisition besides cold email', () => {
   it('inventories live channels and keeps public publish locked', () => {
@@ -21,12 +27,24 @@ describe('trial acquisition besides cold email', () => {
     expect(PUBLIC_SOCIAL_POSTING_ENABLED).toBe(false)
   })
 
-  it('LinkedIn draft uses frozen trial URL and price, and conversion shift queues it', () => {
+  it('LinkedIn draft uses frozen trial URL and price, and conversion shift advances it every tick', () => {
     expect(TRIAL_LINKEDIN_DRAFT_BODY).toContain(TRIAL_CTA_URL)
     expect(TRIAL_LINKEDIN_DRAFT_BODY).toMatch(/60¢|60c/)
     expect(TRIAL_LINKEDIN_DRAFT_BODY).toContain('$299/mo for 500')
     const engine = readFileSync('server/os/conversionEngine.ts', 'utf8')
-    expect(engine).toContain('queueFounderReviewTrialDraft')
+    expect(engine).toContain('advanceLinkedInAcquisition')
+    expect(engine).toContain('runGreyBoxPaidNudge')
     expect(readFileSync('api/handler.ts', 'utf8')).toContain('/api/os/msp-harvest')
+    const acq = readFileSync('server/os/trialAcquisitionChannels.ts', 'utf8')
+    expect(acq).toContain('savePreviewForReview')
+    expect(acq).toContain('LINKEDIN_PENDING_ESCALATE_HOURS')
+    expect(acq).not.toMatch(/return \{ queued: false, reason: 'already queued a founder-review trial draft today' \}/)
+  })
+
+  it('pending LinkedIn review is a funnel + escalate path, not a dead end', () => {
+    expect(LINKEDIN_PENDING_ESCALATE_HOURS).toBe(6)
+    const line = linkedInFunnelLine({ ...EMPTY_LINKEDIN_FUNNEL, pendingReview: 1, oldestPendingHours: 9 })
+    expect(line).toMatch(/pending_review=1/)
+    expect(line).toMatch(/oldest pending 9h/)
   })
 })

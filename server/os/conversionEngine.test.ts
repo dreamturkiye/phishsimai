@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conversionLesson, rankWarmLeads } from './conversionEngine'
+import { conversionLesson, rankWarmLeads, conversionQueued } from './conversionEngine'
 import {
   TRIAL_CTA_URL,
   WARM_CONVERSION_TOUCH,
@@ -85,7 +85,9 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('trial_nudge')
     expect(seq).toMatch(/one of the lowest per-seat prices in the industry/i)
     expect(seq).toContain('$299/mo for 500')
-    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('queueFounderReviewTrialDraft')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('advanceLinkedInAcquisition')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('runGreyBoxPaidNudge')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('measureWarmCtaToTrial')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueAutonomyBlocker')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('autonomyGate.ts')
   })
@@ -117,5 +119,15 @@ describe('crisis warm follow-up does not park 14 sendable leads for 4 days', () 
     const recent = async () => [{ touch: 90, status: 'sent', updated_at: ago(3) }]
     expect(await nextWarmCtaTouch(recent as any, '00000000-0000-4000-8000-000000000001', 6)).toBeNull()
     expect(await nextWarmCtaTouch(sql as any, '00000000-0000-4000-8000-000000000001', 96)).toBeNull()
+  })
+})
+
+describe('convert_warm is queued/executed when work is available', () => {
+  it('queues when eligible>0 even if this tick has not sent yet', () => {
+    expect(conversionQueued({ sent: 0, eligible: 6 })).toBe(true)
+    expect(conversionQueued({ sent: 2, eligible: 0 })).toBe(true)
+    expect(conversionQueued({ sent: 0, eligible: 0, linkedinEscalated: true })).toBe(true)
+    expect(conversionQueued({ sent: 0, eligible: 0, greyBoxSent: true })).toBe(true)
+    expect(conversionQueued({ sent: 0, eligible: 0 })).toBe(false)
   })
 })

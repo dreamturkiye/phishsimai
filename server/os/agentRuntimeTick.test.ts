@@ -31,6 +31,7 @@ describe("L5.7 continuous agent runtime — original 7.10 roster", () => {
     expect(routes).toMatch(/maxAgents:\s*5/);
     expect(heartbeat).toMatch(/tickAllAgentRuntimes\(/);
     expect(heartbeat).toMatch(/runCgoConversionShift/);
+    expect(heartbeat).toMatch(/runSequenceDrainTick/);
     expect(heartbeat).toMatch(/HEARTBEAT_TICK_AGENTS\s*=\s*3/);
     expect(heartbeat).toMatch(/HEARTBEAT_TICK_BUDGET_MS\s*=\s*25_000/);
     expect(heartbeat).toMatch(/HEARTBEAT_CONVERSION_CAP\s*=\s*3/);
