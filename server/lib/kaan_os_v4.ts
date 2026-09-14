@@ -48,6 +48,7 @@ import {
   cgoScorecard,
   cgoStandupDirective,
   conversionDefaultTask,
+  droughtIdleAction,
   employeeExecutePrompt,
   employeeExecutionMandate,
   goalsForWeek,
@@ -66,6 +67,7 @@ import { getSequenceHealth } from '../os/sequences'
 import { persistOutcomeTrace } from '../os/outcomeTrace'
 import { ensureMarcusProposalBugId } from '../os/marcusProposal'
 import { COMPANY_ID } from '../os/version'
+import { CONVERSION_AGENTS } from '../os/agents/reason'
 import { createNeonTaskStore, durableTaskFromRow, DURABLE_TASK_CONTRACT_VERSION } from '../os/neonTaskStore'
 import {
   INTERNAL_ORG_IDS,
@@ -1864,7 +1866,7 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   // the outcome so the stored result records what actually happened, not just what was recommended.
   const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
   let conversionNote = ''
-  if (durable.owner === 'mason' || durable.owner === 'aria' || durable.owner === 'vera' || durable.owner === 'janet') {
+  if (CONVERSION_AGENTS.has(durable.owner)) {
     const { runCgoConversionShift } = await import('../os/conversionEngine')
     const shift = await runCgoConversionShift({ cap: 5 }).catch(() => null)
     if (shift) {
@@ -1874,6 +1876,8 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
     }
   }
   const finalResult = result + actionSummary + conversionNote
+  const converted = conversionEvidenceInResult(finalResult)
+  const queuedMarcus = /queued engineering/.test(actionSummary)
   const execution = buildVerifiedTaskExecution(durable, finalResult)
   await store.persistExecution(
     execution.completedTask,
@@ -1904,9 +1908,9 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   }).catch(() => {})
   await persistAgentRuntime(sql, companyId, durable.owner, {
     currentGoal: task.title,
-    nextAction: 'report outcome to Janet and continue the same thread',
+    nextAction: converted ? 'follow up the same warm leads today' : droughtIdleAction(durable.owner),
     lastAssessment: finalResult.slice(0, 400),
-    success: true,
+    success: converted || queuedMarcus,
     lesson: finalResult.slice(0, 200),
   }).catch(() => {})
 

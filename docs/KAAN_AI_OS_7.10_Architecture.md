@@ -825,7 +825,8 @@ Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. 
 - Dex breaker **tripped** → Janet must not assign prospect/cold sends (`breakerAwareAssignRule` + `assignmentSkipReason`). Warm CTA already stands down on a measured trip. Do not send around Dex.
 - Reviewed-task scores (14-day, real-or-omit) bias assign via `scoreAwareAssignHint`. Unmeasured is not zero and is not a skip. This is L5.7-safe task selection, **not** L5.8 breaker-analytics / hire-fire.
 - Bandit: `computeAdaptiveSplit(..., 'replied')` on the live send path (O.25 / O.32.4).
-- Self-heal: `kind === 'marcus'` queues `os_architect_tasks` even without `queueTask`.
+- Self-heal: `kind === 'marcus'` queues `os_architect_tasks` even without `queueTask`. If `convert_warm` is denied by the autonomy gate, Mason queues a **named-file** Marcus task once per day (`autonomyGate.ts` / `ownerRuling.ts`) — not Dex, not price.
+- `executeTask` fires the conversion shift for every `CONVERSION_AGENTS` member (including Nova). Working-state `success` is true only on conversion evidence or a Marcus queue — empty sends are not a successful rest.
 - Hourly heartbeat runs the same Dex-gated conversion shift as `*/10` task-runner, then ticks all 10.
 - Keep pushing until ≥20 TRUE trials **and** ≥4–5 paying.
 
