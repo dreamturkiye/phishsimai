@@ -81,12 +81,19 @@ export function rankWarmLeads<T extends { replied?: boolean; pipeline_stage?: st
  * Also queues one founder-review LinkedIn draft/day (publish stays lockout-blocked).
  */
 export async function runCgoConversionShift(opts: { emails?: string[]; cap?: number } = {}): Promise<ConversionShiftResult> {
+  let reopenedAutoReplies = 0
   try {
     const { getSql } = await import('./conn')
     const { reopenFalseAutoReplies } = await import('./agents/salesReplies')
-    await reopenFalseAutoReplies(getSql()).catch(() => 0)
-  } catch { /* reopen is additive */ }
+    reopenedAutoReplies = await reopenFalseAutoReplies(getSql(), { crisis: true })
+    if (reopenedAutoReplies > 0) {
+      console.log(`[conversion] reopened ${reopenedAutoReplies} false auto_reply drafts before convert_warm`)
+    }
+  } catch (e) {
+    console.warn('[conversion] reopenFalseAutoReplies failed:', String((e as Error)?.message || e).slice(0, 160))
+  }
   const raw = await sendWarmTrialCtas({ emails: opts.emails, cap: opts.cap ?? 8 })
+  raw.reopenedAutoReplies = reopenedAutoReplies
   let trialNudges = { scanned: 0, sent: 0 }
   try {
     const { runTrialNudges } = await import('./trialNudges')

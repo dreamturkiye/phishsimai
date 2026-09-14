@@ -15,6 +15,7 @@ import { join as pathJoin } from 'path'
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { applyAutonomyFloor, autonomyFloorFor, getAutonomyLevel } from './autonomyGate'
+import { shouldPageFounderForEscalation } from './escalationTriagePolicy'
 import { agentsBelowL5TwoWeeks } from './agentLevels'
 import { verifiedTrialCount } from './cgoMandate'
 import { getWatcherHeartbeatAgeMinutes } from './marcusPipelineHealth'
@@ -268,8 +269,8 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
       `.catch(() => [] as any[])
       // PS-SCOPE-01: same defect, same table family. escalations carries product_id (the
       // breaker writes it on trip); this read ignored it.
-      const pending = await sql`
-        SELECT id, category, created_at FROM escalations
+      const pendingRaw = await sql`
+        SELECT id, category, created_at, payload, status FROM escalations
         WHERE status = 'pending' AND product_id = ${companyId} ORDER BY created_at ASC
       `.catch(() => [] as any[])
       const level = await getAutonomyLevel(companyId).catch(() => autonomyFloorFor(companyId) ?? 'l5')
@@ -308,6 +309,13 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         repliesPending: Number((pendRows as any[])[0]?.n) || 0,
       } : null
       const nowMs = Date.now()
+      const pending = (pendingRaw as any[]).filter((e) => shouldPageFounderForEscalation({
+        category: e.category,
+        payload: typeof e.payload === 'string' ? JSON.parse(e.payload) : (e.payload ?? {}),
+        status: e.status,
+        companyId,
+        liveLevel: (level as string) ?? null,
+      }))
 
       return {
         date,

@@ -16,6 +16,8 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { COMPANY_ID } from './version'
+import { shouldPageFounderForEscalation, type AutonomyNagContext } from './escalationTriagePolicy'
+import { resolveReadableLevel } from './autonomyGate'
 
 // PS-ESCALATION-COVERAGE-01: the founder early-warning writer. escalation-notify (*/15) delivers
 // every un-notified `escalations` row to Telegram, but the ONLY feed used to be circuit-breaker
@@ -29,6 +31,30 @@ export async function raiseEscalation(
 ): Promise<void> {
   try {
     const sql = getSql()
+    if (category === 'autonomy_change') {
+      let liveLevel: string | null = null
+      let storedLevel: string | null = null
+      let posture: string | null = null
+      try {
+        const levelRows = (await sql`SELECT level FROM os_autonomy_state WHERE company_id=${productId} LIMIT 1`) as any[]
+        storedLevel = levelRows[0]?.level != null ? String(levelRows[0].level) : null
+        liveLevel = String(resolveReadableLevel(productId, storedLevel) ?? '')
+        const postureRows = (await sql`SELECT posture FROM os_posture_state WHERE product_id=${productId} LIMIT 1`) as any[]
+        posture = postureRows[0]?.posture != null ? String(postureRows[0].posture) : null
+      } catch { /* payload-only still catches the INSERT artifact */ }
+      const ctx: AutonomyNagContext = {
+        category,
+        payload,
+        companyId: productId,
+        liveLevel,
+        storedLevel,
+        posture,
+      }
+      if (!shouldPageFounderForEscalation(ctx)) {
+        console.log(`[escalation] skip autonomy_change — already_at_l5_floor`)
+        return
+      }
+    }
     await sql`INSERT INTO escalations (product_id, category, payload)
       VALUES (${productId}, ${category}, ${JSON.stringify(payload)}::jsonb)`
   } catch (e: any) {
@@ -50,6 +76,7 @@ export interface NotifyDeps {
   markNotified: (id: number) => Promise<void>
   send: (text: string) => Promise<{ ok: boolean; skipped?: boolean; error?: string }>
   now: () => number
+  liveContext?: () => Promise<{ liveLevel?: string | null; storedLevel?: string | null; posture?: string | null; companyId?: string }>
 }
 
 export interface NotifyResult {
@@ -57,6 +84,7 @@ export interface NotifyResult {
   sent: number
   skipped: number
   failed: number
+  suppressed: number
 }
 
 function escapeHtml(s: string): string {
@@ -104,14 +132,33 @@ export function formatEscalation(row: EscalationRow, nowMs: number): string {
   return lines.join('\n')
 }
 
-// Deliver every un-notified escalation exactly once. Only marks notified on a
-// successful send, so env-unset (skipped) or a transient failure retries later.
+// Deliver every un-notified pending escalation that should page the founder.
+// Already-resolved and already-at-L5 autonomy_change are stamped notified without a send
+// so */15 cannot grow louder. Env-unset / send failure still retries real pages.
 export async function deliverPendingEscalations(deps: NotifyDeps): Promise<NotifyResult> {
   const rows = await deps.loadPending()
   let sent = 0
   let skipped = 0
   let failed = 0
+  let suppressed = 0
+  const emptyLive: { liveLevel?: string | null; storedLevel?: string | null; posture?: string | null; companyId?: string } = {}
+  const live = deps.liveContext ? await deps.liveContext().catch(() => emptyLive) : emptyLive
   for (const row of rows) {
+    const page = shouldPageFounderForEscalation({
+      category: row.category,
+      payload: row.payload,
+      status: row.status,
+      companyId: live.companyId || row.productId,
+      liveLevel: live.liveLevel,
+      storedLevel: live.storedLevel,
+      posture: live.posture,
+    })
+    if (!page) {
+      // Already resolved, or already-at-L5 autonomy noise: stamp notified so */15 cannot grow louder.
+      await deps.markNotified(row.id)
+      suppressed += 1
+      continue
+    }
     const text = formatEscalation(row, deps.now())
     const res = await deps.send(text)
     if (res.ok) {
@@ -123,7 +170,7 @@ export async function deliverPendingEscalations(deps: NotifyDeps): Promise<Notif
       failed += 1 // send error — leave for retry
     }
   }
-  return { total: rows.length, sent, skipped, failed }
+  return { total: rows.length, sent, skipped, failed, suppressed }
 }
 
 // ── Real DB-backed deps ──────────────────────────────────────────────────────
@@ -154,5 +201,16 @@ export function makeSqlNotifyDeps(): NotifyDeps {
     },
     send: (text: string) => sendTelegram(text),
     now: () => Date.now(),
+    async liveContext() {
+      const levelRows = (await sql`SELECT level FROM os_autonomy_state WHERE company_id=${COMPANY_ID} LIMIT 1`.catch(() => [])) as any[]
+      const stored = levelRows[0]?.level != null ? String(levelRows[0].level) : null
+      const postureRows = (await sql`SELECT posture FROM os_posture_state WHERE product_id=${COMPANY_ID} LIMIT 1`.catch(() => [])) as any[]
+      return {
+        companyId: COMPANY_ID,
+        storedLevel: stored,
+        liveLevel: String(resolveReadableLevel(COMPANY_ID, stored) ?? ''),
+        posture: postureRows[0]?.posture != null ? String(postureRows[0].posture) : null,
+      }
+    },
   }
 }

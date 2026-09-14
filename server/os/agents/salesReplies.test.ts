@@ -33,6 +33,10 @@ import {
   decideAction,
   replyToTrialMetric,
   SUPPRESS_MIN_CONFIDENCE,
+  shouldReopenAutoReply,
+  sqlResultRows,
+  reopenFalseAutoReplies,
+  isHardDeadReply,
 } from './salesReplies'
 
 /** The actual row in outreach_reply_drafts on 2026-08-03. Not invented. */
@@ -188,6 +192,34 @@ describe('ASYMMETRIC SAFETY — ambiguity drafts, it never suppresses', () => {
     // auto_reply is checked BEFORE interest precisely so a mailer-daemon cannot become a warm lead.
     const c = classifyByRules('', 'Delivery has failed. Original message: ... our pricing ...')!
     expect(c.cls).toBe('auto_reply')
+  })
+
+  it('crisis reopen clears false auto_reply and {rows}-shaped neon results, not bounces', async () => {
+    expect(shouldReopenAutoReply('Thanks, I will return next week after our board meeting', { crisis: true })).toBe(true)
+    expect(shouldReopenAutoReply('I am out of the office until Monday', { crisis: true })).toBe(true)
+    expect(shouldReopenAutoReply('Delivery has failed for this recipient', { crisis: true })).toBe(false)
+    expect(isHardDeadReply('mailer-daemon: undeliverable')).toBe(true)
+    expect(sqlResultRows({ rows: [{ id: 1 }] })).toEqual([{ id: 1 }])
+    expect(sqlResultRows([{ id: 2 }])).toEqual([{ id: 2 }])
+
+    const updated: string[] = []
+    const sql: any = async (strings: TemplateStringsArray) => {
+      const q = strings.join('?')
+      if (/SELECT/i.test(q)) {
+        return { rows: [
+          { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', inbound_snippet: 'Thanks, we should talk about a trial', confidence: 0.4 },
+          { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', inbound_snippet: 'Mailer-Daemon: undeliverable', confidence: 0.9 },
+        ] }
+      }
+      if (/UPDATE/i.test(q)) {
+        updated.push(q)
+        return [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }]
+      }
+      return []
+    }
+    const n = await reopenFalseAutoReplies(sql, { crisis: true })
+    expect(n).toBe(1)
+    expect(updated).toHaveLength(1)
   })
 
   it('a mixed signal is left to the model rather than guessed', () => {
