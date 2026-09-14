@@ -1445,7 +1445,9 @@ export function osHealthHonesty(f: WorkforceFacts): { healthy: boolean; line: st
     droughtBits.push(`${f.payingCustomers} paying (need ≥4–5)`)
   }
   const drought = droughtBits.length
-    ? `TRUE-TRIAL DROUGHT: ${droughtBits.join(', ')}. Canary/test/walkthrough/Adeo are not trials.`
+    ? (f.payingCustomers === 0 && (f.trueTrials ?? 0) <= 1
+      ? `REVENUE FAILURE: $0 MRR / ${f.trueTrials ?? 0} TRUE trial is not L5.7 health. ${droughtBits.join(', ')}. Canary/test/walkthrough/Adeo are not trials. Never declare 'all agents normal'.`
+      : `TRUE-TRIAL DROUGHT: ${droughtBits.join(', ')}. Canary/test/walkthrough/Adeo are not trials.`)
     : ''
 
   if (f.completions24h === 0 && (f.openTasks > 0 || f.nothingCompletedReports > 0)) {
@@ -1474,6 +1476,7 @@ export function osHealthHonesty(f: WorkforceFacts): { healthy: boolean; line: st
 }
 
 export const ANALYSIS_SCORE_CEILING = 6
+export const CRISIS_ANALYSIS_SCORE_CEILING = 4
 
 export function conversionEvidenceInResult(result: string): boolean {
   const t = String(result || '')
@@ -1485,11 +1488,11 @@ export function conversionEvidenceInResult(result: string): boolean {
   return false
 }
 
-/** Analysis-only output cannot score above 6 even if Janet's LLM is generous. */
-export function applyConversionScoreCeiling(score: number | null, result: string): number | null {
+/** Analysis-only output cannot score above 6 (4 in operating crisis) even if Janet's LLM is generous. */
+export function applyConversionScoreCeiling(score: number | null, result: string, operatingCrisis = false): number | null {
   if (score == null) return null
   if (conversionEvidenceInResult(result)) return score
-  return Math.min(score, ANALYSIS_SCORE_CEILING)
+  return Math.min(score, operatingCrisis ? CRISIS_ANALYSIS_SCORE_CEILING : ANALYSIS_SCORE_CEILING)
 }
 
 export async function issueTask(
@@ -1967,7 +1970,14 @@ Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assign
 
   const feedback = await llm(janetSystem, reviewPrompt, 600)
   const rawScore = parseEvaluationScore(feedback, 'score')
-  const score = applyConversionScoreCeiling(rawScore, String(task.result || ''))
+  const trialFactsForScore = await loadTrialFacts(sql).catch((): TrialFacts => ({
+    liveProductTrials: 0, crmTrials: 0, payingCustomers: 0,
+  }))
+  const score = applyConversionScoreCeiling(
+    rawScore,
+    String(task.result || ''),
+    isOperatingCrisis(trialFactsForScore),
+  )
 
   await sql`
     UPDATE agent_tasks
@@ -2967,7 +2977,7 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     '- If something is not in LIVE FACTS and Kaan would need it, write "not probed" rather than guessing.',
     // PS-BRIEF-HONESTY-01 (D1): 0-executed is not an infra outage. Workforce idle IS an OS-health issue.
     "- '0 tasks executed this run' with ZERO open tasks is not an Operational Halt or outage.",
-    "- If LIVE FACTS os_health contains WORKFORCE IDLE, ISSUANCE GAP, or TRUE-TRIAL DROUGHT, OS health is NOT 'all agents normal'. Do not treat Signup Canary / test / walkthrough / Adeo as trials.",
+    "- If LIVE FACTS os_health contains WORKFORCE IDLE, ISSUANCE GAP, TRUE-TRIAL DROUGHT, or REVENUE FAILURE, OS health is NOT 'all agents normal'. Do not treat Signup Canary / test / walkthrough / Adeo as trials.",
     // PS-BRIEF-HONESTY-01 (D2): do not elevate unverified recall into decisions.
     "- Do NOT elevate UNVERIFIED RECALL (agent claims, or metrics like CAC/LTV/pipeline numbers) into 'Top 3 things' or the 'Decision' item -- those may draw ONLY from LIVE FACTS. An unverified figure may appear only as 'unverified agent memory claims: <claim>'.",
   ].join('\n')

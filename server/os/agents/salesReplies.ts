@@ -53,7 +53,7 @@ export const SUPPRESS_MIN_CONFIDENCE = 0.8
 
 const UNSUB_RE = /\b(unsubscribe|remove me|take me off|opt.?out|stop email(ing)?|do not (email|contact)|don'?t email me( again)?)\b/i
 const HOSTILE_RE = /\b(fuck|piss off|spam(ming|mer)?|reported? (you|this) (as|for) spam|harass|scam|lawsuit|legal action|cease and desist|GDPR complaint)\b/i
-const AUTO_RE = /\b(out of (the )?office|on (annual |parental |maternity |paternity )?leave|automatic reply|auto.?reply|autoresponder|vacation|away from my desk|will (be )?return(ing)?|delivery (status|has failed)|undeliverable|mailer.?daemon|no longer (with|at) (the )?(company|us)|has left the (company|organisation|organization))\b/i
+const AUTO_RE = /\b(out of (the )?office|automatic reply|auto[- ]?reply|autoresponder|away from (my|the) desk|on (annual |parental |maternity |paternity )?vacation|on (annual|parental|maternity|paternity) leave|delivery (status notification|has failed)|undeliverable|mailer.?daemon|no longer (with|at) (the )?(company|firm|us)|has left the (company|organisation|organization))\b/i
 const INTEREST_RE = /\b(interested|tell me more|send (me )?(more|info|details|pricing)|how (much|does it work)|book|demo|call|trial|sign( )?up|pricing|what.{0,12}cost|sounds good|keen|let'?s (talk|chat))\b/i
 const OBJECTION_RE = /\b(too expensive|no budget|already (have|use|using)|we use|not (a )?(good )?fit|not (right )?now|maybe (later|next)|already (with|working with)|happy with|contract|renewal)\b/i
 
@@ -94,7 +94,9 @@ export async function classifyByModel(subject: string, body: string): Promise<Cl
             '(price, incumbent, timing, fit). unsubscribe = asks to be removed. auto_reply = ' +
             'out-of-office, bounce, or left-company notice. hostile = angry, accuses us of spam, ' +
             'or threatens. If genuinely unsure, answer objection with low confidence — never guess ' +
-            'unsubscribe or hostile, because those trigger a permanent, unrecoverable suppression.',
+            'unsubscribe or hostile, because those trigger a permanent, unrecoverable suppression. ' +
+            'Do NOT classify a human sentence as auto_reply unless it is clearly an out-of-office, ' +
+            'bounce, or left-company notice. "I will return with a decision" is not auto_reply.',
         },
         { role: 'user', content: `Subject: ${subject}\n\nReply:\n${String(body).slice(0, 2000)}` },
       ],
@@ -121,7 +123,11 @@ export function decideAction(c: Classification): ReplyAction {
     // Below the bar we still surface it — we just refuse to make the irreversible move on a guess.
     return c.confidence >= SUPPRESS_MIN_CONFIDENCE ? 'auto_suppress' : 'draft_for_kaan'
   }
-  if (c.cls === 'auto_reply') return 'no_action' // a bounce is not a conversation
+  if (c.cls === 'auto_reply') {
+    // Low-confidence auto_reply was the 2026-09-14 trap: 14 pending_review drafts,
+    // 1 interested sent. A human "I will return with pricing" is not an OOO.
+    return c.confidence >= 0.85 ? 'no_action' : 'draft_for_kaan'
+  }
   if (c.cls === 'interested') return 'send_trial_cta'
   return 'draft_for_kaan'
 }
@@ -162,6 +168,33 @@ export async function fetchReplyQueue(sql: any): Promise<QueuedReply[]> {
      LIMIT 50`,
   )
   return (rows as QueuedReply[]) ?? []
+}
+
+/**
+ * 2026-09-14: 14 pending_review drafts classified auto_reply, 1 interested already sent.
+ * Reopen rows that fail the *strict* OOO/bounce rules so the next sweep can convert them.
+ */
+export async function reopenFalseAutoReplies(sql: any): Promise<number> {
+  const rows = (await sql`
+    SELECT id::text AS id, COALESCE(inbound_snippet,'') AS inbound_snippet
+    FROM outreach_reply_drafts
+    WHERE status = 'pending_review' AND classification = 'auto_reply'
+    LIMIT 100
+  `.catch(() => [])) as Array<{ id: string; inbound_snippet: string }>
+  let n = 0
+  for (const r of rows) {
+    const strict = classifyByRules('', r.inbound_snippet)
+    if (strict?.cls === 'auto_reply') continue
+    const updated = await sql`
+      UPDATE outreach_reply_drafts
+      SET classification = NULL, classification_confidence = NULL, classified_at = NULL,
+          action_taken = NULL, classification_claim_token = NULL, classification_claim_expires_at = NULL
+      WHERE id = ${r.id}::uuid AND classification = 'auto_reply'
+      RETURNING id
+    `.catch(() => [])
+    if ((updated as any[])[0]?.id) n++
+  }
+  return n
 }
 
 /**
@@ -268,6 +301,7 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
     queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, trialCtasSent: 0, noAction: 0,
     byClass: {}, line: EMPTY_LINE,
   }
+  await reopenFalseAutoReplies(sql).catch(() => 0)
   const queue = await claimReplyQueue(sql)
   res.queued = queue.length
   if (queue.length === 0) return res // no queue, no work, no output. The anti-ghost path.

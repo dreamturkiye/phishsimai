@@ -87,6 +87,12 @@ export async function reasonAndAct(
   const reportJson = JSON.stringify(report, null, 0).slice(0, 4000)
   const runtimeBlock = runtime?.contextBlock ? `\n\n${runtime.contextBlock}` : ''
 
+  let diagnosisNote = ''
+  try {
+    const diagRows = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY} AND type='operating' AND key='revenue_diagnosis' LIMIT 1`
+    if ((diagRows as any[])[0]?.value) diagnosisNote = String((diagRows as any[])[0].value).slice(0, 800)
+  } catch {}
+
   try {
         const result = await llmComplete({
                 messages: [
@@ -95,11 +101,12 @@ export async function reasonAndAct(
                               role: 'user',
                               content:
                                             `Your last reflection: ${priorNote}\n\n` +
+                                            (diagnosisNote ? `REVENUE DIAGNOSIS (measured, persist this): ${diagnosisNote}\nYou MUST name the bottleneck in assessment. Idle "all normal" is forbidden while TRUE trials < 20 or paying < 4 or MRR=$0.\n\n` : '') +
                                             `Today's real, measured data (do not invent anything beyond this):\n${reportJson}\n\n` +
                                             `Resume the OPEN THREAD next action unless today's data invalidates it.\n` +
-                                            `Reply with ONLY a JSON object, no other text: {"assessment": "1-2 sentence honest read of the data", ` +
-                                            `"action": "the single most useful next action, or literally the string none if nothing is actionable today", ` +
-                                            `"queueTask": true or false -- true ONLY if a concrete task should be queued for the architect to build/fix, ` +
+                                            `Reply with ONLY a JSON object, no other text: {"assessment": "1-2 sentence honest read of the data that NAMES the bottleneck if we are in revenue failure", ` +
+                                            `"action": "the single most useful next conversion action, or literally the string none if nothing is actionable today", ` +
+                                            `"queueTask": true or false -- true ONLY if a concrete named code/infra bug that blocks a trial start or paid conversion should be queued for Marcus, ` +
                                             `"taskTitle": "short imperative task title if queueTask is true, else empty string"}`,
                   },
                         ],

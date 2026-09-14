@@ -13,11 +13,14 @@ describe("nudgeFor (30-day trial, by days-left)", () => {
   it("trial is 30 days — the windows below assume it", () => {
     expect(TRIAL_DAYS).toBe(30);
   });
-  it("days 1-12 of trial (>17 days left) → no nudge yet", () => {
-    for (const d of [30, 25, 20, 18]) expect(nudgeFor(d)).toBeNull();
+  it("days 1-9 of trial (>20 days left) → no nudge yet", () => {
+    for (const d of [30, 25, 22, 21]) expect(nudgeFor(d)).toBeNull();
   });
-  it("around day 14 (7-17 days left) → D14 value recap", () => {
-    for (const d of [17, 16, 12, 7]) expect(nudgeFor(d)).toBe(14);
+  it("around day 14 (13-20 days left) → D14 value recap", () => {
+    for (const d of [20, 18, 14, 13]) expect(nudgeFor(d)).toBe(14);
+  });
+  it("Grey Box window (7-12 days left) → D18 upgrade (existing D25 checkout copy)", () => {
+    for (const d of [12, 10, 7]) expect(nudgeFor(d)).toBe(18);
   });
   it("last stretch (1-6 days left) → D25 loss + CTA", () => {
     for (const d of [6, 5, 3, 1]) expect(nudgeFor(d)).toBe(25);
@@ -28,7 +31,7 @@ describe("nudgeFor (30-day trial, by days-left)", () => {
   it("every day of a 30-day trial maps to exactly one state (no gaps)", () => {
     for (let d = TRIAL_DAYS; d >= -1; d--) {
       const n = nudgeFor(d);
-      expect(n === null || n === 14 || n === 25 || n === 30).toBe(true);
+      expect(n === null || n === 14 || n === 18 || n === 25 || n === 30).toBe(true);
     }
   });
   it("the D30 recovery mail never fires before expiry (its copy says 'has ended')", () => {

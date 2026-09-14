@@ -1,7 +1,8 @@
-import { learnFromOutcome } from './memory'
+import { learnFromOutcome, rememberFact } from './memory'
 import { persistOutcomeTrace } from './outcomeTrace'
 import { COMPANY_ID } from './version'
-import { sendWarmTrialCtas, type WarmCtaResult } from './sequences'
+import { sendWarmTrialCtas, type WarmCtaResult, type WarmPoolCensus, EMPTY_WARM_POOL } from './sequences'
+import { diagnoseRevenueFailure } from './cgoMandate'
 
 export type ConversionShiftResult = WarmCtaResult & {
   lesson: string
@@ -14,6 +15,7 @@ export function conversionLesson(
   r: WarmCtaResult,
   nudges?: { sent: number; scanned?: number },
   draft?: { queued: boolean; reason: string },
+  pool?: WarmPoolCensus,
 ): { success: boolean; lesson: string } {
   if (r.tripped) {
     return {
@@ -36,13 +38,25 @@ export function conversionLesson(
   if (nudgeSent > 0) {
     return {
       success: true,
-      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (D14/D25/D30). Convert remaining trials to paid.${draftNote}`,
+      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (D14/D18/D25/D30). Convert remaining trials to paid.${draftNote}`,
     }
   }
   if (r.blocked > 0) {
     return {
       success: false,
       lesson: `${r.blocked} warm leads blocked by Dex/MX/suppression and 0 CTAs sent. Convert only sendable replies. Do not invent a trial.${draftNote}`,
+    }
+  }
+  const p = pool || r.pool
+  if (p && (p.replied > 0 || p.engaged > 0)) {
+    return {
+      success: false,
+      lesson:
+        `REVENUE BLOCKER: ${p.replied} replied / ${p.engaged} engaged exist but 0 CTAs sent ` +
+        `(eligible=${p.eligible}, suppressed=${p.suppressed}, cooldown=${p.cooldown}, exhausted=${p.exhausted}, ` +
+        `auto_reply_drafts=${p.autoReplyPending}). Do not wait for more TOF. Reopen misclassified replies, ` +
+        `follow up Grey Box to paid, fire convert_warm on sendable engaged leads.` +
+        draftNote,
     }
   }
   return {
@@ -67,6 +81,11 @@ export function rankWarmLeads<T extends { replied?: boolean; pipeline_stage?: st
  * Also queues one founder-review LinkedIn draft/day (publish stays lockout-blocked).
  */
 export async function runCgoConversionShift(opts: { emails?: string[]; cap?: number } = {}): Promise<ConversionShiftResult> {
+  try {
+    const { getSql } = await import('./conn')
+    const { reopenFalseAutoReplies } = await import('./agents/salesReplies')
+    await reopenFalseAutoReplies(getSql()).catch(() => 0)
+  } catch { /* reopen is additive */ }
   const raw = await sendWarmTrialCtas({ emails: opts.emails, cap: opts.cap ?? 8 })
   let trialNudges = { scanned: 0, sent: 0 }
   try {
@@ -83,15 +102,29 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
   } catch (e: any) {
     linkedinDraft = { queued: false, reason: String(e?.message || e).slice(0, 160) }
   }
-  const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft)
+  const pool = raw.pool || EMPTY_WARM_POOL
+  const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft, pool)
   if (raw.reason?.startsWith('autonomy:')) {
     await maybeQueueAutonomyBlocker(raw.reason).catch(() => {})
   }
+  const diagnosis = diagnoseRevenueFailure({
+    trueTrials: null,
+    paying: null,
+    warm: pool,
+  })
+  await rememberFact({
+    company_id: COMPANY_ID,
+    type: 'operating',
+    key: 'revenue_diagnosis',
+    value: JSON.stringify({ lesson, diagnosis: diagnosis.line, bottlenecks: diagnosis.bottlenecks, pool, ts: new Date().toISOString() }).slice(0, 1800),
+    confidence: 0.9,
+    source: 'conversion_engine',
+  }).catch(() => {})
   const result: ConversionShiftResult = { ...raw, success, lesson, trialNudges, linkedinDraft }
   await learnFromOutcome(
     COMPANY_ID,
     'cgo_warm_trial_cta',
-    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent} linkedin_draft=${linkedinDraft.queued}`,
+    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent} linkedin_draft=${linkedinDraft.queued} eligible=${pool.eligible} replied=${pool.replied} engaged=${pool.engaged}`,
     lesson,
   ).catch(() => {})
   await persistOutcomeTrace({
@@ -100,7 +133,7 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     action: 'convert_warm',
     businessOutcome: raw.sent > 0 ? 'trial_cta_sent' : trialNudges.sent > 0 ? 'trial_nudge_sent' : raw.tripped ? 'breaker_tripped' : raw.blocked > 0 ? 'blocked_dex' : 'no_warm_leads',
     liveness: true,
-    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason) || linkedinDraft.queued,
+    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason) || linkedinDraft.queued || pool.replied > 0,
     schemaValid: true,
   }).catch(() => {})
   return result

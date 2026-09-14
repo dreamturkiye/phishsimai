@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  diagnoseRevenueFailure,
   GOALS_BY_WEEK,
   assignmentSkipReason,
   breakerAwareAssignRule,
@@ -53,6 +54,28 @@ describe('Janet CGO mandate', () => {
     expect(isPaidConversionCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 5 })).toBe(false)
   })
 
+  it('names the 2026-09-14 $0 MRR / 1 TRUE / 14 engaged / auto_reply trap as bottlenecks', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1,
+      paying: 0,
+      rawTrials: 100,
+      excluded: 99,
+      greyBoxDaysLeft: 10,
+      warm: {
+        replied: 15, engaged: 14, sendable: 14, eligible: 0,
+        cooldown: 0, exhausted: 0, suppressed: 0, autoReplyPending: 14,
+      },
+    })
+    expect(d.crisis).toBe(true)
+    expect(d.line).toMatch(/REVENUE FAILURE/)
+    expect(d.line).not.toMatch(/all normal/)
+    expect(d.bottlenecks.join(' ')).toMatch(/15 replied/)
+    expect(d.bottlenecks.join(' ')).toMatch(/auto_reply/)
+    expect(d.bottlenecks.join(' ')).toMatch(/Grey Box/)
+    expect(d.bottlenecks.join(' ')).toMatch(/canary noise/)
+    expect(d.nextActions.join(' ')).toMatch(/convert_warm|Grey Box/)
+  })
+
   it('does not treat canary-inflated 92 as the operating number — 92 TRUE would be paid-only', () => {
     const inflatedWouldHaveBeen = { liveProductTrials: 92, crmTrials: 0, payingCustomers: 0 }
     expect(isTrialCrisis(inflatedWouldHaveBeen)).toBe(false)
@@ -68,6 +91,7 @@ describe('Janet CGO mandate', () => {
       expect(voidPremiseFor(task.title, task.description)).toBeNull()
     }
     const titles = pack.map((t) => t.title).join('\n')
+    expect(titles).toMatch(/Grey Box/)
     expect(titles).not.toMatch(/500\s*(MSP|msp)/)
     expect(titles).not.toMatch(/analyze funnel/i)
     expect(titles).not.toMatch(/research TOF/i)
@@ -92,7 +116,7 @@ describe('Janet CGO mandate', () => {
   it('issues only the paying pack once TRUE trials are at 20', () => {
     const pack = operatingCrisisTasks({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 0 })
     const mason = pack.find((t) => t.agentId === 'mason')
-    expect(mason?.title).toMatch(/warm trial CTAs/i)
+    expect(mason?.title).toMatch(/Grey Box|warm CTA/i)
     expect(isTrialCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 0 })).toBe(false)
   })
 
@@ -112,6 +136,8 @@ describe('Janet CGO mandate', () => {
     expect(mandate).toMatch(/shrewd/)
     expect(mandate).toMatch(/20 TRUE/)
     expect(mandate).toMatch(/cannot fake numbers/)
+    expect(mandate).toMatch(/PERMANENT operating crisis/)
+    expect(mandate).toMatch(/Grey Box/)
     expect(employeeExecutionMandate()).toMatch(/full-time employee/)
     expect(employeeExecutionMandate()).toMatch(/true trials are below 20/)
   })
@@ -189,6 +215,8 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('server/os/routes.ts', 'utf8')).toMatch(/drill3/)
     expect(readFileSync('server/os/posture.ts', 'utf8')).toContain('ensureRunningDrill')
     expect(readFileSync('server/os/posture.ts', 'utf8')).toMatch(/healed missing running drill row/)
+    expect(readFileSync('server/os/sequences.ts', 'utf8')).toContain('warmCtaPoolCensus')
+    expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('diagnoseRevenueFailure')
     expect(os).toContain('convert_warm')
     expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('CONVERSION_AGENTS.has')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueAutonomyBlocker')

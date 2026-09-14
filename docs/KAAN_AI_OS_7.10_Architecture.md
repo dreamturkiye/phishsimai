@@ -257,7 +257,7 @@ Async brief model. Nobody is assumed to be watching anything in real time.
 
 **Daily founder brief** (21:00, Telegram + stored in `founder_briefs`): per subsidiary — MRR and delta (real, from `metrics_daily`), tasks shipped/failed, agent score avg (or `no data`), breaker trips + resolution state, pending escalations with age, active experiments + interim reads, unproven `behavior:` memory claims (Section E), anomalies (any metric ±2σ from 14-day mean). One screen, no filler.
 
-**PhishSim honesty (O.32):** the brief and CGO scorecard print **TRUE** live trials (canary/test/walkthrough/Adeo excluded) plus raw vs excluded so inflation cannot hide. OS Health (`osHealthHonesty`) is **not** "all agents normal" on zero completions with open work, an issuance gap, or a TRUE-trial drought (true trials < 20 or paying < 4). LIVE FACTS include `true_live_trials` / `paying_customers`. Analysis-only task reviews cannot score above 6 without conversion evidence.
+**PhishSim honesty (O.32):** the brief and CGO scorecard print **TRUE** live trials (canary/test/walkthrough/Adeo excluded) plus raw vs excluded so inflation cannot hide. OS Health (`osHealthHonesty`) is **not** "all agents normal" on zero completions with open work, an issuance gap, a TRUE-trial drought, or **REVENUE FAILURE** ($0 MRR / 1 TRUE trial). LIVE FACTS include `true_live_trials` / `paying_customers`. Analysis-only task reviews cannot score above 6 (4 in crisis) without conversion evidence.
 
 **On-demand:** `GET /hq/brief?date=YYYY-MM-DD` (kaanhq, Founder-token auth) regenerates any day's brief from stored tables.
 
@@ -478,6 +478,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | — | Acquisition besides cold email is Dex-gated warm CTA + TRUE-org nudges + MSP harvest + founder-review LinkedIn drafts; public social publish stays locked | PS-SOCIAL-LOCKOUT-01. No invented cold copy. Magic-link **trial** start staged (hard stop #5 / protected auth). |
 | 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge (PR #313). Bandit remains `replied`. Not a declaration of L5.8. |
 | 2026-09-14 | M.5 / H / O.32.1 | `ensureRunningDrill` before posture write; `maybeStartDrill3` heals missing running row; heartbeat = 3 ticks (25s) + conversion cap 3 (12s race), parallel | Live verify on #313/`920bfeb`: posture=`drill_3` but autonomy said "start one"; heartbeat timed out on sequential all-10. Marcus remains Mac launchd, not GitHub Actions. |
+| 2026-09-14 | J / O.32.6–7 | Warm CTA COALESCE + follow-up 91/92; auto_reply reopen; D18 Grey Box upgrade; diagnoseRevenueFailure; crisis score cap 4 | Live: 15 replied / 14 engaged / 14 auto_reply drafts / sent:0. $0 MRR + 1 TRUE trial is L5.7 failure. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -809,7 +810,7 @@ Inventory `trialAcquisitionChannels.ts`, fired from `runCgoConversionShift`:
 | Channel | Status | Rail |
 |---|---|---|
 | Warm reply CTA | live | Dex MX / `assertSendable` / suppression; replied/engaged only |
-| TRUE-org D14/D25/D30 nudges | live | canary/test excluded |
+| TRUE-org D14/D18/D25/D30 nudges | live | canary/test excluded; D18 = existing D25 checkout copy for ~10 days left |
 | MSP hub harvest | live | `/api/os/msp-harvest` → AMF/MX refill |
 | Magic-link checkout | live | paid HMAC `/checkout` |
 | LinkedIn founder-review draft | live, 1/day | frozen 60¢ / $299/500 + `TRIAL_CTA_URL`; **not published** |
@@ -821,7 +822,7 @@ Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. 
 ### O.32.5 Aggressive persistence + learning loop
 
 - Conversion agents (Janet, Mason, Aria, Nova, Vera) fire `convert_warm` even on LLM `none` while below targets.
-- Every runtime agent **refuses idle `none`** during operating crisis (`resolveRuntimeAction` / `droughtIdleAction`): next action is rewritten to the lane mandate; analysis-only titles skipped; score ceiling 6 without conversion evidence.
+- Every runtime agent **refuses idle `none`** during operating crisis (`resolveRuntimeAction` / `droughtIdleAction`): next action is rewritten to the lane mandate; analysis-only titles skipped; score ceiling 6 without conversion evidence, **4 in operating crisis**.
 - Dual-crisis pack includes Scout (“Drive trial starts from measured MSP segment”) and Dex (“Keep sending healthy so trial CTAs land”) so those lanes cannot sit idle.
 - Dex breaker **tripped** → Janet must not assign prospect/cold sends (`breakerAwareAssignRule` + `assignmentSkipReason`). Warm CTA already stands down on a measured trip. Do not send around Dex.
 - Reviewed-task scores (14-day, real-or-omit) bias assign via `scoreAwareAssignHint`. Unmeasured is not zero and is not a skip. This is L5.7-safe task selection, **not** L5.8 breaker-analytics / hire-fire.
@@ -833,7 +834,18 @@ Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. 
 
 ### O.32.6 Honest OS Health / founder brief
 
-`osHealthHonesty`: WORKFORCE IDLE, ISSUANCE GAP, or TRUE-TRIAL DROUGHT are not “all agents normal.” Brief prints raw vs excluded. Unmeasured paying is not zero and is not a crisis trigger.
+`osHealthHonesty`: WORKFORCE IDLE, ISSUANCE GAP, TRUE-TRIAL DROUGHT, or **REVENUE FAILURE** ($0 MRR / 1 TRUE trial) are not “all agents normal.” Brief prints raw vs excluded. Unmeasured paying is not zero and is not a crisis trigger. Janet must name the bottleneck every cycle (`diagnoseRevenueFailure`).
+
+### O.32.7 Warm CTA pool + Grey Box upgrade (2026-09-14 live)
+
+Owner DB: 9583 leads, **15 replied**, **14 engaged**, trial_at=0, customers=0. Conversion returned **sent:0 skipped:0 blocked:0** “No warm sendable leads.” 14 `outreach_reply_drafts` pending_review classified **auto_reply**, 1 interested sent. Grey Box Consulting (org 11) is the only TRUE trial (~10 days left), $0 paid.
+
+Fixes (do not invent cold copy; Dex/CAN-SPAM/geo/hard stops stay):
+
+- `sendWarmTrialCtas` treats NULL bounce/unsub as false; one prior CTA at touch 90 does **not** hide the pool forever. Follow-ups 91/92 after 4 days. `warmCtaPoolCensus` names why a run is empty.
+- `AUTO_RE` no longer matches human “I will return…”. False `auto_reply` drafts are reopened (`reopenFalseAutoReplies`). Low-confidence auto_reply drafts for Kaan instead of no_action.
+- TRUE-trial upgrade: D18 (7–12 days left) uses existing D25 checkout copy (`/settings?tab=billing`) so Grey Box is not left in the D14-already-sent / wait-for-D25 gap.
+- Crisis pack names Grey Box. Failures persist as `revenue_diagnosis` and feed the next `reasonAndAct`.
 
 ### Evidence (do not invent rates)
 

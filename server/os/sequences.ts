@@ -815,9 +815,30 @@ export async function runFullSequence() {
 
 export const runSequence = runFullSequence
 
-/** Outbox touch reserved for warm conversion CTAs — never collides with sequence touches 1–5. */
+/** Outbox touches reserved for warm conversion CTAs — never collide with sequence touches 1–5.
+ *  90 = first Dex-gated trial CTA. 91/92 = follow-ups after WARM_CTA_COOLDOWN_DAYS.
+ *  One row at touch 90 used to hide the whole replied/engaged pool forever ("No warm sendable leads"
+ *  while 14 engaged US leads sat in the CRM — 2026-09-14). */
 export const WARM_CONVERSION_TOUCH = 90
+export const WARM_FOLLOWUP_TOUCHES = [91, 92] as const
+export const WARM_CTA_TOUCHES = [90, 91, 92] as const
+export const WARM_CTA_COOLDOWN_DAYS = 4
 export const TRIAL_CTA_URL = 'https://phishsimai.com/login?mode=register'
+
+export type WarmPoolCensus = {
+  replied: number
+  engaged: number
+  sendable: number
+  suppressed: number
+  cooldown: number
+  exhausted: number
+  eligible: number
+  autoReplyPending: number
+}
+
+export const EMPTY_WARM_POOL: WarmPoolCensus = {
+  replied: 0, engaged: 0, sendable: 0, suppressed: 0, cooldown: 0, exhausted: 0, eligible: 0, autoReplyPending: 0,
+}
 
 export type WarmCtaResult = {
   sent: number
@@ -827,6 +848,101 @@ export type WarmCtaResult = {
   paused?: boolean
   reason?: string
   results: { email: string; company: string; outcome: string }[]
+  pool?: WarmPoolCensus
+}
+
+/** Count why convert_warm returned empty. Live 2026-09-14: 15 replied / 14 engaged → sent:0 because
+ *  the SELECT treated NULL bounce flags and a single prior CTA as "no leads". */
+export async function warmCtaPoolCensus(sql: any): Promise<WarmPoolCensus> {
+  const flags = (await sql`
+    SELECT
+      count(*) FILTER (WHERE replied = true)::int AS replied,
+      count(*) FILTER (WHERE pipeline_stage = 'engaged')::int AS engaged,
+      count(*) FILTER (
+        WHERE COALESCE(bounced, false) = false
+          AND COALESCE(unsubscribed, false) = false
+          AND COALESCE(pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
+          AND (replied = true OR pipeline_stage = 'engaged')
+      )::int AS sendable
+    FROM ps_outreach_leads
+  `.catch(() => [{ replied: 0, engaged: 0, sendable: 0 }])) as any[]
+  const extra = (await sql`
+    SELECT
+      count(*) FILTER (
+        WHERE COALESCE(l.bounced, false) = false
+          AND COALESCE(l.unsubscribed, false) = false
+          AND COALESCE(l.pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
+          AND (l.replied = true OR l.pipeline_stage = 'engaged')
+          AND EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+      )::int AS suppressed,
+      count(*) FILTER (
+        WHERE COALESCE(l.bounced, false) = false
+          AND COALESCE(l.unsubscribed, false) = false
+          AND COALESCE(l.pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
+          AND (l.replied = true OR l.pipeline_stage = 'engaged')
+          AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+          AND EXISTS (
+            SELECT 1 FROM outreach_sequence_outbox o
+            WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
+              AND o.updated_at > NOW() - INTERVAL '4 days'
+          )
+      )::int AS cooldown,
+      count(*) FILTER (
+        WHERE COALESCE(l.bounced, false) = false
+          AND COALESCE(l.unsubscribed, false) = false
+          AND COALESCE(l.pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
+          AND (l.replied = true OR l.pipeline_stage = 'engaged')
+          AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+          AND (
+            SELECT count(*) FROM outreach_sequence_outbox o
+            WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
+          ) >= 3
+      )::int AS exhausted,
+      count(*) FILTER (
+        WHERE COALESCE(l.bounced, false) = false
+          AND COALESCE(l.unsubscribed, false) = false
+          AND COALESCE(l.pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
+          AND (l.replied = true OR l.pipeline_stage = 'engaged')
+          AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
+          AND NOT EXISTS (
+            SELECT 1 FROM outreach_sequence_outbox o
+            WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
+              AND o.updated_at > NOW() - INTERVAL '4 days'
+          )
+          AND (
+            SELECT count(*) FROM outreach_sequence_outbox o
+            WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
+          ) < 3
+      )::int AS eligible
+    FROM ps_outreach_leads l
+  `.catch(() => [{ suppressed: 0, cooldown: 0, exhausted: 0, eligible: 0 }])) as any[]
+  const drafts = (await sql`
+    SELECT count(*)::int AS n FROM outreach_reply_drafts
+    WHERE status = 'pending_review' AND classification = 'auto_reply'
+  `.catch(() => [{ n: 0 }])) as any[]
+  return {
+    replied: Number(flags[0]?.replied ?? 0),
+    engaged: Number(flags[0]?.engaged ?? 0),
+    sendable: Number(flags[0]?.sendable ?? 0),
+    suppressed: Number(extra[0]?.suppressed ?? 0),
+    cooldown: Number(extra[0]?.cooldown ?? 0),
+    exhausted: Number(extra[0]?.exhausted ?? 0),
+    eligible: Number(extra[0]?.eligible ?? 0),
+    autoReplyPending: Number(drafts[0]?.n ?? 0),
+  }
+}
+
+export async function nextWarmCtaTouch(sql: any, leadId: string): Promise<number | null> {
+  const rows = (await sql`
+    SELECT touch, status, updated_at
+    FROM outreach_sequence_outbox
+    WHERE lead_id = ${leadId}::uuid AND touch IN (90, 91, 92)
+  `.catch(() => [])) as Array<{ touch: number; status: string; updated_at: string }>
+  const sent = rows.filter((r) => r.status === 'sent')
+  const coolMs = WARM_CTA_COOLDOWN_DAYS * 86_400_000
+  if (sent.some((r) => Date.now() - new Date(r.updated_at).getTime() < coolMs)) return null
+  const used = new Set(sent.map((r) => Number(r.touch)))
+  return WARM_CTA_TOUCHES.find((t) => !used.has(t)) ?? null
 }
 
 /**
@@ -844,13 +960,14 @@ export async function sendWarmTrialCtas(opts: {
   const sql = opts.sql ?? getSql()
   await ensureSequenceOutbox(sql)
   const cap = Math.max(1, Math.min(8, Math.floor(opts.cap ?? 8)))
-  const out: WarmCtaResult = { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }
+  const out: WarmCtaResult = { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [], pool: { ...EMPTY_WARM_POOL } }
 
   const health = await getSequenceHealth(sql).catch(() => null)
   if (health?.tripped) {
     out.tripped = true
     out.paused = true
     out.reason = `bounce breaker tripped ${(health.rate * 100).toFixed(1)}% over ${health.sent} live 7d sends`
+    out.pool = await warmCtaPoolCensus(sql).catch(() => ({ ...EMPTY_WARM_POOL }))
     return out
   }
 
@@ -861,30 +978,41 @@ export async function sendWarmTrialCtas(opts: {
     } catch (e) {
       if (isAutonomyDenied(e)) {
         out.reason = 'autonomy: ' + (e as Error).message
+        out.pool = await warmCtaPoolCensus(sql).catch(() => ({ ...EMPTY_WARM_POOL }))
         return out
       }
       throw e
     }
   }
 
+  out.pool = await warmCtaPoolCensus(sql).catch(() => ({ ...EMPTY_WARM_POOL }))
+
   const wanted = (opts.emails || []).map((e) => String(e).trim().toLowerCase()).filter(Boolean)
+  // COALESCE bounce/unsub: NULL = false used to drop the whole 14-engaged pool.
+  // Lifetime one-shot at touch 90 used to hide replied/engaged after the first CTA.
+  // Follow-ups use 91/92 after 4 days, still Dex-gated, same frozen copy.
   const leads = wanted.length
     ? await sql`SELECT l.id, l.name, l.company, l.email, l.industry FROM ps_outreach_leads l
         WHERE lower(l.email) = ANY(${wanted})
-        AND bounced=false AND l.unsubscribed=false
-        AND pipeline_stage NOT IN ('dead','customer','internal_test')
+        AND COALESCE(l.bounced, false) = false AND COALESCE(l.unsubscribed, false) = false
+        AND COALESCE(l.pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         LIMIT ${cap}`
     : await sql`SELECT l.id, l.name, l.company, l.email, l.industry FROM ps_outreach_leads l
-        WHERE bounced=false AND l.unsubscribed=false
-        AND pipeline_stage NOT IN ('dead','customer','internal_test')
-        AND (replied=true OR pipeline_stage='engaged')
+        WHERE COALESCE(l.bounced, false) = false AND COALESCE(l.unsubscribed, false) = false
+        AND COALESCE(l.pipeline_stage, 'prospect') NOT IN ('dead','customer','internal_test')
+        AND (l.replied = true OR l.pipeline_stage = 'engaged')
         AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
         AND NOT EXISTS (
           SELECT 1 FROM outreach_sequence_outbox o
-          WHERE o.lead_id = l.id AND o.touch = ${WARM_CONVERSION_TOUCH} AND o.status='sent'
+          WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
+            AND o.updated_at > NOW() - INTERVAL '4 days'
         )
-        ORDER BY CASE WHEN replied=true THEN 0 ELSE 1 END, replied_at DESC NULLS LAST
+        AND (
+          SELECT count(*) FROM outreach_sequence_outbox o
+          WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
+        ) < 3
+        ORDER BY CASE WHEN l.replied = true THEN 0 ELSE 1 END, l.replied_at DESC NULLS LAST
         LIMIT ${cap}`
 
   const now = new Date()
@@ -931,20 +1059,26 @@ ${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
 <p style="color:#666;font-size:12px;margin:0">240 Queen Street N.E., Leesburg, VA 20176</p>
 <p style="color:#666;font-size:12px;margin:12px 0 0">You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? <a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a> — one click, no hard feelings.</p>
 </div>`.replace(/\{\{TOKEN\}\}/g, token)
-      const sendClaim = await claimSequenceSend(sql, String(lead.id), WARM_CONVERSION_TOUCH, String(lead.email))
+      const touch = await nextWarmCtaTouch(sql, String(lead.id))
+      if (touch == null) {
+        out.skipped++
+        out.results.push({ email: String(lead.email), company: co, outcome: 'cooldown_or_exhausted' })
+        continue
+      }
+      const sendClaim = await claimSequenceSend(sql, String(lead.id), touch, String(lead.email))
       if (!sendClaim.claimed && !sendClaim.providerMessageId) {
         out.skipped++
         out.results.push({ email: String(lead.email), company: co, outcome: 'already_sent' })
         continue
       }
-      const idempotencyKey = sequenceIdempotencyKey(String(lead.id), WARM_CONVERSION_TOUCH)
+      const idempotencyKey = sequenceIdempotencyKey(String(lead.id), touch)
       const result = sendClaim.providerMessageId
         ? { id: sendClaim.providerMessageId }
         : await sendEmail(
             String(lead.email),
             subject,
             html,
-            [{ name: 'touch', value: 'warm_cta' }, { name: 'lead_id', value: String(lead.id) }],
+            [{ name: 'touch', value: 'warm_cta' }, { name: 'lead_id', value: String(lead.id) }, { name: 'warm_touch', value: String(touch) }],
             token,
             text,
             idempotencyKey,
@@ -954,7 +1088,7 @@ ${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
         continue
       }
       if (sendClaim.claimed) {
-        await completeSequenceSend(sql, String(lead.id), WARM_CONVERSION_TOUCH, sendClaim.claimToken!, String(result.id))
+        await completeSequenceSend(sql, String(lead.id), touch, sendClaim.claimToken!, String(result.id))
       }
       await sql`UPDATE ps_outreach_leads SET pipeline_stage='engaged', stage_updated_at=${now.toISOString()}
                 WHERE id=${lead.id} AND pipeline_stage NOT IN ('dead','customer','internal_test')`.catch(() => {})

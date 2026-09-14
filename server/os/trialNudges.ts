@@ -20,11 +20,14 @@ const DAY_MS = 86_400_000;
 //   • D30 (expired)       — post-expiry recovery. Keyed to daysLeft <= 0 and NOT to day 29: its
 //     copy says the trial "has ended" and the account is on the free plan, which is only true
 //     once the gate has actually dropped. Sending it a day early would be a false statement.
-export function nudgeFor(daysLeft: number): 14 | 25 | 30 | null {
+export function nudgeFor(daysLeft: number): 14 | 18 | 25 | 30 | null {
   if (daysLeft <= 0) return 30;
   if (daysLeft <= 6) return 25;
-  if (daysLeft <= 17) return 14;
-  return null; // days 1–12 of the trial: too early to nudge
+  // D18: mid-trial upgrade using existing D25 checkout copy. Grey Box at ~10 days left
+  // was sitting in the D14-already-sent / wait-for-D25 gap.
+  if (daysLeft <= 12) return 18;
+  if (daysLeft <= 20) return 14;
+  return null; // first ~10 days of the trial
 }
 
 export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }> }> {
@@ -66,7 +69,7 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
 
     try {
       const ok = nudge === 14 ? await sendTrialDay14(org.admin_email, org.name, stats)
-        : nudge === 25 ? await sendTrialDay25(org.admin_email, org.name, stats, Math.max(1, daysLeft))
+        : nudge === 25 || nudge === 18 ? await sendTrialDay25(org.admin_email, org.name, stats, Math.max(1, daysLeft))
           : await sendTrialDay30(org.admin_email, org.name);
       if (ok) sent.push({ orgId: org.id, nudge });
       else {
