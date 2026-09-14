@@ -36,14 +36,22 @@ describe('Janet CGO mandate', () => {
     expect(isTrialCrisis({ liveProductTrials: 20, crmTrials: 0 })).toBe(false)
   })
 
-  it('treats 92 verified trials and 0 paying as a paid-conversion crisis, not a trial crisis', () => {
-    const today = { liveProductTrials: 92, crmTrials: 0, payingCustomers: 0 }
-    expect(isTrialCrisis(today)).toBe(false)
+  it('treats 1 TRUE trial and 0 paying as BOTH a trial crisis and a paying crisis', () => {
+    const today = { liveProductTrials: 1, crmTrials: 0, payingCustomers: 0 }
+    expect(isTrialCrisis(today)).toBe(true)
     expect(isPaidConversionCrisis(today)).toBe(true)
     expect(isOperatingCrisis(today)).toBe(true)
-    expect(isPaidConversionCrisis({ liveProductTrials: 92, crmTrials: 0, payingCustomers: 1 })).toBe(false)
-    expect(isPaidConversionCrisis({ liveProductTrials: 0, crmTrials: 0, payingCustomers: 0 })).toBe(false)
-    expect(isPaidConversionCrisis({ liveProductTrials: 92, crmTrials: 0, payingCustomers: null })).toBe(false)
+    expect(isPaidConversionCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 1 })).toBe(true)
+    expect(isPaidConversionCrisis({ liveProductTrials: 0, crmTrials: 0, payingCustomers: 0 })).toBe(true)
+    expect(isPaidConversionCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: null })).toBe(false)
+    expect(isPaidConversionCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 4 })).toBe(false)
+    expect(isPaidConversionCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 5 })).toBe(false)
+  })
+
+  it('does not treat canary-inflated 92 as the operating number — 92 TRUE would be paid-only', () => {
+    const inflatedWouldHaveBeen = { liveProductTrials: 92, crmTrials: 0, payingCustomers: 0 }
+    expect(isTrialCrisis(inflatedWouldHaveBeen)).toBe(false)
+    expect(isPaidConversionCrisis(inflatedWouldHaveBeen)).toBe(true)
   })
 
   it('issues conversion-bound work (not analyze/research/500-cold) in the paid-conversion pack', () => {
@@ -68,11 +76,19 @@ describe('Janet CGO mandate', () => {
     expect(isConversionBoundTitle('Ship one trial-to-paid experiment with a live upgrade CTA')).toBe(true)
   })
 
-  it('lets the paid pack win per agent when both crises apply', () => {
-    const both = operatingCrisisTasks({ liveProductTrials: 10, crmTrials: 10, payingCustomers: 0 })
+  it('lets the true-trial pack keep Mason/Aria/Nova when both crises apply', () => {
+    const both = operatingCrisisTasks({ liveProductTrials: 1, crmTrials: 0, payingCustomers: 0 })
     const mason = both.find((t) => t.agentId === 'mason')
+    expect(mason?.title).toMatch(/20 hottest/)
+    expect(mason?.title).not.toMatch(/warm trial CTAs/i)
+    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'vera', 'finn']))
+  })
+
+  it('issues only the paying pack once TRUE trials are at 20', () => {
+    const pack = operatingCrisisTasks({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 0 })
+    const mason = pack.find((t) => t.agentId === 'mason')
     expect(mason?.title).toMatch(/warm trial CTAs/i)
-    expect(mason?.title).not.toMatch(/20 hottest/)
+    expect(isTrialCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 0 })).toBe(false)
   })
 
   it('forces Mason, Aria, and Nova conversion work when trials are zero', () => {
@@ -87,9 +103,10 @@ describe('Janet CGO mandate', () => {
   it('tells Janet she owns paid MRR and forbids fake trials', () => {
     const mandate = janetCgoMandate()
     expect(mandate).toMatch(/shrewd/)
-    expect(mandate).toMatch(/20 verified/)
+    expect(mandate).toMatch(/20 TRUE/)
     expect(mandate).toMatch(/cannot fake numbers/)
     expect(employeeExecutionMandate()).toMatch(/full-time employee/)
+    expect(employeeExecutionMandate()).toMatch(/true trials are below 20/)
   })
 
   it('makes execute prompts do the work instead of writing an analysis', () => {
@@ -115,7 +132,7 @@ describe('coded enforcers are wired', () => {
     expect(os).toContain('janetCgoMandate')
     expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('applyOwnerAutonomyRuling')
     expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('ensureOwnerL57Autonomy')
-    expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('tickAllAgentRuntimes')
+    expect(readFileSync('server/os/routes.ts', 'utf8')).toMatch(/tickAllAgentRuntimes\(\s*\{\s*maxAgents:\s*5/)
     expect(readFileSync('server/os/routes.ts', 'utf8')).toMatch(/reasonAndAct\(\s*["']janet["']/)
     expect(os).toContain('does NOT forbid converting')
     expect(os).toContain('runCgoConversionShift')

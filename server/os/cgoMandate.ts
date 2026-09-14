@@ -5,6 +5,10 @@ export type TrialFacts = {
   crmTrials: number
   /** Live paying orgs (plan ≠ free), excluding internal/test. null = unmeasured. */
   payingCustomers?: number | null
+  /** Canary/test/walkthrough/Adeo raw live trials that were excluded. */
+  excludedNonCustomerTrials?: number
+  /** Raw plan=free + future planExpiresAt, before true-trial exclusion. */
+  rawLiveTrials?: number
 }
 
 export type WeeklyGoals = {
@@ -24,6 +28,9 @@ export type CrisisTask = {
 }
 
 export const TRIAL_SPRINT_TARGET = 20
+/** Owner 2026-09-14: 4–5 paying customers. Gate fires below 4; stretch is 5. */
+export const PAYING_SPRINT_TARGET = 4
+export const PAYING_STRETCH_TARGET = 5
 
 /** Aggressive CGO targets. Founder sprint: 20 verified 30-day trials now — sandbagging is forbidden. */
 export const GOALS_BY_WEEK: WeeklyGoals[] = [
@@ -59,14 +66,13 @@ export function payingCount(facts: TrialFacts): number | null {
 }
 
 /**
- * Trials exist and nobody is paying. Today's Telegram (2026-09-14): 92 trials, $0 MRR.
- * The zero-trial pack does not fire at 92, so without this the crisis ASSIGN lines
- * became analysis/research/500-cold — the opposite of convert-existing-trials.
+ * Paying customers below the owner floor. Unmeasured is not a crisis trigger.
+ * True-trial drought (1 Grey Box, 0 paid) is BOTH a trial crisis and a paying crisis.
  */
 export function isPaidConversionCrisis(facts: TrialFacts): boolean {
   const paying = payingCount(facts)
   if (paying === null) return false
-  return verifiedTrialCount(facts) >= 1 && paying === 0
+  return paying < PAYING_SPRINT_TARGET
 }
 
 export function isOperatingCrisis(facts: TrialFacts): boolean {
@@ -97,22 +103,28 @@ export function cgoScorecard(facts: TrialFacts, goals: WeeklyGoals): string {
   const payingLine = paying === null ? 'Paying customers: NOT CHECKED.' : `Paying customers: ${paying}.`
   return [
     `CGO SCORECARD — Janet owns this number.`,
-    `Verified 30-day trials (live product entitlement, excluding internal/test orgs): ${facts.liveProductTrials}.`,
-    `CRM trial_at (external): ${facts.crmTrials}. Operating count = ${trials} (week ${goals.week} target: ${goals.trialsTarget}).`,
+    `True customer 30-day trials (canary/test/walkthrough/Adeo excluded): ${facts.liveProductTrials}.`,
+    facts.rawLiveTrials != null
+      ? `Raw live entitlements: ${facts.rawLiveTrials} (excluded non-customer: ${facts.excludedNonCustomerTrials ?? 0}). Never treat raw as the operating number.`
+      : null,
+    `CRM trial_at (external): ${facts.crmTrials}. Operating TRUE count = ${trials} (week ${goals.week} target: ${goals.trialsTarget} true trials, ${PAYING_SPRINT_TARGET}–${PAYING_STRETCH_TARGET} paying).`,
     payingLine,
-    paidCrisis
-      ? `PAID CONVERSION CRISIS: ${trials} verified trials and ${paying} paying. MRR is $0 until a live Stripe customer exists. Convert EXISTING trial orgs and warm replies today. Analysis, TOF research, and 500-lead cold volume are misses.`
-      : trialCrisis
-        ? `SPRINT CRISIS: ${trials}/${goals.trialsTarget} verified free trials. The number is ${TRIAL_SPRINT_TARGET}. Activity without a trial is failure. Convert the hottest existing leads today AND fill the top of funnel.`
-        : `Keep converting. Do not celebrate activity that does not add a trial or paid MRR. Gap to sprint: ${Math.max(0, goals.trialsTarget - trials)}.`,
+    trialCrisis && paidCrisis
+      ? `DUAL CRISIS: ${trials}/${TRIAL_SPRINT_TARGET} TRUE trials and ${paying}/${PAYING_SPRINT_TARGET} paying. Fill the funnel with real MSP trials AND convert Grey Box / warm replies to paid. Canary orgs are not trials.`
+      : paidCrisis
+        ? `PAYING CRISIS: ${paying}/${PAYING_SPRINT_TARGET} paying (stretch ${PAYING_STRETCH_TARGET}). Convert EXISTING true trial orgs and warm replies today.`
+        : trialCrisis
+          ? `SPRINT CRISIS: ${trials}/${goals.trialsTarget} TRUE free trials. Canary inflation does not count. Convert the hottest existing leads today AND fill the top of funnel.`
+          : `Keep converting. Do not celebrate activity that does not add a TRUE trial or paid MRR. Gap to sprint: ${Math.max(0, goals.trialsTarget - trials)} trials, ${Math.max(0, PAYING_SPRINT_TARGET - (paying ?? 0))} paying.`,
     `Revenue target this week: $${goals.revenueTarget} from live Stripe only. Pricing is frozen.`,
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 export function janetCgoMandate(): string {
   return [
     'You are Janet, Chief Growth Officer. You run this startup like a hungry operator, not a coordinator. Kaan is CEO; you own paid MRR and the trial count.',
-    `SUCCESS GOAL, NON-NEGOTIABLE: ${TRIAL_SPRINT_TARGET} verified 30-day no-card trials now. Then paid MRR from Stripe. Sends, standups, and ONLINE are not results.`,
+    `SUCCESS GOAL, NON-NEGOTIABLE: ${TRIAL_SPRINT_TARGET} TRUE customer 30-day no-card trials (Signup Canary / test / walkthrough / Adeo excluded) and ${PAYING_SPRINT_TARGET}–${PAYING_STRETCH_TARGET} paying Stripe customers. Keep pushing until both are met. Sends, standups, canary orgs, and ONLINE are not results.`,
+    'Be persistent and aggressive: same-day follow-up on every warm lead and every true trial org. An employee who reported "nothing completed" failed. Queue Marcus when a code path blocks a trial start.',
     'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened). Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
     'Hold Mason, Aria, and Nova to a daily conversion number. An employee who only reported failed. Follow up the same day. "I delegated" is not a result.',
     'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Do not choose one and ignore the other.',
@@ -122,8 +134,8 @@ export function janetCgoMandate(): string {
 
 export function employeeExecutionMandate(): string {
   return [
-    'You are a full-time employee, not a reporter. Do the work in your lane today.',
-    'If a real next step exists, analysis-only output is a miss. Name what you DID, the evidence ID, and the next conversion step toward a verified 30-day trial.',
+    'You are a full-time employee, not a reporter. Do the work in your lane today. Be persistent: follow up the same day.',
+    `If true trials are below ${TRIAL_SPRINT_TARGET} or paying customers below ${PAYING_SPRINT_TARGET}, analysis-only output and idle "nothing completed" are a miss. Name what you DID, the evidence ID, and the next conversion step toward a TRUE 30-day trial or a paid sub.`,
     'If you cannot act, name the blocker, the owner, and the ask — then stop. Do not narrate work you did not do.',
     'You still cannot fake metrics, change price, skip Dex send-safety, or deploy around Marcus. Warm trial CTAs go through ACTION: convert_warm, never a raw send.',
   ].join('\n')
@@ -195,7 +207,7 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
       agentId: 'mason',
       title: 'Drive the 20 hottest MSPs to a 30-day trial start today',
       description:
-        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
+        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now (canary/test/walkthrough/Adeo excluded). Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Also use MSP harvest + founder-review LinkedIn drafts. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
       priority: 'high',
     },
     {
@@ -232,7 +244,7 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
       agentId: 'mason',
       title: 'Send warm trial CTAs and follow up existing trial orgs today',
       description:
-        'PAID CONVERSION CRISIS: trials exist and paying = 0. Fire convert_warm on replied > engaged leads (Dex MX + suppression + bounce breaker). Then nurture existing free-trial orgs toward paid — leave send evidence (CONVERSION SHIFT sent>0 and/or trial nudge sent). Do not open a 500-lead cold blast. Do not write another sequence analysis.',
+        'PAID CONVERSION CRISIS: trials exist and paying is below 4. Fire convert_warm on replied > engaged leads (Dex MX + suppression + bounce breaker). Then nurture existing TRUE free-trial orgs toward paid — leave send evidence (CONVERSION SHIFT sent>0 and/or trial nudge sent). Do not open a 500-lead cold blast. Do not write another sequence analysis. Do not count Signup Canary as a trial.',
       priority: 'high',
     },
     {
@@ -253,7 +265,7 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
       agentId: 'vera',
       title: 'Nurture existing trial orgs toward paid with D14/D25/D30 send evidence',
       description:
-        'PAID CONVERSION CRISIS: 93 free-trial orgs and 0 paying. Run trial nudges (idempotent D14/D25/D30) and first-value follow-up. Retention theater with no send is a miss. Name orgs nudged and evidence ids.',
+        'PAID CONVERSION CRISIS: TRUE trial orgs (canary/test/walkthrough/Adeo excluded) and paying below 4. Run trial nudges (idempotent D14/D25/D30) and first-value follow-up on REAL customer trials only. Retention theater with no send is a miss. Name orgs nudged and evidence ids.',
       priority: 'high',
     },
     {
@@ -266,14 +278,14 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
   ]
 }
 
-/** Paid-gap pack wins per agent when both crises apply — convert what we already have first. */
+/** True-trial drought takes Mason/Aria/Nova; paying gap adds Vera/Finn. Both can fire. */
 export function operatingCrisisTasks(facts: TrialFacts): CrisisTask[] {
   const byAgent = new Map<CrisisTask['agentId'], CrisisTask>()
-  if (isPaidConversionCrisis(facts)) {
-    for (const t of paidConversionCrisisTasks()) byAgent.set(t.agentId, t)
-  }
   if (isTrialCrisis(facts)) {
-    for (const t of zeroTrialCrisisTasks()) {
+    for (const t of zeroTrialCrisisTasks()) byAgent.set(t.agentId, t)
+  }
+  if (isPaidConversionCrisis(facts)) {
+    for (const t of paidConversionCrisisTasks()) {
       if (!byAgent.has(t.agentId)) byAgent.set(t.agentId, t)
     }
   }
@@ -283,30 +295,39 @@ export function operatingCrisisTasks(facts: TrialFacts): CrisisTask[] {
 export function cgoStandupDirective(facts: TrialFacts, goals: WeeklyGoals): string {
   const trials = verifiedTrialCount(facts)
   const paying = payingCount(facts)
+  const excluded = facts.excludedNonCustomerTrials ?? 0
+  const rawNote = facts.rawLiveTrials != null
+    ? ` Raw entitlements ${facts.rawLiveTrials} minus ${excluded} canary/test = ${trials} TRUE.`
+    : ''
+  if (isTrialCrisis(facts) && isPaidConversionCrisis(facts)) {
+    return (
+      `TODAY'S BINDING CONSTRAINT — dual crisis, not a suggestion:\n` +
+      `TRUE trials = ${trials} / ${TRIAL_SPRINT_TARGET}, paying = ${paying ?? 0} / ${PAYING_SPRINT_TARGET} (stretch ${PAYING_STRETCH_TARGET}).${rawNote} ` +
+      `Fill the funnel with real MSP trials AND convert existing true trials / warm replies to paid.\n` +
+      `ASSIGN conversion-bound work only. Do NOT assign funnel analysis, TOF research, or 500-lead cold volume. ` +
+      `Do NOT count Signup Canary, test, walkthrough, or Adeo as trials. An employee who only reported failed.\n\n`
+    )
+  }
   if (isPaidConversionCrisis(facts)) {
     return (
-      `TODAY'S BINDING CONSTRAINT — paid conversion crisis, not a suggestion:\n` +
-      `Verified 30-day trials = ${trials}, paying customers = ${paying ?? 0}, MRR = $0 until Stripe has a customer. ` +
-      `ONE company focus: convert EXISTING trial orgs and warm replies into paid MRR.\n` +
-      `ASSIGN only conversion-bound work with measurable trial/MRR outcomes (warm CTA, trial nudge, upgrade, Stripe truth). ` +
-      `Do NOT assign funnel analysis, TOF research, coverage proposals, or 500-lead cold volume. ` +
-      `Mason/Aria/Nova/Vera must leave send or upgrade evidence. An employee who only reported failed.\n\n`
+      `TODAY'S BINDING CONSTRAINT — paying crisis, not a suggestion:\n` +
+      `TRUE trials = ${trials}, paying = ${paying ?? 0} / ${PAYING_SPRINT_TARGET} (stretch ${PAYING_STRETCH_TARGET}). ` +
+      `Convert EXISTING true trial orgs and warm replies into paid MRR.\n` +
+      `ASSIGN only conversion-bound work. Do NOT assign funnel analysis or 500-lead cold volume.\n\n`
     )
   }
   if (trials < TRIAL_SPRINT_TARGET) {
     return (
       `TODAY'S BINDING CONSTRAINT — owner sprint, not a suggestion:\n` +
-      `Verified 30-day trials = ${trials} / ${goals.trialsTarget}. Gap = ${goals.trialsTarget - trials}. ` +
-      `ONE company focus: close that gap with live no-card trials.\n` +
-      `Be shrewd: convert the warmest leads first, then fill the top of funnel. ` +
-      `Do not assign brand, retention, or reporting theater. ` +
-      `Do not claim the sprint is done without a verified count >= ${TRIAL_SPRINT_TARGET}.\n\n`
+      `TRUE 30-day trials = ${trials} / ${goals.trialsTarget}.${rawNote} Gap = ${goals.trialsTarget - trials}. ` +
+      `ONE company focus: close that gap with live no-card trials from real MSPs.\n` +
+      `Be shrewd: convert the warmest leads first, then fill the top of funnel (MSP harvest + warm CTA + founder-review social drafts). ` +
+      `Do not claim the sprint is done without a TRUE count >= ${TRIAL_SPRINT_TARGET}.\n\n`
     )
   }
   return (
     `TODAY'S BINDING CONSTRAINT — stay on conversion:\n` +
-    `Verified trials = ${trials} (week ${goals.week} target ${goals.trialsTarget}). ` +
-    `Assign work that adds a trial or paid MRR from Stripe. ` +
-    `Fill the funnel and convert existing replies. A week with more emails and no new paid MRR is not a good week.\n\n`
+    `TRUE trials = ${trials} (week ${goals.week} target ${goals.trialsTarget}), paying = ${paying ?? 'NOT CHECKED'} / ${PAYING_SPRINT_TARGET}. ` +
+    `Assign work that adds a true trial or paid MRR from Stripe.\n\n`
   )
 }

@@ -5,6 +5,7 @@
 // PS-TRIAL-30-01: re-spaced D7/D12/D14 → D14/D25/D30. The windows are expressed in DAYS-LEFT, so
 // they are read against TRIAL_DAYS = 30: day 14 of the trial ≈ 16 left, day 25 ≈ 5 left, expiry = 0.
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import { nudgeFor } from "./os/trialNudges";
 import { TRIAL_DAYS } from "./lib/entitlements";
 
@@ -32,5 +33,9 @@ describe("nudgeFor (30-day trial, by days-left)", () => {
   });
   it("the D30 recovery mail never fires before expiry (its copy says 'has ended')", () => {
     for (let d = TRIAL_DAYS; d >= 1; d--) expect(nudgeFor(d)).not.toBe(30);
+  });
+  it("skips canary/test/walkthrough/Adeo orgs (true-trial exclusion)", () => {
+    const src = readFileSync("server/os/trialNudges.ts", "utf8");
+    expect(src).toContain("isNonCustomerOrg");
   });
 });

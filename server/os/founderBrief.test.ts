@@ -47,7 +47,7 @@ describe("renderFounderBrief — honesty (null ⇒ 'no data')", () => {
       })],
     })
     expect(md).toContain("76 deneme")
-    expect(md).toContain("canlı ürün 76")
+    expect(md).toContain("canlı ürün TRUE 76")
     expect(md).toContain("CRM trial_at 0")
     expect(md).not.toMatch(/Funnel \(7g\): 236 gönderim → 4 yanıt → 0 deneme/)
   })
@@ -56,6 +56,7 @@ describe("renderFounderBrief — honesty (null ⇒ 'no data')", () => {
     const src = readFileSync("server/os/founderBrief.ts", "utf8")
     expect(src).toContain("verifiedTrialCount")
     expect(src).toContain("liveProductTrials")
+    expect(src).toContain("measureTrueOrgCounts")
     expect(src).toContain('snapshot_date::date = ${date}::date')
   })
 

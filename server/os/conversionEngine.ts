@@ -7,9 +7,14 @@ export type ConversionShiftResult = WarmCtaResult & {
   lesson: string
   success: boolean
   trialNudges?: { scanned: number; sent: number }
+  linkedinDraft?: { queued: boolean; reason: string }
 }
 
-export function conversionLesson(r: WarmCtaResult, nudges?: { sent: number; scanned?: number }): { success: boolean; lesson: string } {
+export function conversionLesson(
+  r: WarmCtaResult,
+  nudges?: { sent: number; scanned?: number },
+  draft?: { queued: boolean; reason: string },
+): { success: boolean; lesson: string } {
   if (r.tripped) {
     return {
       success: false,
@@ -20,28 +25,29 @@ export function conversionLesson(r: WarmCtaResult, nudges?: { sent: number; scan
     return { success: false, lesson: `Conversion blocked by autonomy gate (${r.reason}). Do not bypass. Escalate to Janet only if L-level is wrong.` }
   }
   const nudgeSent = Math.max(0, Number(nudges?.sent) || 0)
+  const draftNote = draft?.queued ? ' Queued one LinkedIn trial CTA for founder review (not published).' : ''
   if (r.sent > 0) {
     const extra = nudgeSent > 0 ? ` Also sent ${nudgeSent} trial-org nudge(s).` : ''
     return {
       success: true,
-      lesson: `Sent ${r.sent} Dex-gated 30-day trial CTAs to warm leads. Same-day follow-up is the job until a verified trial starts. Blocked=${r.blocked} skipped=${r.skipped}.${extra}`,
+      lesson: `Sent ${r.sent} Dex-gated 30-day trial CTAs to warm leads. Same-day follow-up is the job until a verified trial starts. Blocked=${r.blocked} skipped=${r.skipped}.${extra}${draftNote}`,
     }
   }
   if (nudgeSent > 0) {
     return {
       success: true,
-      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing free-trial orgs (D14/D25/D30). Convert remaining trials to paid.`,
+      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (D14/D25/D30). Convert remaining trials to paid.${draftNote}`,
     }
   }
   if (r.blocked > 0) {
     return {
       success: false,
-      lesson: `${r.blocked} warm leads blocked by Dex/MX/suppression and 0 CTAs sent. Convert only sendable replies. Do not invent a trial.`,
+      lesson: `${r.blocked} warm leads blocked by Dex/MX/suppression and 0 CTAs sent. Convert only sendable replies. Do not invent a trial.${draftNote}`,
     }
   }
   return {
     success: false,
-    lesson: 'No warm sendable leads this run. Fill the top of funnel AND wait for replies — activity without a trial is failure.',
+    lesson: 'No warm sendable leads this run. Fill the top of funnel via MSP harvest + founder-review social drafts AND wait for replies — activity without a TRUE trial is failure.' + draftNote,
   }
 }
 
@@ -58,6 +64,7 @@ export function rankWarmLeads<T extends { replied?: boolean; pipeline_stage?: st
 /**
  * Janet's conversion tool. Mason/Aria tasks and the task-runner heartbeat call this.
  * Sends go through sequences.ts so Dex SEND_PATHS / assertSendable / MX still apply.
+ * Also queues one founder-review LinkedIn draft/day (publish stays lockout-blocked).
  */
 export async function runCgoConversionShift(opts: { emails?: string[]; cap?: number } = {}): Promise<ConversionShiftResult> {
   const raw = await sendWarmTrialCtas({ emails: opts.emails, cap: opts.cap ?? 8 })
@@ -69,12 +76,19 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
   } catch {
     // Nudges are additive; a nudge failure must not hide a warm CTA that already sent.
   }
-  const { success, lesson } = conversionLesson(raw, trialNudges)
-  const result: ConversionShiftResult = { ...raw, success, lesson, trialNudges }
+  let linkedinDraft = { queued: false, reason: 'not attempted' }
+  try {
+    const { queueFounderReviewTrialDraft } = await import('./trialAcquisitionChannels')
+    linkedinDraft = await queueFounderReviewTrialDraft()
+  } catch (e: any) {
+    linkedinDraft = { queued: false, reason: String(e?.message || e).slice(0, 160) }
+  }
+  const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft)
+  const result: ConversionShiftResult = { ...raw, success, lesson, trialNudges, linkedinDraft }
   await learnFromOutcome(
     COMPANY_ID,
     'cgo_warm_trial_cta',
-    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent}`,
+    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent} linkedin_draft=${linkedinDraft.queued}`,
     lesson,
   ).catch(() => {})
   await persistOutcomeTrace({
@@ -83,7 +97,7 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     action: 'convert_warm',
     businessOutcome: raw.sent > 0 ? 'trial_cta_sent' : trialNudges.sent > 0 ? 'trial_nudge_sent' : raw.tripped ? 'breaker_tripped' : raw.blocked > 0 ? 'blocked_dex' : 'no_warm_leads',
     liveness: true,
-    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason),
+    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason) || linkedinDraft.queued,
     schemaValid: true,
   }).catch(() => {})
   return result

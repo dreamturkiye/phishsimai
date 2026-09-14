@@ -44,6 +44,24 @@ describe('osHealthHonesty — idle workforce is not all-agents-normal', () => {
     expect(h.healthy).toBe(false)
     expect(h.line).toMatch(/ISSUANCE GAP/)
   })
+
+  it('flags a true-trial drought even when the workforce completed work', () => {
+    const h = osHealthHonesty({
+      completions24h: 4, openTasks: 2, executedThisRun: 1, nothingCompletedReports: 0,
+      trueTrials: 1, payingCustomers: 0,
+    })
+    expect(h.healthy).toBe(false)
+    expect(h.line).toMatch(/TRUE-TRIAL DROUGHT/)
+    expect(h.line).toMatch(/Canary/)
+  })
+
+  it('does not treat canary inflation as healthy — 20 TRUE + 5 paying is the floor', () => {
+    const h = osHealthHonesty({
+      completions24h: 4, openTasks: 2, executedThisRun: 1, nothingCompletedReports: 0,
+      trueTrials: 20, payingCustomers: 5,
+    })
+    expect(h.healthy).toBe(true)
+  })
 })
 
 describe('applyConversionScoreCeiling', () => {

@@ -202,7 +202,7 @@ export async function osTaskRunner(req: Request, res: Response) {
     const maxTasks = Math.min(Number((req.query.max as string) || 10), 25)
     const result = await drainAgentTasks(COMPANY, { maxTasks })
     const { tickAllAgentRuntimes } = await import('./agentRuntimeTick')
-    const runtime = await tickAllAgentRuntimes({ maxAgents: 2, companyId: COMPANY }).catch((e: any) => ({
+    const runtime = await tickAllAgentRuntimes({ maxAgents: 5, companyId: COMPANY }).catch((e: any) => ({
       ticked: [] as string[], error: String(e?.message || e).slice(0, 120),
     }))
     const healthy = result.claimed === 0 || result.succeeded > 0

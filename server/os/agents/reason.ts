@@ -7,8 +7,8 @@ import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from 
 
 const COMPANY = 'phishsimai'
 
-/** Agents whose daily reason-loop may fire the Dex-gated warm trial CTA. */
-export const CONVERSION_AGENTS = new Set(['janet', 'mason', 'aria'])
+/** Agents whose daily reason-loop may fire the Dex-gated warm trial CTA / trial nudges. */
+export const CONVERSION_AGENTS = new Set(['janet', 'mason', 'aria', 'vera'])
 
 export type AgentDecision = {
     assessment: string

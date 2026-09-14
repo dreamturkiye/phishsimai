@@ -62,6 +62,14 @@ import { persistOutcomeTrace } from '../os/outcomeTrace'
 import { ensureMarcusProposalBugId } from '../os/marcusProposal'
 import { COMPANY_ID } from '../os/version'
 import { createNeonTaskStore, durableTaskFromRow, DURABLE_TASK_CONTRACT_VERSION } from '../os/neonTaskStore'
+import {
+  INTERNAL_ORG_IDS,
+  NON_CUSTOMER_ORG_NAMES,
+  NON_LEAD_ORG_ADMIN_EMAILS,
+  measureTrueOrgCounts,
+  countTrueOrgCreates,
+} from '../os/trueTrials'
+export { INTERNAL_ORG_IDS, NON_LEAD_ORG_ADMIN_EMAILS }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  KAAN AI OS  v4  —  Janet + 9 Full-Time AI Employees
@@ -474,12 +482,9 @@ function annualPriceIds(): Set<string> {
  *   • asadbek.munasar@forliion.com — one person, two throwaway test orgs ("ai worker" 6, "sending" 7),
  *                                    no trial timer. One duplicated test account, not two leads.
  * NOT excluded: info@belldesign.net ("egroth", org 9) — a genuine outside trial (exp 2026-08-08).
- * Emails are compared lower-cased.
+ * Emails are compared lower-cased. Canonical list: server/os/trueTrials.ts
+ * (2026-09-14: also excludes Signup Canary / walkthrough / Adeo / test by org name).
  */
-export const NON_LEAD_ORG_ADMIN_EMAILS: readonly string[] = [
-  'kaanari@mac.com',
-  'asadbek.munasar@forliion.com',
-]
 
 /**
  * PS-INTERNAL-FUNNEL-01 (2026-08-02, founder directive) — internal traffic is excluded from the
@@ -519,8 +524,9 @@ export const INTERNAL_RECIPIENT_DOMAINS: readonly string[] = ['phishsimai.com']
  *   6 = "ai worker"         admin @forliion.com  — test tenant
  *   7 = "sending"           admin @forliion.com  — test tenant (0 targets, 0 campaigns)
  *   8 = "PhishSim Internal" admin @mac.com       — founder org, owns all 5 lifetime results
+ *
+ * Name/canary exclusions live in server/os/trueTrials.ts (owner 2026-09-14).
  */
-export const INTERNAL_ORG_IDS: readonly number[] = [6, 7, 8]
 
 /**
  * Below this external denominator we print counts only and no percentage, at any n. 30 is the
@@ -980,12 +986,23 @@ export async function getCompanyContext(sql: any): Promise<string> {
     q('lead_orgs', sql`
       SELECT count(*) FILTER (WHERE is_excluded)::int AS free_excluded
       FROM (
-        SELECT lower((
-          SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+        SELECT (
+          COALESCE(a.admin_email = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false)
+          OR COALESCE(a.admin_email LIKE '%canary%', false)
+          OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsimai.com', false)
+          OR lower(o.name) = ANY(${NON_CUSTOMER_ORG_NAMES})
+          OR o.name ILIKE '%canary%'
+          OR o.name ILIKE '%walkthrough%'
+          OR o.id = ANY(${INTERNAL_ORG_IDS}::int[])
+        ) AS is_excluded
+        FROM organizations o
+        LEFT JOIN LATERAL (
+          SELECT lower(u.email) AS admin_email
+          FROM org_members m JOIN users u ON u.id = m."userId"
           WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
           ORDER BY m.id ASC LIMIT 1
-        )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}) AS is_excluded
-        FROM organizations o WHERE o.plan = 'free'
+        ) a ON true
+        WHERE o.plan = 'free'
       ) t`, [{ free_excluded: 0 }]),
     // PS-INTERNAL-FUNNEL-01: tripwire on the hardcoded INTERNAL_ORG_IDS list. Finds orgs whose
     // admin contact is one of OURS but whose id was never added to the list — i.e. a test org
@@ -1054,26 +1071,13 @@ export async function getCompanyContext(sql: any): Promise<string> {
     // replied" from "we cannot hear replies" — see topOfFunnelMetric.
     q('reply_drafts', sql`SELECT count(*)::int AS n FROM outreach_reply_drafts`, [{ n: 0 }]),
     // PS-TOPFUNNEL-01: genuinely NEW external signups this week, internal/test orgs excluded.
-    q('new_signups', sql`
-      SELECT count(*)::int AS n FROM organizations o
-      WHERE o."createdAt" > now() - interval '7 days'
-        AND COALESCE(lower((
-          SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-          WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-          ORDER BY m.id ASC LIMIT 1
-        )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) = false`, [{ n: 0 }]),
-    q('live_trials', sql`
-      SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
-      FROM (
-        SELECT
-          o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
-          COALESCE(lower((
-            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-            ORDER BY m.id ASC LIMIT 1
-          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
-        FROM organizations o
-      ) t`, [{ n: 0 }]),
+    q('new_signups', countTrueOrgCreates(sql, 7).then((n) => [{ n }]), [{ n: 0 }]),
+    q('live_trials', measureTrueOrgCounts(sql).then((c) => [{
+      n: c.trueLiveTrials,
+      excluded: c.excludedLiveTrials,
+      raw: c.rawLiveTrials,
+      paying: c.truePaying,
+    }]), [{ n: 0, excluded: 0, raw: 0, paying: 0 }]),
   ])
 
   const annual = annualPriceIds()
@@ -1176,6 +1180,9 @@ export async function getCompanyContext(sql: any): Promise<string> {
   const trialFacts: TrialFacts = {
     liveProductTrials: Number((liveTrials as any[])[0]?.n ?? 0),
     crmTrials: Number(of_.crm_trials ?? 0),
+    payingCustomers: (liveTrials as any[])[0]?.paying == null ? null : Number((liveTrials as any[])[0].paying),
+    excludedNonCustomerTrials: Number((liveTrials as any[])[0]?.excluded ?? 0),
+    rawLiveTrials: Number((liveTrials as any[])[0]?.raw ?? 0),
   }
   const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
   const goals = goalsForWeek(weekNum)
@@ -1201,21 +1208,9 @@ trends — do not reason about a percentage without saying the raw number it cam
 }
 
 async function loadTrialFacts(sql: any): Promise<TrialFacts> {
-  const failedLive = [{ n: 0 }]
-  const failedPaying = [{ n: null as number | null }]
-  const [live, crm, paying] = await Promise.all([
-    sql`
-      SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
-      FROM (
-        SELECT
-          o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
-          COALESCE(lower((
-            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-            ORDER BY m.id ASC LIMIT 1
-          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
-        FROM organizations o
-      ) t`.catch(() => failedLive),
+  const failedLive = { trueLiveTrials: 0, excludedLiveTrials: 0, rawLiveTrials: 0, truePaying: 0 }
+  const [counts, crm] = await Promise.all([
+    measureTrueOrgCounts(sql).catch(() => failedLive),
     sql`
       SELECT count(*) FILTER (WHERE NOT is_internal AND (trial_at IS NOT NULL OR pipeline_stage = 'trial'))::int AS n
       FROM (
@@ -1224,25 +1219,14 @@ async function loadTrialFacts(sql: any): Promise<TrialFacts> {
                 OR lower(split_part(email, '@', 2)) = ANY(${INTERNAL_RECIPIENT_DOMAINS})
                 OR pipeline_stage = 'internal_test') AS is_internal
         FROM ps_outreach_leads
-      ) t`.catch(() => failedLive),
-    sql`
-      SELECT count(*) FILTER (WHERE is_paying AND NOT is_excluded)::int AS n
-      FROM (
-        SELECT
-          o.plan IS NOT NULL AND o.plan <> 'free' AS is_paying,
-          COALESCE(lower((
-            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-            ORDER BY m.id ASC LIMIT 1
-          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
-        FROM organizations o
-      ) t`.catch(() => failedPaying),
+      ) t`.catch(() => [{ n: 0 }]),
   ])
-  const payN = (paying as any[])[0]?.n
   return {
-    liveProductTrials: Number((live as any[])[0]?.n ?? 0),
+    liveProductTrials: counts.trueLiveTrials,
     crmTrials: Number((crm as any[])[0]?.n ?? 0),
-    payingCustomers: payN == null ? null : Number(payN),
+    payingCustomers: counts.truePaying,
+    excludedNonCustomerTrials: counts.excludedLiveTrials,
+    rawLiveTrials: counts.rawLiveTrials,
   }
 }
 
@@ -1435,27 +1419,46 @@ export type WorkforceFacts = {
   openTasks: number
   executedThisRun: number
   nothingCompletedReports: number
+  trueTrials?: number | null
+  payingCustomers?: number | null
 }
 
 /**
  * OS Health honesty: zero completions while agents hold open work (or report
  * "Nothing completed") is workforce idle, not "all agents normal".
  * 0 overdue / 0 executed-this-run is still not an infra outage.
+ * Canary-inflated trial counts are not a healthy funnel.
  */
 export function osHealthHonesty(f: WorkforceFacts): { healthy: boolean; line: string } {
+  const droughtBits: string[] = []
+  if (f.trueTrials != null && f.trueTrials < 20) {
+    droughtBits.push(`${f.trueTrials} TRUE trials (need ≥20)`)
+  }
+  if (f.payingCustomers != null && f.payingCustomers < 4) {
+    droughtBits.push(`${f.payingCustomers} paying (need ≥4–5)`)
+  }
+  const drought = droughtBits.length
+    ? `TRUE-TRIAL DROUGHT: ${droughtBits.join(', ')}. Canary/test/walkthrough/Adeo are not trials.`
+    : ''
+
   if (f.completions24h === 0 && (f.openTasks > 0 || f.nothingCompletedReports > 0)) {
     return {
       healthy: false,
       line:
         `WORKFORCE IDLE: ${f.completions24h} completions in 24h, ${f.openTasks} open task(s), ` +
-        `${f.nothingCompletedReports} nothing-completed report(s). This is NOT 'all agents normal'.`,
+        `${f.nothingCompletedReports} nothing-completed report(s). This is NOT 'all agents normal'.` +
+        (drought ? ` ${drought}` : ''),
     }
   }
   if (f.completions24h === 0 && f.openTasks === 0) {
     return {
       healthy: false,
-      line: 'ISSUANCE GAP: zero completions and zero open tasks — the workforce was not given work.',
+      line: 'ISSUANCE GAP: zero completions and zero open tasks — the workforce was not given work.' +
+        (drought ? ` ${drought}` : ''),
     }
+  }
+  if (drought) {
+    return { healthy: false, line: drought }
   }
   return {
     healthy: true,
@@ -2882,11 +2885,16 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   const nothingCompleted = (standup.reports || []).filter((r: AgentReport) =>
     /nothing completed/i.test(String(r.summary || '')),
   ).length
+  const trialFactsForHealth = await loadTrialFacts(sql).catch(() => ({
+    liveProductTrials: 0, crmTrials: 0, payingCustomers: null as number | null,
+  }))
   const health = osHealthHonesty({
     completions24h: Number(completions24[0]?.n ?? 0),
     openTasks: openN,
     executedThisRun: executed,
     nothingCompletedReports: nothingCompleted,
+    trueTrials: verifiedTrialCount(trialFactsForHealth),
+    payingCustomers: trialFactsForHealth.payingCustomers ?? null,
   })
   const liveFacts = [
     `generated_at: ${new Date().toISOString()}`,
@@ -2895,6 +2903,8 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     `completions_24h: ${Number(completions24[0]?.n ?? 0)}`,
     `open_tasks: ${openN}`,
     `nothing_completed_reports: ${nothingCompleted}`,
+    `true_live_trials: ${verifiedTrialCount(trialFactsForHealth)} (raw=${trialFactsForHealth.rawLiveTrials ?? 'n/a'} excluded_canary_test=${trialFactsForHealth.excludedNonCustomerTrials ?? 'n/a'})`,
+    `paying_customers: ${trialFactsForHealth.payingCustomers ?? 'NOT CHECKED'}`,
     `tasks executed this run: ${executed} (drain of due queued work after standup; 0 executed with 0 open is not an infra outage)`,
     `os_health: ${health.line}`,
   ].join('\n')
@@ -2906,7 +2916,7 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     '- If something is not in LIVE FACTS and Kaan would need it, write "not probed" rather than guessing.',
     // PS-BRIEF-HONESTY-01 (D1): 0-executed is not an infra outage. Workforce idle IS an OS-health issue.
     "- '0 tasks executed this run' with ZERO open tasks is not an Operational Halt or outage.",
-    "- If LIVE FACTS os_health contains WORKFORCE IDLE or ISSUANCE GAP, OS health is NOT 'all agents normal'. Report it as an issue. Do not claim agents are steady while completions_24h=0 and open_tasks>0 or nothing_completed_reports>0.",
+    "- If LIVE FACTS os_health contains WORKFORCE IDLE, ISSUANCE GAP, or TRUE-TRIAL DROUGHT, OS health is NOT 'all agents normal'. Do not treat Signup Canary / test / walkthrough / Adeo as trials.",
     // PS-BRIEF-HONESTY-01 (D2): do not elevate unverified recall into decisions.
     "- Do NOT elevate UNVERIFIED RECALL (agent claims, or metrics like CAC/LTV/pipeline numbers) into 'Top 3 things' or the 'Decision' item -- those may draw ONLY from LIVE FACTS. An unverified figure may appear only as 'unverified agent memory claims: <claim>'.",
   ].join('\n')

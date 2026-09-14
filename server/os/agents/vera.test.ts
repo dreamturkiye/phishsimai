@@ -183,9 +183,13 @@ describe('the armed machinery computes the moment an account exists', () => {
 //  INTERNAL ACCOUNTS ARE NOT CUSTOMERS
 // ─────────────────────────────────────────────────────────────────────────────
 describe('our own organizations never count as accounts', () => {
-  it('excludes all three by name, at the SELECT level', () => {
-    for (const n of INTERNAL_ORG_NAMES) expect(INTERNAL_ORG_EXCLUSION_SQL).toContain(n)
+  it('excludes named internals at the SELECT level', () => {
+    for (const n of INTERNAL_ORG_NAMES) {
+      expect(INTERNAL_ORG_EXCLUSION_SQL).toContain(n.replace(/'/g, "''"))
+    }
     expect(INTERNAL_ORG_EXCLUSION_SQL).toContain('o.name <> ALL')
+    expect(INTERNAL_ORG_NAMES).toContain('Adeo')
+    expect(INTERNAL_ORG_NAMES).toContain("Signup Canary's organization")
   })
 
   it('names them explicitly rather than pattern-matching the slug', () => {

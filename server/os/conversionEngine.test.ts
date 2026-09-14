@@ -55,5 +55,6 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('trial_nudge')
     expect(seq).toMatch(/one of the lowest per-seat prices in the industry/i)
     expect(seq).toContain('$299/mo for 500')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('queueFounderReviewTrialDraft')
   })
 })

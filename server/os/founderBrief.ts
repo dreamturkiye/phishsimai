@@ -18,6 +18,7 @@ import { applyAutonomyFloor, autonomyFloorFor, getAutonomyLevel } from './autono
 import { agentsBelowL5TwoWeeks } from './agentLevels'
 import { verifiedTrialCount } from './cgoMandate'
 import { getWatcherHeartbeatAgeMinutes } from './marcusPipelineHealth'
+import { measureTrueOrgCounts } from './trueTrials'
 
 /** 7.10 O.3: kaanhq pages Mac Marcus after 30 min without heartbeat. Same threshold on the brief. */
 export const MAC_WATCHER_BRIEF_STALE_MIN = 30
@@ -46,6 +47,8 @@ export interface ProductBrief {
     repliesPending: number // interested replies awaiting founder action
     liveProductTrials?: number
     crmTrials?: number
+    rawLiveTrials?: number
+    excludedNonCustomerTrials?: number
   } | null
 }
 
@@ -125,7 +128,10 @@ export function renderFounderBrief(data: BriefData): string {
       const f = p.funnel
       out.push(`- **Funnel (7g):** ${num(f.sends7d)} gönderim → ${num(f.replies7d)} yanıt → ${num(f.trials)} deneme → ${num(f.customers)} müşteri`)
       if (f.liveProductTrials != null || f.crmTrials != null) {
-        out.push(`- **Deneme kaynağı:** canlı ürün ${num(f.liveProductTrials ?? null)} · CRM trial_at ${num(f.crmTrials ?? null)} (operating = max)`)
+        out.push(`- **Deneme kaynağı:** canlı ürün TRUE ${num(f.liveProductTrials ?? null)} · CRM trial_at ${num(f.crmTrials ?? null)} (operating = max)`)
+      }
+      if (f.rawLiveTrials != null) {
+        out.push(`- **True-trial exclusion:** raw ${num(f.rawLiveTrials)} · excluded canary/test/walkthrough/Adeo ${num(f.excludedNonCustomerTrials ?? 0)} · never treat raw as the sprint number`)
       }
       out.push(`- **Bugün:** ${num(f.sendsToday)} gönderim`)
       if (f.repliesPending > 0) {
@@ -267,10 +273,9 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         WHERE status = 'pending' AND product_id = ${companyId} ORDER BY created_at ASC
       `.catch(() => [] as any[])
       const level = await getAutonomyLevel(companyId).catch(() => autonomyFloorFor(companyId) ?? 'l5')
-      // QA-2026-09-06 + 2026-09-13: sends/replies stay on the outreach table. Trials must
-      // match Janet/Mason — max(live product entitlement, CRM trial_at). CRM-only printed
-      // 0 deneme for a week while 76 live 30-day orgs existed and the morning brief said 68.
-      const INTERNAL_ORG_ADMIN_EMAILS = ['kaanari@mac.com', 'asadbek.munasar@forliion.com']
+      // QA-2026-09-06 + 2026-09-13 + 2026-09-14: sends/replies stay on the outreach table.
+      // Trials must match Janet/Mason — max(TRUE live product entitlement, CRM trial_at).
+      // Admin-email-only exclusion printed "92 verified" while ~94 Signup Canary orgs inflated it.
       const fRows = await sql`
         SELECT
           count(*) FILTER (WHERE touch1_sent_at >= now() - interval '7 days')::int AS sends7d,
@@ -280,32 +285,24 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
           count(*) FILTER (WHERE touch1_sent_at >= date_trunc('day', now()))::int AS sends_today
         FROM ps_outreach_leads
       `.catch(() => [] as any[])
-      const liveRows = await sql`
-        SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
-        FROM (
-          SELECT
-            o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
-            COALESCE(lower((
-              SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-              WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-              ORDER BY m.id ASC LIMIT 1
-            )) = ANY(${INTERNAL_ORG_ADMIN_EMAILS}), false) AS is_excluded
-          FROM organizations o
-        ) t
-      `.catch(() => [] as any[])
+      const liveCounts = await measureTrueOrgCounts(sql).catch(() => ({
+        trueLiveTrials: 0, excludedLiveTrials: 0, rawLiveTrials: 0, truePaying: 0,
+      }))
       const pendRows = await sql`
         SELECT count(*)::int AS n FROM outreach_reply_drafts
         WHERE status = 'pending_review' AND classification = 'interested'
       `.catch(() => [] as any[])
       const fr = (fRows as any[])[0] ?? null
       const crmTrials = Number(fr?.crm_trials) || 0
-      const liveProductTrials = Number((liveRows as any[])[0]?.n) || 0
+      const liveProductTrials = liveCounts.trueLiveTrials
       const funnel = fr ? {
         sends7d: Number(fr.sends7d) || 0,
         replies7d: Number(fr.replies7d) || 0,
         trials: verifiedTrialCount({ liveProductTrials, crmTrials }),
         liveProductTrials,
         crmTrials,
+        rawLiveTrials: liveCounts.rawLiveTrials,
+        excludedNonCustomerTrials: liveCounts.excludedLiveTrials,
         customers: Number(fr.customers) || 0,
         sendsToday: Number(fr.sends_today) || 0,
         repliesPending: Number((pendRows as any[])[0]?.n) || 0,

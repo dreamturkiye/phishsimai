@@ -5,6 +5,7 @@
 import { getSql } from "./conn";
 import { sendTelegram } from "./telegram";
 import { sendTrialDay14, sendTrialDay25, sendTrialDay30, type TrialStats } from "../email/janet";
+import { isNonCustomerOrg } from "./trueTrials";
 
 const DAY_MS = 86_400_000;
 
@@ -42,7 +43,10 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
     WHERE o.plan = 'free' AND o."planExpiresAt" IS NOT NULL`) as Array<{ id: number; name: string; planExpiresAt: string; admin_email: string | null }>;
 
   const sent: Array<{ orgId: number; nudge: number }> = [];
+  let scanned = 0;
   for (const org of orgs) {
+    if (isNonCustomerOrg({ name: org.name, adminEmail: org.admin_email, orgId: org.id })) continue;
+    scanned++;
     const daysLeft = Math.ceil((new Date(org.planExpiresAt).getTime() - Date.now()) / DAY_MS);
     const nudge = nudgeFor(daysLeft);
     if (!nudge || !org.admin_email) continue;
@@ -73,7 +77,7 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
       await sql`DELETE FROM trial_nudges_sent WHERE org_id = ${org.id} AND nudge_day = ${nudge}`.catch(() => {});
     }
   }
-  return { scanned: orgs.length, sent };
+  return { scanned, sent };
 }
 
 export async function cronTrialNudges(req: any, res: any) {

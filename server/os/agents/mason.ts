@@ -39,6 +39,7 @@ import { getSequenceHealth } from '../sequences'
 import { runSalesReplyAgent, replyToTrialMetric, type SalesReplyRun } from './salesReplies'
 import { INTERNAL_EXCLUSION_SQL, type Incident, type Severity } from './rex'
 import { verifiedTrialCount } from '../cgoMandate'
+import { measureTrueOrgCounts } from '../trueTrials'
 import { runCurrencyLoop, type CurrencyRun, type TrustedSource } from './currency'
 
 const COMPANY = 'phishsimai'
@@ -178,9 +179,6 @@ export function stepLine(label: string, num: number, den: number): string {
   return `${label}: ${num}/${den} (${((num / den) * 100).toFixed(1)}%)`
 }
 
-/** Must match NON_LEAD_ORG_ADMIN_EMAILS in server/lib/kaan_os_v4.ts — Janet's live-trial exclusion. */
-const INTERNAL_ORG_ADMIN_EMAILS = ['kaanari@mac.com', 'asadbek.munasar@forliion.com']
-
 export async function measureFunnel(sql: any): Promise<Funnel> {
   try {
     const r = (await sql.query(`
@@ -198,19 +196,7 @@ export async function measureFunnel(sql: any): Promise<Funnel> {
     const customers = Number(r[0]?.customers ?? 0)
     let liveProductTrials = 0
     try {
-      const live = (await sql`
-        SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
-        FROM (
-          SELECT
-            o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
-            COALESCE(lower((
-              SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
-              WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-              ORDER BY m.id ASC LIMIT 1
-            )) = ANY(${INTERNAL_ORG_ADMIN_EMAILS}), false) AS is_excluded
-          FROM organizations o
-        ) t`) as any[]
-      liveProductTrials = Number(live[0]?.n ?? 0)
+      liveProductTrials = (await measureTrueOrgCounts(sql)).trueLiveTrials
     } catch {
       liveProductTrials = 0
     }
@@ -221,7 +207,7 @@ export async function measureFunnel(sql: any): Promise<Funnel> {
         stepLine('touched→replied', replied, contacted),
         replyToTrialMetric(trials, replied),
         stepLine('trial→paid', customers, trials),
-        `live product trials: ${liveProductTrials} | CRM trial_at: ${crmTrials} — operating count ${trials}`,
+        `TRUE live product trials: ${liveProductTrials} | CRM trial_at: ${crmTrials} — operating count ${trials} (canary/test/walkthrough/Adeo excluded)`,
       ],
     }
   } catch {

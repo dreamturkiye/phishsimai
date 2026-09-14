@@ -11,12 +11,16 @@ describe("L5.7 continuous agent runtime — original 7.10 roster", () => {
     expect(RUNTIME_AGENT_IDS).toHaveLength(10);
   });
 
-  it("has a self-mod / memory prompt for every runtime agent", () => {
+  it("has a self-mod / memory prompt for every runtime agent and encodes the ≥20 / ≥4–5 mandate", () => {
     for (const id of RUNTIME_AGENT_IDS) {
       const prompt = RUNTIME_PROMPTS[id];
       expect(prompt, `missing RUNTIME_PROMPTS.${id}`).toBeTruthy();
       expect(prompt.toLowerCase()).toMatch(/open thread|current_goal|next_action|lesson|self-mod|marcus/);
     }
+    expect(RUNTIME_PROMPTS.janet).toMatch(/≥20/);
+    expect(RUNTIME_PROMPTS.janet).toMatch(/4–5|≥4/);
+    expect(RUNTIME_PROMPTS.mason).toMatch(/Refuse idle/);
+    expect(readFileSync(resolve(import.meta.dirname, "routes.ts"), "utf8")).toMatch(/maxAgents:\s*5/);
   });
 
   it("task-runner (*/10) and hourly heartbeat both call tickAllAgentRuntimes", () => {

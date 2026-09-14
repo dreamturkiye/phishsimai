@@ -41,11 +41,19 @@ export const MIN_N = 30
  * Our own organizations. Named explicitly rather than pattern-matched: a slug rule like "contains
  * phishsim" would silently start excluding a real customer called "PhishSim Partners".
  */
-export const INTERNAL_ORG_NAMES = ['PhishSim Internal', 'ai worker', 'sending'] as const
+export const INTERNAL_ORG_NAMES = [
+  'PhishSim Internal',
+  'ai worker',
+  'sending',
+  'test',
+  'Adeo',
+  'Trial Walkthrough Co',
+  "Signup Canary's organization",
+] as const
 
-/** Applied at the SELECT level, never downstream. */
+/** Applied at the SELECT level, never downstream. Exact names only — no LIKE (would drop "PhishSim Partners"). */
 export const INTERNAL_ORG_EXCLUSION_SQL = `
-      AND o.name <> ALL (ARRAY['PhishSim Internal','ai worker','sending'])`
+      AND o.name <> ALL (ARRAY['PhishSim Internal','ai worker','sending','test','Adeo','Trial Walkthrough Co','Signup Canary''s organization'])`
 
 // ─── THE ONBOARDING PLAYBOOK (built now, triggers on first account) ──────────
 

@@ -2,6 +2,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
+import { countTrueOrgCreates } from './trueTrials'
 
 // PS-FUNNEL-HEALTH-01 — the check that would have caught "269 clicks, 0 signups".
 //
@@ -39,13 +40,11 @@ export async function checkFunnelHealth(sqlOverride?: any): Promise<FunnelHealth
             (SELECT count(*) FROM ps_outreach_leads
                      WHERE touch1_sent_at > now() - ${iv}::interval
                                  OR touch2_sent_at > now() - ${iv}::interval) AS sent,
-                                       (SELECT count(*) FROM organizations
-                                                WHERE "createdAt" > now() - ${iv}::interval) AS signups,
                                                       (SELECT count(*) FROM ps_outreach_leads
                                                                WHERE replied = true AND replied_at > now() - ${iv}::interval) AS replies
                                                                  `
     const sent = Number(rows[0]?.sent ?? 0)
-    const signups = Number(rows[0]?.signups ?? 0)
+    const signups = await countTrueOrgCreates(sql, WINDOW_DAYS)
     const replies = Number(rows[0]?.replies ?? 0)
 
   const measured = sent >= MIN_SENDS_TO_JUDGE
