@@ -3,7 +3,11 @@
 Kaan AI OS — Marcus Watcher v5 (multi-product)
 ScrollFuel + PhishSimAI: Janet queues → Marcus codes → dev → QA → prod → complete.
 
-Runs every 10 min via launchd (com.kaanos.architect).
+KAAN AI OS 7.10 §0 / O.20 / O.21: the CANONICAL daemon is
+`/Users/kaan/HQ/marcus_watcher.py` (launchd `com.kaanos.architect`), committed
+to dreamturkiye/HQ — never left only in a working tree. This file is the
+PhishSim-tree mirror of that client contract (HQ `x-os-secret` on /pending and
+/code). Edits here do not restart the Mac process.
 """
 import urllib.request
 import urllib.parse

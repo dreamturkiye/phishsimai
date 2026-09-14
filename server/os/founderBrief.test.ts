@@ -75,6 +75,16 @@ describe("renderFounderBrief — honesty (null ⇒ 'no data')", () => {
     expect(md).toContain("Open breaker trips:** 1");
     expect(md).toContain("Pending escalations:** 1");
   });
+
+  it("renders Mac Marcus liveness from watcher_heartbeat (7.10 O.3), never invents a poll", () => {
+    const missing = renderFounderBrief({ date: "2026-09-14", products: [base({ macWatcherAgeMin: null })] });
+    expect(missing).toContain("Mac Marcus (7.10 launchd):** no data");
+    expect(missing).not.toContain("last poll");
+    const stale = renderFounderBrief({ date: "2026-09-14", products: [base({ macWatcherAgeMin: 252 })] });
+    expect(stale).toContain("STALE 252m");
+    const fresh = renderFounderBrief({ date: "2026-09-14", products: [base({ macWatcherAgeMin: 1.4 })] });
+    expect(fresh).toContain("last poll 1m ago");
+  });
 });
 
 describe("composeFounderBrief — store idempotently, deliver, resilient", () => {

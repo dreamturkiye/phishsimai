@@ -21,8 +21,10 @@ function firstString(v: unknown): string {
 }
 
 /** HQ / cron / architect secrets are interchangeable for this endpoint.
- *  The Mac watcher historically 401'd because /pending accepts x-os-secret=HQ
- *  while /code only accepted query/body ARCHITECT_SECRET. */
+ *  KAAN AI OS 7.10 §0 / O.20: the live client is the Mac launchd daemon
+ *  (`/Users/kaan/HQ/marcus_watcher.py`). /pending already accepts x-os-secret=HQ
+ *  and records `watcher_heartbeat`; /code historically only accepted query/body
+ *  ARCHITECT_SECRET, so every Mac poll 401'd and Groq did 100% of codegen. */
 export function isArchitectCodeAuthorized(req: {
   query?: Record<string, unknown>
   body?: Record<string, unknown> | null

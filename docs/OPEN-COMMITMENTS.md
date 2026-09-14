@@ -39,8 +39,8 @@ Last reviewed: 2026-09-14
 |---|---|---|
 | 2026-08-24 | Merge PR #272 — hourly drip, separate follow-up budget, touches 3+4 live | DONE — merged. Ledger was stale. |
 | 2026-09-03 | Subject-line bandit on opens that can never fire | DONE — PR #311 switches the bandit to `outcomeEvent:'replied'` (plain-text doctrine; open pixel never applied). |
-| 2026-08-14 | Marcus remote `/architect/code` 401 every run | DONE — `isArchitectCodeAuthorized` accepts query/body secret, `x-os-secret`, `x-hq-secret`, and Bearer vs `ARCHITECT_SECRET` **or** `HQ_SECRET` **or** `CRON_SECRET`. Watcher now sends body + query + `x-os-secret`. |
-| 2026-08-19 | Daily Marcus health false alarm (stale ~4h overnight) | DONE — heartbeat pokes empty `marcus.yml` dispatch when quiet >2h; pages only after 6h stale or 4/5 failures. Empty dispatch falls through to the scheduled picker. |
+| 2026-08-14 | Marcus remote `/architect/code` 401 every run | DONE — PhishSim `/code` now accepts the Mac watcher's HQ `x-os-secret` (7.10 §0 / O.20). Canonical daemon remains `/Users/kaan/HQ/marcus_watcher.py`; this repo cannot restart launchd. |
+| 2026-08-19 | Daily Marcus health false alarm (stale ~4h overnight) | DONE — 7.10-aligned: GitHub Actions `marcus.yml` overnight skip is NOT Mac Marcus down. Heartbeat no longer pokes a cloud duplicate and no longer pages on stale. Pages only if 4/5 Actions runs failed (jam). Founder brief renders `watcher_heartbeat` age (O.3, 30m). |
 | 2026-08-24 | Signup canary never `{ok:true}`; org/trial missing from register JSON | DONE — register returns `{ ok:true, success:true, user, trial }`. QA smoke POSTs `/api/auth/register` `{}` and expects 400 (route live). |
 | 2026-08-19 | Signup/login DB outage returns generic 500 | DONE — `isDatabaseUnavailable` → HTTP 503. `oauth.ts` is Marcus-protected; delivered by this operator pass. |
 | 2026-08-14 | `mobileOptimizedTemplates.ts` — 439 lines, zero callers | DONE — wired: Janet D0 welcome uses `trialStartedEmail`. Cold outreach stays plaintext. |

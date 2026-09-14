@@ -26,7 +26,7 @@ if (process.env.EVENT === 'workflow_dispatch') {
     out('task', task); out('task_id', process.env.IN_ID || '');
     process.exit(0);
   }
-  console.log('Empty dispatch — running the scheduled picker (heartbeat poke).');
+  console.log('Empty dispatch — running the scheduled picker.');
 }
 
 // scheduled path

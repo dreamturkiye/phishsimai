@@ -17,6 +17,10 @@ import { sendTelegram } from './telegram'
 import { applyAutonomyFloor, autonomyFloorFor, getAutonomyLevel } from './autonomyGate'
 import { agentsBelowL5TwoWeeks } from './agentLevels'
 import { verifiedTrialCount } from './cgoMandate'
+import { getWatcherHeartbeatAgeMinutes } from './marcusPipelineHealth'
+
+/** 7.10 O.3: kaanhq pages Mac Marcus after 30 min without heartbeat. Same threshold on the brief. */
+export const MAC_WATCHER_BRIEF_STALE_MIN = 30
 
 export interface ProductBrief {
   productId: string
@@ -29,6 +33,8 @@ export interface ProductBrief {
   openBreakers: Array<{ fingerprint: string; state: string; tripReason: string | null }>
   pendingEscalations: Array<{ id: number; category: string; ageMs: number }>
   agentsBelowL5: string[] // O.17: agents below L5 for 2 consecutive weeks
+  // 7.10 O.3: Mac launchd Marcus last GET /architect/pending. null = never pinged.
+  macWatcherAgeMin?: number | null
   // QA-2026-09-06: the true funnel. MRR/tasks read "no data" nightly (snapshot lands after
   // the brief runs) and $0 MRR taught the founder to ignore the brief. This is what moves.
   funnel?: {
@@ -130,6 +136,15 @@ export function renderFounderBrief(data: BriefData): string {
     out.push(`- **Tasks:** ${num(p.tasksCompleted)} shipped / ${num(p.tasksFailed)} failed`)
     out.push(`- **Agent score:** ${score(p.agentScoreAvg)}`)
     out.push(`- **Autonomy level:** ${applyAutonomyFloor(p.productId, p.autonomyLevel) ?? p.autonomyLevel ?? autonomyFloorFor(p.productId) ?? 'l5'}`)
+    if (p.macWatcherAgeMin !== undefined) {
+      if (p.macWatcherAgeMin == null) {
+        out.push(`- **Mac Marcus (7.10 launchd):** no data (never pinged \`watcher_heartbeat\`)`)
+      } else if (p.macWatcherAgeMin > MAC_WATCHER_BRIEF_STALE_MIN) {
+        out.push(`- **Mac Marcus (7.10 launchd):** STALE ${Math.round(p.macWatcherAgeMin)}m (O.3 threshold ${MAC_WATCHER_BRIEF_STALE_MIN}m)`)
+      } else {
+        out.push(`- **Mac Marcus (7.10 launchd):** last poll ${Math.round(p.macWatcherAgeMin)}m ago`)
+      }
+    }
     if (p.openBreakers.length === 0) {
       out.push(`- **Open breaker trips:** none`)
     } else {
@@ -316,6 +331,7 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
             })),
             agentsBelowL5: await agentsBelowL5TwoWeeks(sql, companyId).catch(() => []),
             funnel,
+            macWatcherAgeMin: await getWatcherHeartbeatAgeMinutes(companyId).catch(() => null),
           },
         ],
       }
