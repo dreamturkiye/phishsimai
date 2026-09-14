@@ -263,6 +263,16 @@ export async function runQASmoke(triggerRef = 'manual', baseUrl?: string) {
       const d = await r.json()
       if (!d.total || d.total < 9) throw new Error('Expected 9 agents, got ' + d.total)
     }},
+    { name: 'Signup route live (400 without credentials)', test: async () => {
+      const r = await fetch(`${root}/api/auth/register`, {
+        method: 'POST',
+        headers: { ...bypassHeaders, 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      if (r.status !== 400) throw new Error('Expected 400 from register, got ' + r.status)
+      const d = await r.json().catch(() => ({}))
+      if (!d.error) throw new Error('Expected error body from register')
+    }},
   ]
   const results: any[] = []
   let passed = 0, failed = 0

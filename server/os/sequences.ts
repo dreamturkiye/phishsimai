@@ -370,6 +370,11 @@ export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
  *   3. the per-lead MX gate, identical to touch-1 — a domain with no MX bounces 100%, and our
  *      bounce rate (4.3%) is already above the founder's 2% line.
  *
+ * Touch-2 is intentionally NOT in the generic follow-up loop (`runSequence` /
+ * `runFullSequence`). That loop owns touches 3+; this dedicated batch owns
+ * touch 2. Folding them together would double-send. Do not "consolidate" until
+ * the founder evaluates batch 1 (`TOUCH2_SCALE_KEY`).
+ *
  * The bounce breaker is checked BEFORE the batch, not per-send: sending 150 into a known-bad
  * deliverability state is the failure this exists to prevent.
  *

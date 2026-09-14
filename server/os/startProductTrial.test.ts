@@ -39,6 +39,7 @@ describe('register actually starts the 30-day trial', () => {
     expect(helper).toContain('markLeadTrial')
     expect(helper).toContain('sendWelcomeEmail')
     expect(readFileSync('server/db.ts', 'utf8')).toContain('planExpiresAt')
+    expect(oauth).toContain('registerResponseBody')
   })
 
   it('orgs.create also stamps CRM trial_at so /setup is not a silent miss', () => {

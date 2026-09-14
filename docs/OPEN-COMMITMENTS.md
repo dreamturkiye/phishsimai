@@ -14,7 +14,7 @@ deferred goes HERE, in the repo, with a date and an owner — or it does not cou
 - Age is the point. An item sitting here for weeks is either not real or is being avoided; both
   are useful signals.
 
-Last reviewed: 2026-08-24
+Last reviewed: 2026-09-14
 
 ---
 
@@ -22,23 +22,29 @@ Last reviewed: 2026-08-24
 
 | Since | Item | Note |
 |---|---|---|
-| 2026-08-24 | **Merge PR #272** — hourly drip, separate follow-up budget, touches 3+4 live | Built and pushed; merging starts real sends within the hour |
 | 2026-08-14 | **Escalation #40** — Aria's replacement email variants | Recommendation: REJECT. Live copy already leads with price, 10-min setup, set-and-forget, and its prices are Stripe-verified |
 | 2026-08-24 | **Posture fairness rule** — should a day spoiled by an OPERATOR action count against the product's clean-day streak? | The 2026-08-19 breakers came from an operator test task targeting a protected path. Needs a decision before it is coded |
 | 2026-08-24 | **Raise RAMP_MAX 50 → 100/day?** | `PS-RAMP-HOLD-01` requires evidence that enrichment keeps pace for ~3 consecutive days. Not measured yet |
-| 2026-09-03 | **Subject-line bandit optimizes on opens, but opens can never fire** — switch to `outcomeEvent:'replied'`, or retire the open-pixel path | `touch1Html`/`touch2Html` always return `''` (plain-text doctrine), so `withOpenPixel` is never applied and `computeAdaptiveSplit('touch1_subject')` has returned the 0.5 fallback since it shipped. See `docs/COLD_EMAIL_OUTREACH_STRATEGY_INVESTIGATION.md` Finding 1 |
-| 2026-09-08 | **`server/outreach/*` is a second, fully-built lead-gen/outreach stack (Apollo discovery + LinkedIn-via-Telegram queue) that has never run** — wire it up or delete it | None of its three routes is in any `vercel.json` cron; its table (`outreach_leads`, created via MySQL-syntax DDL) is a different, unverifiable table from the sanctioned `ps_outreach_leads`. See `docs/ALTERNATIVE_CHANNELS_INVESTIGATION.md` Finding 1 |
+| 2026-09-08 | **`server/outreach/*` is a second, fully-built lead-gen/outreach stack (Apollo discovery + LinkedIn-via-Telegram queue) that has never run** — wire it up or delete it | None of its three routes is in any `vercel.json` cron; its table (`outreach_leads`, created via MySQL-syntax DDL) is a different, unverifiable table from the sanctioned `ps_outreach_leads`. See `docs/ALTERNATIVE_CHANNELS_INVESTIGATION.md` Finding 1. Do **not** cron it on without a founder decision. |
 
 ## Operator work (no decision needed — just not done yet)
 
 | Since | Item | Note |
 |---|---|---|
-| 2026-08-19 | **Escalation auto-resolve has never run** (`auto_stale = 0`) | Code is in main and correct; `routes.ts` swallows triage errors in a `.catch`, so the failure is invisible. Root cause NOT found |
-| 2026-08-14 | **Marcus remote `/architect/code` returns 401 on every run** | The Grok fallback does 100% of codegen. A permanently failing primary path masks the next problem |
-| 2026-08-24 | **Signup canary: confirm live + extend to org creation** | Deployed but never observed returning `{ok:true}`. Registration is covered; the org/trial step is NOT |
-| 2026-08-19 | **Signup 503 honesty fix** | A DB outage returns a generic 500 "Registration failed". Must be delivered by hand: `server/_core/oauth.ts` is a protected path and Marcus is correctly refused |
-| 2026-08-14 | **`server/email/mobileOptimizedTemplates.ts` — 439 lines, zero callers** | Shipped to production as dead code. Wire it or delete it |
-| 2026-08-24 | **Follow-up ladder has no touch 2 in the generic loop** | Correct today (touch 2 has its own batch path), but the split is a trap for the next person. Consolidate once touch-2 batch 1 is evaluated |
+| 2026-08-24 | **Follow-up ladder has no touch 2 in the generic loop** | Correct today: touch 2 has its own batch path (`runTouch2Batch`). The split is intentional (a shared loop would double-send). Do not consolidate until founder evaluates touch-2 batch 1 (`TOUCH2_SCALE_KEY`). Comment pinned on `runTouch2Batch` 2026-09-14. |
+
+## Closed this review (2026-09-14)
+
+| Since | Item | Closed how |
+|---|---|---|
+| 2026-08-24 | Merge PR #272 — hourly drip, separate follow-up budget, touches 3+4 live | DONE — merged. Ledger was stale. |
+| 2026-09-03 | Subject-line bandit on opens that can never fire | DONE — PR #311 switches the bandit to `outcomeEvent:'replied'` (plain-text doctrine; open pixel never applied). |
+| 2026-08-14 | Marcus remote `/architect/code` 401 every run | DONE — `isArchitectCodeAuthorized` accepts query/body secret, `x-os-secret`, `x-hq-secret`, and Bearer vs `ARCHITECT_SECRET` **or** `HQ_SECRET` **or** `CRON_SECRET`. Watcher now sends body + query + `x-os-secret`. |
+| 2026-08-19 | Daily Marcus health false alarm (stale ~4h overnight) | DONE — heartbeat pokes empty `marcus.yml` dispatch when quiet >2h; pages only after 6h stale or 4/5 failures. Empty dispatch falls through to the scheduled picker. |
+| 2026-08-24 | Signup canary never `{ok:true}`; org/trial missing from register JSON | DONE — register returns `{ ok:true, success:true, user, trial }`. QA smoke POSTs `/api/auth/register` `{}` and expects 400 (route live). |
+| 2026-08-19 | Signup/login DB outage returns generic 500 | DONE — `isDatabaseUnavailable` → HTTP 503. `oauth.ts` is Marcus-protected; delivered by this operator pass. |
+| 2026-08-14 | `mobileOptimizedTemplates.ts` — 439 lines, zero callers | DONE — wired: Janet D0 welcome uses `trialStartedEmail`. Cold outreach stays plaintext. |
+| 2026-08-19 | Escalation auto-resolve never visible (`cronFounderBrief` swallowed triage) | DONE — triage result or error is included in the founder-brief JSON. Failures are no longer silent. |
 
 ---
 

@@ -344,10 +344,18 @@ def run_groq_for_diff(product: Product, task_description: str, task_id: str = No
         if repo_files:
             payload['repo_files'] = repo_files
             print(f'[{product.name}] Pre-injected {len(repo_files)} repo file(s): {list(repo_files.keys())}')
-        url = f"{product.base_url}{product.code_path}?secret={product.code_secret}"  # /code uses ARCHITECT_SECRET (okSecret)
+        payload['secret'] = product.code_secret or product.secret
+        url = (
+            f"{product.base_url}{product.code_path}"
+            f"?secret={urllib.parse.quote(product.code_secret or product.secret or '', safe='')}"
+        )
         req = urllib.request.Request(
             url, data=json.dumps(payload).encode(),
-            headers={'Content-Type': 'application/json'}, method='POST',
+            headers={
+                'Content-Type': 'application/json',
+                'x-os-secret': product.secret or product.code_secret,
+            },
+            method='POST',
         )
         with urllib.request.urlopen(req, timeout=180) as r:
             data = json.loads(r.read().decode('utf-8'))

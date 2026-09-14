@@ -14,6 +14,7 @@ const APP_URL = process.env.VITE_APP_URL ?? "https://phishsimai.com";
  * captured rather than discarded. Returns whether it was accepted, for callers that care.
  */
 import { BRAND_LOGO_FOOTER } from './brandFooter'
+import { trialStartedEmail } from './mobileOptimizedTemplates'
 
 async function sendLifecycle(tag: string, to: string, subject: string, html: string): Promise<boolean> {
   try {
@@ -36,8 +37,8 @@ async function sendLifecycle(tag: string, to: string, subject: string, html: str
 }
 
 export async function sendWelcomeEmail(to: string, orgName: string): Promise<void> {
-  const html = '<div style="font-family:-apple-system,sans-serif;max-width:600px;margin:0 auto;background:#0f172a;color:#e2e8f0;border-radius:12px;overflow:hidden"><div style="background:#6366f1;padding:28px 32px"><h1 style="margin:0;font-size:22px;color:#fff;font-weight:700">Welcome to PhishSim AI</h1><p style="margin:8px 0 0;color:#c7d2fe;font-size:14px">Your 30-day free trial is active — full access, no card required</p></div><div style="padding:32px"><p style="color:#e2e8f0;font-size:15px;line-height:1.7">Hi ' + orgName + ' team, you are all set. Run your first campaign in 10 minutes: (1) Add employees under Targets, (2) Pick a template or generate one with AI, (3) Click Launch.</p><a href="' + APP_URL + '/dashboard" style="display:inline-block;background:#6366f1;color:#fff;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px">Launch Your First Campaign</a><p style="color:#64748b;font-size:13px;margin-top:28px">Janet, PhishSim AI Customer Success</p></div></div>';
-  await sendLifecycle('D0', to, 'Your first phishing campaign in 10 minutes', html);
+  const mail = trialStartedEmail({ orgName, dashboardUrl: `${APP_URL}/dashboard` })
+  await sendLifecycle('D0', to, mail.subject, mail.html);
 }
 
 export async function sendInsurancePackEmail(to: string, orgName: string): Promise<void> {

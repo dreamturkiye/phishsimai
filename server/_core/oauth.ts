@@ -7,6 +7,7 @@ import { COOKIE_NAME } from "@shared/const";
 import * as db from "../db";
 import { sdk } from "./sdk";
 import { startProductTrial } from "../os/startProductTrial";
+import { isDatabaseUnavailable, registerResponseBody } from "./registerResult";
 
 // Simple password hashing using Node.js built-in crypto (no bcrypt dependency)
 import { createHash, randomBytes, timingSafeEqual } from "crypto";
@@ -70,20 +71,24 @@ export function registerOAuthRoutes(app: any) {
       // A register that only creates a login dumped prospects onto /setup after they
       // already believed they had started a trial. Best-effort: never fail the account
       // if org creation misses — /setup remains the fallback.
-      await startProductTrial({
+      const trial = await startProductTrial({
         userId: user.id,
         email: String(email),
         name: typeof name === "string" ? name : user.name ?? undefined,
         company: typeof company === "string" ? company : undefined,
       }).catch((err) => {
         console.error("[Auth] startProductTrial failed (account created, /setup remains):", err);
+        return null;
       });
       const token = await sdk.createSessionToken(openId, { name: user.name ?? "" });
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, token, cookieOptions);
-      return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
+      return res.json(registerResponseBody(user, trial));
     } catch (err: any) {
       console.error("[Auth] Register error:", err);
+      if (isDatabaseUnavailable(err)) {
+        return res.status(503).json({ error: "Registration unavailable — database unreachable" });
+      }
       return res.status(500).json({ error: "Registration failed" });
     }
   });
@@ -110,6 +115,9 @@ export function registerOAuthRoutes(app: any) {
       return res.json({ success: true, user: { id: user.id, email: user.email, name: user.name } });
     } catch (err: any) {
       console.error("[Auth] Login error:", err);
+      if (isDatabaseUnavailable(err)) {
+        return res.status(503).json({ error: "Login unavailable — database unreachable" });
+      }
       return res.status(500).json({ error: "Login failed" });
     }
   });

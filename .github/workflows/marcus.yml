@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: "Task for Marcus"
-        required: true
+        description: "Task for Marcus (omit to pick the next queued task)"
+        required: false
       task_id:
         description: "agent_tasks id (optional)"
         required: false

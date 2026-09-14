@@ -21,10 +21,12 @@ const MAX_ATTEMPTS = 2, STALE_MIN = 90;
 
 if (process.env.EVENT === 'workflow_dispatch') {
   const task = (process.env.IN_TASK || '').trim();
-  if (!task) nothing('Manual run with empty task.');
-  console.log('Manual task provided.');
-  out('task', task); out('task_id', process.env.IN_ID || '');
-  process.exit(0);
+  if (task) {
+    console.log('Manual task provided.');
+    out('task', task); out('task_id', process.env.IN_ID || '');
+    process.exit(0);
+  }
+  console.log('Empty dispatch — running the scheduled picker (heartbeat poke).');
 }
 
 // scheduled path

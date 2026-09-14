@@ -14,9 +14,34 @@ import { sendTelegram } from './telegram'
 
 const FILE_BLOCK_RE = /FILE:\s*(.+?)\n---\n([\s\S]*?)\n---END---/g
 
-function okSecret(req: Request): boolean {
-  const s = (req.query.secret as string) || req.body?.secret
-  return !!ARCHITECT_SECRET && s === ARCHITECT_SECRET
+function firstString(v: unknown): string {
+  if (typeof v === 'string' && v.length) return v
+  if (Array.isArray(v) && typeof v[0] === 'string') return v[0]
+  return ''
+}
+
+/** HQ / cron / architect secrets are interchangeable for this endpoint.
+ *  The Mac watcher historically 401'd because /pending accepts x-os-secret=HQ
+ *  while /code only accepted query/body ARCHITECT_SECRET. */
+export function isArchitectCodeAuthorized(req: {
+  query?: Record<string, unknown>
+  body?: Record<string, unknown> | null
+  headers?: Record<string, unknown>
+}): boolean {
+  const headers = req.headers || {}
+  const auth = firstString(headers.authorization || headers.Authorization)
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : ''
+  const presented = [
+    firstString(req.query?.secret),
+    firstString(req.body?.secret),
+    firstString(headers['x-os-secret']),
+    firstString(headers['x-hq-secret']),
+    bearer,
+  ].filter(Boolean)
+  const accepted = [ARCHITECT_SECRET, process.env.HQ_SECRET, process.env.CRON_SECRET].filter(
+    (s): s is string => typeof s === 'string' && s.length > 0,
+  )
+  return presented.some((p) => accepted.includes(p))
 }
 
 export function parseFileBlocks(output: string): Record<string, string> {
@@ -156,7 +181,7 @@ async function callWithFallback(prompt: string, strict = false): Promise<{ outpu
 }
 
 export async function architectCode(req: Request, res: Response) {
-  if (!okSecret(req)) return res.status(401).json({ error: 'Unauthorized' })
+  if (!isArchitectCodeAuthorized(req)) return res.status(401).json({ error: 'Unauthorized' })
 
   const body = req.body || {}
   const task = String(body.task || '')

@@ -90,6 +90,7 @@ export function readOpenCommitments(): { since: string; item: string; owner: 'fo
       const line = raw.trim()
       if (/^##\s+Waiting on the founder/i.test(line)) { owner = 'founder'; continue }
       if (/^##\s+Operator work/i.test(line)) { owner = 'operator'; continue }
+      if (/^##\s+/.test(line)) { owner = null; continue }
       if (!owner || !line.startsWith('|')) continue
       const cells = line.split('|').map((c) => c.trim()).filter((c) => c.length)
       if (cells.length < 2) continue

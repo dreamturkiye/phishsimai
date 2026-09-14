@@ -312,6 +312,29 @@ export function welcomeEmail(opts: {
   };
 }
 
+export function trialStartedEmail(opts: {
+  orgName: string;
+  dashboardUrl: string;
+  brand?: EmailBrand;
+}): { subject: string; html: string; text: string } {
+  const input: EmailTemplateInput = {
+    preheader: "Your 30-day free trial is active — full access, no card.",
+    title: "Welcome to PhishSim AI",
+    greeting: `Hi ${opts.orgName} team,`,
+    paragraphs: [
+      "You are all set. Your 30-day free trial is active — full access, no card required.",
+      "Run your first campaign in about 10 minutes: (1) Add employees under Targets, (2) Pick a template or generate one with AI, (3) Click Launch.",
+    ],
+    cta: { label: "Launch Your First Campaign", href: opts.dashboardUrl },
+    brand: opts.brand,
+  };
+  return {
+    subject: "Your first phishing campaign in 10 minutes",
+    html: buildMobileOptimizedEmail(input),
+    text: buildPlainTextEmail(input),
+  };
+}
+
 export function passwordResetEmail(opts: {
   userName: string;
   resetUrl: string;

@@ -171,9 +171,15 @@ export async function cronFounderBrief(req: Request, res: Response) {
     // resolved what she safely can and re-alerted (with growing urgency) what she cannot, and the
     // brief's "pending escalations" line reflects the TRUE unresolved count -- not a passive list
     // nothing ever acts on.
-    await triageEscalations(COMPANY).catch((e) => console.error('[cronFounderBrief] triage failed:', e?.message))
+    let triage: { reviewed: number; resolved: number; escalatedToFounder: number } | { error: string }
+    try {
+      triage = await triageEscalations(COMPANY)
+    } catch (e: any) {
+      console.error('[cronFounderBrief] triage failed:', e?.message)
+      triage = { error: formatOsError(e) }
+    }
     const result = await composeFounderBrief(makeSqlBriefDeps(COMPANY), date)
-    res.json({ ok: true, ...result })
+    res.json({ ok: true, triage, ...result })
   } catch (e: any) {
     res.json({ ok: false, error: formatOsError(e) })
   }
