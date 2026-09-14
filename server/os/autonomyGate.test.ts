@@ -12,11 +12,40 @@ import {
   isAutonomyDenied,
   HARD_STOPS,
   MIN_LEVEL,
+  resolveReadableLevel,
+  autonomyFloorFor,
   type AutonomyLevel,
   type DeniedAudit,
 } from "./autonomyGate";
 
 const LEVELS: AutonomyLevel[] = ["manual", "l2", "l3", "l4", "l5"];
+
+describe("resolveReadableLevel — floor at read time (PS-L57-ENFORCE-01)", () => {
+  it("PhishSim floor is l5", () => {
+    expect(autonomyFloorFor("phishsimai")).toBe("l5");
+  });
+
+  it("a missing row stays missing (fail closed to manual at decideAutonomy)", () => {
+    expect(resolveReadableLevel("phishsimai", null, false)).toBeNull();
+    expect(resolveReadableLevel("phishsimai", undefined, false)).toBeUndefined();
+  });
+
+  it("holds the floor when stored is below it and the kill flag is off", () => {
+    expect(resolveReadableLevel("phishsimai", "manual", false)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", "l2", false)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", "l4", false)).toBe("l5");
+  });
+
+  it("leaves a stored emergency stop alone when the kill flag is on or unreadable", () => {
+    expect(resolveReadableLevel("phishsimai", "manual", true)).toBe("manual");
+    expect(resolveReadableLevel("phishsimai", "l3", null)).toBe("l3");
+  });
+
+  it("never lowers a stored level that is already at or above the floor", () => {
+    expect(resolveReadableLevel("phishsimai", "l5", false)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", "l5", true)).toBe("l5");
+  });
+});
 
 describe("decideAutonomy (pure decision)", () => {
   it("manual permits nothing autonomous — both writer actions deny", () => {

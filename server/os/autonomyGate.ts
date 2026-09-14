@@ -170,6 +170,34 @@ export function applyAutonomyFloor(companyId: string, level: string | null | und
   return current
 }
 
+/**
+ * Gate-time level: a stored value below the founder floor is an accident unless a kill flag
+ * is active (or unreadable — fail closed, do not override an emergency stop we cannot see).
+ * A missing row stays missing (null → decideAutonomy treats it as manual).
+ */
+export function resolveReadableLevel(
+  companyId: string,
+  stored: string | null | undefined,
+  killFlagActive: boolean | null,
+): string | null | undefined {
+  if (stored == null) return stored
+  const floor = autonomyFloorFor(companyId)
+  if (!floor || !(LEVEL_ORDER as readonly string[]).includes(stored)) return stored
+  if (levelRank(stored as AutonomyLevel) >= levelRank(floor)) return stored
+  if (killFlagActive !== false) return stored
+  return floor
+}
+
+async function killFlagActive(companyId: string): Promise<boolean | null> {
+  try {
+    const sql = getSql()
+    const rows = (await sql`SELECT 1 FROM os_kill_flags WHERE company_id=${companyId} AND active=true LIMIT 1`) as Array<unknown>
+    return rows.length > 0
+  } catch {
+    return null
+  }
+}
+
 // Real level reader: os_autonomy_state.level for the company, never below the product's floor.
 export const getAutonomyLevel: GetLevel = async (companyId: string) => {
   try {
@@ -178,17 +206,20 @@ export const getAutonomyLevel: GetLevel = async (companyId: string) => {
       SELECT level FROM os_autonomy_state WHERE company_id=${companyId} LIMIT 1
     `) as Array<{ level?: string }>
     const stored = rows[0]?.level ?? null
-    // A level that is genuinely STORED is respected as written, including 'manual' — that is the
-    // founder's emergency stop and code must never override it. What the floor protects against is
-    // arriving at a low level by ACCIDENT: an unreadable row (below) or an automatic demotion (the
-    // ladder in autonomyPromotion). If a stored level sits below the floor, say so loudly so the
-    // self-heal in the promotion cycle can restore it, but do not silently pretend it is higher.
-    const floor = autonomyFloorFor(companyId)
-    if (floor && stored && levelRank(stored as AutonomyLevel) < levelRank(floor)) {
-      console.warn(`[autonomyGate] ${companyId}: stored level '${stored}' is BELOW the founder-set floor '${floor}' — ` +
-        'either a deliberate stop or an accidental demotion; the promotion cycle will restore it if no kill flag is set')
+    // A stored 'manual' WITH an active kill flag is the founder's emergency stop — never override.
+    // A stored level below the floor WITHOUT a kill flag is the accidental-demotion case
+    // (breaker cascade + Neon 402). Holding the floor at READ time stops Janet's whole morning
+    // from running denied until the 06:40 restore cron. The promotion cycle still persists it.
+    const killed = stored ? await killFlagActive(companyId) : false
+    const effective = resolveReadableLevel(companyId, stored, killed)
+    if (effective !== stored) {
+      console.warn(`[autonomyGate] ${companyId}: stored level '${stored}' is BELOW the founder-set floor ` +
+        `'${autonomyFloorFor(companyId)}' with no kill flag — holding floor ${effective} for gate decisions`)
+    } else if (stored && autonomyFloorFor(companyId) && levelRank(stored as AutonomyLevel) < levelRank(autonomyFloorFor(companyId)!)) {
+      console.warn(`[autonomyGate] ${companyId}: stored level '${stored}' is BELOW the founder-set floor ` +
+        `'${autonomyFloorFor(companyId)}' — kill flag ${killed === null ? 'UNREADABLE' : 'ACTIVE'}; leaving stored value`)
     }
-    return stored
+    return effective
   } catch (e) {
     // Unreadable is NOT manual. Say so loudly and hold the floor; products without a floor keep
     // the original fail-closed behaviour.

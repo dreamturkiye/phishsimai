@@ -109,6 +109,13 @@ export async function cronJanet(req: Request, res: Response) {
 export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoDeps) {
   if (!okCronOrHq(req, res)) return
   const started = Date.now()
+  // PS-L57-ENFORCE-01: Janet's day starts at the owner-ruled L5 / L5.7, not at whatever
+  // accidental demotion is sitting in os_autonomy_state. Kill flag still wins.
+  const { ensureOwnerL57Autonomy } = await import('./ownerRuling')
+  const ownerRuling = await ensureOwnerL57Autonomy(getSql(), declarePosture, COMPANY).catch((e: any) => ({
+    ok: false,
+    reason: String(e?.message || e).slice(0, 160),
+  }))
   const summary = await buildJanetCgoSummary(COMPANY, deps).catch((e: any) => ({
     ok: false, ran: [] as string[], orchestration: null, l5: null, gateDeniedCount: 0,
     errors: [`fatal: ${String(e?.message).slice(0, 200)}`],
@@ -119,7 +126,7 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
     Date.now() - started,
     summary.ok === false ? String((summary as { errors?: string[] }).errors?.[0] || 'cgo failed') : undefined,
   ).catch(() => {})
-  res.json(summary)
+  res.json({ ...summary, ownerRuling })
 }
 
 // Daily metrics_daily snapshot (passive infra). Secret-gated like the other os

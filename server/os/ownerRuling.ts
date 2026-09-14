@@ -151,3 +151,16 @@ export async function applyOwnerAutonomyRuling(
       : walked.reason,
   }
 }
+
+/**
+ * Persist the standing owner ruling (enforcement L5 + posture L5.7).
+ * Idempotent. Kill flag still wins. Intended for the daily autonomy-promote
+ * and Janet CGO crons so L5.7 is the live state, not a one-shot HQ action.
+ */
+export async function ensureOwnerL57Autonomy(
+  sql: SqlLike,
+  declarePosture: (sql: SqlLike, productId: string, to: 'l5_7', declaredBy: string, opts: { force: boolean }) => Promise<{ ok: boolean; reason: string }>,
+  companyId = 'phishsimai',
+): Promise<OwnerRulingResult> {
+  return applyOwnerAutonomyRuling(sql, companyId, declarePosture, { declaredBy: OWNER_RULING.declaredBy })
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { OWNER_RULING, applyOwnerAutonomyRuling, rungsFromTo } from './ownerRuling'
+import { OWNER_RULING, applyOwnerAutonomyRuling, ensureOwnerL57Autonomy, rungsFromTo } from './ownerRuling'
+import { readFileSync } from 'node:fs'
 
 describe('owner autonomy ruling', () => {
   it('walks one rung at a time from manual to l5 and never skips', () => {
@@ -61,5 +62,14 @@ describe('owner autonomy ruling', () => {
     expect(out.ok).toBe(false)
     expect(out.killFlag).toBe(true)
     expect(out.reason).toMatch(/kill_flag_active/)
+  })
+
+  it('ensureOwnerL57Autonomy is the same ruling the daily crons persist', async () => {
+    expect(ensureOwnerL57Autonomy).toBeTypeOf('function')
+    const promo = readFileSync('server/os/autonomyPromotion.ts', 'utf8')
+    const routes = readFileSync('server/os/routes.ts', 'utf8')
+    expect(promo).toContain('ensureOwnerL57Autonomy')
+    expect(routes).toContain('ensureOwnerL57Autonomy')
+    expect(promo).toContain('ownerRuling')
   })
 })

@@ -17,10 +17,10 @@
 // distrust, and the two surfaces then disagreed (streak 5 vs 0) with no way to tell which ladder a
 // number belonged to. Every clean-day read below now goes through the same v2 + baseline filter,
 // and every streak written is stamped with the version that produced it.
-import { walkEnforcementRungs } from './ownerRuling'
+import { walkEnforcementRungs, ensureOwnerL57Autonomy } from './ownerRuling'
 import { getSql } from './conn'
 import { autonomyFloorFor } from './autonomyGate'
-import { CRITERIA_VERSION, getPostureState, currentStreak } from './posture'
+import { CRITERIA_VERSION, getPostureState, currentStreak, declarePosture } from './posture'
 import { COMPANY_ID } from './version'
 import { sendTelegram } from './telegram'
 
@@ -452,6 +452,14 @@ export async function cronAutonomyPromotion(req: any, res: any) {
   if (!okCron && !okHq) return res.status(401).json({ error: 'Unauthorized' })
   try {
     const sql = getSql()
+    // PS-L57-ENFORCE-01: the 2026-09-10 owner ruling is the standing instruction, not a
+    // one-shot HQ action. Re-apply before the earned ladder so Janet's morning is not
+    // gate-denied because someone forgot to hit ?action=owner-ruling&by=kaan. Kill flag
+    // still wins inside ensureOwnerL57Autonomy.
+    const ownerRuling = await ensureOwnerL57Autonomy(sql, declarePosture, COMPANY_ID).catch((e: any) => ({
+      ok: false,
+      reason: String(e?.message || e).slice(0, 160),
+    }))
     const result = await runAutonomyPromotion(COMPANY_ID, sql)
     const cd = await latestCleanDay(sql, COMPANY_ID)
     const dayState = cd.clean === null ? 'not yet computed' : cd.clean ? 'clean ✅' : `dirty ⚠️ (${cd.violations.slice(0, 2).join('; ') || 'see clean-day log'})`
@@ -470,7 +478,7 @@ export async function cronAutonomyPromotion(req: any, res: any) {
       `Today: ${move}\n` +
       monitor.join('\n'),
     ).catch(() => {})
-    return res.json({ ok: true, ...result, latestCleanDay: cd, monitor })
+    return res.json({ ok: true, ...result, ownerRuling, latestCleanDay: cd, monitor })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) })
   }

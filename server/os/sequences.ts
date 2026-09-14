@@ -602,7 +602,9 @@ export async function runFullSequence() {
     // PS-BANDIT-01: adaptive split, computed ONCE per batch (one query). Weights allocation toward
     // the higher open-rate subject once there is enough data; 0.5 (current 50/50) until then or if
     // the experiment is off. Fail-safe inside computeAdaptiveSplit.
-    const testWeight = (exp.active && exp.test) ? await computeAdaptiveSplit('touch1_subject') : 0
+    // Opens can never fire on plaintext touch-1/2 (PS-COPY-PLAINTEXT-01 + no HTML pixel).
+    // Optimize on replies — the path recordConversion(..., 'replied') already writes.
+    const testWeight = (exp.active && exp.test) ? await computeAdaptiveSplit('touch1_subject', 200, 0.2, 'replied') : 0
     // PS-DEX-GATE-01: `AND NOT EXISTS (suppression)` added here. Touch-1 filtered on `unsubscribed`
     // alone and never consulted ps_outreach_suppression — a provider-suppressed lead whose flag was
     // unset (Rex found 8 on 2026-08-03) was fully eligible for a first touch.

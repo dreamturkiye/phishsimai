@@ -7,13 +7,26 @@ import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from 
 
 const COMPANY = 'phishsimai'
 
+/** Agents whose daily reason-loop may fire the Dex-gated warm trial CTA. */
+export const CONVERSION_AGENTS = new Set(['janet', 'mason', 'aria'])
+
 export type AgentDecision = {
     assessment: string
     action: string
     queued: boolean
     taskId: string | null
+    converted?: boolean
+    conversion?: { sent: number; blocked: number; skipped: number; reason?: string }
     provider?: string
     error?: string
+}
+
+/** Pure: Mason/Aria/Janet naming convert/trial/warm as the next action. */
+export function wantsWarmConversion(agentId: string, action: string): boolean {
+  if (!CONVERSION_AGENTS.has(agentId)) return false
+  const a = String(action || '').trim()
+  if (!a || /^none$/i.test(a)) return false
+  return /convert_warm|warm (lead|cta|trial)|trial cta|hottest|30-day trial|no-card trial/i.test(a)
 }
 
 export async function reasonAndAct(
@@ -83,11 +96,22 @@ export async function reasonAndAct(
                 }).catch(() => null)
         }
 
+      let converted = false
+      let conversion: AgentDecision['conversion']
+      if (kind !== 'hard_stop' && wantsWarmConversion(agentId, action)) {
+        const { runCgoConversionShift } = await import('../conversionEngine')
+        const shift = await runCgoConversionShift({ cap: 8 }).catch(() => null)
+        if (shift) {
+          converted = shift.sent > 0
+          conversion = { sent: shift.sent, blocked: shift.blocked, skipped: shift.skipped, reason: shift.reason }
+        }
+      }
+
       await rememberFact({
               company_id: COMPANY,
               type: 'operating',
               key: memKey,
-              value: JSON.stringify({ assessment, action, queued: !!taskId, ts: new Date().toISOString() }),
+              value: JSON.stringify({ assessment, action, queued: !!taskId, converted, conversion, ts: new Date().toISOString() }),
               confidence: 0.7,
               source: agentId,
       }).catch(() => {})
@@ -96,11 +120,11 @@ export async function reasonAndAct(
               currentGoal: runtime?.working.currentGoal || `${agentId} daily mandate`,
               nextAction: action,
               lastAssessment: assessment,
-              success: action !== 'none' && kind !== 'hard_stop',
-              lesson: assessment,
+              success: (action !== 'none' && kind !== 'hard_stop') || converted,
+              lesson: conversion ? `convert_warm sent=${conversion.sent}` : assessment,
       }).catch(() => {})
 
-      return { assessment, action, queued: !!taskId, taskId, provider: result.provider }
+      return { assessment, action, queued: !!taskId, taskId, converted, conversion, provider: result.provider }
   } catch (e: any) {
         const error = String(e?.message || e).slice(0, 300)
         return { assessment: 'reasoning unavailable', action: 'none', queued: false, taskId: null, error }
