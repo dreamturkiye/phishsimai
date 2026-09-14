@@ -5,7 +5,7 @@
 **L5.7 → L5.8 autonomy layer built on Kaan AI OS 6.0**
 
 - Version: `7.10.1`
-- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + this follow-up: 7.10 doc sync, idle-rewrite, Scout/Dex pack, breaker+score assign, heartbeat conversion). Section O supersedes conflicting details in B–N.
+- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + PR #313 denser ticks + drill-row heal / budgeted heartbeat follow-up). Section O supersedes conflicting details in B–N.
 - Author: Claude Fable 5 (design). Implementation: Claude orchestrating local Ollama models (kimi-k2.6:cloud for codegen, deepseek-r1:7b for analysis, gemma3:9b for drafts). Amendments: Cursor Cloud Agent (PR #311 and follow-up).
 - Extends: `KAAN_AI_OS_V6.md` in this repo as **lineage**, not as a competing spec. This document's original scope was V6 Section 8 plus the autonomy model those mechanisms enable. V6 Sections 2–6 are not redesigned here. **Runtime design is 7.10.1.**
 - This is the handoff artifact between design and implementation. Every module named here gets built as named. If implementation must deviate, the deviation is recorded in Section N's changelog table, not silently absorbed.
@@ -44,7 +44,7 @@ L5.7 is a property of the *infrastructure*. L5.8 is a property of the *learning 
 | Enforcement | `os_autonomy_state.level` = `manual\|l2\|l3\|l4\|l5` | WHAT an agent may do now (`autonomyGate.ts`). Max action class is `l5`. |
 | Posture | `os_posture_state.posture` = `pre_l5_7\|l5_7\|drill_3\|drill_7\|drill_15\|l5_8` | WHETHER the system has proven it runs unattended. Graduation is **declared**, never auto-promoted. |
 
-L5.7 does not add new action classes; it is the standing "Janet runs the company unattended" posture. PhishSim (PR #311 / O.32): owner ruling persists `l5` + `l5_7`; floor reads cannot return operative `manual`. Next step from held L5.7 is **`drill_3`** (`maybeStartDrill3`) — not a declaration of L5.8. L5.8 still requires the 15-day drill (M.5).
+L5.7 does not add new action classes; it is the standing "Janet runs the company unattended" posture. PhishSim (PR #311 / O.32): owner ruling persists `l5` + `l5_7`; floor reads cannot return operative `manual`. Next step from held L5.7 is **`drill_3`** (`maybeStartDrill3`) — not a declaration of L5.8. Declaring `drill_3` **requires** a running `os_posture_drills` row (`ensureRunningDrill`); a declared `drill_3` with no running row is healed, not skipped to L5.8. L5.8 still requires the 15-day drill (M.5).
 
 ---
 
@@ -235,7 +235,7 @@ Engine = cron (Vercel cron per subsidiary + launchd on the Mac) + Marcus's 3s po
 | 06:40 UTC | `/api/os/autonomy-promote` | persist owner L5 / L5.7 floor, then earned ladder |
 | 08:00 UTC | `/api/os/janet` | CGO standup + crisis pack + `reasonAndAct('janet')` |
 | `*/10` | `/api/os/task-runner` | drain tasks + Dex-gated conversion shift + **5-agent** runtime tick |
-| hourly | `/api/os/heartbeat` | infra checks + Dex-gated conversion shift + **all 10** agents (Janet + 9) |
+| hourly | `/api/os/heartbeat` | infra checks + **budgeted** Dex-gated conversion (cap 3, 12s race) + **3 ticks** (25s budget). Roster coverage = `*/10` 5-agent ticks + hourly 3. Cursor advances only for agents actually ticked. |
 
 `server/os/agentRuntimeTick.ts` is the shared tick. Roster = `@kaan/os-core` `AGENT_IDS`. Dual crisis (TRUE trials < 20 **or** paying < 4) issues conversion-bound work first; idle conversion agents still fire `convert_warm`; every runtime agent **refuses idle `none`** (`droughtIdleAction`). Analysis-only titles are refused in crisis. Dex breaker **tripped** → Janet does not assign prospect/cold sends (`breakerAwareAssignRule`). Reviewed-task scores bias assign (unmeasured omitted). Same-day follow-up is the job until targets are met (≥20 TRUE trials, ≥4–5 paying).
 
@@ -446,7 +446,7 @@ Behavior: introspect env at call time — chain = [Groq, Gemini, OpenAI] filtere
 
 Staged, real, scored: 3-day (Phase 2 / held-L5.7 exit) → 7-day → 15-day (L5.8 exit). During a drill the Founder genuinely does not respond; hard-stop escalations are expected to accumulate as `deferred` and the drill verifies the system *routed around them*. Pass = MRR drift ≥ 0, task failure rate non-increasing, all breaker trips auto-quarantined, brief generated all 15 days, ≥3 self-originated improvements shipped with commit-SHA proof, zero hard-stop violations. Fail on any violation → root-cause doc appended to this file before retry.
 
-**PhishSim (O.32):** when L5.7 is held, Janet's CGO cron may start **`drill_3` only** (`maybeStartDrill3`). It must not skip to L5.8. Declaring L5.8 still requires the 15-day drill pass above.
+**PhishSim (O.32):** when L5.7 is held, Janet's CGO cron (and `GET /api/os/architect/autonomy` status) may start **`drill_3` only** (`maybeStartDrill3`). Declaring `drill_3` must open a running `os_posture_drills` row **before** writing `os_posture_state`; a swallowed INSERT is how production showed `posture=drill_3` with blocker "no drill row is running". `maybeStartDrill3` heals that missing row. It must not skip to L5.8. Declaring L5.8 still requires the 15-day drill pass above.
 
 **Recovery paths:** auto-rollback stays (v6 pipeline); breaker quarantine (above); Mac loss = subsidiaries serve traffic and queue work indefinitely (Marcus is the only writer of code — safe stall, not outage); secret leak = Mason rotates HQ secrets + provider keys, audit_log identifies exposure window.
 
@@ -477,6 +477,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | M.5 | Start `drill_3` from held L5.7; do not declare L5.8 | Owner: 3-day drill, not 15-day skip. |
 | 2026-09-14 | — | Acquisition besides cold email is Dex-gated warm CTA + TRUE-org nudges + MSP harvest + founder-review LinkedIn drafts; public social publish stays locked | PS-SOCIAL-LOCKOUT-01. No invented cold copy. Magic-link **trial** start staged (hard stop #5 / protected auth). |
 | 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge (PR #313). Bandit remains `replied`. Not a declaration of L5.8. |
+| 2026-09-14 | M.5 / H / O.32.1 | `ensureRunningDrill` before posture write; `maybeStartDrill3` heals missing running row; heartbeat = 3 ticks (25s) + conversion cap 3 (12s race), parallel | Live verify on #313/`920bfeb`: posture=`drill_3` but autonomy said "start one"; heartbeat timed out on sequential all-10. Marcus remains Mac launchd, not GitHub Actions. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -772,7 +773,7 @@ Where this amendment conflicts with B–N, **O.32 wins for PhishSim**. ScrollFue
 - Posture: owner ruling persists `l5_7` (`ownerRuling.ts`, 06:40 `runAutonomyPromotion`).
 - Missing / unknown / below-floor / kill-flag / thrown gate reads → **l5**. Kill flags are **audit**, not a collapse to `manual`.
 - `manual` remains in the ladder type for other products and for pure `decideAutonomy` tests. It is not a live PhishSim operating mode.
-- Next posture step: **`drill_3`** (`maybeStartDrill3` from the 08:00 Janet CGO cron). **Do not declare L5.8.**
+- Next posture step: **`drill_3`** (`maybeStartDrill3` from the 08:00 Janet CGO cron **and** `GET /api/os/architect/autonomy` status). Declaring `drill_3` **requires** a running `os_posture_drills` row (`ensureRunningDrill` before the posture write). A declared `drill_3` with no running row is **healed**, not left as the "start one" blocker. **Do not declare L5.8.**
 
 ### O.32.2 Persistent memory, continuous ticks, L5.7 self-mod
 
@@ -784,7 +785,7 @@ Meanings are Section E / H, wired in PhishSim as:
 | Lessons / reflections | `outcomeLearning.ts` / `agentReflection.ts` |
 | Shared tick | `agentRuntimeTick.ts` — roster = `@kaan/os-core` `AGENT_IDS` (Janet + 9) |
 | `*/10` task-runner | drain + Dex-gated conversion shift + **5-agent** tick |
-| Hourly heartbeat | infra checks + Dex-gated conversion shift + **all 10** ticks |
+| Hourly heartbeat | infra checks + **budgeted** conversion (cap 3, 12s race) + **3 ticks** (25s budget), in parallel. Roster coverage = `*/10` × 5 + hourly × 3 |
 | 08:00 CGO | owner ruling + standup + crisis pack + `reasonAndAct('janet')` |
 
 Self-mod = change the open thread and/or queue Marcus (`classifySelfModification`). Not O.2 evalHarness.
@@ -827,7 +828,7 @@ Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. 
 - Bandit: `computeAdaptiveSplit(..., 'replied')` on the live send path (O.25 / O.32.4).
 - Self-heal: `kind === 'marcus'` queues `os_architect_tasks` even without `queueTask`. If `convert_warm` is denied by the autonomy gate, Mason queues a **named-file** Marcus task once per day (`autonomyGate.ts` / `ownerRuling.ts`) — not Dex, not price.
 - `executeTask` fires the conversion shift for every `CONVERSION_AGENTS` member (including Nova). Working-state `success` is true only on conversion evidence or a Marcus queue — empty sends are not a successful rest.
-- Hourly heartbeat runs the same Dex-gated conversion shift as `*/10` task-runner, then ticks all 10.
+- Hourly heartbeat runs a **capped** Dex-gated conversion shift (cap 3, 12s `Promise.race` — does not abort in-flight LLM) **in parallel with 3 ticks** (25s budget). Task-runner still converts every 10 minutes and ticks 5. Do not require all 10 agents in one heartbeat.
 - Keep pushing until ≥20 TRUE trials **and** ≥4–5 paying.
 
 ### O.32.6 Honest OS Health / founder brief
@@ -836,5 +837,5 @@ Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. 
 
 ### Evidence (do not invent rates)
 
-Owner DB paste 2026-09-14 + in-repo paths cited in `docs/architect/SPEC-true-trials-funnel.md`. Click→signup % is not claimed here.
+Owner DB paste 2026-09-14 + in-repo paths cited in `docs/architect/SPEC-true-trials-funnel.md`. Click→signup % is not claimed here. Live verify the same day on merged #313 / `920bfeb`: gate `level=l5` PASS; task-runner 5 ticks + conversion PASS; founder brief TRUE 1 / raw 100 / excluded 99 PASS; heartbeat timed out once (sequential all-10); posture=`drill_3` with autonomy blocker "no drill row is running". Marcus is Mac launchd, not GitHub Actions.
 

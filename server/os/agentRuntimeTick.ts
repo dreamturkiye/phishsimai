@@ -85,13 +85,23 @@ export async function tickAllAgentRuntimes(opts: {
   maxAgents?: number
   companyId?: string
   sql?: any
-} = {}): Promise<{ ticked: string[]; results: RuntimeTickResult[] }> {
+  /** Stop starting new ticks after this many ms. Cursor only advances for agents actually ticked. */
+  budgetMs?: number
+} = {}): Promise<{ ticked: string[]; results: RuntimeTickResult[]; budgetHit: boolean }> {
   const companyId = opts.companyId ?? COMPANY_ID
   const sql = opts.sql ?? getSql()
   const maxAgents = opts.maxAgents ?? RUNTIME_AGENT_IDS.length
-  const ids = await nextRuntimeAgents(sql, maxAgents, companyId)
+  const budgetMs = opts.budgetMs
+  const startedAt = Date.now()
+  const ticked: string[] = []
   const results: RuntimeTickResult[] = []
-  for (const agentId of ids) {
+  for (let i = 0; i < maxAgents; i++) {
+    if (budgetMs != null && Date.now() - startedAt >= budgetMs) {
+      return { ticked, results, budgetHit: true }
+    }
+    const [agentId] = await nextRuntimeAgents(sql, 1, companyId)
+    if (!agentId) break
+    ticked.push(agentId)
     try {
       results.push({ agentId, decision: await tickAgentRuntime(agentId, companyId) })
     } catch (e: any) {
@@ -107,5 +117,5 @@ export async function tickAllAgentRuntimes(opts: {
       })
     }
   }
-  return { ticked: ids, results }
+  return { ticked, results, budgetHit: false }
 }

@@ -26,9 +26,19 @@ describe("L5.7 continuous agent runtime — original 7.10 roster", () => {
   it("task-runner (*/10) and hourly heartbeat both call tickAllAgentRuntimes", () => {
     const routes = readFileSync(resolve(import.meta.dirname, "routes.ts"), "utf8");
     const heartbeat = readFileSync(resolve(import.meta.dirname, "heartbeat.ts"), "utf8");
+    const tick = readFileSync(resolve(import.meta.dirname, "agentRuntimeTick.ts"), "utf8");
     expect(routes).toMatch(/tickAllAgentRuntimes\(/);
+    expect(routes).toMatch(/maxAgents:\s*5/);
     expect(heartbeat).toMatch(/tickAllAgentRuntimes\(/);
     expect(heartbeat).toMatch(/runCgoConversionShift/);
+    expect(heartbeat).toMatch(/HEARTBEAT_TICK_AGENTS\s*=\s*3/);
+    expect(heartbeat).toMatch(/HEARTBEAT_TICK_BUDGET_MS\s*=\s*25_000/);
+    expect(heartbeat).toMatch(/HEARTBEAT_CONVERSION_CAP\s*=\s*3/);
+    expect(heartbeat).toMatch(/maxAgents:\s*HEARTBEAT_TICK_AGENTS/);
+    expect(heartbeat).toMatch(/budgetMs:\s*HEARTBEAT_TICK_BUDGET_MS/);
+    expect(heartbeat).not.toMatch(/maxAgents:\s*10/);
+    expect(tick).toMatch(/nextRuntimeAgents\(sql, 1/);
+    expect(tick).toMatch(/budgetMs/);
     expect(readFileSync(resolve(import.meta.dirname, "routes.ts"), "utf8")).toMatch(/runCgoConversionShift/);
   });
 
