@@ -9,21 +9,70 @@
 // (same doctrine as ScrollFuel's SF-DELIV-16 founder_decision_pending rule) until a human closes
 // it. An escalation can no longer just sit silently; it is either resolved or loudly, repeatedly,
 // unmissably flagged as YOUR decision to make.
+// O.32.8: PhishSim autonomy_change that is already at the L5 floor (raise_refused INSERT
+// artifact #202) is auto-deferred as already_at_l5_floor — never founder_required, never louder.
 import { getSql } from './conn'
 // PS-ESCALATION-STALE-01: reuse the dispatch guard so 'executable?' has ONE definition.
 import { dispatchRefusalReason } from '../lib/kaan_os_v4'
 import { sendTelegram } from './telegram'
 import { llmComplete } from './llmChat'
 import { queueJanetArchitectTask } from './selfHeal'
-import { isOperatorOwnedEscalation } from './escalationTriagePolicy'
+import {
+  isOperatorOwnedEscalation,
+  isAlreadyAtL5FloorAutonomyNoise,
+  shouldPageFounderForEscalation,
+  ALREADY_AT_L5_FLOOR,
+  type AutonomyNagContext,
+} from './escalationTriagePolicy'
+import { resolveReadableLevel } from './autonomyGate'
 
-export { isOperatorOwnedEscalation }
+export { isOperatorOwnedEscalation, isAlreadyAtL5FloorAutonomyNoise, ALREADY_AT_L5_FLOOR }
 
 interface PendingEscalation {
   id: number
   category: string
   payload: any
   created_at: string
+  status?: string
+}
+
+export type LiveAutonomyContext = {
+  companyId: string
+  liveLevel: string | null
+  storedLevel: string | null
+  posture: string | null
+}
+
+function nagContext(row: PendingEscalation, live?: LiveAutonomyContext): AutonomyNagContext {
+  return {
+    category: row.category,
+    payload: row.payload,
+    status: row.status,
+    companyId: live?.companyId,
+    liveLevel: live?.liveLevel,
+    storedLevel: live?.storedLevel,
+    posture: live?.posture,
+  }
+}
+
+async function deferAlreadyAtL5Floor(sql: any, row: PendingEscalation, reason = ALREADY_AT_L5_FLOOR): Promise<boolean> {
+  try {
+    await sql`UPDATE escalations
+      SET status='deferred', resolved_at=NOW(), resolved_via=${reason},
+          notified_at = COALESCE(notified_at, NOW()),
+          payload = payload || ${JSON.stringify({
+            autoResolved: true,
+            already_at_l5_floor: true,
+            janetTriage: ALREADY_AT_L5_FLOOR,
+            janetReasoning: reason,
+          })}::jsonb
+      WHERE id=${row.id}`
+    console.log(`[escalationTriage] auto-resolved #${row.id} (${row.category}): ${reason}`)
+    return true
+  } catch (e: any) {
+    console.error(`[escalationTriage] already_at_l5_floor write failed #${row.id}: ${e?.message}`)
+    return false
+  }
 }
 
 const AGE_DAYS = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000))
@@ -40,11 +89,16 @@ const AGE_DAYS = (createdAt: string) => Math.max(0, Math.floor((Date.now() - new
  * is left untouched for Janet and, if she cannot decide, for the founder. Silence is not the goal;
  * an accurate queue is.
  */
-async function autoResolveStale(sql: any, rows: PendingEscalation[]): Promise<Set<number>> {
+async function autoResolveStale(sql: any, rows: PendingEscalation[], live?: LiveAutonomyContext): Promise<Set<number>> {
   const done = new Set<number>()
   for (const row of rows) {
     const payload: any = row.payload || {}
     let reason: string | null = null
+
+    if (isAlreadyAtL5FloorAutonomyNoise(nagContext(row, live))) {
+      if (await deferAlreadyAtL5Floor(sql, row)) done.add(row.id)
+      continue
+    }
 
     if (row.category === 'breaker_trip' && payload.fingerprint) {
       try {
@@ -93,12 +147,24 @@ async function autoResolveStale(sql: any, rows: PendingEscalation[]): Promise<Se
   return done
 }
 
+async function loadLiveAutonomyContext(sql: any, companyId: string): Promise<LiveAutonomyContext> {
+  const levelRows = (await sql`SELECT level FROM os_autonomy_state WHERE company_id=${companyId} LIMIT 1`.catch(() => [])) as any[]
+  const postureRows = (await sql`SELECT posture FROM os_posture_state WHERE product_id=${companyId} LIMIT 1`.catch(() => [])) as any[]
+  const stored = levelRows[0]?.level != null ? String(levelRows[0].level) : null
+  return {
+    companyId,
+    storedLevel: stored,
+    liveLevel: String(resolveReadableLevel(companyId, stored) ?? 'l5'),
+    posture: postureRows[0]?.posture != null ? String(postureRows[0].posture) : null,
+  }
+}
+
 export async function triageEscalations(companyId: string): Promise<{ reviewed: number; resolved: number; escalatedToFounder: number }> {
   const sql = getSql()
   let rows: PendingEscalation[] = []
   try {
     rows = (await sql`
-      SELECT id, category, payload, created_at FROM escalations
+      SELECT id, category, payload, created_at, status FROM escalations
       WHERE status = 'pending' AND product_id = ${companyId}
       ORDER BY created_at ASC LIMIT 20
     `) as PendingEscalation[]
@@ -107,13 +173,15 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
   }
   if (!rows.length) return { reviewed: 0, resolved: 0, escalatedToFounder: 0 }
 
+  const liveCtx = await loadLiveAutonomyContext(sql, companyId)
+
   // PS-ESCALATION-STALE-01 (2026-08-18): an escalation had no way to become irrelevant. Fixing the
   // underlying fault resolved nothing, so repaired problems kept escalating at the founder daily
   // and LOUDER — on 2026-08-17 he received eight, of which seven were already dead: merge-405s
   // (the daemon was running stale code), Grok format mismatches (max_tokens truncation, fixed),
   // and a truncated DDL that cannot execute at all. Real signal drowns in that. An escalation
   // whose cause is demonstrably gone is now closed automatically, with the evidence recorded.
-  const autoResolved = await autoResolveStale(sql, rows)
+  const autoResolved = await autoResolveStale(sql, rows, liveCtx)
   const live = rows.filter((r) => !autoResolved.has(r.id))
   if (!live.length) return { reviewed: rows.length, resolved: autoResolved.size, escalatedToFounder: 0 }
 
@@ -122,10 +190,16 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
 
   for (const row of live) {
     const age = AGE_DAYS(row.created_at)
+    const ctx = nagContext(row, liveCtx)
+    // Already-at-L5 autonomy noise: never janetTriage=founder_required, never re-alert louder.
+    if (isAlreadyAtL5FloorAutonomyNoise(ctx)) {
+      if (await deferAlreadyAtL5Floor(sql, row)) resolved++
+      continue
+    }
     // Already flagged founder-decision-required in a prior pass — just re-alert with growing
     // urgency, do not re-spend an LLM call re-litigating the same item every day.
     if (isOperatorOwnedEscalation(row)) {
-      const extra = await autoResolveStale(sql, [row])
+      const extra = await autoResolveStale(sql, [row], liveCtx)
       if (extra.has(row.id)) {
         resolved++
         continue
@@ -133,6 +207,10 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
     }
     const already = String(row.payload?.janetTriage ?? '')
     if (already === 'founder_required') {
+      if (!shouldPageFounderForEscalation(ctx)) {
+        if (await deferAlreadyAtL5Floor(sql, row)) resolved++
+        continue
+      }
       await reAlertFounder(row, age, companyId)
       escalatedToFounder++
       continue
@@ -182,6 +260,11 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
       } catch { /* leave pending for tomorrow */ }
     } else {
       // FOUNDER_REQUIRED (or triage failed => default to founder-required, never silently drop it).
+      // Already-at-L5 autonomy_change is not a founder decision — never stamp founder_required.
+      if (isAlreadyAtL5FloorAutonomyNoise(ctx)) {
+        if (await deferAlreadyAtL5Floor(sql, row)) resolved++
+        continue
+      }
       const reasoning = decision?.reasoning || 'Could not be auto-triaged — needs your review.'
       await sql`UPDATE escalations SET payload = payload || ${JSON.stringify({ janetTriage: 'founder_required', janetReasoning: reasoning })}::jsonb
         WHERE id=${row.id}`.catch(() => {})
@@ -194,6 +277,12 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
 }
 
 async function reAlertFounder(row: PendingEscalation, age: number, companyId: string, reasoning?: string): Promise<void> {
+  if (!shouldPageFounderForEscalation({
+    category: row.category,
+    payload: row.payload,
+    status: row.status,
+    companyId,
+  })) return
   const ageLine = age === 0 ? '(raised today)' : `— **${age} DAY${age === 1 ? '' : 'S'} UNRESOLVED**`
   const why = reasoning || String((row.payload as any)?.janetReasoning ?? '')
   await sendTelegram(
