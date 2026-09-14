@@ -44,7 +44,7 @@ export const POSTURE_LABEL: Record<Posture, string> = {
 export const L5_7_CLEAN_DAYS = 5
 export const L5_7_HANDLED_TRIPS = 1
 /** Spec: staged 3-day (Phase 2 exit) → 7-day → 15-day (L5.8 exit). */
-export const DRILL_DAYS: Record<'drill_3' | 'drill_7' | 'drill_15', number> = { drill_3: 3, drill_7: 7, drill_15: 15 }
+export const DRILL_DAYS = { drill_3: 3, drill_7: 7, drill_15: 15 } as const
 
 /**
  * Which products a posture must hold across, per spec.
@@ -441,6 +441,42 @@ export function buildPostureAlarm(day: string, verdict: DayVerdict, ev: Evaluati
 }
 
 /**
+ * Open a running os_posture_drills row if none exists. Declaring drill_3 without this
+ * row is how production showed "L5.7 + 3-day drill but no drill row is running".
+ * INSERT is not swallowed — a silent catch is what left posture=drill_3 with no window.
+ */
+export async function ensureRunningDrill(
+  sql: SqlLike,
+  productId: string,
+  kind: 3 | 7 | 15,
+  declaredBy: string,
+): Promise<{ created: boolean; reason: string }> {
+  const running = (await sql`
+    SELECT id FROM os_posture_drills
+    WHERE product_id=${productId} AND status='running'
+    LIMIT 1
+  `.catch(() => [])) as any[]
+  if (running[0]?.id) return { created: false, reason: 'already running' }
+  try {
+    const inserted = (await sql`
+      INSERT INTO os_posture_drills (product_id, kind, started_on, ends_on, status, declared_by)
+      VALUES (${productId}, ${kind}::int, CURRENT_DATE, (CURRENT_DATE + (${kind}::int)), 'running', ${declaredBy})
+      RETURNING id
+    `) as any[]
+    if (!inserted[0]?.id) return { created: false, reason: 'INSERT returned no id' }
+    return { created: true, reason: 'started' }
+  } catch (e: any) {
+    const again = (await sql`
+      SELECT id FROM os_posture_drills
+      WHERE product_id=${productId} AND status='running'
+      LIMIT 1
+    `.catch(() => [])) as any[]
+    if (again[0]?.id) return { created: false, reason: 'already running' }
+    return { created: false, reason: String(e?.message || e).slice(0, 200) }
+  }
+}
+
+/**
  * Advance the posture. Requires a named human declarer and refuses unless evaluatePosture()
  * already says eligible — so a declaration can confirm earned progress but never manufacture it.
  * This is the whole reason the posture axis exists separately from the auto-promoted gate.
@@ -453,17 +489,19 @@ export async function declarePosture(
   if (ev.eligibleFor !== to && !opts.force) {
     return { ok: false, from: ev.posture, to, reason: ev.eligibleFor ? `eligible for ${ev.eligibleFor}, not ${to}` : `not eligible: ${ev.blockers.join('; ')}` }
   }
+  // Drill row BEFORE posture write: never leave drill_3/7/15 with no running window.
+  if (to === 'drill_3' || to === 'drill_7' || to === 'drill_15') {
+    const days = DRILL_DAYS[to]
+    await sql`UPDATE os_posture_drills SET status='passed', resolved_at=now() WHERE product_id=${productId} AND status='running'`.catch(() => {})
+    const row = await ensureRunningDrill(sql, productId, days, declaredBy)
+    if (!row.created && row.reason !== 'already running') {
+      return { ok: false, from: ev.posture, to, reason: `could not open os_posture_drills running row: ${row.reason}` }
+    }
+  }
   await sql`UPDATE os_posture_state SET posture=${to}, entered_at=now(), declared_by=${declaredBy}, updated_at=now()
             WHERE product_id=${productId}`
   await sql`INSERT INTO audit_log (actor, action, target, detail) VALUES ('posture_tracker', 'posture_declared', ${productId},
             ${JSON.stringify({ from: ev.posture, to, declared_by: declaredBy, forced: !!opts.force, blockers: ev.blockers })}::jsonb)`.catch(() => {})
-  // Starting a drill posture opens its window.
-  if (to === 'drill_3' || to === 'drill_7' || to === 'drill_15') {
-    const days = DRILL_DAYS[to]
-    await sql`UPDATE os_posture_drills SET status='passed', resolved_at=now() WHERE product_id=${productId} AND status='running'`.catch(() => {})
-    await sql`INSERT INTO os_posture_drills (product_id, kind, started_on, ends_on, declared_by)
-              VALUES (${productId}, ${days}, CURRENT_DATE, CURRENT_DATE + ${days}, ${declaredBy})`.catch(() => {})
-  }
   return { ok: true, from: ev.posture, to, reason: opts.force ? 'declared (FORCED past blockers)' : 'declared' }
 }
 
@@ -477,8 +515,22 @@ export async function maybeStartDrill3(
   declaredBy = 'janet-cgo',
 ): Promise<{ started: boolean; from: Posture; to?: Posture; reason: string }> {
   const ev = await evaluatePosture(sql, productId)
-  if (ev.posture === 'drill_3' || ev.posture === 'drill_7' || ev.posture === 'drill_15' || ev.posture === 'l5_8') {
-    return { started: false, from: ev.posture, reason: `already past L5.7 (${ev.posture}) — will not skip to L5.8` }
+  if (ev.posture === 'l5_8') {
+    return { started: false, from: ev.posture, reason: 'already L5.8 — will not re-declare' }
+  }
+  if (ev.posture === 'drill_7' || ev.posture === 'drill_15') {
+    return { started: false, from: ev.posture, reason: `already past drill_3 (${ev.posture}) — will not skip to L5.8` }
+  }
+  // Production 2026-09-14: posture was drill_3 with no running row. Early-return here
+  // left the blocker ("start one") in place forever. Heal the row; do not declare L5.8.
+  if (ev.posture === 'drill_3') {
+    const row = await ensureRunningDrill(sql, productId, 3, declaredBy)
+    return {
+      started: row.created,
+      from: 'drill_3',
+      to: 'drill_3',
+      reason: row.created ? 'healed missing running drill row' : row.reason,
+    }
   }
   if (ev.posture !== 'l5_7') {
     return { started: false, from: ev.posture, reason: `posture is ${ev.posture}, not l5_7 — 3-day drill is not next` }

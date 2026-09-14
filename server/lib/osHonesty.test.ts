@@ -51,7 +51,8 @@ describe('osHealthHonesty — idle workforce is not all-agents-normal', () => {
       trueTrials: 1, payingCustomers: 0,
     })
     expect(h.healthy).toBe(false)
-    expect(h.line).toMatch(/TRUE-TRIAL DROUGHT/)
+    expect(h.line).toMatch(/REVENUE FAILURE/)
+    expect(h.line).toMatch(/Never declare/)
     expect(h.line).toMatch(/Canary/)
   })
 
@@ -72,6 +73,10 @@ describe('applyConversionScoreCeiling', () => {
   it('does not cap a real convert_warm send', () => {
     expect(applyConversionScoreCeiling(8, '**CONVERSION SHIFT:** sent=2 blocked=0 skipped=0\nconvert_warm sent=2')).toBe(8)
     expect(conversionEvidenceInResult('trial_nudges sent=3')).toBe(true)
+  })
+
+  it('caps analysis-only output at 4 during operating crisis', () => {
+    expect(applyConversionScoreCeiling(9, 'I analyzed the funnel.', true)).toBe(4)
   })
 
   it('leaves an unscored review unscored', () => {

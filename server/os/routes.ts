@@ -133,7 +133,7 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
   const janetRuntime = await reasonAndAct(
     'janet',
     { ownerRuling, ...summary },
-    'You are Janet, CGO of PhishSim AI. Resume the open thread. Own verified 30-day trials and paid MRR. Prefer convert_warm. Queue Marcus only for a named product bug.',
+    'You are Janet, CGO of PhishSim AI. Resume the open thread. Own verified 30-day trials and paid MRR. $0 MRR / 1 TRUE trial is a crisis: name the bottleneck then convert_warm. Queue Marcus only for a named product bug.',
   ).catch((e: any) => ({ assessment: 'unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e).slice(0, 160) }))
   res.json({ ...summary, ownerRuling, drill3, janetRuntime })
 }
@@ -1273,6 +1273,16 @@ export async function architectAutonomy(req: Request, res: Response) {
       return res.status(out.ok ? 200 : 409).json(out)
     }
     const ev = await evaluatePosture(sql, 'phishsimai')
+    // Heal a declared drill_3 with no running os_posture_drills row here, not only at 08:00 CGO.
+    // Production 2026-09-14: GET this route reported "start one" after declarePosture's INSERT
+    // was swallowed. maybeStartDrill3 now opens the missing row; re-evaluate so the JSON
+    // blocker list is current for the same request.
+    const drill3 = await maybeStartDrill3(sql, 'phishsimai', 'janet-cgo').catch((e: unknown) => ({
+      started: false,
+      from: 'drill_3' as const,
+      reason: e instanceof Error ? e.message : String(e),
+    }))
+    const evAfter = drill3.started ? await evaluatePosture(sql, 'phishsimai') : ev
     // PS-AUTONOMY-CRITERIA-01: getCleanStreak is the UNFILTERED (v1) reader. Its last-computed day
     // is useful operationally — it says whether the compute cron ran at all — but it sat here as a
     // bare `lastComputedDay` next to `ev.lastJudgedDay`, which is the v2 baseline-filtered value.
@@ -1281,10 +1291,11 @@ export async function architectAutonomy(req: Request, res: Response) {
     const streak = await getCleanStreak(sql, 'phishsimai')
     return res.json({
       product: 'phishsimai',
-      ...ev,
-      line: postureLine(ev),
+      ...evAfter,
+      line: postureLine(evAfter),
+      drill3,
       criteriaVersion: CRITERIA_VERSION,
-      lastJudgedDayV2: ev.lastJudgedDay,
+      lastJudgedDayV2: evAfter.lastJudgedDay,
       lastComputedDayAnyCriteria: streak.lastComputedDay,
     })
   } catch (e: any) {

@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest'
 import {
-  computeDayCounters, currentStreak, evaluatePosture, declarePosture, maybeStartDrill3, postureLine,
+  computeDayCounters, currentStreak, evaluatePosture, declarePosture, maybeStartDrill3, ensureRunningDrill, postureLine,
   POSTURE_LABEL, L5_7_CLEAN_DAYS, DRILL_DAYS, CRITERIA_VERSION, handledTrips,
 } from './posture'
 
@@ -223,6 +223,8 @@ describe('declarePosture — declared, never auto-promoted', () => {
 
 describe('maybeStartDrill3 — L5.7 held starts the 3-day drill, never L5.8', () => {
   const held = () => fakeSql([
+    { match: /INSERT INTO os_posture_drills/, rows: [{ id: 1 }] },
+    { match: /FROM os_posture_drills/, rows: [] },
     { match: /os_posture_state/, rows: [{ product_id: 'p', posture: 'l5_7', entered_at: '', declared_by: 'kaan', baseline_from: '2026-07-23', notes: null }] },
     { match: /autonomy_clean_days/, rows: [{ day: '2026-07-27', clean: true }] },
   ])
@@ -248,6 +250,59 @@ describe('maybeStartDrill3 — L5.7 held starts the 3-day drill, never L5.8', ()
     ]), 'p', 'janet-cgo')
     expect(r.started).toBe(false)
     expect(r.from).toBe('pre_l5_7')
+  })
+
+  it('heals drill_3 posture with no running row (does not declare L5.8)', async () => {
+    const sql = fakeSql([
+      { match: /INSERT INTO os_posture_drills/, rows: [{ id: 7 }] },
+      { match: /FROM os_posture_drills/, rows: [] },
+      { match: /os_posture_state/, rows: [{ product_id: 'p', posture: 'drill_3', entered_at: '', declared_by: 'janet-cgo', baseline_from: '2026-07-23', notes: null }] },
+      { match: /autonomy_clean_days/, rows: [{ day: '2026-09-14', clean: true }] },
+    ])
+    const r = await maybeStartDrill3(sql, 'p', 'janet-cgo')
+    expect(r.started).toBe(true)
+    expect(r.to).toBe('drill_3')
+    expect(r.reason).toMatch(/healed missing running drill row/)
+    expect(sql.calls.some((q: string) => /UPDATE os_posture_state SET posture/.test(q))).toBe(false)
+    expect(sql.calls.some((q: string) => /l5_8/.test(q))).toBe(false)
+  })
+
+  it('leaves drill_3 with a running row alone — already running, not L5.8', async () => {
+    const sql = fakeSql([
+      { match: /INSERT INTO os_posture_drills/, rows: [{ id: 99 }] },
+      { match: /FROM os_posture_drills/, rows: [{ id: 1, kind: 3, started_on: '2026-09-14', ends_on: '2026-09-17', status: 'running' }] },
+      { match: /os_posture_state/, rows: [{ product_id: 'p', posture: 'drill_3', entered_at: '', declared_by: 'janet-cgo', baseline_from: '2026-07-23', notes: null }] },
+      { match: /autonomy_clean_days/, rows: [{ day: '2026-09-14', clean: true, n: 0 }] },
+    ])
+    const r = await maybeStartDrill3(sql, 'p', 'janet-cgo')
+    expect(r.started).toBe(false)
+    expect(r.reason).toBe('already running')
+    expect(sql.calls.some((q: string) => /INSERT INTO os_posture_drills/.test(q))).toBe(false)
+    expect(sql.calls.some((q: string) => /UPDATE os_posture_state SET posture/.test(q))).toBe(false)
+  })
+
+  it('declarePosture to drill_3 fails closed if INSERT returns no id', async () => {
+    const sql = fakeSql([
+      { match: /INSERT INTO os_posture_drills/, rows: [] },
+      { match: /FROM os_posture_drills/, rows: [] },
+      { match: /os_posture_state/, rows: [{ product_id: 'p', posture: 'l5_7', entered_at: '', declared_by: 'kaan', baseline_from: '2026-07-23', notes: null }] },
+      { match: /autonomy_clean_days/, rows: [{ day: '2026-07-27', clean: true }] },
+    ])
+    const r = await declarePosture(sql, 'p', 'drill_3', 'kaan')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/could not open os_posture_drills running row/)
+    expect(sql.calls.some((q: string) => /UPDATE os_posture_state SET posture/.test(q))).toBe(false)
+  })
+
+  it('ensureRunningDrill is a no-op when a running row already exists', async () => {
+    const sql = fakeSql([
+      { match: /FROM os_posture_drills/, rows: [{ id: 1 }] },
+      { match: /INSERT INTO os_posture_drills/, rows: [{ id: 2 }] },
+    ])
+    const r = await ensureRunningDrill(sql, 'p', 3, 'janet-cgo')
+    expect(r.created).toBe(false)
+    expect(r.reason).toBe('already running')
+    expect(sql.calls.some((q: string) => /INSERT INTO os_posture_drills/.test(q))).toBe(false)
   })
 })
 

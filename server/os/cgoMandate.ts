@@ -79,6 +79,85 @@ export function isOperatingCrisis(facts: TrialFacts): boolean {
   return isTrialCrisis(facts) || isPaidConversionCrisis(facts)
 }
 
+export type WarmPoolFacts = {
+  replied: number
+  engaged: number
+  sendable: number
+  eligible: number
+  cooldown: number
+  exhausted: number
+  suppressed: number
+  autoReplyPending: number
+}
+
+export type RevenueDiagnosis = {
+  crisis: boolean
+  bottlenecks: string[]
+  line: string
+  nextActions: string[]
+}
+
+/**
+ * Name WHY we are at $0 MRR / 1 TRUE trial. Live 2026-09-14:
+ * 15 replied, 14 engaged, 14 auto_reply drafts, conversion sent:0.
+ * "No warm sendable leads / wait for replies" is a lie when replies exist.
+ */
+export function diagnoseRevenueFailure(input: {
+  trueTrials?: number | null
+  paying?: number | null
+  rawTrials?: number | null
+  excluded?: number | null
+  greyBoxDaysLeft?: number | null
+  warm?: WarmPoolFacts | null
+}): RevenueDiagnosis {
+  const bottlenecks: string[] = []
+  const nextActions: string[] = []
+  const trials = input.trueTrials
+  const paying = input.paying
+  const crisis =
+    (trials != null && trials < TRIAL_SPRINT_TARGET) ||
+    (paying != null && paying < PAYING_SPRINT_TARGET)
+  if (paying === 0 || (paying != null && paying < PAYING_SPRINT_TARGET)) {
+    bottlenecks.push(`paying=${paying ?? 'n/a'} (need ≥${PAYING_SPRINT_TARGET}–${PAYING_STRETCH_TARGET}) — $0 MRR is an L5.7 failure`)
+  }
+  if (trials != null && trials < TRIAL_SPRINT_TARGET) {
+    bottlenecks.push(`TRUE trials=${trials} (need ≥${TRIAL_SPRINT_TARGET})`)
+  }
+  if ((input.excluded ?? 0) > 0 && (trials ?? 0) <= 1) {
+    bottlenecks.push(`canary noise: raw=${input.rawTrials ?? '?'} excluded=${input.excluded} — do not treat raw as trials`)
+  }
+  const w = input.warm
+  if (w) {
+    if (w.replied === 0 && w.engaged === 0) {
+      bottlenecks.push('TOF empty: 0 replied/engaged — MSP harvest + founder-review LinkedIn drafts')
+      nextActions.push('Run MSP harvest and queue one founder-review LinkedIn trial draft')
+    } else if (w.eligible === 0 && (w.replied > 0 || w.engaged > 0)) {
+      bottlenecks.push(
+        `${w.replied} replied / ${w.engaged} engaged but eligible=${w.eligible} ` +
+        `(suppressed=${w.suppressed}, cooldown=${w.cooldown}, exhausted=${w.exhausted}, auto_reply_drafts=${w.autoReplyPending})`,
+      )
+      nextActions.push('Fire convert_warm on sendable engaged leads; reopen false auto_reply drafts')
+    } else if (w.eligible > 0) {
+      bottlenecks.push(`${w.eligible} warm sendable leads waiting — convert_warm must send, not report`)
+      nextActions.push(`convert_warm the ${w.eligible} eligible replied/engaged leads (Dex rails)`)
+    }
+    if (w.autoReplyPending > 0) {
+      bottlenecks.push(`${w.autoReplyPending} pending_review drafts classified auto_reply — likely misclassified interest`)
+    }
+  }
+  if (input.greyBoxDaysLeft != null) {
+    bottlenecks.push(`Grey Box Consulting has ${input.greyBoxDaysLeft} day(s) left on the only TRUE trial and $0 paid`)
+    nextActions.push('Send Grey Box the existing D18/D25 upgrade/checkout nudge (settings?tab=billing)')
+  }
+  if (!nextActions.length && crisis) {
+    nextActions.push('convert_warm hottest', 'nurture Grey Box to paid', 'MSP harvest')
+  }
+  const line = crisis || bottlenecks.length
+    ? `REVENUE FAILURE: ${bottlenecks.join('; ') || '$0 MRR / TRUE-trial drought'}. Never declare healthy. Next: ${nextActions.slice(0, 3).join(' · ')}.`
+    : 'Targets held — keep converting.'
+  return { crisis: Boolean(crisis || bottlenecks.length), bottlenecks, line, nextActions }
+}
+
 /** Conversion-critical titles: send, CTA, trial start, upgrade, paid. */
 export function isConversionBoundTitle(title: string, description = ''): boolean {
   return /\b(convert|warm cta|trial[- ]?(starts?|nudges?|ctas?|orgs?)|upgrade|paid mrr|paying|stripe|send evidence|nurture|follow-?up existing|trial.?to.?paid)\b/i
@@ -201,7 +280,9 @@ export function janetCgoMandate(): string {
   return [
     'You are Janet, Chief Growth Officer. You run this startup like a hungry operator, not a coordinator. Kaan is CEO; you own paid MRR and the trial count.',
     `SUCCESS GOAL, NON-NEGOTIABLE: ${TRIAL_SPRINT_TARGET} TRUE customer 30-day no-card trials (Signup Canary / test / walkthrough / Adeo excluded) and ${PAYING_SPRINT_TARGET}–${PAYING_STRETCH_TARGET} paying Stripe customers. Keep pushing until both are met. Sends, standups, canary orgs, and ONLINE are not results.`,
-    'Be persistent and aggressive: same-day follow-up on every warm lead and every true trial org. An employee who reported "nothing completed" failed. Queue Marcus when a code path blocks a trial start.',
+    'Be persistent and aggressive: same-day follow-up on every warm lead and every true trial org. An employee who reported "nothing completed" failed. Queue Marcus when a code path blocks a trial start or a paid conversion.',
+    '$0 MRR and TRUE trials < 20 is a PERMANENT operating crisis, not a yellow flag. Diagnose the bottleneck every cycle (TOF empty vs replied/engaged not getting CTAs vs auto_reply trap vs Grey Box not upgrading vs Dex). Then execute. Never declare health. Analysis theater is a miss.',
+    'Convert Grey Box Consulting (the only TRUE trial) to paid via the existing upgrade/checkout path. Do not wait for day-25 if they have ~10 days left.',
     'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened). Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
     'Hold Mason, Aria, and Nova to a daily conversion number. An employee who only reported failed. Follow up the same day. "I delegated" is not a result.',
     'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Do not choose one and ignore the other.',
@@ -333,9 +414,9 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
   return [
     {
       agentId: 'mason',
-      title: 'Send warm trial CTAs and follow up existing trial orgs today',
+      title: 'Convert Grey Box Consulting to paid and fire warm CTAs today',
       description:
-        'PAID CONVERSION CRISIS: trials exist and paying is below 4. Fire convert_warm on replied > engaged leads (Dex MX + suppression + bounce breaker). Then nurture existing TRUE free-trial orgs toward paid — leave send evidence (CONVERSION SHIFT sent>0 and/or trial nudge sent). Do not open a 500-lead cold blast. Do not write another sequence analysis. Do not count Signup Canary as a trial.',
+        'PAID CONVERSION CRISIS: trials exist and paying is below 4. Fire convert_warm on replied > engaged leads (Dex MX + suppression + bounce breaker). Aggressively nurture Grey Box Consulting (org 11, the only TRUE trial) toward paid via D18/D25 upgrade /settings?tab=billing — leave send evidence. Do not open a 500-lead cold blast. Do not write another sequence analysis. Do not count Signup Canary as a trial.',
       priority: 'high',
     },
     {
@@ -354,9 +435,9 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
     },
     {
       agentId: 'vera',
-      title: 'Nurture existing trial orgs toward paid with D14/D25/D30 send evidence',
+      title: 'Nurture Grey Box and every TRUE trial toward paid (D14/D18/D25/D30)',
       description:
-        'PAID CONVERSION CRISIS: TRUE trial orgs (canary/test/walkthrough/Adeo excluded) and paying below 4. Run trial nudges (idempotent D14/D25/D30) and first-value follow-up on REAL customer trials only. Retention theater with no send is a miss. Name orgs nudged and evidence ids.',
+        'PAID CONVERSION CRISIS: Grey Box Consulting is the only TRUE trial (~10 days left on 2026-09-14) and paying is 0. Run trial nudges (idempotent D14/D18 upgrade/D25/D30) using existing billing checkout copy. Retention theater with no send is a miss. Name orgs nudged and evidence ids.',
       priority: 'high',
     },
     {

@@ -134,7 +134,7 @@ describe('EMPTY QUEUE — the anti-ghost guarantee', () => {
     expect(run.line).toContain('not a reason to generate work')
   })
 
-  it('runs exactly ONE query and then stops — no speculative follow-up work', async () => {
+  it('runs exactly ONE claim query and then stops — no speculative follow-up work', async () => {
     const sql = spySql([])
     await runSalesReplyAgent(sql)
     expect(sql.queries).toHaveLength(1)
@@ -171,6 +171,12 @@ describe('ASYMMETRIC SAFETY — ambiguity drafts, it never suppresses', () => {
     const c = classifyByRules('', 'I am out of the office until Monday and will return then')!
     expect(c.cls).toBe('auto_reply')
     expect(decideAction(c)).toBe('no_action')
+  })
+
+  it('a human "I will return with pricing" is NOT auto_reply (2026-09-14 trap)', () => {
+    expect(classifyByRules('', 'Thanks, I will return next week after our board meeting')?.cls).not.toBe('auto_reply')
+    expect(classifyByRules('', "Sounds good, let's talk about a trial")!.cls).toBe('interested')
+    expect(decideAction({ cls: 'auto_reply', confidence: 0.4, why: 'model guess' })).toBe('draft_for_kaan')
   })
 
   it('an ANGRY opt-out reads as hostile, not merely unsubscribe', () => {

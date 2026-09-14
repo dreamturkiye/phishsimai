@@ -42,7 +42,7 @@ This is durable Postgres state, not a session buffer.
 | Loop | Where | What |
 |---|---|---|
 | `*/10` task-runner | `osTaskRunner` | drain tasks + Dex-gated conversion + **5-agent runtime tick** |
-| hourly heartbeat | `runHeartbeat` | infra checks + Dex-gated conversion + **all 10 agents** (`janet` + 9 workers) |
+| hourly heartbeat | `runHeartbeat` | infra checks + **budgeted** Dex-gated conversion (cap 3) + **3 ticks** (25s). Roster coverage = `*/10` 5-agent + hourly 3 |
 | 08:00 Janet CGO | `cronJanetCgo` | owner ruling persist + standup + L5 cycle + **`reasonAndAct('janet')`** |
 | daily specialist crons | mason/aria/nova/rex/scout/finn/vera/dex | existing `reasonAndAct` after each report |
 | 06:40 autonomy-promote | `cronAutonomyPromotion` | persist owner L5 / L5.7, then earned ladder |
@@ -79,7 +79,7 @@ Hard safety rails that stay: Dex bounce breaker, CAN-SPAM, geo allowlist (US/GB/
 - `applyOwnerAutonomyRuling` / `restoreFloorIfBelow` persist L5 + declare `l5_7` even when a kill-flag row exists.
 - `runAutonomyPromotion` reasons from the floored operative level; stored `manual` is not what the job holds at.
 - Live readers (`architectGateEndpoint`, founder brief, Janet `marcus_status`) report the floored level.
-- Continuous tick: task-runner (5/10 min), heartbeat (all 10 hourly), Janet CGO `reasonAndAct`.
+- Continuous tick: task-runner (5/10 min), heartbeat (3 ticks hourly, 25s budget), Janet CGO `reasonAndAct`.
 - Self-mod: `kind === 'marcus'` queues Marcus without requiring `queueTask`.
 
 ## How to verify
@@ -106,6 +106,6 @@ Config checklist (prod, after deploy):
 3. `/api/os/architect/gate` `level` is `l5` even if the stored row was below the floor.
 4. `/api/os/janet` JSON includes `ownerRuling.ok` / `ownerRuling.to` and `janetRuntime`.
 5. `/api/os/task-runner` returns `runtime.ticked` (5 agents) and a `conversion` object.
-6. `/api/os/heartbeat` returns `runtime.ticked` length 10 (janet + 9 workers) **and** a `conversion` object.
+6. `/api/os/heartbeat` returns `runtime.ticked` length **≤ 3**, optional `runtime.budgetHit` / `conversion.timedOut`, **and** a `conversion` object. Do not wait for all 10 in one call.
 7. `os_agent_working_state` has a row per ticked agent after the first successful reason loop.
 8. Watcher audit / Dex breaker / CAN-SPAM / geo allowlist unchanged.

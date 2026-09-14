@@ -34,6 +34,19 @@ describe('conversionLesson is honest', () => {
     expect(l.lesson).toMatch(/No warm sendable/)
   })
 
+  it('names the 14-engaged / 0-CTA trap instead of "wait for replies"', () => {
+    const l = conversionLesson(
+      { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] },
+      undefined,
+      undefined,
+      { replied: 15, engaged: 14, sendable: 14, suppressed: 0, cooldown: 0, exhausted: 0, eligible: 0, autoReplyPending: 14 },
+    )
+    expect(l.success).toBe(false)
+    expect(l.lesson).toMatch(/REVENUE BLOCKER/)
+    expect(l.lesson).toMatch(/15 replied/)
+    expect(l.lesson).not.toMatch(/wait for replies/)
+  })
+
   it('counts trial-org nudges as conversion progress when warm CTAs are empty', () => {
     const l = conversionLesson({ sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }, { sent: 3, scanned: 93 })
     expect(l.success).toBe(true)
@@ -50,6 +63,11 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(seq).toContain('hasMx')
     expect(seq).toContain('ps_outreach_suppression')
     expect(WARM_CONVERSION_TOUCH).toBe(90)
+    expect(seq).toContain("COALESCE(l.bounced, false)")
+    expect(seq).toContain("touch IN (90, 91, 92)")
+    expect(seq).toContain("INTERVAL '4 days'")
+    expect(seq).toContain('nextWarmCtaTouch')
+    expect(readFileSync('server/os/agents/salesReplies.ts', 'utf8')).toContain('reopenFalseAutoReplies')
     expect(TRIAL_CTA_URL).toContain('login?mode=register')
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('warm_conversion')
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('trial_nudge')
