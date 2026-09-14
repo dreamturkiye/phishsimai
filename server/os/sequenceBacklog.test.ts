@@ -7,6 +7,7 @@ import {
   drainPlanDays,
   followUpHourlySlice,
   isStaleSilentLead,
+  secondTouchCopyKind,
   sequenceEngineCheck,
   shouldCrisisUnlockTouch2,
   shouldPauseTouch1,
@@ -15,11 +16,13 @@ import {
 import { TOUCH2_COPY_ERA_CUTOFF } from './sequenceBacklog'
 
 describe('sequence backlog routing (no invented copy)', () => {
-  it('skips T2 for price-era T1 so they are not double-pitched', () => {
+  it('skips the T2 price pitch for price-era T1 (second email uses approved T3 copy)', () => {
     expect(shouldSkipTouch2ForPriceEra('2026-08-03T01:36:00Z')).toBe(true)
     expect(shouldSkipTouch2ForPriceEra('2026-09-14T00:00:00Z')).toBe(true)
     expect(shouldSkipTouch2ForPriceEra('2026-08-02T12:00:00Z')).toBe(false)
     expect(TOUCH2_COPY_ERA_CUTOFF).toBe('2026-08-03T01:36:00Z')
+    expect(secondTouchCopyKind('2026-08-02T12:00:00Z')).toBe('approved_t2_price')
+    expect(secondTouchCopyKind('2026-08-04T00:00:00Z')).toBe('approved_t3_value_reframe')
   })
 
   it('marks silent 45d+ no-open unreplied leads stale, not recently-touched ICP', () => {
@@ -90,6 +93,15 @@ describe('drain is wired onto live send paths', () => {
     expect(seq).toMatch(/touch1_sent_at >= \$\{TOUCH2_COPY_ERA_CUTOFF\}/)
     expect(hb).toContain('runSequenceDrainTick')
     expect(hb).toContain('sequenceEngineCheck')
-    expect(hb).toContain('includeTouch2: false')
+    expect(hb).toContain('includeTouch2: true')
+    expect(hb).toContain('HEARTBEAT_TOUCH2_MAX')
+  })
+
+  it('sequence-touch2 eligible includes post-cutoff T1 after 5 days (live empty-eligible fix)', () => {
+    const seq = readFileSync('server/os/sequences.ts', 'utf8')
+    expect(seq).toMatch(/touch1_sent_at >= '\$\{TOUCH2_COPY_ERA_CUTOFF\}'::timestamptz/)
+    expect(seq).toContain('seq_t3_as_t2')
+    expect(seq).toContain('secondTouchCopyKind')
+    expect(seq).toContain('touch2_sent_at=${ts}, touch3_sent_at=${ts}')
   })
 })

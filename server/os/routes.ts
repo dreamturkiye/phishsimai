@@ -84,7 +84,8 @@ export async function cronAriaDaily(req: Request, res: Response) {
 }
 
 // PS-OUTREACH-THROTTLE-01: the SECOND-TOUCH tick. Dual crisis (TRUE<20 or paying<4) auto-unlocks
-// remaining approved T2 (O.32.10) — still Dex-capped (≤10/run, ≤50 T2/day, ≤100 combined).
+// remaining approved T2 (O.32.10) and post-cutoff T1 ≥5d with approved T3 copy (O.32.11) —
+// still Dex-capped (≤10/run, ≤50 T2/day, ≤100 combined).
 // janet_memory touch2_scale_approved='1' still unlocks when not in crisis. Same cron auth as touch-1.
 export async function cronSequenceTouch2(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return

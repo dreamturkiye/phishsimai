@@ -31,7 +31,7 @@ Last reviewed: 2026-09-14
 
 | Since | Item | Note |
 |---|---|---|
-| 2026-08-24 | **Follow-up ladder has no touch 2 in the generic loop** | Correct today: touch 2 has its own batch path (`runTouch2Batch`). The split is intentional (a shared loop would double-send). Do not consolidate until founder evaluates touch-2 batch 1 (`TOUCH2_SCALE_KEY`). Comment pinned on `runTouch2Batch` 2026-09-14. |
+| 2026-08-24 | **Follow-up ladder has no touch 2 in the generic loop** | Correct today: touch 2 has its own batch path (`runTouch2Batch`). Post-cutoff T1 ≥5d now get approved T3 copy on that same path (O.32.11). Do not fold T2-price copy into the generic loop. |
 
 ## Closed this review (2026-09-14)
 

@@ -9,13 +9,16 @@ import { sequenceEngineCheck } from './sequenceBacklog'
  *
  * Conversion stays (cap 3) so an hourly pass still happens if task-runner missed;
  * ticks are capped + time-budgeted. Cursor only advances for agents actually ticked.
- * Sequence drain runs first (T3/T4 + stale, no T2 sleep) so unsent>5d trends down.
+ * Sequence drain runs first (T2 ≤2 + T3/T4 + stale) so unsent>5d trends down.
+ * T2 is capped at 2 because SEND_SPACING_MS=10s; the dedicated sequence-touch2 cron owns the 10/run batch.
  */
 export const HEARTBEAT_TICK_AGENTS = 3
 export const HEARTBEAT_TICK_BUDGET_MS = 25_000
 export const HEARTBEAT_CONVERSION_CAP = 3
 export const HEARTBEAT_CONVERSION_BUDGET_MS = 12_000
 export const HEARTBEAT_DRAIN_FOLLOWUP_CAP = 8
+/** Small T2 slice on heartbeat (10s spacing) so T1-no-T2 actually drains hourly. sequence-touch2 still owns the 10/run cadence. */
+export const HEARTBEAT_TOUCH2_MAX = 2
 
 async function withBudget<T>(ms: number, fn: () => Promise<T>, fallback: T): Promise<{ value: T; timedOut: boolean }> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -51,7 +54,8 @@ export async function runHeartbeat() {
 
   const { runSequenceDrainTick } = await import('./sequences')
   const drain = await runSequenceDrainTick({
-    includeTouch2: false,
+    includeTouch2: true,
+    touch2MaxSends: HEARTBEAT_TOUCH2_MAX,
     followUpCap: HEARTBEAT_DRAIN_FOLLOWUP_CAP,
   }).catch((e: any) => ({
     sent: 0, t2: 0, t3: 0, t4: 0, staleMarked: 0, skipped: 0, blocked: 0,

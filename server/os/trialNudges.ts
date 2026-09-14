@@ -9,9 +9,16 @@ import { isNonCustomerOrg, measureTrueOrgCounts } from "./trueTrials";
 import { isPaidConversionCrisis } from "./cgoMandate";
 
 export const GREY_BOX_ORG_NAME = "Grey Box Consulting";
+export const GREY_BOX_ORG_IDS = [11] as const;
 export const GREY_BOX_CRISIS_NUDGE_HOURS = 24;
 export const GREY_BOX_CRISIS_NUDGE_MEMORY = "greybox_crisis_nudge_at";
 export const GREY_BOX_CRISIS_NUDGE_DAY = 181;
+
+export function isGreyBoxOrg(name?: string | null, orgId?: number | null): boolean {
+  if (orgId != null && GREY_BOX_ORG_IDS.some((id) => id === Number(orgId))) return true;
+  const n = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return /\bgrey\s*box\b/.test(n) || n.replace(/\s+/g, "").includes("greybox");
+}
 
 const DAY_MS = 86_400_000;
 
@@ -36,7 +43,7 @@ export function nudgeFor(daysLeft: number): 14 | 18 | 25 | 30 | null {
   return null; // first ~10 days of the trial
 }
 
-export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }> }> {
+export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }>; greyBox: GreyBoxPaidNudgeResult | null }> {
   const sql = sqlOverride ?? getSql();
   await sql`CREATE TABLE IF NOT EXISTS trial_nudges_sent (
     org_id INTEGER NOT NULL, nudge_day INTEGER NOT NULL, sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -86,7 +93,16 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
       await sql`DELETE FROM trial_nudges_sent WHERE org_id = ${org.id} AND nudge_day = ${nudge}`.catch(() => {});
     }
   }
-  return { scanned, sent };
+  // Live 2026-09-14: scanned:2 sent:0 because D18 was already claimed and the crisis D25
+  // loop was not on this cron. Always attempt Grey Box paid nudge from THIS function so
+  // /api/os/trial-nudges actually sends while D18 sits claimed.
+  const greyBox = await runGreyBoxPaidNudge(sql).catch((e: any) => ({
+    attempted: false, sent: false, reason: String(e?.message || e).slice(0, 160),
+  } as GreyBoxPaidNudgeResult));
+  if (greyBox.sent && greyBox.orgId != null) {
+    sent.push({ orgId: greyBox.orgId, nudge: GREY_BOX_CRISIS_NUDGE_DAY });
+  }
+  return { scanned, sent, greyBox };
 }
 
 export type GreyBoxPaidNudgeResult = {
@@ -130,7 +146,12 @@ export async function runGreyBoxPaidNudge(sqlOverride?: any): Promise<GreyBoxPai
        ORDER BY m.id ASC LIMIT 1) AS admin_email
     FROM organizations o
     WHERE o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > NOW()
-      AND lower(o.name) = ${GREY_BOX_ORG_NAME.toLowerCase()}
+      AND (
+        o.id = ${GREY_BOX_ORG_IDS[0]}
+        OR lower(o.name) LIKE '%grey%box%'
+        OR lower(replace(o.name, ' ', '')) LIKE '%greybox%'
+      )
+    ORDER BY CASE WHEN o.id = ${GREY_BOX_ORG_IDS[0]} THEN 0 ELSE 1 END, o.id ASC
     LIMIT 1`) as Array<{ id: number; name: string; planExpiresAt: string; admin_email: string | null }>;
 
   const org = orgs[0];
@@ -186,11 +207,10 @@ export async function cronTrialNudges(req: any, res: any) {
   if (!okCron && !okHq) return res.status(401).json({ error: "Unauthorized" });
   try {
     const r = await runTrialNudges(getSql());
-    const grey = await runGreyBoxPaidNudge(getSql()).catch(() => null);
     if (r.sent.length > 0) {
       await sendTelegram(`✉️ <b>PhishSim trial nudges</b> — sent ${r.sent.length}: ${r.sent.map(s => `org ${s.orgId} (D${s.nudge})`).join(", ")}`).catch(() => {});
     }
-    return res.json({ ok: true, ...r, greyBox: grey });
+    return res.json({ ok: true, scanned: r.scanned, sent: r.sent, greyBox: r.greyBox });
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }

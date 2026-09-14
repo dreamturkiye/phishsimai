@@ -133,19 +133,22 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
   const raw = await sendWarmTrialCtas({ emails: opts.emails, cap: opts.cap ?? 8 })
   raw.reopenedAutoReplies = reopenedAutoReplies
   let trialNudges = { scanned: 0, sent: 0 }
+  let greyBox: GreyBoxPaidNudgeResult | undefined
   try {
     const { runTrialNudges } = await import('./trialNudges')
     const n = await runTrialNudges()
     trialNudges = { scanned: n.scanned, sent: n.sent.length }
+    if (n.greyBox) greyBox = n.greyBox
   } catch {
     // Nudges are additive; a nudge failure must not hide a warm CTA that already sent.
   }
-  let greyBox: GreyBoxPaidNudgeResult | undefined
-  try {
-    const { runGreyBoxPaidNudge } = await import('./trialNudges')
-    greyBox = await runGreyBoxPaidNudge()
-  } catch (e: any) {
-    greyBox = { attempted: false, sent: false, reason: String(e?.message || e).slice(0, 160) }
+  if (!greyBox) {
+    try {
+      const { runGreyBoxPaidNudge } = await import('./trialNudges')
+      greyBox = await runGreyBoxPaidNudge()
+    } catch (e: any) {
+      greyBox = { attempted: false, sent: false, reason: String(e?.message || e).slice(0, 160) }
+    }
   }
   let linkedinDraft: LinkedInAcquisitionResult = {
     queued: false,

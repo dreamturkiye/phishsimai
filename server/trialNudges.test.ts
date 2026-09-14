@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { nudgeFor } from "./os/trialNudges";
-import { GREY_BOX_CRISIS_NUDGE_DAY, GREY_BOX_CRISIS_NUDGE_HOURS, GREY_BOX_ORG_NAME } from "./os/trialNudges";
+import { GREY_BOX_CRISIS_NUDGE_DAY, GREY_BOX_CRISIS_NUDGE_HOURS, GREY_BOX_ORG_IDS, GREY_BOX_ORG_NAME, isGreyBoxOrg } from "./os/trialNudges";
 import { TRIAL_DAYS } from "./lib/entitlements";
 
 describe("nudgeFor (30-day trial, by days-left)", () => {
@@ -44,11 +44,18 @@ describe("nudgeFor (30-day trial, by days-left)", () => {
   });
   it("Grey Box paid loop reuses D25 checkout copy on a 24h crisis cadence", () => {
     expect(GREY_BOX_ORG_NAME).toBe("Grey Box Consulting");
+    expect(GREY_BOX_ORG_IDS).toContain(11);
+    expect(isGreyBoxOrg("Grey Box Consulting")).toBe(true);
+    expect(isGreyBoxOrg("GreyBox Consulting LLC")).toBe(true);
+    expect(isGreyBoxOrg("Acme MSP", 11)).toBe(true);
+    expect(isGreyBoxOrg("Acme MSP", 99)).toBe(false);
     expect(GREY_BOX_CRISIS_NUDGE_HOURS).toBe(24);
     expect(GREY_BOX_CRISIS_NUDGE_DAY).toBe(181);
     const src = readFileSync("server/os/trialNudges.ts", "utf8");
     expect(src).toContain("runGreyBoxPaidNudge");
     expect(src).toContain("sendTrialDay25");
+    expect(src).toMatch(/runGreyBoxPaidNudge\(sql\)/);
+    expect(src).toContain("%grey%box%");
     expect(readFileSync("server/os/conversionEngine.ts", "utf8")).toContain("runGreyBoxPaidNudge");
   });
 });

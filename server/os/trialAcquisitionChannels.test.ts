@@ -42,9 +42,12 @@ describe('trial acquisition besides cold email', () => {
   })
 
   it('pending LinkedIn review is a funnel + escalate path, not a dead end', () => {
-    expect(LINKEDIN_PENDING_ESCALATE_HOURS).toBe(6)
+    expect(LINKEDIN_PENDING_ESCALATE_HOURS).toBe(2)
     const line = linkedInFunnelLine({ ...EMPTY_LINKEDIN_FUNNEL, pendingReview: 1, oldestPendingHours: 9 })
     expect(line).toMatch(/pending_review=1/)
     expect(line).toMatch(/oldest pending 9h/)
+    const acq = readFileSync('server/os/trialAcquisitionChannels.ts', 'utf8')
+    expect(acq).toContain('pending_review=0')
+    expect(acq).not.toMatch(/return \{[\s\S]*already queued a founder-review trial draft today[\s\S]*funnel[\s\S]*\}/)
   })
 })

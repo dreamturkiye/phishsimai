@@ -7,14 +7,18 @@
  *   2. Touch-2 has its own batch path that HOLDS after 150 sends (PS-TOUCH2-PRICE-01,
  *      Aug 3) until janet_memory touch2_scale_approved='1'. Dual crisis + owner mandate
  *      now unlocks that remainder — still Dex-capped (≤10/run, ≤50 T2/day, ≤100 combined).
- *   3. touch2Eligible() only selects T1 BEFORE TOUCH2_COPY_ERA_CUTOFF (compliance-era).
- *      Price-led T1 after that cutoff is excluded from T2 (same pitch) AND cannot enter
- *      T3 because T3 required touch2_sent_at. Those leads are permanently stalled.
+ *   3. touch2Eligible() historically only selected T1 BEFORE TOUCH2_COPY_ERA_CUTOFF
+ *      (compliance-era). Price-led T1 after that cutoff was excluded from T2 (same
+ *      pitch — correct) AND could not enter T3 because T3 required touch2_sent_at.
+ *      Live 2026-09-14: /api/os/sequence-touch2 attempted:0 sent:0 headroom:10
+ *      holding:false — pre-cutoff eligible exhausted; ~1565 stalled were POST-cutoff.
  *   4. Hourly follow-up slice is ceil(50/24)=3, and T3 finds zero rows while T2 is held.
  *
- * Drain doctrine: resume approved T2 for pre-cutoff ICP; skip T2 and send approved T3
- * for post-cutoff T1 after 5 days; T4 after T3+6d; suppress silent stale; pause new T1
- * while the overdue drainable pool is large. No new cold copy.
+ * Drain doctrine: resume approved T2 copy for pre-cutoff ICP; for post-cutoff T1 after
+ * ≥5 days send the EXISTING approved SEQUENCE touch-3 (value re-frame, not a same-day
+ * double price-pitch) via runTouch2Batch and stamp touch2_sent_at (and touch3_sent_at
+ * so the T3 loop does not re-send the same copy). T4 after T3+6d. Suppress silent stale.
+ * Pause new T1 while the overdue drainable pool is large. No invented cold copy.
  */
 
 /** Instant PS-COPY-PRICE-01 (price-led touch-1) reached production. Canonical copy lives in sequences.ts. */
@@ -57,11 +61,24 @@ export type SequenceEngineCheck = {
   draining: boolean
 }
 
-/** Price-led T1 (on/after cutoff) must not get the same T2 pitch — they skip to T3. */
+/** Price-led T1 (on/after cutoff) must not get the same T2 pitch — they get approved T3 copy as the second email. */
 export function shouldSkipTouch2ForPriceEra(touch1SentAt: string | Date, copyEraCutoff = TOUCH2_COPY_ERA_CUTOFF): boolean {
   const t1 = new Date(touch1SentAt).getTime()
   const cut = Date.parse(copyEraCutoff)
   return Number.isFinite(t1) && t1 >= cut
+}
+
+export type SecondTouchCopyKind = 'approved_t2_price' | 'approved_t3_value_reframe'
+
+/**
+ * Safety: post-cutoff T1 already received the price-led pitch. A second email is allowed
+ * only with the DISTINCT founder-approved T3 value-reframe, and only after SEQUENCE_STALL_DAYS.
+ * Pre-cutoff T1 still gets the approved T2 price follow-up (PS-TOUCH2-PRICE-01).
+ */
+export function secondTouchCopyKind(touch1SentAt: string | Date, copyEraCutoff = TOUCH2_COPY_ERA_CUTOFF): SecondTouchCopyKind {
+  return shouldSkipTouch2ForPriceEra(touch1SentAt, copyEraCutoff)
+    ? 'approved_t3_value_reframe'
+    : 'approved_t2_price'
 }
 
 export function isStaleSilentLead(opts: {

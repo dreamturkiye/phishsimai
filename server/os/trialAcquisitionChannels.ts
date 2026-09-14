@@ -5,7 +5,7 @@
  * Do not invent cold copy. Trial URL and price claims are the frozen sequence strings.
  *
  * "already queued a founder-review trial draft today" is NOT a permanent dead end:
- * pending drafts escalate on a 6h cadence until the founder reviews, and the funnel
+ * pending drafts escalate on a 2h cadence until the founder reviews, and the funnel
  * (queued → pending_review → approved → posted → reply → trial) is returned every tick.
  */
 import { getSql } from './conn'
@@ -39,7 +39,7 @@ export const TRIAL_ACQUISITION_CHANNELS = [
   {
     id: 'linkedin_founder_draft',
     status: 'live' as const,
-    how: 'Queue LinkedIn trial-CTA drafts with preview URL; escalate when pending >6h. Publish remains lockout-blocked until founder approves.',
+    how: 'Queue LinkedIn trial-CTA drafts with preview URL; escalate when pending >2h. Publish remains lockout-blocked until founder approves.',
   },
   {
     id: 'public_social_publish',
@@ -50,7 +50,7 @@ export const TRIAL_ACQUISITION_CHANNELS = [
 
 const DRAFT_MEMORY_KEY = 'trial_acq_linkedin_draft_day'
 const ESCALATE_MEMORY_KEY = 'trial_acq_linkedin_escalate_at'
-export const LINKEDIN_PENDING_ESCALATE_HOURS = 6
+export const LINKEDIN_PENDING_ESCALATE_HOURS = 2
 
 export const TRIAL_LINKEDIN_DRAFT_BODY =
   `MSPs: 30-day no-card trial. One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Live in 10 minutes.\n\nStart: ${TRIAL_CTA_URL}`
@@ -111,7 +111,8 @@ export async function queueFounderReviewTrialDraft(sqlOverride?: any): Promise<L
 
 /**
  * Crisis-tick multi-channel: queue a previewable LinkedIn trial draft if none is pending,
- * escalate when a draft sits unreviewed >6h, always return the funnel. Public publish stays locked.
+ * escalate when a draft sits unreviewed >2h, always return the funnel. Public publish stays locked.
+ * "already queued today" with pendingReview=0 is a failed queue — retry, do not park.
  */
 export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<LinkedInAcquisitionResult> {
   if (PUBLIC_SOCIAL_POSTING_ENABLED) {
@@ -185,12 +186,32 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
     LIMIT 1
   `.catch(() => [])) as Array<{ value?: string }>
   if (String(prior[0]?.value || '') === day) {
-    return {
-      queued: false,
-      escalated: false,
-      reason: 'already queued a founder-review trial draft today — funnel still tracked; escalate if it sits',
-      funnel,
+    // Memory says we queued today but pendingReview is 0 — the insert never became
+    // reviewable. Live dead end was returning here. Retry on the escalate cadence only.
+    const last = (await sql`
+      SELECT value FROM janet_memory
+      WHERE company_id='phishsimai' AND type='operating' AND key=${ESCALATE_MEMORY_KEY}
+      LIMIT 1
+    `.catch(() => [])) as Array<{ value?: string }>
+    const lastAt = Date.parse(String(last[0]?.value || ''))
+    const due = !Number.isFinite(lastAt) || Date.now() - lastAt >= LINKEDIN_PENDING_ESCALATE_HOURS * 3_600_000
+    if (!due) {
+      return {
+        queued: false,
+        escalated: false,
+        reason: `queued-today memory but pending_review=0 — retrying in <${LINKEDIN_PENDING_ESCALATE_HOURS}h (not a dead end)`,
+        funnel,
+      }
     }
+    await sendTelegram(
+      `📋 LINKEDIN TRIAL DRAFT memory said queued today but pending_review=0 — re-queueing preview (lockout stays on).\n` +
+      `Approve in Safari when the preview lands.`,
+    ).catch(() => {})
+    await sql`
+      INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+      VALUES ('phishsimai', 'operating', ${ESCALATE_MEMORY_KEY}, ${new Date().toISOString()}, 1, 'trial_acquisition')
+      ON CONFLICT (company_id, type, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `.catch(() => {})
   }
 
   const saved = await savePreviewForReview({
