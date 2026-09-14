@@ -476,7 +476,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | C / O.15 | PhishSim Mason = pipeline conversion; Rex = data truth; Dex = deliverability (not the ScrollFuel-shaped C table) | O.15 divergence charter. Roster remains Janet + 9 from `@kaan/os-core` `AGENT_IDS`. |
 | 2026-09-14 | M.5 | Start `drill_3` from held L5.7; do not declare L5.8 | Owner: 3-day drill, not 15-day skip. |
 | 2026-09-14 | — | Acquisition besides cold email is Dex-gated warm CTA + TRUE-org nudges + MSP harvest + founder-review LinkedIn drafts; public social publish stays locked | PS-SOCIAL-LOCKOUT-01. No invented cold copy. Magic-link **trial** start staged (hard stop #5 / protected auth). |
-| 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge. Bandit remains `replied`. Not a declaration of L5.8. |
+| 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge (PR #313). Bandit remains `replied`. Not a declaration of L5.8. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
