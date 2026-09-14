@@ -56,5 +56,7 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(seq).toMatch(/one of the lowest per-seat prices in the industry/i)
     expect(seq).toContain('$299/mo for 500')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('queueFounderReviewTrialDraft')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueAutonomyBlocker')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('autonomyGate.ts')
   })
 })

@@ -28,6 +28,14 @@ export async function runHeartbeat() {
     checks.push({ name: 'sequence_engine', ok: false, detail: e.message })
   }
 
+  const { runCgoConversionShift } = await import('./conversionEngine')
+  const conversion = await runCgoConversionShift({ cap: 8 }).catch((e: any) => ({
+    sent: 0,
+    blocked: 0,
+    skipped: 0,
+    error: String(e?.message || e).slice(0, 160),
+  }))
+
   const { tickAllAgentRuntimes } = await import('./agentRuntimeTick')
   const runtime = await tickAllAgentRuntimes({ maxAgents: 10, companyId: 'phishsimai' }).catch((e: any) => ({
     ticked: [] as string[],
@@ -35,5 +43,13 @@ export async function runHeartbeat() {
   }))
 
   await reportAgentRun('heartbeat', healthy, { checks }, healthy ? undefined : 'heartbeat unhealthy', 'phishsimai')
-  return { company: 'phishsimai', timestamp: new Date().toISOString(), checks, healthy, runtime, issues: checks.filter(c => !c.ok).map(c => c.name) }
+  return {
+    company: 'phishsimai',
+    timestamp: new Date().toISOString(),
+    checks,
+    healthy,
+    conversion,
+    runtime,
+    issues: checks.filter(c => !c.ok).map(c => c.name),
+  }
 }

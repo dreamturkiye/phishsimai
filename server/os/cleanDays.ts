@@ -114,7 +114,7 @@ export async function getCleanStreak(sql: SqlLike, productId: string): Promise<{
 //
 // It returned the strings 'L5.6' and 'L5.7' and wrote them nowhere. Two problems, both fatal:
 //
-//   1. 'L5.6' DOES NOT EXIST. Grep KAAN_AI_OS_V7.3 (the governing architecture) for "L5.6":
+//   1. 'L5.6' DOES NOT EXIST. Grep docs/KAAN_AI_OS_7.10_Architecture.md (the governing architecture) for "L5.6":
 //      zero hits. It was invented here as a name for "not yet L5.7". The spec defines exactly
 //      two postures on this axis, L5.7 and L5.8, and reaching either is a declaration backed by
 //      measured exit criteria — not a string a getter returns.

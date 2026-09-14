@@ -42,7 +42,7 @@ This is durable Postgres state, not a session buffer.
 | Loop | Where | What |
 |---|---|---|
 | `*/10` task-runner | `osTaskRunner` | drain tasks + Dex-gated conversion + **5-agent runtime tick** |
-| hourly heartbeat | `runHeartbeat` | infra checks + **all 10 agents** (`janet` + 9 workers) |
+| hourly heartbeat | `runHeartbeat` | infra checks + Dex-gated conversion + **all 10 agents** (`janet` + 9 workers) |
 | 08:00 Janet CGO | `cronJanetCgo` | owner ruling persist + standup + L5 cycle + **`reasonAndAct('janet')`** |
 | daily specialist crons | mason/aria/nova/rex/scout/finn/vera/dex | existing `reasonAndAct` after each report |
 | 06:40 autonomy-promote | `cronAutonomyPromotion` | persist owner L5 / L5.7, then earned ladder |
@@ -106,6 +106,6 @@ Config checklist (prod, after deploy):
 3. `/api/os/architect/gate` `level` is `l5` even if the stored row was below the floor.
 4. `/api/os/janet` JSON includes `ownerRuling.ok` / `ownerRuling.to` and `janetRuntime`.
 5. `/api/os/task-runner` returns `runtime.ticked` (5 agents) and a `conversion` object.
-6. `/api/os/heartbeat` returns `runtime.ticked` length 10 (janet + 9 workers).
+6. `/api/os/heartbeat` returns `runtime.ticked` length 10 (janet + 9 workers) **and** a `conversion` object.
 7. `os_agent_working_state` has a row per ticked agent after the first successful reason loop.
 8. Watcher audit / Dex breaker / CAN-SPAM / geo allowlist unchanged.

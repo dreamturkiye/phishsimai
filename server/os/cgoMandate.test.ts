@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   GOALS_BY_WEEK,
+  assignmentSkipReason,
+  breakerAwareAssignRule,
   conversionDefaultTask,
+  droughtIdleAction,
   employeeExecutePrompt,
   employeeExecutionMandate,
   goalsForWeek,
@@ -9,10 +12,12 @@ import {
   isConversionBoundTitle,
   isOperatingCrisis,
   isPaidConversionCrisis,
+  isProspectColdSendTitle,
   isTrialCrisis,
   janetCgoMandate,
   operatingCrisisTasks,
   paidConversionCrisisTasks,
+  scoreAwareAssignHint,
   verifiedTrialCount,
   zeroTrialCrisisTasks,
 } from './cgoMandate'
@@ -56,7 +61,7 @@ describe('Janet CGO mandate', () => {
 
   it('issues conversion-bound work (not analyze/research/500-cold) in the paid-conversion pack', () => {
     const pack = paidConversionCrisisTasks()
-    expect(pack.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'vera', 'finn']))
+    expect(pack.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'vera', 'finn', 'dex']))
     for (const task of pack) {
       expect(isConversionBoundTitle(task.title, task.description)).toBe(true)
       expect(isAnalysisOnlyTitle(task.title, task.description)).toBe(false)
@@ -81,7 +86,7 @@ describe('Janet CGO mandate', () => {
     const mason = both.find((t) => t.agentId === 'mason')
     expect(mason?.title).toMatch(/20 hottest/)
     expect(mason?.title).not.toMatch(/warm trial CTAs/i)
-    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'vera', 'finn']))
+    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'vera', 'finn']))
   })
 
   it('issues only the paying pack once TRUE trials are at 20', () => {
@@ -91,11 +96,13 @@ describe('Janet CGO mandate', () => {
     expect(isTrialCrisis({ liveProductTrials: 20, crmTrials: 0, payingCustomers: 0 })).toBe(false)
   })
 
-  it('forces Mason, Aria, and Nova conversion work when trials are zero', () => {
+  it('forces Mason, Aria, Nova, Scout, and Dex conversion work when trials are zero', () => {
     const owners = zeroTrialCrisisTasks().map((t) => t.agentId)
-    expect(owners).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex']))
+    expect(owners).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex']))
     expect(zeroTrialCrisisTasks().every((t) => /trial/i.test(`${t.title} ${t.description}`))).toBe(true)
     for (const task of zeroTrialCrisisTasks()) {
+      expect(isConversionBoundTitle(task.title, task.description)).toBe(true)
+      expect(isAnalysisOnlyTitle(task.title, task.description)).toBe(false)
       expect(voidPremiseFor(task.title, task.description)).toBeNull()
     }
   })
@@ -117,6 +124,45 @@ describe('Janet CGO mandate', () => {
     expect(conversionDefaultTask('mason', 'pipeline', 'Sales')).toMatch(/30-day/)
     expect(employeeExecutionMandate()).not.toMatch(/email customers directly/)
   })
+
+  it('rewrites idle rest to a conversion-bound lane mandate', () => {
+    expect(droughtIdleAction('mason')).toBe('convert_warm: hottest')
+    expect(isConversionBoundTitle(droughtIdleAction('scout'))).toBe(true)
+    expect(isConversionBoundTitle(droughtIdleAction('dex'))).toBe(true)
+    expect(isProspectColdSendTitle('Mason cold outreach 500 MSP')).toBe(true)
+    expect(isProspectColdSendTitle('Send warm trial CTAs to replied leads')).toBe(false)
+  })
+
+  it('feeds Dex breaker + reviewed scores into Janet assign (7.10 learning loop, not L5.8)', () => {
+    expect(breakerAwareAssignRule(true, false)).toMatch(/conversion-bound/)
+    expect(breakerAwareAssignRule(true, true)).toMatch(/TRIPPED/)
+    expect(breakerAwareAssignRule(true, true)).not.toMatch(/500-cold/)
+    expect(assignmentSkipReason({
+      title: 'Mason cold outreach 500 MSP',
+      operatingCrisis: true,
+      breakerTripped: true,
+    })).toBe('breaker_tripped_cold_send')
+    expect(assignmentSkipReason({
+      title: 'Send warm trial CTAs and follow up existing trial orgs today',
+      operatingCrisis: true,
+      breakerTripped: true,
+    })).toBeNull()
+    expect(assignmentSkipReason({
+      title: 'Write a blog post',
+      operatingCrisis: true,
+      breakerTripped: false,
+      agentScoreAvg: 3,
+    })).toBe('low_score_non_conversion')
+    expect(assignmentSkipReason({
+      title: 'Write a blog post',
+      operatingCrisis: true,
+      breakerTripped: false,
+      agentScoreAvg: null,
+    })).toBeNull()
+    expect(scoreAwareAssignHint({})).toBe('')
+    expect(scoreAwareAssignHint({ mason: { count: 4, avg: 8.2 }, aria: { count: 2, avg: 3 } })).toMatch(/mason=8.2/)
+    expect(scoreAwareAssignHint({ mason: { count: 4, avg: 8.2 } })).not.toMatch(/\b0\b/)
+  })
 })
 
 describe('coded enforcers are wired', () => {
@@ -135,9 +181,13 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('server/os/routes.ts', 'utf8')).toMatch(/tickAllAgentRuntimes\(\s*\{\s*maxAgents:\s*5/)
     expect(readFileSync('server/os/routes.ts', 'utf8')).toMatch(/reasonAndAct\(\s*["']janet["']/)
     expect(os).toContain('does NOT forbid converting')
-    expect(os).toContain('runCgoConversionShift')
+    expect(os).toContain('breakerAwareAssignRule')
+    expect(os).toContain('getSequenceHealth')
+    expect(os).toContain('scoreAwareAssignHint')
+    expect(readFileSync('server/os/heartbeat.ts', 'utf8')).toContain('runCgoConversionShift')
     expect(os).toContain('convert_warm')
-    expect(os).toContain('sendWarmTrialCtas')
+    expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('CONVERSION_AGENTS.has')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueAutonomyBlocker')
     expect(readFileSync('server/_core/oauth.ts', 'utf8')).toContain('startProductTrial')
     expect(readFileSync('server/os/startProductTrial.ts', 'utf8')).toContain('createOrganization')
     expect(os).not.toMatch(/Your team is TEXT-ONLY/)
@@ -145,7 +195,9 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('server/os/sequences.ts', 'utf8')).toMatch(/computeAdaptiveSplit\(\s*'touch1_subject',\s*200,\s*0\.2,\s*'replied'\s*\)/)
     expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('shouldFireConversionShift')
     expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('runCgoConversionShift')
-    expect(os).not.toMatch(/Do NOT assign conversion/)
+    expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('## O.32')
+    expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('7.10.1')
+    expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('breakerAwareAssignRule')
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)
   })
 

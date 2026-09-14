@@ -81,8 +81,85 @@ export function isOperatingCrisis(facts: TrialFacts): boolean {
 
 /** Conversion-critical titles: send, CTA, trial start, upgrade, paid. */
 export function isConversionBoundTitle(title: string, description = ''): boolean {
-  return /\b(convert|warm cta|trial[- ]?(start|nudge|ctas?|orgs?)|upgrade|paid mrr|paying|stripe|send evidence|nurture|follow-?up existing|trial.?to.?paid)\b/i
+  return /\b(convert|warm cta|trial[- ]?(starts?|nudges?|ctas?|orgs?)|upgrade|paid mrr|paying|stripe|send evidence|nurture|follow-?up existing|trial.?to.?paid)\b/i
     .test(`${title} ${description}`)
+}
+
+/** Prospect / first-touch / cold volume — Dex breaker must stand these down. */
+export function isProspectColdSendTitle(title: string, description = ''): boolean {
+  return /\b(prospect|cold (email|send|blast|outreach)|touch\s*1|first[- ]touch|sequence send|500\s*(msp|cold))\b/i
+    .test(`${title} ${description}`)
+}
+
+export function isIdleNone(action: string): boolean {
+  return !String(action || '').trim() || /^none$/i.test(String(action).trim())
+}
+
+/** Lane mandate when an agent would rest during an operating crisis. */
+export function droughtIdleAction(agentId: string): string {
+  const map: Record<string, string> = {
+    janet: 'convert_warm: hottest',
+    mason: 'convert_warm: hottest',
+    aria: 'convert_warm: hottest',
+    nova: 'convert_warm: hottest',
+    vera: 'convert_warm: hottest',
+    rex: 'Publish TRUE-trial vs paying integers (canary excluded)',
+    scout: 'Drive trial starts from measured MSP segment',
+    finn: 'Publish paying vs free-trial integers from Stripe and plan',
+    dex: 'Keep sending healthy so trial CTAs land',
+    marcus: 'Queue Marcus only for a named signup/trial-start/upgrade bug',
+  }
+  return map[agentId] || 'convert_warm: hottest'
+}
+
+/**
+ * 7.10 §H / L5.7-safe: Dex breaker feeds task selection.
+ * Measured trip → no prospect/cold assigns. Unmeasured is not treated as tripped here
+ * (warm CTA already fail-closes on !measured in sequences.ts).
+ */
+export function breakerAwareAssignRule(operatingCrisis: boolean, breakerTripped: boolean): string {
+  if (breakerTripped) {
+    const halt =
+      'Bounce breaker is TRIPPED — Dex owns the halt. Do NOT assign prospect/cold/touch-1 sends. ' +
+      'Warm CTA on replied/engaged already stands down on a measured trip. Assign trial nudge, upgrade, Stripe truth, Dex health, or a named Marcus send-path fix only.'
+    return operatingCrisis
+      ? `ASSIGN only conversion-bound work that does not send around Dex. ${halt} One open task per agent.`
+      : halt
+  }
+  return operatingCrisis
+    ? 'ASSIGN only conversion-bound work (warm CTA, trial nudge, upgrade, Stripe truth, trial start). Do NOT assign analyze/research/TOF/500-cold. One open task per agent.'
+    : 'Issue 1-3 conversion-critical task assignments.'
+}
+
+export type AgentScoreHint = { count: number; avg: number }
+
+/** Unmeasured scores are omitted — never printed as 0. */
+export function scoreAwareAssignHint(scores: Record<string, AgentScoreHint>): string {
+  const entries = Object.entries(scores).filter(([, v]) => v.count > 0 && Number.isFinite(v.avg))
+  if (entries.length === 0) return ''
+  const line = entries
+    .sort((a, b) => b[1].avg - a[1].avg)
+    .map(([id, v]) => `${id}=${v.avg}(n=${v.count})`)
+    .join(', ')
+  return (
+    `Reviewed-task scores (real; unmeasured omitted): ${line}. ` +
+    `Prefer higher scorers for conversion-bound work. Do not assign analysis/volume theater to avg<5.\n`
+  )
+}
+
+export function assignmentSkipReason(opts: {
+  title: string
+  description?: string
+  operatingCrisis: boolean
+  breakerTripped: boolean
+  agentScoreAvg?: number | null
+}): 'analysis_only' | 'breaker_tripped_cold_send' | 'low_score_non_conversion' | null {
+  const { title, description = '', operatingCrisis, breakerTripped, agentScoreAvg } = opts
+  if (breakerTripped && isProspectColdSendTitle(title, description)) return 'breaker_tripped_cold_send'
+  if (operatingCrisis && isAnalysisOnlyTitle(title, description)) return 'analysis_only'
+  if (isConversionBoundTitle(title, description)) return null
+  if (operatingCrisis && agentScoreAvg != null && agentScoreAvg < 5) return 'low_score_non_conversion'
+  return null
 }
 
 /**
@@ -226,9 +303,23 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
     },
     {
       agentId: 'rex',
-      title: 'Publish the 20-trial scoreboard from entitlements + CRM',
+      title: 'Publish the TRUE-trial vs paying scoreboard from entitlements + CRM',
       description:
         `SPRINT: operating count must be N/${TRIAL_SPRINT_TARGET}. Reconcile live product trials (excluding internal/test orgs) against CRM trial_at. Report the verified integer and mismatches. Do not let Janet run on a fake number.`,
+      priority: 'high',
+    },
+    {
+      agentId: 'scout',
+      title: 'Drive trial starts from measured MSP segment',
+      description:
+        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now. From measured reply/ICP data only, name the MSP segment most likely to start a trial THIS WEEK and hand Mason that list for convert_warm / MSP harvest. Do not invent competitor prices. Do not write a TOF research essay.`,
+      priority: 'high',
+    },
+    {
+      agentId: 'dex',
+      title: 'Keep sending healthy so trial CTAs land',
+      description:
+        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE trials. Report breaker, authentication, and suppression only. Queue Marcus for a named send-path bug. Do not classify replies or send around Dex.`,
       priority: 'high',
     },
   ]
@@ -273,6 +364,13 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
       title: 'Publish paying vs free-trial integers from Stripe and plan',
       description:
         'PAID CONVERSION CRISIS: report live Stripe paying and organizations.plan paid vs free/trial only. Do not invent MRR from CRM stages. If Stripe is NOT CHECKED, say so. This number is how Janet knows whether conversion moved.',
+      priority: 'high',
+    },
+    {
+      agentId: 'dex',
+      title: 'Keep sending healthy so trial CTAs land',
+      description:
+        'PAID CONVERSION CRISIS: report breaker, authentication, and suppression only. Warm CTA already stands down on a measured trip. Queue Marcus for a named send-path bug. Do not send around Dex.',
       priority: 'high',
     },
   ]

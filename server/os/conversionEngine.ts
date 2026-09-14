@@ -84,6 +84,9 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     linkedinDraft = { queued: false, reason: String(e?.message || e).slice(0, 160) }
   }
   const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft)
+  if (raw.reason?.startsWith('autonomy:')) {
+    await maybeQueueAutonomyBlocker(raw.reason).catch(() => {})
+  }
   const result: ConversionShiftResult = { ...raw, success, lesson, trialNudges, linkedinDraft }
   await learnFromOutcome(
     COMPANY_ID,
@@ -101,4 +104,33 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     schemaValid: true,
   }).catch(() => {})
   return result
+}
+
+const AUTONOMY_MARCUS_DAY_KEY = 'conversion_autonomy_marcus_day'
+
+/** Once per UTC day: named-file Marcus task when convert_warm is denied by the gate. Not Dex. */
+async function maybeQueueAutonomyBlocker(reason: string): Promise<void> {
+  const { getSql } = await import('./conn')
+  const sql = getSql()
+  const day = new Date().toISOString().slice(0, 10)
+  const prior = (await sql`
+    SELECT value FROM janet_memory
+    WHERE company_id=${COMPANY_ID} AND type='operating' AND key=${AUTONOMY_MARCUS_DAY_KEY}
+    LIMIT 1
+  `.catch(() => [])) as Array<{ value?: string }>
+  if (String(prior[0]?.value || '') === day) return
+  const { queueJanetArchitectTask } = await import('./selfHeal')
+  const id = await queueJanetArchitectTask({
+    task:
+      'Restore PhishSim convert_warm / send_simulation at the L5 floor. convert_warm was denied by the autonomy gate. Named files: server/os/autonomyGate.ts, server/os/ownerRuling.ts. Do not lower the floor. Do not change Dex rails or price.',
+    source: 'agent:mason',
+    notes: String(reason || '').slice(0, 500),
+    notify: false,
+  }).catch(() => null)
+  if (!id) return
+  await sql`
+    INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+    VALUES (${COMPANY_ID}, 'operating', ${AUTONOMY_MARCUS_DAY_KEY}, ${day}, 1, 'conversion_engine')
+    ON CONFLICT (company_id, type, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `.catch(() => {})
 }

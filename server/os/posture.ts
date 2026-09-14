@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  PS-POSTURE-01 — KAAN_AI_OS_V7.3 maturity posture (L5.7 → L5.8).
+//  PS-POSTURE-01 — KAAN AI OS 7.10 Section A maturity posture (L5.7 → L5.8).
 //
 //  Two axes, kept separate on purpose:
 //    os_autonomy_state.level  — WHAT an agent may do now (gate; auto-promoted; manual..l5)

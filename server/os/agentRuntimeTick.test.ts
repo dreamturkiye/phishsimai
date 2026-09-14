@@ -28,6 +28,8 @@ describe("L5.7 continuous agent runtime — original 7.10 roster", () => {
     const heartbeat = readFileSync(resolve(import.meta.dirname, "heartbeat.ts"), "utf8");
     expect(routes).toMatch(/tickAllAgentRuntimes\(/);
     expect(heartbeat).toMatch(/tickAllAgentRuntimes\(/);
+    expect(heartbeat).toMatch(/runCgoConversionShift/);
+    expect(readFileSync(resolve(import.meta.dirname, "routes.ts"), "utf8")).toMatch(/runCgoConversionShift/);
   });
 
   it("Janet 08:00 CGO cron also reasonAndActs (continuous, not standup-only)", () => {
