@@ -51,6 +51,41 @@ export function previewPublicUrl(token: string): string {
   return `${BASE_URL.replace(/\/$/, '')}/preview/social/${token}`
 }
 
+function escapeTelegramHtml(s: string): string {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/** Clickable Safari preview. Publish stays locked (PS-SOCIAL-LOCKOUT-01). */
+export function linkedInPreviewTelegramHtml(opts: {
+  title: string
+  previewUrl: string
+  hours?: number | null
+  kind: 'new' | 'pending' | 'retry'
+}): string {
+  const url = String(opts.previewUrl || '').trim()
+  const title = escapeTelegramHtml(String(opts.title || '30-day no-card trial for MSPs').slice(0, 80))
+  const link = url ? `<a href="${escapeTelegramHtml(url)}">${escapeTelegramHtml(url)}</a>` : 'preview URL missing'
+  if (opts.kind === 'pending') {
+    const h = opts.hours == null ? '' : ` (${opts.hours}h)`
+    return (
+      `📋 LINKEDIN TRIAL DRAFT still pending founder review${h}.\n` +
+      `${title}\n` +
+      `Open preview (Safari — lockout stays on until you approve):\n${link}`
+    )
+  }
+  if (opts.kind === 'retry') {
+    return (
+      `📋 LINKEDIN TRIAL DRAFT re-queued for founder review (lockout stays on).\n` +
+      `${title}\n` +
+      `Open preview:\n${link}`
+    )
+  }
+  return (
+    `📋 SARAH LINKEDIN PREVIEW ready for Kaan\n${title}\n\n` +
+    `Open in Safari (lockout stays on — this is not a publish):\n${link}`
+  )
+}
+
 export async function getPreviewByToken(token: string): Promise<SocialPreviewRecord | null> {
   await ensureSocialPreviewColumns()
   const sql = getSql()
@@ -114,9 +149,11 @@ export async function savePreviewForReview(input: {
     source: 'janet',
   }).catch(() => {})
 
-  await sendTelegram(
-    `📋 SARAH LINKEDIN PREVIEW ready for Kaan\n${input.title.slice(0, 80)}\n\nOpen in Safari:\n${previewUrl}`
-  ).catch(() => {})
+  await sendTelegram(linkedInPreviewTelegramHtml({
+    title: input.title,
+    previewUrl,
+    kind: 'new',
+  })).catch(() => {})
 
   return { id: row.id, previewToken: token, previewUrl, preview: { ...preview, previewHtml: renderLinkedInFeedPost({ ...previewBase, imageUrl: input.imageUrl || null }) } }
 }
