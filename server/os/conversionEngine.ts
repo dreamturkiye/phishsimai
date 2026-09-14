@@ -3,9 +3,13 @@ import { persistOutcomeTrace } from './outcomeTrace'
 import { COMPANY_ID } from './version'
 import { sendWarmTrialCtas, type WarmCtaResult } from './sequences'
 
-export type ConversionShiftResult = WarmCtaResult & { lesson: string; success: boolean }
+export type ConversionShiftResult = WarmCtaResult & {
+  lesson: string
+  success: boolean
+  trialNudges?: { scanned: number; sent: number }
+}
 
-export function conversionLesson(r: WarmCtaResult): { success: boolean; lesson: string } {
+export function conversionLesson(r: WarmCtaResult, nudges?: { sent: number; scanned?: number }): { success: boolean; lesson: string } {
   if (r.tripped) {
     return {
       success: false,
@@ -15,10 +19,18 @@ export function conversionLesson(r: WarmCtaResult): { success: boolean; lesson: 
   if (r.reason?.startsWith('autonomy:')) {
     return { success: false, lesson: `Conversion blocked by autonomy gate (${r.reason}). Do not bypass. Escalate to Janet only if L-level is wrong.` }
   }
+  const nudgeSent = Math.max(0, Number(nudges?.sent) || 0)
   if (r.sent > 0) {
+    const extra = nudgeSent > 0 ? ` Also sent ${nudgeSent} trial-org nudge(s).` : ''
     return {
       success: true,
-      lesson: `Sent ${r.sent} Dex-gated 30-day trial CTAs to warm leads. Same-day follow-up is the job until a verified trial starts. Blocked=${r.blocked} skipped=${r.skipped}.`,
+      lesson: `Sent ${r.sent} Dex-gated 30-day trial CTAs to warm leads. Same-day follow-up is the job until a verified trial starts. Blocked=${r.blocked} skipped=${r.skipped}.${extra}`,
+    }
+  }
+  if (nudgeSent > 0) {
+    return {
+      success: true,
+      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing free-trial orgs (D14/D25/D30). Convert remaining trials to paid.`,
     }
   }
   if (r.blocked > 0) {
@@ -49,21 +61,29 @@ export function rankWarmLeads<T extends { replied?: boolean; pipeline_stage?: st
  */
 export async function runCgoConversionShift(opts: { emails?: string[]; cap?: number } = {}): Promise<ConversionShiftResult> {
   const raw = await sendWarmTrialCtas({ emails: opts.emails, cap: opts.cap ?? 8 })
-  const { success, lesson } = conversionLesson(raw)
-  const result: ConversionShiftResult = { ...raw, success, lesson }
+  let trialNudges = { scanned: 0, sent: 0 }
+  try {
+    const { runTrialNudges } = await import('./trialNudges')
+    const n = await runTrialNudges()
+    trialNudges = { scanned: n.scanned, sent: n.sent.length }
+  } catch {
+    // Nudges are additive; a nudge failure must not hide a warm CTA that already sent.
+  }
+  const { success, lesson } = conversionLesson(raw, trialNudges)
+  const result: ConversionShiftResult = { ...raw, success, lesson, trialNudges }
   await learnFromOutcome(
     COMPANY_ID,
     'cgo_warm_trial_cta',
-    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped}`,
+    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent}`,
     lesson,
   ).catch(() => {})
   await persistOutcomeTrace({
     companyId: COMPANY_ID,
     agentId: 'mason',
     action: 'convert_warm',
-    businessOutcome: raw.sent > 0 ? 'trial_cta_sent' : raw.tripped ? 'breaker_tripped' : raw.blocked > 0 ? 'blocked_dex' : 'no_warm_leads',
+    businessOutcome: raw.sent > 0 ? 'trial_cta_sent' : trialNudges.sent > 0 ? 'trial_nudge_sent' : raw.tripped ? 'breaker_tripped' : raw.blocked > 0 ? 'blocked_dex' : 'no_warm_leads',
     liveness: true,
-    usefulness: raw.sent > 0 || raw.tripped || Boolean(raw.reason),
+    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason),
     schemaValid: true,
   }).catch(() => {})
   return result

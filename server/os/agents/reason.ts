@@ -29,6 +29,17 @@ export function wantsWarmConversion(agentId: string, action: string): boolean {
   return /convert_warm|warm (lead|cta|trial)|trial cta|hottest|30-day trial|no-card trial/i.test(a)
 }
 
+/**
+ * Idle conversion agents must still fire the Dex-gated shift. Today's brief
+ * (2026-09-14) was "Nothing completed" because reasonAndAct treated `none` as rest.
+ */
+export function shouldFireConversionShift(agentId: string, action: string): boolean {
+  if (!CONVERSION_AGENTS.has(agentId)) return false
+  const a = String(action || '').trim()
+  if (!a || /^none$/i.test(a)) return true
+  return wantsWarmConversion(agentId, action)
+}
+
 export async function reasonAndAct(
     agentId: string,
     report: unknown,
@@ -105,7 +116,7 @@ export async function reasonAndAct(
 
       let converted = false
       let conversion: AgentDecision['conversion']
-      if (kind !== 'hard_stop' && wantsWarmConversion(agentId, action)) {
+      if (kind !== 'hard_stop' && shouldFireConversionShift(agentId, action)) {
         const { runCgoConversionShift } = await import('../conversionEngine')
         const shift = await runCgoConversionShift({ cap: 8 }).catch(() => null)
         if (shift) {

@@ -33,6 +33,12 @@ describe('conversionLesson is honest', () => {
     expect(l.success).toBe(false)
     expect(l.lesson).toMatch(/No warm sendable/)
   })
+
+  it('counts trial-org nudges as conversion progress when warm CTAs are empty', () => {
+    const l = conversionLesson({ sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }, { sent: 3, scanned: 93 })
+    expect(l.success).toBe(true)
+    expect(l.lesson).toMatch(/trial nudge/)
+  })
 })
 
 describe('warm CTA stays on the Dex-registered send path', () => {
@@ -46,6 +52,7 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(WARM_CONVERSION_TOUCH).toBe(90)
     expect(TRIAL_CTA_URL).toContain('login?mode=register')
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('warm_conversion')
+    expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('trial_nudge')
     expect(seq).toMatch(/one of the lowest per-seat prices in the industry/i)
     expect(seq).toContain('$299/mo for 500')
   })

@@ -64,6 +64,14 @@ export const SEND_PATHS: SendPath[] = [
   { key: 'touch3_5', file: 'server/os/sequences.ts', where: 'runFullSequence touchDefs loop (touch 2-5)', cls: 'prospect' },
   { key: 'warm_conversion', file: 'server/os/sequences.ts', where: 'sendWarmTrialCtas (replied/engaged trial CTA)', cls: 'prospect' },
   {
+    key: 'trial_nudge',
+    file: 'server/os/trialNudges.ts',
+    where: 'runTrialNudges D14/D25/D30 to signed-up trial orgs',
+    cls: 'internal',
+    exemptionReason:
+      'transactional mail to organizations that already created a trial account. Consent is the signup, not prospect outreach. Copy is the frozen D14/D25/D30 templates — do not invent cold subjects.',
+  },
+  {
     key: 'reply_send',
     file: 'server/os/replyParser.ts',
     where: 'reply handling',

@@ -468,6 +468,29 @@ export async function declarePosture(
 }
 
 /**
+ * L5.7 held → start the 3-day drill (spec nextStep). Does NOT declare L5.8.
+ * Named declarer is the Janet CGO cron (unattended-safe operator), not a silent auto-promote.
+ */
+export async function maybeStartDrill3(
+  sql: SqlLike,
+  productId: string,
+  declaredBy = 'janet-cgo',
+): Promise<{ started: boolean; from: Posture; to?: Posture; reason: string }> {
+  const ev = await evaluatePosture(sql, productId)
+  if (ev.posture === 'drill_3' || ev.posture === 'drill_7' || ev.posture === 'drill_15' || ev.posture === 'l5_8') {
+    return { started: false, from: ev.posture, reason: `already past L5.7 (${ev.posture}) — will not skip to L5.8` }
+  }
+  if (ev.posture !== 'l5_7') {
+    return { started: false, from: ev.posture, reason: `posture is ${ev.posture}, not l5_7 — 3-day drill is not next` }
+  }
+  if (ev.eligibleFor !== 'drill_3') {
+    return { started: false, from: ev.posture, reason: `not eligible for drill_3: ${ev.blockers.join('; ') || ev.nextStep}` }
+  }
+  const declared = await declarePosture(sql, productId, 'drill_3', declaredBy)
+  return { started: declared.ok, from: declared.from, to: declared.to, reason: declared.reason }
+}
+
+/**
  * The one line on the daily brief. Deliberately shows the denominator and what is left, so the
  * founder watches it graduate instead of discovering it graduated.
  */

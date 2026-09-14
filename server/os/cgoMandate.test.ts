@@ -5,8 +5,14 @@ import {
   employeeExecutePrompt,
   employeeExecutionMandate,
   goalsForWeek,
+  isAnalysisOnlyTitle,
+  isConversionBoundTitle,
+  isOperatingCrisis,
+  isPaidConversionCrisis,
   isTrialCrisis,
   janetCgoMandate,
+  operatingCrisisTasks,
+  paidConversionCrisisTasks,
   verifiedTrialCount,
   zeroTrialCrisisTasks,
 } from './cgoMandate'
@@ -28,6 +34,45 @@ describe('Janet CGO mandate', () => {
     expect(isTrialCrisis({ liveProductTrials: 1, crmTrials: 0 })).toBe(true)
     expect(isTrialCrisis({ liveProductTrials: 19, crmTrials: 19 })).toBe(true)
     expect(isTrialCrisis({ liveProductTrials: 20, crmTrials: 0 })).toBe(false)
+  })
+
+  it('treats 92 verified trials and 0 paying as a paid-conversion crisis, not a trial crisis', () => {
+    const today = { liveProductTrials: 92, crmTrials: 0, payingCustomers: 0 }
+    expect(isTrialCrisis(today)).toBe(false)
+    expect(isPaidConversionCrisis(today)).toBe(true)
+    expect(isOperatingCrisis(today)).toBe(true)
+    expect(isPaidConversionCrisis({ liveProductTrials: 92, crmTrials: 0, payingCustomers: 1 })).toBe(false)
+    expect(isPaidConversionCrisis({ liveProductTrials: 0, crmTrials: 0, payingCustomers: 0 })).toBe(false)
+    expect(isPaidConversionCrisis({ liveProductTrials: 92, crmTrials: 0, payingCustomers: null })).toBe(false)
+  })
+
+  it('issues conversion-bound work (not analyze/research/500-cold) in the paid-conversion pack', () => {
+    const pack = paidConversionCrisisTasks()
+    expect(pack.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'vera', 'finn']))
+    for (const task of pack) {
+      expect(isConversionBoundTitle(task.title, task.description)).toBe(true)
+      expect(isAnalysisOnlyTitle(task.title, task.description)).toBe(false)
+      expect(voidPremiseFor(task.title, task.description)).toBeNull()
+    }
+    const titles = pack.map((t) => t.title).join('\n')
+    expect(titles).not.toMatch(/500\s*(MSP|msp)/)
+    expect(titles).not.toMatch(/analyze funnel/i)
+    expect(titles).not.toMatch(/research TOF/i)
+  })
+
+  it('refuses analysis-only titles that crowded out conversion on 2026-09-14', () => {
+    expect(isAnalysisOnlyTitle('Analyze funnel conversion')).toBe(true)
+    expect(isAnalysisOnlyTitle('Research TOF beyond email')).toBe(true)
+    expect(isAnalysisOnlyTitle('Mason cold outreach 500 MSP')).toBe(true)
+    expect(isAnalysisOnlyTitle('Send warm trial CTAs and follow up existing trial orgs today')).toBe(false)
+    expect(isConversionBoundTitle('Ship one trial-to-paid experiment with a live upgrade CTA')).toBe(true)
+  })
+
+  it('lets the paid pack win per agent when both crises apply', () => {
+    const both = operatingCrisisTasks({ liveProductTrials: 10, crmTrials: 10, payingCustomers: 0 })
+    const mason = both.find((t) => t.agentId === 'mason')
+    expect(mason?.title).toMatch(/warm trial CTAs/i)
+    expect(mason?.title).not.toMatch(/20 hottest/)
   })
 
   it('forces Mason, Aria, and Nova conversion work when trials are zero', () => {
@@ -60,7 +105,11 @@ describe('Janet CGO mandate', () => {
 describe('coded enforcers are wired', () => {
   it('standup issues the crisis pack and no longer forbids conversion on a small funnel', () => {
     const os = readFileSync('server/lib/kaan_os_v4.ts', 'utf8')
-    expect(os).toContain('zeroTrialCrisisTasks')
+    expect(os).toContain('operatingCrisisTasks')
+    expect(os).toContain('osHealthHonesty')
+    expect(os).toContain('collapseOpenDuplicateTasks')
+    expect(os).not.toMatch(/runner only acts on >4h-idle/)
+    expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('maybeStartDrill3')
     expect(os).toContain('conversionDefaultTask')
     expect(os).toContain('employeeExecutePrompt')
     expect(os).toContain('janetCgoMandate')
@@ -77,7 +126,7 @@ describe('coded enforcers are wired', () => {
     expect(os).not.toMatch(/Your team is TEXT-ONLY/)
     expect(readFileSync('vercel.json', 'utf8')).toContain('/api/os/task-runner')
     expect(readFileSync('server/os/sequences.ts', 'utf8')).toMatch(/computeAdaptiveSplit\(\s*'touch1_subject',\s*200,\s*0\.2,\s*'replied'\s*\)/)
-    expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('wantsWarmConversion')
+    expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('shouldFireConversionShift')
     expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('runCgoConversionShift')
     expect(os).not.toMatch(/Do NOT assign conversion/)
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)

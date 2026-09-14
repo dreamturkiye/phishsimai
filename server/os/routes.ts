@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import { getCleanStreak, recordIncident } from './cleanDays'
 import { applyOwnerAutonomyRuling } from './ownerRuling'
 import { resolveReadableLevel } from './autonomyGate'
-import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm } from './posture'
+import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm, maybeStartDrill3 } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
 import { runLeadResearcher, runLeadDiscover } from './agents/leadResearcher'
@@ -114,6 +114,11 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
     ok: false,
     reason: String(e?.message || e).slice(0, 160),
   }))
+  const drill3 = await maybeStartDrill3(getSql(), COMPANY, 'janet-cgo').catch((e: any) => ({
+    started: false,
+    from: 'l5_7' as const,
+    reason: String(e?.message || e).slice(0, 160),
+  }))
   const summary = await buildJanetCgoSummary(COMPANY, deps).catch((e: any) => ({
     ok: false, ran: [] as string[], orchestration: null, l5: null, gateDeniedCount: 0,
     errors: [`fatal: ${String(e?.message).slice(0, 200)}`],
@@ -130,7 +135,7 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
     { ownerRuling, ...summary },
     'You are Janet, CGO of PhishSim AI. Resume the open thread. Own verified 30-day trials and paid MRR. Prefer convert_warm. Queue Marcus only for a named product bug.',
   ).catch((e: any) => ({ assessment: 'unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e).slice(0, 160) }))
-  res.json({ ...summary, ownerRuling, janetRuntime })
+  res.json({ ...summary, ownerRuling, drill3, janetRuntime })
 }
 
 // Daily metrics_daily snapshot (passive infra). Secret-gated like the other os

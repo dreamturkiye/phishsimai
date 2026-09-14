@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest'
 import {
-  computeDayCounters, currentStreak, evaluatePosture, declarePosture, postureLine,
+  computeDayCounters, currentStreak, evaluatePosture, declarePosture, maybeStartDrill3, postureLine,
   POSTURE_LABEL, L5_7_CLEAN_DAYS, DRILL_DAYS, CRITERIA_VERSION, handledTrips,
 } from './posture'
 
@@ -218,6 +218,36 @@ describe('declarePosture — declared, never auto-promoted', () => {
     expect(r.ok).toBe(true)
     expect(r.from).toBe('pre_l5_7')
     expect(r.to).toBe('l5_7')
+  })
+})
+
+describe('maybeStartDrill3 — L5.7 held starts the 3-day drill, never L5.8', () => {
+  const held = () => fakeSql([
+    { match: /os_posture_state/, rows: [{ product_id: 'p', posture: 'l5_7', entered_at: '', declared_by: 'kaan', baseline_from: '2026-07-23', notes: null }] },
+    { match: /autonomy_clean_days/, rows: [{ day: '2026-07-27', clean: true }] },
+  ])
+
+  it('starts drill_3 when L5.7 is held', async () => {
+    const r = await maybeStartDrill3(held(), 'p', 'janet-cgo')
+    expect(r.started).toBe(true)
+    expect(r.to).toBe('drill_3')
+    expect(r.from).toBe('l5_7')
+  })
+
+  it('refuses skipping to L5.8 from held L5.7', async () => {
+    const r = await declarePosture(held(), 'p', 'l5_8', 'janet-cgo')
+    expect(r.ok).toBe(false)
+    expect(r.reason).toMatch(/eligible for drill_3, not l5_8/)
+  })
+
+  it('does not start a drill from pre-L5.7', async () => {
+    const r = await maybeStartDrill3(fakeSql([
+      { match: /os_posture_state/, rows: [{ product_id: 'p', posture: 'pre_l5_7', entered_at: '', declared_by: null, baseline_from: '2026-07-23', notes: null }] },
+      { match: /autonomy_clean_days/, rows: [{ day: '2026-07-24', clean: true }] },
+      { match: /circuit_breaker_state/, rows: [{ n: 0 }] },
+    ]), 'p', 'janet-cgo')
+    expect(r.started).toBe(false)
+    expect(r.from).toBe('pre_l5_7')
   })
 })
 

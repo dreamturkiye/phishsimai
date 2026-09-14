@@ -49,11 +49,13 @@ import {
   employeeExecutePrompt,
   employeeExecutionMandate,
   goalsForWeek,
-  isTrialCrisis,
+  isAnalysisOnlyTitle,
+  isConversionBoundTitle,
+  isOperatingCrisis,
   janetCgoMandate,
+  operatingCrisisTasks,
   researchGroundedConversionTask,
   verifiedTrialCount,
-  zeroTrialCrisisTasks,
   type TrialFacts,
 } from '../os/cgoMandate'
 import { persistOutcomeTrace } from '../os/outcomeTrace'
@@ -1200,7 +1202,8 @@ trends — do not reason about a percentage without saying the raw number it cam
 
 async function loadTrialFacts(sql: any): Promise<TrialFacts> {
   const failedLive = [{ n: 0 }]
-  const [live, crm] = await Promise.all([
+  const failedPaying = [{ n: null as number | null }]
+  const [live, crm, paying] = await Promise.all([
     sql`
       SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
       FROM (
@@ -1222,10 +1225,24 @@ async function loadTrialFacts(sql: any): Promise<TrialFacts> {
                 OR pipeline_stage = 'internal_test') AS is_internal
         FROM ps_outreach_leads
       ) t`.catch(() => failedLive),
+    sql`
+      SELECT count(*) FILTER (WHERE is_paying AND NOT is_excluded)::int AS n
+      FROM (
+        SELECT
+          o.plan IS NOT NULL AND o.plan <> 'free' AS is_paying,
+          COALESCE(lower((
+            SELECT u.email FROM org_members m JOIN users u ON u.id = m."userId"
+            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
+            ORDER BY m.id ASC LIMIT 1
+          )) = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false) AS is_excluded
+        FROM organizations o
+      ) t`.catch(() => failedPaying),
   ])
+  const payN = (paying as any[])[0]?.n
   return {
     liveProductTrials: Number((live as any[])[0]?.n ?? 0),
     crmTrials: Number((crm as any[])[0]?.n ?? 0),
+    payingCustomers: payN == null ? null : Number(payN),
   }
 }
 
@@ -1403,6 +1420,68 @@ export function voidPremiseFor(title: string, description = ''): VoidPremise | n
   return VOID_PREMISE_TASKS.find(v => v.subject.test(t) && v.frame.test(t)) ?? null
 }
 
+export const OPEN_TASK_STATUSES = ['queued', 'executing', 'assigned', 'in_progress'] as const
+
+/** Keep conversion-bound (or executing) work; drop twin analysis/volume rows. Newest first input. */
+export function pickOpenTaskToKeep<T extends { title: string; status?: string }>(rows: T[]): T {
+  if (rows.length === 0) throw new Error('pickOpenTaskToKeep requires at least one row')
+  const conversion = rows.filter((r) => isConversionBoundTitle(r.title))
+  const pool = conversion.length ? conversion : rows
+  return pool.find((r) => r.status === 'executing') ?? pool[0]
+}
+
+export type WorkforceFacts = {
+  completions24h: number
+  openTasks: number
+  executedThisRun: number
+  nothingCompletedReports: number
+}
+
+/**
+ * OS Health honesty: zero completions while agents hold open work (or report
+ * "Nothing completed") is workforce idle, not "all agents normal".
+ * 0 overdue / 0 executed-this-run is still not an infra outage.
+ */
+export function osHealthHonesty(f: WorkforceFacts): { healthy: boolean; line: string } {
+  if (f.completions24h === 0 && (f.openTasks > 0 || f.nothingCompletedReports > 0)) {
+    return {
+      healthy: false,
+      line:
+        `WORKFORCE IDLE: ${f.completions24h} completions in 24h, ${f.openTasks} open task(s), ` +
+        `${f.nothingCompletedReports} nothing-completed report(s). This is NOT 'all agents normal'.`,
+    }
+  }
+  if (f.completions24h === 0 && f.openTasks === 0) {
+    return {
+      healthy: false,
+      line: 'ISSUANCE GAP: zero completions and zero open tasks — the workforce was not given work.',
+    }
+  }
+  return {
+    healthy: true,
+    line: `workforce active: ${f.completions24h} completion(s) in 24h, ${f.openTasks} open`,
+  }
+}
+
+export const ANALYSIS_SCORE_CEILING = 6
+
+export function conversionEvidenceInResult(result: string): boolean {
+  const t = String(result || '')
+  if (/CONVERSION SHIFT[\s\S]*sent=[1-9]/.test(t)) return true
+  if (/convert_warm sent=[1-9]/.test(t)) return true
+  if (/trial_cta_sent/.test(t)) return true
+  if (/trial[_ ]nudge[s]? sent=[1-9]/i.test(t)) return true
+  if (/Sent [1-9]\d* trial-org nudge/i.test(t)) return true
+  return false
+}
+
+/** Analysis-only output cannot score above 6 even if Janet's LLM is generous. */
+export function applyConversionScoreCeiling(score: number | null, result: string): number | null {
+  if (score == null) return null
+  if (conversionEvidenceInResult(result)) return score
+  return Math.min(score, ANALYSIS_SCORE_CEILING)
+}
+
 export async function issueTask(
   agentId: AgentId,
   task: NewAgentTask,
@@ -1430,6 +1509,39 @@ export async function issueTask(
     await sql`INSERT INTO audit_log (actor, action, target, detail) VALUES ('kaan_os_v4', 'task_refused_void_premise', ${agentId},
               ${JSON.stringify({ rule: void_.id, title: task.title, company_id: companyId })}::jsonb)`.catch(() => {})
     return { task_id: '', agent: agent.name, title: task.title, voided: true, reason: void_.reason }
+  }
+
+  // One-open-task: Scout/Finn twins on 2026-09-14 were different titles, so 72h
+  // title-dedupe said "2 dup skipped" while both rows stayed open. Conversion
+  // work may supersede analysis-only; otherwise return the existing open row.
+  if (!opts.force) {
+    const openRows = (await sql`
+      SELECT id, title, status FROM agent_tasks
+      WHERE company_id=${companyId} AND agent_id=${agentId}
+        AND status IN ('queued','executing','assigned','in_progress')
+      ORDER BY created_at DESC
+    `.catch(() => [])) as any[]
+    if (openRows.length > 0) {
+      const incomingConversion = isConversionBoundTitle(task.title, task.description)
+      const analysisOpens = openRows.filter((r: any) => isAnalysisOnlyTitle(String(r.title || '')))
+      const canSupersede = incomingConversion && analysisOpens.length > 0
+      if (canSupersede) {
+        for (const r of analysisOpens) {
+          if (r.status === 'executing') continue
+          await sql`UPDATE agent_tasks SET status='cancelled', updated_at=NOW()
+            WHERE id=${r.id} AND company_id=${companyId} AND status IN ('queued','assigned','in_progress')`.catch(() => {})
+        }
+        const stillOpen = openRows.filter((r: any) => r.status === 'executing' || !isAnalysisOnlyTitle(String(r.title || '')))
+        if (stillOpen.length > 0) {
+          console.log(`[kaan_os_v4] issueTask one-open for ${agentId}: "${task.title.slice(0, 60)}" → existing ${stillOpen[0].id}`)
+          return { task_id: stillOpen[0].id, agent: agent.name, title: task.title, deduped: true }
+        }
+      } else {
+        const keep = pickOpenTaskToKeep(openRows)
+        console.log(`[kaan_os_v4] issueTask one-open for ${agentId}: "${task.title.slice(0, 60)}" → existing ${keep.id}`)
+        return { task_id: keep.id, agent: agent.name, title: task.title, deduped: true }
+      }
+    }
   }
 
   // PS-DEDUPE-01 — the single choke point every issuer passes through, matching the autonomy
@@ -1744,11 +1856,12 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   // the outcome so the stored result records what actually happened, not just what was recommended.
   const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
   let conversionNote = ''
-  if (durable.owner === 'mason' || durable.owner === 'aria') {
+  if (durable.owner === 'mason' || durable.owner === 'aria' || durable.owner === 'vera' || durable.owner === 'janet') {
     const { runCgoConversionShift } = await import('../os/conversionEngine')
     const shift = await runCgoConversionShift({ cap: 5 }).catch(() => null)
     if (shift) {
       conversionNote = `\n\n---\n**CONVERSION SHIFT:** sent=${shift.sent} blocked=${shift.blocked} skipped=${shift.skipped}` +
+        (shift.trialNudges ? ` trial_nudges sent=${shift.trialNudges.sent}` : '') +
         (shift.reason ? ` ${shift.reason}` : '') + `\n${shift.lesson}`
     }
   }
@@ -1841,7 +1954,8 @@ As their manager (CGO), assess:
 Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assignment if any]`
 
   const feedback = await llm(janetSystem, reviewPrompt, 600)
-  const score = parseEvaluationScore(feedback, 'score')
+  const rawScore = parseEvaluationScore(feedback, 'score')
+  const score = applyConversionScoreCeiling(rawScore, String(task.result || ''))
 
   await sql`
     UPDATE agent_tasks
@@ -1981,6 +2095,36 @@ export async function drainAgentTasks(
   `.catch(() => [{ n: 0 }])
   out.remaining = ((rest as any[])[0]?.n as number) ?? 0
   return out
+}
+
+/** Cancel twin open tasks so an agent never holds/report two queued rows. */
+export async function collapseOpenDuplicateTasks(sql: any, companyId: string): Promise<number> {
+  const rows = (await sql`
+    SELECT id, agent_id, title, status FROM agent_tasks
+    WHERE company_id=${companyId} AND status IN ('queued','executing','assigned','in_progress')
+    ORDER BY created_at DESC
+  `.catch(() => [])) as any[]
+  const byAgent = new Map<string, any[]>()
+  for (const r of rows) {
+    const list = byAgent.get(r.agent_id) || []
+    list.push(r)
+    byAgent.set(r.agent_id, list)
+  }
+  let cancelled = 0
+  for (const list of byAgent.values()) {
+    if (list.length < 2) continue
+    const keep = pickOpenTaskToKeep(list)
+    for (const r of list) {
+      if (r.id === keep.id) continue
+      if (r.status === 'executing') continue
+      const out = await sql`UPDATE agent_tasks SET status='cancelled', updated_at=NOW()
+        WHERE id=${r.id} AND company_id=${companyId} AND status IN ('queued','assigned','in_progress')
+        RETURNING id`.catch(() => [])
+      cancelled += (out as any[]).length
+    }
+  }
+  if (cancelled) console.log(`[kaan_os_v4] collapsed ${cancelled} twin open task(s)`)
+  return cancelled
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2294,13 +2438,15 @@ ${todayItem}
   // tell her the one check that settles it.
   const janetGrounding = `GROUND RULES — READ FIRST.
 The reports below are UNVERIFIED SELF-REPORTS generated by each agent. They are claims, not events.
-Coded conversion is real: Mason/Aria tasks and the 10-minute task-runner fire sendWarmTrialCtas
-(Dex MX + suppression + bounce breaker). Treat CONVERSION SHIFT / trial_cta_sent / outbox rows as events.
+Coded conversion is real: Mason/Aria/Vera tasks and the 10-minute task-runner fire sendWarmTrialCtas
+and trial nudges (Dex MX + suppression + bounce breaker on prospect paths). Treat CONVERSION SHIFT /
+trial_cta_sent / trial nudge / outbox rows as events.
 Everything else is still analysis. NO agent can deploy around Marcus, skip Dex, or send a raw email.
 So: if a report claims a send or deploy WITHOUT a conversion-shift or architect-queue record, the claim
 is FALSE BY CONSTRUCTION — it is a hallucination, not an incident. Do NOT escalate it to Kaan as an event.
 Escalate to Kaan ONLY what is corroborated by live metrics or a conversion/outbox/architect record.
 Distinguish "X reported that..." from "X did...". Only write the second when a system record backs it.
+Do NOT paste, quote, or restate the agent reports in your synthesis — the transcript already includes them verbatim. Your output is crisis call + ASSIGN lines + performance + one focus.
 
 `
   // CGO mandate (2026-09-10, founder): zero trials is a crisis. Fill the funnel AND convert
@@ -2309,26 +2455,57 @@ Distinguish "X reported that..." from "X did...". Only write the second when a s
   // context, not a ban on conversion work.
   const pipelineFact = (await sql`SELECT value FROM janet_memory
     WHERE company_id=${companyId} AND type='company' AND key='real_pipeline' LIMIT 1`.catch(() => [])) as any[]
-  const trialFacts = await loadTrialFacts(sql).catch(() => ({ liveProductTrials: 0, crmTrials: 0 }))
+  const trialFacts = await loadTrialFacts(sql).catch(() => ({ liveProductTrials: 0, crmTrials: 0, payingCustomers: null }))
   const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
   const goals = goalsForWeek(weekNum)
   const pipelineNote = pipelineFact[0]?.value
     ? `Founder pipeline note (context — does NOT forbid converting existing replies into a 30-day trial):\n${pipelineFact[0].value}\n\n`
     : ''
   const acquisitionGate = `${pipelineNote}${cgoStandupDirective(trialFacts, goals)}`
+  const operatingCrisis = isOperatingCrisis(trialFacts)
+  const assignRule = operatingCrisis
+    ? 'ASSIGN only conversion-bound work (warm CTA, trial nudge, upgrade, Stripe truth, trial start). Do NOT assign analyze/research/TOF/500-cold. One open task per agent.'
+    : 'Issue 1-3 conversion-critical task assignments.'
 
-  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO you run this company:\n1. Call out the trial/revenue crisis or progress — not activity theater\n2. Issue 1-3 conversion-critical task assignments — each on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern — an employee who only reported is failing\n4. Your ONE focus for the company today must move verified trials or paid MRR\n5. What to tell Kaan in 2 sentences`, 800)
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO you run this company:\n1. Call out the trial/revenue crisis or progress — not activity theater\n2. ${assignRule} Each assignment on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid conversion task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern — an employee who only reported is failing\n4. Your ONE focus for the company today must move verified trials or paid MRR\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
 
-  // Dedupe is enforced centrally in issueTask (PS-DEDUPE-01) so every issuer — this standup,
-  // os6Autonomy, intelligenceFinance, janetProactive — obeys one rule. Here we only need to
-  // read back which calls were absorbed as duplicates so the footer can say so.
+  await collapseOpenDuplicateTasks(sql, companyId).catch(() => 0)
+
+  // Dedupe is enforced centrally in issueTask (PS-DEDUPE-01 + one-open-task) so every issuer —
+  // this standup, os6Autonomy, intelligenceFinance, janetProactive — obeys one rule.
   const newTasks: any[] = []
-  let skippedDuplicate = 0, deniedByGate = 0, refusedVoid = 0, supersededTasks = 0
+  let skippedDuplicate = 0, deniedByGate = 0, refusedVoid = 0, supersededTasks = 0, skippedAnalysis = 0
+
+  // Crisis pack FIRST so Mason/Aria/Nova get conversion-bound work before Janet's analysis ASSIGNs.
+  if (operatingCrisis) {
+    for (const crisis of operatingCrisisTasks(trialFacts)) {
+      try {
+        const t = await issueTask(crisis.agentId, {
+          title: crisis.title.slice(0, 100),
+          description: crisis.description,
+          priority: crisis.priority,
+          due_in_hours: 24,
+        }, companyId)
+        if (t.voided) refusedVoid++
+        else if (t.deduped) skippedDuplicate++
+        else newTasks.push(t)
+      } catch (e: any) {
+        if (isAutonomyDenied(e)) deniedByGate++
+        else console.error(`[kaan_os_v4] crisis issueTask failed for ${crisis.agentId}: ${String(e?.message || e).slice(0, 200)}`)
+      }
+    }
+    console.log(`[kaan_os_v4] standup: operating crisis pack attempted (verified=${verifiedTrialCount(trialFacts)})`)
+  }
+
   for (const { agentId, title, supersede } of parsed) {
     try {
+      if (operatingCrisis && isAnalysisOnlyTitle(title)) {
+        skippedAnalysis++
+        continue
+      }
       // PS-SUPERSEDE-01: a pause/pivot/replace directive CANCELS this agent's currently-open work
       // before the new task is issued — one directive supersedes, not both live. This is the fix for
       // the lingering-contradicted-task defect (Vera's "define cadence" stayed in_progress after a
@@ -2357,28 +2534,9 @@ Distinguish "X reported that..." from "X did...". Only write the second when a s
   }
   console.log(
     `[kaan_os_v4] standup task issuance: parsed=${parsed.length} issued=${newTasks.length} ` +
-    `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
+    `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} analysis_skipped=${skippedAnalysis} ` +
+    `autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
-
-  if (isTrialCrisis(trialFacts)) {
-    for (const crisis of zeroTrialCrisisTasks()) {
-      try {
-        const t = await issueTask(crisis.agentId, {
-          title: crisis.title.slice(0, 100),
-          description: crisis.description,
-          priority: crisis.priority,
-          due_in_hours: 24,
-        }, companyId)
-        if (t.voided) refusedVoid++
-        else if (t.deduped) skippedDuplicate++
-        else newTasks.push(t)
-      } catch (e: any) {
-        if (isAutonomyDenied(e)) deniedByGate++
-        else console.error(`[kaan_os_v4] crisis issueTask failed for ${crisis.agentId}: ${String(e?.message || e).slice(0, 200)}`)
-      }
-    }
-    console.log(`[kaan_os_v4] standup: zero-trial crisis pack attempted (verified=${verifiedTrialCount(trialFacts)})`)
-  }
 
   // PS-OWNERSHIP-01: restore agent OWNERSHIP. Any specialist left with NO open task after Janet's
   // 1-3 assignments SELF-ORIGINATES its own proposed next step (issued_by = the agent, not 'janet').
@@ -2411,6 +2569,12 @@ Distinguish "X reported that..." from "X did...". Only write the second when a s
         ? researchGroundedConversionTask(a.title, a.domain, research.summary, research.sources.map((x) => x.url).join(', '), new Date().toISOString().slice(0, 10))
         : conversionDefaultTask(aId, a.domain, a.title)
       source = research ? 'domain-default conversion (current best practice)' : 'domain-default conversion'
+    }
+    if (operatingCrisis && (!taskText || isAnalysisOnlyTitle(taskText))) {
+      const a = AGENTS[aId]
+      if (!a) continue
+      taskText = conversionDefaultTask(aId, a.domain, a.title)
+      source = 'crisis conversion default'
     }
     try {
       const t = await issueTask(aId, {
@@ -2445,6 +2609,7 @@ Distinguish "X reported that..." from "X did...". Only write the second when a s
   const issuance = [
     `${newTasks.length} tasks issued`,
     skippedDuplicate ? `${skippedDuplicate} dup skipped` : '',
+    skippedAnalysis ? `${skippedAnalysis} analysis skipped` : '',
     deniedByGate ? `${deniedByGate} gate-denied` : '',
     newTasks.length === 0 && parsed.length === 0 ? 'none proposed' : '',
   ].filter(Boolean).join(' | ')
@@ -2691,20 +2856,10 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   // 1. Run daily standup
   const standup = await runDailyStandup(companyId)
 
-  // 2. Execute any overdue pending tasks
-  const overdueTasks = await sql`
-    SELECT id FROM agent_tasks
-    WHERE status IN ('queued','assigned') AND company_id=${companyId}
-    AND created_at < NOW() - interval '4 hours'
-    LIMIT 5
-  `.catch(() => [])
-
-  let executed = 0
-  for (const t of overdueTasks) {
-    await executeTask(t.id, companyId).catch(() => {})
-    await reviewTask(t.id, companyId).catch(() => {})
-    executed++
-  }
+  // 2. Execute due queued work NOW — waiting 4h after the 08:00 standup is why
+  //    every morning brief said "Nothing completed" while OS Health claimed normal.
+  const drain = await drainAgentTasks(companyId, { maxTasks: 6, budgetMs: 80_000 }).catch(() => null)
+  const executed = drain?.claimed ?? 0
 
   // 3. Janet writes CEO brief for Kaan
   const janetMemory = await getAgentMemory('janet', sql, companyId)
@@ -2716,11 +2871,32 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   const liveTaskCounts = (await sql`
     SELECT status, count(*)::int AS n FROM agent_tasks WHERE company_id=${companyId} GROUP BY status
   `.catch(() => [])) as { status: string; n: number }[]
+  const completions24 = (await sql`
+    SELECT count(*)::int AS n FROM agent_tasks
+    WHERE company_id=${companyId} AND status IN ('completed','reviewed')
+      AND completed_at > NOW() - interval '24 hours'
+  `.catch(() => [{ n: 0 }])) as { n: number }[]
+  const openN = liveTaskCounts
+    .filter((r) => ['queued', 'executing', 'assigned', 'in_progress'].includes(r.status))
+    .reduce((acc, r) => acc + Number(r.n || 0), 0)
+  const nothingCompleted = (standup.reports || []).filter((r: AgentReport) =>
+    /nothing completed/i.test(String(r.summary || '')),
+  ).length
+  const health = osHealthHonesty({
+    completions24h: Number(completions24[0]?.n ?? 0),
+    openTasks: openN,
+    executedThisRun: executed,
+    nothingCompletedReports: nothingCompleted,
+  })
   const liveFacts = [
     `generated_at: ${new Date().toISOString()}`,
     `database: reachable (this probe succeeded)`,
     `agent_tasks by status: ${liveTaskCounts.map(r => `${r.status}=${r.n}`).join(', ') || 'none'}`,
-    `tasks executed this run: ${executed} (from ${overdueTasks.length} tasks idle >4h; the runner only acts on >4h-idle 'assigned' tasks, so 0 here is the NORMAL idle state, not an outage)`,
+    `completions_24h: ${Number(completions24[0]?.n ?? 0)}`,
+    `open_tasks: ${openN}`,
+    `nothing_completed_reports: ${nothingCompleted}`,
+    `tasks executed this run: ${executed} (drain of due queued work after standup; 0 executed with 0 open is not an infra outage)`,
+    `os_health: ${health.line}`,
   ].join('\n')
   const memoryContract = [
     'MEMORY CONTRACT -- hard rules for this brief:',
@@ -2728,8 +2904,9 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
     '- NEVER assert infrastructure state (repository contents, deployments, pipelines, code, environments) as current fact from recall. If recall claims such a blocker, either omit it or write exactly: "unverified agent memory claims: <claim>".',
     '- Only the LIVE FACTS block may be stated as current fact.',
     '- If something is not in LIVE FACTS and Kaan would need it, write "not probed" rather than guessing.',
-    // PS-BRIEF-HONESTY-01 (D1): 0-executed is by-design idle, not an outage.
-    "- '0 tasks executed' / '0 overdue' is the NORMAL idle state (the runner only touches tasks idle >4h). Report it as steady-state -- NEVER as 'Operational Halt', outage, or an issue -- unless a LIVE FACT shows a real failure.",
+    // PS-BRIEF-HONESTY-01 (D1): 0-executed is not an infra outage. Workforce idle IS an OS-health issue.
+    "- '0 tasks executed this run' with ZERO open tasks is not an Operational Halt or outage.",
+    "- If LIVE FACTS os_health contains WORKFORCE IDLE or ISSUANCE GAP, OS health is NOT 'all agents normal'. Report it as an issue. Do not claim agents are steady while completions_24h=0 and open_tasks>0 or nothing_completed_reports>0.",
     // PS-BRIEF-HONESTY-01 (D2): do not elevate unverified recall into decisions.
     "- Do NOT elevate UNVERIFIED RECALL (agent claims, or metrics like CAC/LTV/pipeline numbers) into 'Top 3 things' or the 'Decision' item -- those may draw ONLY from LIVE FACTS. An unverified figure may appear only as 'unverified agent memory claims: <claim>'.",
   ].join('\n')

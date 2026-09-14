@@ -8,6 +8,19 @@ type Sql = ReturnType<typeof getSql>
 
 export type HealthStatus = 'healthy' | 'warning' | 'critical' | 'unknown' | 'healing'
 
+/** Overlay heartbeat status with actual task completions. Idle with issued work is warning, not healthy. */
+export function overlayActivityStatus(
+  stored: HealthStatus,
+  done7: number,
+  issued7: number,
+  ranRecently: boolean,
+): HealthStatus {
+  if (stored === 'critical') return 'critical'
+  if (done7 > 0) return 'healthy'
+  if (issued7 > 0 || ranRecently) return 'warning'
+  return stored
+}
+
 export interface AgentHealthRecord {
   agent_id: string
   agent_name: string
@@ -152,13 +165,11 @@ export async function getAllAgentHealth(companyId = 'phishsimai'): Promise<Agent
     const a = actMap.get(r.agent_id)
     const done7 = Number(a?.done_7d ?? 0)
     const issued7 = Number(a?.issued_7d ?? 0)
-    let status = r.status
+    let status = overlayActivityStatus(r.status as HealthStatus, done7, issued7, ranRecently.has(r.agent_id))
     let uptime = r.uptime_pct
     if (done7 > 0) {
-      status = 'healthy'
       uptime = issued7 > 0 ? Math.min(100, Math.round((done7 / issued7) * 100)) : 100
     } else if (issued7 > 0 || ranRecently.has(r.agent_id)) {
-      status = 'active'
       uptime = 0
     }
     return {
