@@ -37,6 +37,7 @@ describe("deliverPendingEscalations", () => {
 
     const r1 = await deliverPendingEscalations(h.deps);
     expect(r1.sent).toBe(1);
+    expect(r1.suppressed).toBe(0);
     expect(h.sentTexts).toHaveLength(1);
     expect(h.sentTexts[0]).toContain("breaker_trip");
     expect(h.sentTexts[0]).toContain("Cannot read properties of undefined"); // RAW error present
@@ -97,5 +98,47 @@ describe("deliverPendingEscalations", () => {
     expect(msg).not.toContain("ESCALATION — marcus_dispatch");
     expect(msg).toContain("📋");
     expect(msg).not.toContain("⛔");
+  });
+
+  it("already-at-L5 raise_refused autonomy_change is suppressed — no Telegram, marked notified, no louder retry", async () => {
+    const row: EscalationRow = {
+      id: 202,
+      productId: "phishsimai",
+      category: "autonomy_change",
+      status: "pending",
+      createdAtMs: NOW,
+      payload: { outcome: "raise_refused", from: "(insert)", attempted: "l5", effective: "manual" },
+    };
+    const h = harness([row, breakerRow(8, "boom")]);
+    const r = await deliverPendingEscalations(h.deps);
+    expect(r.suppressed).toBe(1);
+    expect(r.sent).toBe(1);
+    expect(h.notified.has(202)).toBe(true);
+    expect(h.notified.has(8)).toBe(true);
+    expect(h.sentTexts).toHaveLength(1);
+    expect(h.sentTexts[0]).toContain("breaker_trip");
+    expect(h.sentTexts.some((t) => t.includes("autonomy_change"))).toBe(false);
+
+    const r2 = await deliverPendingEscalations(h.deps);
+    expect(r2.sent).toBe(0);
+    expect(r2.suppressed).toBe(0);
+    expect(h.sentTexts).toHaveLength(1);
+  });
+
+  it("already-resolved autonomy_change is stamped notified without a growing-urgency send", async () => {
+    const row: EscalationRow = {
+      id: 202,
+      productId: "phishsimai",
+      category: "autonomy_change",
+      status: "approved",
+      createdAtMs: NOW,
+      payload: { outcome: "raise_refused", attempted: "l5", effective: "manual" },
+    };
+    const h = harness([row]);
+    const r = await deliverPendingEscalations(h.deps);
+    expect(r.sent).toBe(0);
+    expect(r.suppressed).toBe(1);
+    expect(h.notified.has(202)).toBe(true);
+    expect(h.sentTexts).toHaveLength(0);
   });
 });

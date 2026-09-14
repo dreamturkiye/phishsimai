@@ -5,7 +5,7 @@
 **L5.7 → L5.8 autonomy layer built on Kaan AI OS 6.0**
 
 - Version: `7.10.1`
-- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + PR #313 denser ticks + drill-row heal / budgeted heartbeat follow-up). Section O supersedes conflicting details in B–N.
+- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + PR #313 denser ticks + drill-row heal / budgeted heartbeat follow-up). **O.32.8:** Janet does not nag about `autonomy_change` / `raise_refused` when already at L5 / L5.7 — do not demote. **O.32.9:** crisis 6h warm follow-up so one touch-90 cannot park all sendable leads. Section O supersedes conflicting details in B–N.
 - Author: Claude Fable 5 (design). Implementation: Claude orchestrating local Ollama models (kimi-k2.6:cloud for codegen, deepseek-r1:7b for analysis, gemma3:9b for drafts). Amendments: Cursor Cloud Agent (PR #311 and follow-up).
 - Extends: `KAAN_AI_OS_V6.md` in this repo as **lineage**, not as a competing spec. This document's original scope was V6 Section 8 plus the autonomy model those mechanisms enable. V6 Sections 2–6 are not redesigned here. **Runtime design is 7.10.1.**
 - This is the handoff artifact between design and implementation. Every module named here gets built as named. If implementation must deviate, the deviation is recorded in Section N's changelog table, not silently absorbed.
@@ -478,7 +478,8 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | — | Acquisition besides cold email is Dex-gated warm CTA + TRUE-org nudges + MSP harvest + founder-review LinkedIn drafts; public social publish stays locked | PS-SOCIAL-LOCKOUT-01. No invented cold copy. Magic-link **trial** start staged (hard stop #5 / protected auth). |
 | 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge (PR #313). Bandit remains `replied`. Not a declaration of L5.8. |
 | 2026-09-14 | M.5 / H / O.32.1 | `ensureRunningDrill` before posture write; `maybeStartDrill3` heals missing running row; heartbeat = 3 ticks (25s) + conversion cap 3 (12s race), parallel | Live verify on #313/`920bfeb`: posture=`drill_3` but autonomy said "start one"; heartbeat timed out on sequential all-10. Marcus remains Mac launchd, not GitHub Actions. |
-| 2026-09-14 | J / O.32.6–7 | Warm CTA COALESCE + follow-up 91/92; auto_reply reopen; D18 Grey Box upgrade; diagnoseRevenueFailure; crisis score cap 4 | Live: 15 replied / 14 engaged / 14 auto_reply drafts / sent:0. $0 MRR + 1 TRUE trial is L5.7 failure. |
+| 2026-09-14 | J / O.32.6–7 | Warm CTA COALESCE + follow-up 91/92; auto_reply reopen; D18 Grey Box upgrade; diagnoseRevenueFailure; crisis score cap 4 | Live: 15 replied / 14 engaged / 14 auto_reply drafts / sent=0. $0 MRR + 1 TRUE trial is L5.7 failure. |
+| 2026-09-14 | O.30 / O.32.8 | `already_at_l5_floor` auto-defer; no founder nag loop for raise_refused while live L5 / posture drill_3+; trigger INSERT seed | #202 approved false raise_refused→manual. Owner: stop nagging. Do not demote. Breaker/hard-stop/spend/protected_path stay loud. |
 | 2026-09-14 | O.32.9 | Crisis 6h 91/92 follow-up when eligible=0 and cooldown=sendable; reopenFalseAutoReplies crisis-clears false auto_reply on convert_warm | Live `bad6786` 19:24Z: cooldown=14 eligible=0 autoReplyPending=12 sent=0. Dex/CAN-SPAM/geo unchanged. |
 ---
 
@@ -738,7 +739,7 @@ Janet's standup prompt no longer tells her to reflexively "Pause X and pivot to 
 Founder-directed: agents (and Janet) were reporting and escalating, and nothing was ever REQUIRED to act on it. Measured: 3 PhishSim `marcus_dispatch` escalations sat pending 12–23h; both products' existing notify mechanisms ping Telegram once (or, in SF's case, every 4h at flat urgency) and then the item just sits.
 
 ### PS-TRIAGE-01 (PhishSim)
-Wired into the existing daily founder-brief cron (which already reads pending `escalations`). Before composing the brief, Janet triages every pending row via LLM: RESOLVE it herself — genuinely in her authority, optionally queuing a real Marcus task — or mark `founder_required`. A `founder_required` item re-alerts Telegram with **growing urgency by day count** ("N DAYS UNRESOLVED") every day until a human closes it. Verified live: founder-brief now reports "Pending escalations: none."
+Wired into the existing daily founder-brief cron (which already reads pending `escalations`). Before composing the brief, Janet triages every pending row via LLM: RESOLVE it herself — genuinely in her authority, optionally queuing a real Marcus task — or mark `founder_required`. A `founder_required` item re-alerts Telegram with **growing urgency by day count** ("N DAYS UNRESOLVED") every day until a human closes it. **Exception (O.32.8):** PhishSim `autonomy_change` that is already at the L5 floor / L5.7+ posture (including `raise_refused` INSERT artifacts like #202) is auto-deferred as `already_at_l5_floor` — never `founder_required`, never louder. Breaker trips, hard stops, spend, and protected-path stay loud. Verified live: founder-brief now reports "Pending escalations: none."
 
 ### SF-TRIAGE-01 (ScrollFuel)
 Same mechanism against `system_alerts` (`janet_memory`-backed), as its own standalone daily cron (15:00 UTC) — deliberately kept separate from `janet-cgo`'s tightly time-budgeted cycle rather than risk pushing it over its deadline. Verified live: triggered directly, reviewed 6 open alerts, correctly escalated all 6 to the founder (Janet defaulting to caution over auto-resolving items she wasn't confident on — the intended behavior).
@@ -848,6 +849,18 @@ Fixes (do not invent cold copy; Dex/CAN-SPAM/geo/hard stops stay):
 - TRUE-trial upgrade: D18 (7–12 days left) uses existing D25 checkout copy (`/settings?tab=billing`) so Grey Box is not left in the D14-already-sent / wait-for-D25 gap.
 - Crisis pack names Grey Box. Failures persist as `revenue_diagnosis` and feed the next `reasonAndAct`.
 
+### O.32.8 Already-at-L5 autonomy_change is not a founder nag (2026-09-14)
+
+Owner: PhishSim has been at L5 / L5.7 for some time. Live: `level=l5`, posture=`drill_3` with a running drill row. Escalation **#202** was a false `raise_refused`→`manual` on `INSERT` into `os_autonomy_state` while live/operative level stayed `l5`. It was founder_chat **approved**. **Do not demote.** Janet must **stop nagging** about this class going forward.
+
+- **Do not raise** founder Telegram / growing-urgency `autonomy_change` when: attempted/target is at or below the PhishSim L5 floor and live/stored is already `l5`; **or** outcome is `raise_refused` but `resolveReadableLevel` / floor would still be `l5` (INSERT artifact); **or** posture is already `l5_7` / `drill_3` / higher (raise/insert only).
+- **Triage:** pending `autonomy_change` in that class auto-resolves `deferred` with `resolved_via=already_at_l5_floor`. Never `janetTriage=founder_required`. Never re-alert louder.
+- **Notify:** `deliverPendingEscalations` stamps `notified_at` without sending; already-resolved rows cannot grow louder.
+- **Trigger:** `drizzle/pg/0035_autonomy_floor_no_nag.sql` treats PhishSim INSERT of a valid ladder level as a seed (`insert`), not a raise from implicit `manual`.
+- Real pages stay loud: `breaker_trip`, hard stops, spend, `protected_path`. `drop` / `row_deleted` remain visible.
+
+Do not declare L5.8.
+
 ### O.32.9 Crisis follow-up — do not park 14 sendable leads on one touch-90 (2026-09-14 19:24Z)
 
 Production `bad6786` LIVE: gate `l5`, drill_3 running, Grey Box nudge sent=1, conversion lesson **REVENUE BLOCKER**. Census: replied=15 engaged=14 sendable=14 suppressed=0 **cooldown=14 exhausted=0 eligible=0 autoReplyPending=12**. Warm CTAs sent=0.
@@ -856,7 +869,7 @@ Production `bad6786` LIVE: gate `l5`, drill_3 running, Grey Box nudge sent=1, co
 - Dual crisis (`TRUE<20` or `paying<4`) + `eligible=0` + `cooldown≥sendable`: follow-up 91/92 after **6 hours**, not 4 days. Same frozen copy. Dex / MX / `assertSendable` / suppression / CAN-SPAM / geo unchanged. Max three warm touches. No new cold copy.
 - Default (not crisis, or some leads still eligible) stays 4 days.
 
-Do not declare L5.8.
+Do not declare L5.8. Do not claim revenue is fixed until Production serves `sent>0` or rapidly shrinking `autoReplyPending`/`cooldown` with CTAs out.
 
 ### Evidence (do not invent rates)
 
