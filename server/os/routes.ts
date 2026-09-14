@@ -83,10 +83,10 @@ export async function cronAriaDaily(req: Request, res: Response) {
   return cronSequence(req, res)
 }
 
-// PS-OUTREACH-THROTTLE-01: the SECOND-TOUCH tick. Runs several times across the working window so
-// the day's 50 second-touch spread out instead of bursting. Sends nothing until the founder sets
-// janet_memory touch2_scale_approved='1' (runTouch2Batch holds otherwise), and even then never
-// exceeds the throttle (≤10/run, ≤50 second-touch/day, ≤100 combined/day). Same cron auth as touch-1.
+// PS-OUTREACH-THROTTLE-01: the SECOND-TOUCH tick. Dual crisis (TRUE<20 or paying<4) auto-unlocks
+// remaining approved T2 (O.32.10) and post-cutoff T1 ≥5d with approved T3 copy (O.32.11) —
+// still Dex-capped (≤10/run, ≤50 T2/day, ≤100 combined).
+// janet_memory touch2_scale_approved='1' still unlocks when not in crisis. Same cron auth as touch-1.
 export async function cronSequenceTouch2(req: Request, res: Response) {
   if (!okCronOrHq(req,res)) return
   try { res.json({ ok: true, ...(await runTouch2Batch()) }) } catch(e:any) { res.status(500).json({error:e.message}) }

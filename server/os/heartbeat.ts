@@ -1,5 +1,6 @@
 import { getSql } from './conn'
 import { reportAgentRun } from './agentHealth'
+import { sequenceEngineCheck } from './sequenceBacklog'
 
 /**
  * Heartbeat is the hourly liveness cron. Production verify (2026-09-14) timed out
@@ -8,11 +9,16 @@ import { reportAgentRun } from './agentHealth'
  *
  * Conversion stays (cap 3) so an hourly pass still happens if task-runner missed;
  * ticks are capped + time-budgeted. Cursor only advances for agents actually ticked.
+ * Sequence drain runs first (T2 ≤2 + T3/T4 + stale) so unsent>5d trends down.
+ * T2 is capped at 2 because SEND_SPACING_MS=10s; the dedicated sequence-touch2 cron owns the 10/run batch.
  */
 export const HEARTBEAT_TICK_AGENTS = 3
 export const HEARTBEAT_TICK_BUDGET_MS = 25_000
 export const HEARTBEAT_CONVERSION_CAP = 3
 export const HEARTBEAT_CONVERSION_BUDGET_MS = 12_000
+export const HEARTBEAT_DRAIN_FOLLOWUP_CAP = 8
+/** Small T2 slice on heartbeat (10s spacing) so T1-no-T2 actually drains hourly. sequence-touch2 still owns the 10/run cadence. */
+export const HEARTBEAT_TOUCH2_MAX = 2
 
 async function withBudget<T>(ms: number, fn: () => Promise<T>, fallback: T): Promise<{ value: T; timedOut: boolean }> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -46,19 +52,31 @@ export async function runHeartbeat() {
     healthy = false
   }
 
-  try {
-    const rows = await sql`SELECT count(*) as n FROM ps_outreach_leads
-      WHERE touch1_sent_at IS NOT NULL
-      AND touch2_sent_at IS NULL
-      AND touch1_sent_at < NOW() - INTERVAL '5 days'
-      AND replied = false AND bounced = false AND unsubscribed = false
-      AND pipeline_stage NOT IN ('dead','customer')`
-    const stalled = Number(rows[0].n)
-    checks.push({ name: 'sequence_engine', ok: stalled < 10, detail: stalled + ' leads unsent >5d' })
-    if (stalled >= 10) healthy = false
-  } catch (e: any) {
-    checks.push({ name: 'sequence_engine', ok: false, detail: e.message })
-  }
+  const { runSequenceDrainTick } = await import('./sequences')
+  const drain = await runSequenceDrainTick({
+    includeTouch2: true,
+    touch2MaxSends: HEARTBEAT_TOUCH2_MAX,
+    followUpCap: HEARTBEAT_DRAIN_FOLLOWUP_CAP,
+  }).catch((e: any) => ({
+    sent: 0, t2: 0, t3: 0, t4: 0, staleMarked: 0, skipped: 0, blocked: 0,
+    tripped: false, pauseNewTouch1: false,
+    backlog: {
+      rawUnsentTouch2Over5d: 0, drainableOverdue: 0, waitingTouch2: 0,
+      waitingTouch3SkipT2: 0, waitingTouch3AfterT2: 0, waitingTouch4: 0,
+      staleSilent: 0, geoOrSuppressed: 0,
+    },
+    reason: String(e?.message || e).slice(0, 160),
+  }))
+
+  const seq = sequenceEngineCheck({
+    drainableOverdue: drain.backlog.drainableOverdue,
+    rawUnsentTouch2Over5d: drain.backlog.rawUnsentTouch2Over5d,
+    drainSent: drain.sent,
+    staleMarked: drain.staleMarked,
+    tripped: drain.tripped,
+  })
+  checks.push({ name: 'sequence_engine', ok: seq.ok, detail: seq.detail })
+  if (!seq.ok) healthy = false
 
   // Parallel: sequential conversion-then-10-ticks is what timed out live verify.
   // Promise.race does NOT abort an in-flight LLM; ticks-not-started is the timeout win.
@@ -75,6 +93,8 @@ export async function runHeartbeat() {
         tripped: false,
         results: [],
         success: false,
+        executed: false,
+        queued: false,
         reason: 'heartbeat conversion budget exceeded',
         lesson: 'heartbeat conversion budget exceeded — task-runner still converts every 10 minutes',
       },
@@ -95,12 +115,13 @@ export async function runHeartbeat() {
     timedOut: conversionRace.timedOut,
   }
 
-  await reportAgentRun('heartbeat', healthy, { checks }, healthy ? undefined : 'heartbeat unhealthy', 'phishsimai')
+  await reportAgentRun('heartbeat', healthy, { checks, drain: seq.detail }, healthy ? undefined : 'heartbeat unhealthy', 'phishsimai')
   return {
     company: 'phishsimai',
     timestamp: new Date().toISOString(),
     checks,
     healthy,
+    drain,
     conversion,
     runtime,
     issues: checks.filter(c => !c.ok).map(c => c.name),

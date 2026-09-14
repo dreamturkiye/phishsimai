@@ -27,6 +27,84 @@ const UA = 'Mozilla/5.0 (compatible; PhishSimBot/1.0; +https://phishsimai.com)'
 const PER_RUN_DEFAULT = 50
 const CONCURRENCY = 8
 const TIME_BUDGET_MS = 240_000
+/** Walk this many listings looking for real domains so a noDomain streak cannot burn the quota. */
+export const HARVEST_SCAN_MULTIPLIER = 8
+export const HARVEST_SCAN_CAP_MAX = 400
+
+export function harvestScanCap(perRun: number): number {
+  const target = Math.max(1, Math.floor(perRun) || PER_RUN_DEFAULT)
+  return Math.min(HARVEST_SCAN_CAP_MAX, Math.max(target, target * HARVEST_SCAN_MULTIPLIER))
+}
+
+export function harvestShouldStop(opts: {
+  domainsQueued: number
+  queueTarget: number
+  scanned: number
+  scanCap: number
+  elapsedMs: number
+  timeBudgetMs: number
+}): boolean {
+  if (opts.elapsedMs >= opts.timeBudgetMs) return true
+  if (opts.domainsQueued >= opts.queueTarget) return true
+  if (opts.scanned >= opts.scanCap) return true
+  return false
+}
+
+function jsonLdItems(html: string): any[] {
+  const blocks = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
+  const items: any[] = []
+  for (const b of blocks) {
+    try {
+      const parsed = JSON.parse(b.trim())
+      for (const it of Array.isArray(parsed) ? parsed : [parsed]) items.push(it)
+    } catch {
+      /* skip broken JSON-LD */
+    }
+  }
+  return items
+}
+
+function acceptExternalHost(url: string | undefined | null): string | null {
+  if (!url || /mymsphub\.com/i.test(url)) return null
+  return hostnameOf(url)
+}
+
+/**
+ * Parse a mymsphub company profile. JSON-LD LocalBusiness.url first; if the listing has
+ * no JSON-LD site (live: 50 consecutive noDomain), fall back to sameAs / og:url / Website link.
+ */
+export function parseMspHubProfileHtml(html: string): { domain: string; name: string | null } | null {
+  if (!html) return null
+  let name: string | null = null
+  for (const it of jsonLdItems(html)) {
+    const t = it?.['@type']
+    const isLocal = t === 'LocalBusiness' || (Array.isArray(t) && t.includes('LocalBusiness'))
+    if (typeof it?.name === 'string' && it.name.trim()) name = name || it.name.trim()
+    if (isLocal) {
+      const dom = acceptExternalHost(typeof it.url === 'string' ? it.url : null)
+      if (dom) {
+        const n = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : name
+        return { domain: dom, name: n }
+      }
+      const same = it.sameAs
+      for (const u of Array.isArray(same) ? same : same ? [same] : []) {
+        const d = acceptExternalHost(typeof u === 'string' ? u : null)
+        if (d) return { domain: d, name: name }
+      }
+    }
+  }
+  const og = html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i)
+    || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:url["']/i)
+  const ogDom = acceptExternalHost(og?.[1])
+  if (ogDom) return { domain: ogDom, name }
+  const canonical = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
+  const canDom = acceptExternalHost(canonical?.[1])
+  if (canDom) return { domain: canDom, name }
+  const website = html.match(/<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>\s*(?:Website|Visit (?:site|website)|Company (?:site|website))/i)
+  const webDom = acceptExternalHost(website?.[1])
+  if (webDom) return { domain: webDom, name }
+  return null
+}
 
 // Resumable cursor over the sitemap — a dedicated one-row table so runs advance instead of
 // re-scraping the top of the list. Idempotent create.
@@ -62,26 +140,7 @@ async function domainFromProfile(url: string): Promise<{ domain: string; name: s
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) })
     if (!res.ok) return null
     const html = await res.text()
-    const blocks = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    for (const b of blocks) {
-      let parsed: any
-      try {
-        parsed = JSON.parse(b.trim())
-      } catch {
-        continue
-      }
-      for (const it of Array.isArray(parsed) ? parsed : [parsed]) {
-        const t = it?.['@type']
-        const isLocal = t === 'LocalBusiness' || (Array.isArray(t) && t.includes('LocalBusiness'))
-        if (isLocal && typeof it.url === 'string' && !/mymsphub\.com/i.test(it.url)) {
-          const dom = hostnameOf(it.url)
-          if (!dom) continue
-          const name = typeof it.name === 'string' && it.name.trim() ? it.name.trim() : null
-          return { domain: dom, name }
-        }
-      }
-    }
-    return null
+    return parseMspHubProfileHtml(html)
   } catch {
     return null
   }
@@ -92,22 +151,29 @@ export interface HarvestResult {
   cursorFrom: number
   cursorTo: number
   processed: number
+  listingsScanned: number
   domainsQueued: number
   noDomain: number
+  alreadyQueued: number
 }
 
-// Harvest one bounded window of company profiles, queue their domains (US, dedup), advance cursor.
+// Harvest until we QUEUE perRun domains (or hit scan/time budget). A 50-listing noDomain
+// streak must not consume the whole run — live 2026-09-14: processed 50, domainsQueued:0, noDomain:50.
 export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT): Promise<HarvestResult> {
   const sql = sqlOverride ?? getSql()
   await ensureState(sql)
   const urls = await fetchCompanyUrls()
   const total = urls.length
+  if (total === 0) {
+    return { total: 0, cursorFrom: 0, cursorTo: 0, processed: 0, listingsScanned: 0, domainsQueued: 0, noDomain: 0, alreadyQueued: 0 }
+  }
 
   const stateRow = (await sql`SELECT cursor FROM msp_hub_harvest_state WHERE id = 1`) as Array<{ cursor: number }>
   let cursor = Number(stateRow[0]?.cursor ?? 0) || 0
   if (cursor >= total) cursor = 0 // wrap — re-scraping is free (domain dedup)
   const cursorFrom = cursor
-  const slice = urls.slice(cursor, cursor + perRun)
+  const queueTarget = Math.max(1, Math.floor(perRun) || PER_RUN_DEFAULT)
+  const scanCap = harvestScanCap(queueTarget)
 
   const started = Date.now()
   const seen = new Set<string>()
@@ -115,14 +181,19 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
   let processed = 0
   let domainsQueued = 0
   let noDomain = 0
+  let alreadyQueued = 0
 
   async function worker(): Promise<void> {
     while (true) {
-      if (Date.now() - started >= TIME_BUDGET_MS) return
+      if (harvestShouldStop({
+        domainsQueued, queueTarget, scanned: idx, scanCap,
+        elapsedMs: Date.now() - started, timeBudgetMs: TIME_BUDGET_MS,
+      })) return
       const i = idx++
-      if (i >= slice.length) return
+      if (i >= scanCap) return
       processed++
-      const prof = await domainFromProfile(slice[i])
+      const url = urls[(cursorFrom + i) % total]
+      const prof = await domainFromProfile(url)
       const domain = prof?.domain ?? null
       const companyName = prof?.name ?? null
       if (!domain) {
@@ -136,19 +207,20 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
         // ps_outreach_leads.country so the geo gate admits them. Domain dedup is the ON CONFLICT.
         const r = (await sql`INSERT INTO lead_research_queue (company_id, domain, company_name, source, status, research_data)
           VALUES (${COMPANY_ID}, ${domain}, ${companyName}, 'mymsphub', 'pending',
-            ${JSON.stringify({ country_code: 'US', profile: slice[i], harvested_at: new Date().toISOString() })})
+            ${JSON.stringify({ country_code: 'US', profile: url, harvested_at: new Date().toISOString() })})
           ON CONFLICT (company_id, domain) DO NOTHING RETURNING id`) as any[]
         if (r.length > 0) domainsQueued++
+        else alreadyQueued++
       } catch {
         /* transient insert error — skip, next run re-covers via cursor wrap */
       }
     }
   }
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, slice.length) || 1 }, () => worker()))
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, scanCap) || 1 }, () => worker()))
 
   const cursorTo = cursorFrom + processed
   await sql`UPDATE msp_hub_harvest_state SET cursor = ${cursorTo}, total = ${total}, updated_at = now() WHERE id = 1`.catch(() => {})
-  const result = { total, cursorFrom, cursorTo, processed, domainsQueued, noDomain }
+  const result = { total, cursorFrom, cursorTo, processed, listingsScanned: processed, domainsQueued, noDomain, alreadyQueued }
   await reportAgentRun('discover', processed > 0, { agent: 'msp_harvest', ...result }).catch(() => {})
   return result
 }

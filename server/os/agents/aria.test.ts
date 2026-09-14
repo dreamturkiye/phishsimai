@@ -300,18 +300,37 @@ function fakeSeqSql(responses: any[][]) {
   return fn
 }
 
+function targetsHeld(responses: any[][]) {
+  return fakeSeqSql([
+    ...responses,
+    [{ true_trials: 20, excluded_trials: 0, raw_trials: 20, true_paying: 4 }],
+  ])
+}
+
 describe('follow-up sequence status — the touch-2 batch gate, surfaced rather than hidden in a cron log', () => {
   it('reports batch progress while headroom remains', async () => {
-    const r = await followupSequenceStatus(fakeSeqSql([[{ n: 42 }], []]))
+    const r = await followupSequenceStatus(targetsHeld([[{ n: 42 }], []]))
     expect(r).toMatchObject({ touch: 2, sentInBatch: 42, batchLimit: 150, headroom: 108, holding: false })
     expect(r!.line).toContain('42/150 sent this batch')
   })
 
-  it('reports BATCH 1 COMPLETE and holding once headroom hits zero', async () => {
-    const r = await followupSequenceStatus(fakeSeqSql([[{ n: 150 }], []]))
+  it('reports BATCH 1 COMPLETE and holding once headroom hits zero (targets held, not dual crisis)', async () => {
+    const r = await followupSequenceStatus(targetsHeld([[{ n: 150 }], []]))
     expect(r).toMatchObject({ sentInBatch: 150, headroom: 0, holding: true })
     expect(r!.line).toContain('BATCH 1 COMPLETE (150/150)')
     expect(r!.line).toContain('holding for founder scale-approval')
+  })
+
+  it('dual crisis unlocks remaining approved T2 instead of parking 1565 leads', async () => {
+    const r = await followupSequenceStatus(fakeSeqSql([
+      [{ n: 150 }],
+      [],
+      [{ true_trials: 1, excluded_trials: 104, raw_trials: 105, true_paying: 0 }],
+    ]))
+    expect(r!.holding).toBe(false)
+    expect(r!.crisisDrain).toBe(true)
+    expect(r!.headroom).toBeGreaterThan(300)
+    expect(r!.line).toMatch(/dual-crisis drain/)
   })
 
   it('never reports holding once the founder has approved scaling', async () => {

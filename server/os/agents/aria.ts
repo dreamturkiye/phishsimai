@@ -115,6 +115,7 @@ export type FollowupStatus = {
   batchLimit: number
   headroom: number
   holding: boolean
+  crisisDrain?: boolean
   line: string
 }
 
@@ -130,8 +131,10 @@ export async function followupSequenceStatus(sql: any): Promise<FollowupStatus |
     const h = await touch2Headroom(sql)
     const line = h.holding
       ? `touch-2 follow-up: BATCH 1 COMPLETE (${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT}) — holding for founder scale-approval`
-      : `touch-2 follow-up: ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent this batch`
-    return { touch: 2, sentInBatch: h.sentInBatch, batchLimit: TOUCH2_BATCH1_LIMIT, headroom: h.headroom, holding: h.holding, line }
+      : h.crisisDrain
+        ? `touch-2 follow-up: ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent this batch — dual-crisis drain of remaining approved T2 (Dex-capped)`
+        : `touch-2 follow-up: ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent this batch`
+    return { touch: 2, sentInBatch: h.sentInBatch, batchLimit: TOUCH2_BATCH1_LIMIT, headroom: h.headroom, holding: h.holding, crisisDrain: h.crisisDrain, line }
   } catch {
     return null
   }
