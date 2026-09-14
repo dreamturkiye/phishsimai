@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getCleanStreak, recordIncident } from './cleanDays'
 import { applyOwnerAutonomyRuling } from './ownerRuling'
+import { resolveReadableLevel } from './autonomyGate'
 import { recordDay, evaluatePosture, declarePosture, postureLine, CRITERIA_VERSION, buildPostureAlarm } from './posture'
 import { janetChat } from './janet'
 import { llmComplete } from './llmChat'
@@ -99,18 +100,15 @@ export async function cronJanet(req: Request, res: Response) {
   } catch(e:any) { res.status(500).json({error:e.message}) }
 }
 
-// The daily CGO cron. Runs BOTH the existing standup orchestration AND the
-// (previously dormant) L5 CGO cycle (runL5JanetCycle). The L5 cycle is now LIVE
-// but gated: at level 'manual' every task-issue / architect-queue it attempts is
-// DENIED by the autonomy gate and logged as a no-op — zero autonomous writes.
-// buildJanetCgoSummary (in l5Autonomy.ts) wraps both halves so no failure can
-// crash the cron; it always returns 200 with a summary of what ran and what was
-// gate-denied. The optional `deps` param is for tests only (Express passes none).
+// The daily CGO cron. Runs standup + L5 CGO cycle + Janet reasonAndAct.
+// PhishSim has no manual operating mode: ensureOwnerL57Autonomy persists l5 +
+// l5_7 before she acts. buildJanetCgoSummary wraps both halves so no failure
+// can crash the cron. The optional `deps` param is for tests only.
 export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoDeps) {
   if (!okCronOrHq(req, res)) return
   const started = Date.now()
   // PS-L57-ENFORCE-01: Janet's day starts at the owner-ruled L5 / L5.7, not at whatever
-  // accidental demotion is sitting in os_autonomy_state. Kill flag still wins.
+  // accidental demotion is sitting in os_autonomy_state. Kill flag is recorded, not a collapse.
   const { ensureOwnerL57Autonomy } = await import('./ownerRuling')
   const ownerRuling = await ensureOwnerL57Autonomy(getSql(), declarePosture, COMPANY).catch((e: any) => ({
     ok: false,
@@ -126,7 +124,13 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
     Date.now() - started,
     summary.ok === false ? String((summary as { errors?: string[] }).errors?.[0] || 'cgo failed') : undefined,
   ).catch(() => {})
-  res.json({ ...summary, ownerRuling })
+  const { reasonAndAct } = await import('./agents/reason')
+  const janetRuntime = await reasonAndAct(
+    'janet',
+    { ownerRuling, ...summary },
+    'You are Janet, CGO of PhishSim AI. Resume the open thread. Own verified 30-day trials and paid MRR. Prefer convert_warm. Queue Marcus only for a named product bug.',
+  ).catch((e: any) => ({ assessment: 'unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e).slice(0, 160) }))
+  res.json({ ...summary, ownerRuling, janetRuntime })
 }
 
 // Daily metrics_daily snapshot (passive infra). Secret-gated like the other os
@@ -186,8 +190,12 @@ export async function osTaskRunner(req: Request, res: Response) {
     }))
     const maxTasks = Math.min(Number((req.query.max as string) || 10), 25)
     const result = await drainAgentTasks(COMPANY, { maxTasks })
+    const { tickAllAgentRuntimes } = await import('./agentRuntimeTick')
+    const runtime = await tickAllAgentRuntimes({ maxAgents: 2, companyId: COMPANY }).catch((e: any) => ({
+      ticked: [] as string[], error: String(e?.message || e).slice(0, 120),
+    }))
     const healthy = result.claimed === 0 || result.succeeded > 0
-    return res.status(healthy ? 200 : 500).json({ ok: healthy, conversion, ...result })
+    return res.status(healthy ? 200 : 500).json({ ok: healthy, conversion, runtime, ...result })
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: formatOsError(e) })
   }
@@ -264,7 +272,7 @@ export async function architectGateEndpoint(req: Request, res: Response) {
     const w = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY} AND key='watcher_audit' ORDER BY updated_at DESC LIMIT 1`.catch(() => [] as any[])
     const a = await sql`SELECT level FROM os_autonomy_state WHERE company_id=${COMPANY} LIMIT 1`.catch(() => [] as any[])
     const watcher_audit = String((w as any[])[0]?.value ?? 'outstanding')
-    const level = String((a as any[])[0]?.level ?? 'manual')
+    const level = String(resolveReadableLevel(COMPANY, (a as any[])[0]?.level) ?? 'l5')
     res.json({ watcher_audit, watcher_passed: watcher_audit.trim().toLowerCase() === 'passed', level })
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })

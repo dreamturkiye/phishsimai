@@ -94,6 +94,13 @@ export async function reasonAndAct(
                           source: `agent:${agentId}`,
                           notify: false,
                 }).catch(() => null)
+        } else if (kind === 'marcus') {
+                taskId = await queueJanetArchitectTask({
+                          task: action.slice(0, 2000),
+                          notes: `[${agentId} self-mod] ${assessment}`.slice(0, 500),
+                          source: `agent:${agentId}`,
+                          notify: false,
+                }).catch(() => null)
         }
 
       let converted = false

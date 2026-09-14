@@ -49,6 +49,9 @@ describe('daily loop and task execution actually load and persist the runtime', 
     expect(src).toContain('persistAgentRuntime')
     expect(src).toContain('Resume the OPEN THREAD')
     expect(src).toContain("kind !== 'hard_stop'")
+    expect(src).toContain("kind === 'marcus'")
+    expect(src).toContain('self-mod')
+    expect(src).toContain('queueJanetArchitectTask')
     expect(src).toContain('notify: false')
   })
 

@@ -19,7 +19,7 @@
 // and every streak written is stamped with the version that produced it.
 import { walkEnforcementRungs, ensureOwnerL57Autonomy } from './ownerRuling'
 import { getSql } from './conn'
-import { autonomyFloorFor } from './autonomyGate'
+import { autonomyFloorFor, resolveReadableLevel } from './autonomyGate'
 import { CRITERIA_VERSION, getPostureState, currentStreak, declarePosture } from './posture'
 import { COMPANY_ID } from './version'
 import { sendTelegram } from './telegram'
@@ -122,11 +122,14 @@ export function decidePromotion(input: DecisionInput): AutonomyDecision {
 async function readState(
   sql: any,
   companyId: string,
-): Promise<{ level: EnfLevel; trust: number; storedStreak: { days: number; criteria: number | null } }> {
+): Promise<{ storedLevel: string | null; level: EnfLevel; trust: number; storedStreak: { days: number; criteria: number | null } }> {
   const r = (await sql`SELECT level, trust, clean_day_streak, clean_day_streak_criteria
                        FROM os_autonomy_state WHERE company_id=${companyId}`) as any[]
+  const stored = r[0]?.level ? String(r[0].level) : null
+  const operative = String(resolveReadableLevel(companyId, stored) ?? autonomyFloorFor(companyId) ?? 'l5') as EnfLevel
   return {
-    level: (r[0]?.level ?? 'manual') as EnfLevel,
+    storedLevel: stored,
+    level: operative,
     trust: Number(r[0]?.trust ?? 0),
     storedStreak: {
       days: Number(r[0]?.clean_day_streak ?? 0),
@@ -232,7 +235,14 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
     isWatcherAudited(sql, companyId),
   ])
   return {
-    ...decidePromotion({ level, cleanSinceLastGrant, breakerOpen: open, trust, watcherAudited }),
+    ...decidePromotion({
+      level,
+      cleanSinceLastGrant,
+      breakerOpen: open,
+      trust,
+      watcherAudited,
+      floor: autonomyFloorFor(companyId),
+    }),
     cleanStreak: streak.days,
     cleanStreakCriteria: streak.criteria,
   }
@@ -254,9 +264,8 @@ export async function computeAutonomyDecision(companyId = COMPANY_ID, sqlOverrid
  * PS-AUTONOMY-FLOOR-01 — restore a level that fell below the founder-set floor by accident.
  *
  * The ladder can no longer demote below the floor, but a row may already be sitting under it from
- * before this rule existed (PhishSim was found at 'manual' after a breaker cascade plus a Neon 402
- * that made the level unreadable). A deliberate stop must still win, so this is skipped entirely
- * when the kill flag is set — the founder's emergency stop is never overridden by code.
+ * before this rule existed. PS-L57-NO-MANUAL-01: restore even if a kill flag row exists — a flag
+ * is not a manual operating mode. Dex / hard stops remain the safety.
  *
  * The level column is guarded by assert_autonomy_level_change(), which consumes an autonomy_grants
  * row. That guard exists to stop UNEARNED PROMOTION. Restoring a floor the founder has declared is
@@ -267,16 +276,6 @@ async function restoreFloorIfBelow(sql: any, companyId: string, storedLevel: str
   const floor = autonomyFloorFor(companyId)
   if (!floor || !storedLevel) return null
   if (ORDER.indexOf(storedLevel as EnfLevel) >= ORDER.indexOf(floor as EnfLevel)) return null
-
-  try {
-    const killed = (await sql`SELECT 1 FROM os_kill_flags WHERE company_id=${companyId} AND active=true LIMIT 1`) as any[]
-    if (killed.length) {
-      console.warn(`[autonomyPromotion] ${companyId} is below floor '${floor}' but a kill flag is ACTIVE — leaving it stopped`)
-      return null
-    }
-  } catch {
-    // No kill-flag table/row is not permission to override; only a successful "no active flag" is.
-  }
 
   try {
     const walked = await walkEnforcementRungs(sql, companyId, floor, {
@@ -304,7 +303,7 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
   // Only against the real database: a caller that injects its own sql is exercising a specific
   // scenario (including deliberately sub-floor ones), and a self-repair would silently rewrite the
   // very condition under test.
-  const restored = sqlOverride ? null : await restoreFloorIfBelow(sql, companyId, state0.level)
+  const restored = sqlOverride ? null : await restoreFloorIfBelow(sql, companyId, state0.storedLevel)
   const { trust, storedStreak } = state0
   const level = (restored ?? state0.level) as typeof state0.level
   const [budget0, open, streak, watcherAudited] = await Promise.all([
@@ -324,7 +323,14 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
   // earned level / l5 cap); a demote fires once and breaks. The pure decidePromotion still enforces
   // the l4 failure-mode guard (budget 0 → hold), the floor, and the cap on every iteration.
   while (true) {
-    const d = decidePromotion({ level: curLevel, cleanSinceLastGrant: budget, breakerOpen: open, trust: curTrust, watcherAudited })
+    const d = decidePromotion({
+      level: curLevel,
+      cleanSinceLastGrant: budget,
+      breakerOpen: open,
+      trust: curTrust,
+      watcherAudited,
+      floor: autonomyFloorFor(companyId),
+    })
     if (d.action === 'hold') break
 
     await sql`INSERT INTO autonomy_grants (company_id, from_level, to_level, direction, reason, clean_days, trust, created_by)
@@ -360,7 +366,14 @@ export async function runAutonomyPromotion(companyId = COMPANY_ID, sqlOverride?:
     trail.length === 0 ? 'hold' : trail[trail.length - 1].action === 'demote' ? 'demote' : 'promote'
   const reason =
     trail.length === 0
-      ? decidePromotion({ level, cleanSinceLastGrant: budget0, breakerOpen: open, trust, watcherAudited }).reason
+      ? decidePromotion({
+          level,
+          cleanSinceLastGrant: budget0,
+          breakerOpen: open,
+          trust,
+          watcherAudited,
+          floor: autonomyFloorFor(companyId),
+        }).reason
       : netAction === 'demote'
         ? trail[trail.length - 1].reason
         : `earned_${trail.length}_rung${trail.length === 1 ? '' : 's'}_from_${budget0}_clean_days`
@@ -455,7 +468,7 @@ export async function cronAutonomyPromotion(req: any, res: any) {
     // PS-L57-ENFORCE-01: the 2026-09-10 owner ruling is the standing instruction, not a
     // one-shot HQ action. Re-apply before the earned ladder so Janet's morning is not
     // gate-denied because someone forgot to hit ?action=owner-ruling&by=kaan. Kill flag
-    // still wins inside ensureOwnerL57Autonomy.
+    // records a kill flag but does not collapse enforcement to manual.
     const ownerRuling = await ensureOwnerL57Autonomy(sql, declarePosture, COMPANY_ID).catch((e: any) => ({
       ok: false,
       reason: String(e?.message || e).slice(0, 160),

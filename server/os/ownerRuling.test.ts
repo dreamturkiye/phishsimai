@@ -22,7 +22,7 @@ describe('owner autonomy ruling', () => {
     expect(OWNER_RULING.reason).toMatch(/20 verified free trials/)
   })
 
-  it('writes a grant token before each raise and refuses when a kill flag is active', async () => {
+  it('writes a grant token before each raise (kill flag is not a refuse)', async () => {
     const writes: string[] = []
     let level = 'manual'
     const sql = async (strings: TemplateStringsArray, ...vals: any[]) => {
@@ -49,19 +49,25 @@ describe('owner autonomy ruling', () => {
     expect(writes.filter((w) => /UPDATE os_autonomy_state SET level/.test(w))).toHaveLength(4)
   })
 
-  it('does not raise when a kill flag is active', async () => {
-    const sql = async (strings: TemplateStringsArray) => {
+  it('still persists L5 / L5.7 when a kill flag row is present (no manual collapse)', async () => {
+    let level = 'l4'
+    const sql = async (strings: TemplateStringsArray, ...vals: any[]) => {
       const q = strings.join('?')
       if (/os_kill_flags/.test(q)) return [{ '?column?': 1 }]
-      if (/FROM os_autonomy_state/.test(q)) return [{ level: 'manual' }]
+      if (/FROM os_autonomy_state/.test(q)) return [{ level }]
+      if (/UPDATE os_autonomy_state SET level/.test(q)) {
+        level = String(vals[0])
+        return []
+      }
       return []
     }
-    const out = await applyOwnerAutonomyRuling(sql as any, 'phishsimai', async () => ({ ok: true, reason: 'no' }), {
+    const out = await applyOwnerAutonomyRuling(sql as any, 'phishsimai', async () => ({ ok: true, reason: 'declared' }), {
       declaredBy: 'kaan',
     })
-    expect(out.ok).toBe(false)
+    expect(out.ok).toBe(true)
+    expect(out.to).toBe('l5')
     expect(out.killFlag).toBe(true)
-    expect(out.reason).toMatch(/kill_flag_active/)
+    expect(out.reason).toMatch(/did not collapse to manual/)
   })
 
   it('ensureOwnerL57Autonomy is the same ruling the daily crons persist', async () => {

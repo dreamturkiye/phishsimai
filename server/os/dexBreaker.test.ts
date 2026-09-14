@@ -203,9 +203,21 @@ describe('application is asymmetric — tighten autonomously, loosen never', () 
     expect(sql.writes.some((w: string) => /INSERT INTO janet_memory/.test(w))).toBe(true)
   })
 
-  it('initialisation still respects the gate', async () => {
+  it('injected manual on PhishSim does not block Dex initialisation (floored to l5)', async () => {
     const sql = fakeSql(undefined)
     const r = await reconcileBreaker({ sql, cohort: { bounced: 11, contacted: 710 }, getLevel: async () => 'manual' })
+    expect(r.gate).toBe('allowed')
+    expect(r.applied).toBe(true)
+  })
+
+  it('a product without a floor still respects an injected manual deny', async () => {
+    const sql = fakeSql(undefined)
+    const r = await reconcileBreaker({
+      sql,
+      companyId: 'otherco',
+      cohort: { bounced: 11, contacted: 710 },
+      getLevel: async () => 'manual',
+    })
     expect(r.gate).toBe('denied')
     expect(r.applied).toBe(false)
     expect(sql.writes.filter((w: string) => /INSERT INTO janet_memory/.test(w))).toEqual([])
@@ -273,9 +285,10 @@ describe('a denied gate writes nothing', () => {
       const p: any = Promise.resolve([]); p.catch = () => p; return p
     }
     const r = await reconcileBreaker({
-      sql, cohort: { bounced: 11, contacted: 710 },
+      sql,
+      companyId: 'otherco',
+      cohort: { bounced: 11, contacted: 710 },
       getLevel: async () => 'manual',
-      // audit sink is autonomyGate's own; it may write, but janet_memory must not change
     })
     expect(r.gate).toBe('denied')
     expect(r.applied).toBe(false)

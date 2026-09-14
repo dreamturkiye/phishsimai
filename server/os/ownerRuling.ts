@@ -1,3 +1,5 @@
+import { autonomyFloorFor } from './autonomyGate'
+
 export const ENFORCEMENT_ORDER = ['manual', 'l2', 'l3', 'l4', 'l5'] as const
 export type EnforcementLevel = (typeof ENFORCEMENT_ORDER)[number]
 
@@ -61,11 +63,12 @@ export async function walkEnforcementRungs(
   target: EnforcementLevel,
   opts: { createdBy: string; reason: string },
 ): Promise<{ ok: boolean; from: string | null; to: string; trail: Array<{ from: string; to: string }>; reason: string }> {
+  const seed = autonomyFloorFor(companyId) || 'l5'
   await sql`INSERT INTO os_autonomy_state (company_id, level, trust, clean_day_streak, updated_at)
-    VALUES (${companyId}, 'manual', 0, 0, NOW())
+    VALUES (${companyId}, ${seed}, 0, 0, NOW())
     ON CONFLICT (company_id) DO NOTHING`.catch(() => {})
 
-  let current = (await readLevel(sql, companyId)) || 'manual'
+  let current = (await readLevel(sql, companyId)) || seed
   const trail: Array<{ from: string; to: string }> = []
   const from0 = current
   for (const step of rungsFromTo(current, target)) {
@@ -97,19 +100,10 @@ export async function applyOwnerAutonomyRuling(
   opts: { declaredBy?: string } = {},
 ): Promise<OwnerRulingResult> {
   const declaredBy = (opts.declaredBy || OWNER_RULING.declaredBy).trim() || OWNER_RULING.declaredBy
-  if (await killFlagActive(sql, companyId)) {
-    const stored = await readLevel(sql, companyId)
-    return {
-      ok: false,
-      companyId,
-      from: stored,
-      to: OWNER_RULING.enforcementLevel,
-      posture: OWNER_RULING.posture,
-      trail: [],
-      reason: 'kill_flag_active — emergency stop still wins. Clear the kill flag, then re-apply the owner ruling.',
-      killFlag: true,
-    }
-  }
+  const killed = await killFlagActive(sql, companyId)
+  // PS-L57-NO-MANUAL-01: a kill flag is an audit/safety signal. It does NOT collapse
+  // PhishSim to manual or refuse the L5 / L5.7 persist. Dex, hard stops, and send rails
+  // remain the live safety. We still record that a flag was present.
 
   const walked = await walkEnforcementRungs(sql, companyId, OWNER_RULING.enforcementLevel, {
     createdBy: declaredBy,
@@ -146,16 +140,17 @@ export async function applyOwnerAutonomyRuling(
     to: walked.to,
     posture: OWNER_RULING.posture,
     trail: walked.trail,
+    killFlag: killed,
     reason: walked.ok
-      ? `owner ruling applied: enforcement ${walked.from}->${walked.to}, posture ${OWNER_RULING.posture} (${postureReason})`
+      ? `owner ruling applied: enforcement ${walked.from}->${walked.to}, posture ${OWNER_RULING.posture} (${postureReason})${killed ? ' — kill flag present but did not collapse to manual' : ''}`
       : walked.reason,
   }
 }
 
 /**
  * Persist the standing owner ruling (enforcement L5 + posture L5.7).
- * Idempotent. Kill flag still wins. Intended for the daily autonomy-promote
- * and Janet CGO crons so L5.7 is the live state, not a one-shot HQ action.
+ * Idempotent. Kill flag is recorded, not a collapse to manual. Intended for the
+ * daily autonomy-promote and Janet CGO crons so L5.7 is the live state.
  */
 export async function ensureOwnerL57Autonomy(
   sql: SqlLike,

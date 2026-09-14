@@ -151,7 +151,7 @@ describe('runAutonomyPromotion — criteria + baseline alignment', () => {
     const r = await runAutonomyPromotion('phishsimai', sql)
     expect(r.cleanSinceLastGrant).toBe(0)
     expect(r.action).toBe('hold')
-    expect(r.to).toBe('manual')
+    expect(r.to).toBe('l5')
     expect(writes.some((w) => /autonomy_grants/.test(w))).toBe(false)
   })
 
@@ -160,18 +160,20 @@ describe('runAutonomyPromotion — criteria + baseline alignment', () => {
       level: 'manual', baseline: '2026-07-23',
       cleanDays: [{ day: '2026-07-22', clean: true, criteria_version: 2 }],
     })
-    expect((await runAutonomyPromotion('phishsimai', sql)).cleanSinceLastGrant).toBe(0)
+    const r = await runAutonomyPromotion('phishsimai', sql)
+    expect(r.cleanSinceLastGrant).toBe(0)
+    expect(r.to).toBe('l5')
   })
 
   it('DOES count v2 rows at/after the baseline — the ladder still works', async () => {
     const { sql } = fakeSql({
-      level: 'manual', baseline: '2026-07-23',
+      level: 'l2', baseline: '2026-07-23', watcherAudited: true,
       cleanDays: [
         { day: '2026-07-23', clean: true, criteria_version: 2 },
         { day: '2026-07-24', clean: true, criteria_version: 2 },
       ],
     })
-    const r = await runAutonomyPromotion('phishsimai', sql)
+    const r = await runAutonomyPromotion('otherco', sql)
     expect(r.cleanSinceLastGrant).toBe(2)
     expect(r.action).toBe('promote')
   })
@@ -193,7 +195,7 @@ describe('runAutonomyPromotion — criteria + baseline alignment', () => {
     const r = await runAutonomyPromotion('phishsimai', sql)
     expect(r.cleanSinceLastGrant).toBe(0)
     expect(r.action).toBe('hold')
-    expect(r.to).toBe('l4')
+    expect(r.to).toBe('l5')
     expect(writes.some((w) => /SET level=/.test(w))).toBe(false)
   })
 
@@ -202,6 +204,15 @@ describe('runAutonomyPromotion — criteria + baseline alignment', () => {
   // earned. The open breaker still halts the work it applies to — that is the breaker's job and it
   // is unchanged — but it no longer strips the product's level. Verified live: a Neon 402 made the
   // level unreadable and the old behaviour left Marcus with zero tasks for a day.
+  it('stored manual on PhishSim is not the operative level — holds at l5', async () => {
+    const { sql, writes } = fakeSql({ level: 'manual', baseline: '2026-07-23', cleanDays: [] })
+    const r = await runAutonomyPromotion('phishsimai', sql)
+    expect(r.from).toBe('l5')
+    expect(r.to).toBe('l5')
+    expect(r.action).toBe('hold')
+    expect(writes.some((w) => /SET level=/.test(w))).toBe(false)
+  })
+
   it('a breaker trip HOLDS at the founder-set floor instead of demoting phishsimai', async () => {
     const { sql } = fakeSql({ level: 'l5', baseline: '2026-07-23', cleanDays: [], breakerOpen: true })
     const r = await runAutonomyPromotion('phishsimai', sql)
@@ -275,7 +286,7 @@ describe('decidePromotion — watcher-audit gate on acting levels', () => {
   it('an audited multi-rung catch-up still climbs past l3 in one run (RATE-01 intact)', async () => {
     const days = Array.from({ length: 6 }, (_, i) => ({ day: `2026-08-0${i + 1}`, clean: true, criteria_version: CRITERIA_VERSION }))
     const { sql, writes } = fakeSql({ level: 'manual', baseline: '2026-07-31', lastGrantAt: '2026-07-31T00:00:00.000Z', cleanDays: days, watcherAudited: true })
-    const r = await runAutonomyPromotion('phishsimai', sql)
+    const r = await runAutonomyPromotion('otherco', sql)
     // Multi-rung: reaches an acting level in a single run, NOT capped at l2.
     expect(['l3', 'l4', 'l5']).toContain(r.to)
     expect(writes.filter((w) => /INSERT INTO autonomy_grants/.test(w)).length).toBeGreaterThan(1)
@@ -284,7 +295,7 @@ describe('decidePromotion — watcher-audit gate on acting levels', () => {
   it('an UNAUDITED catch-up run stalls exactly at l2, writing no acting-level grant', async () => {
     const days = Array.from({ length: 6 }, (_, i) => ({ day: `2026-08-0${i + 1}`, clean: true, criteria_version: CRITERIA_VERSION }))
     const { sql, writes } = fakeSql({ level: 'manual', baseline: '2026-07-31', lastGrantAt: '2026-07-31T00:00:00.000Z', cleanDays: days, watcherAudited: false })
-    const r = await runAutonomyPromotion('phishsimai', sql)
+    const r = await runAutonomyPromotion('otherco', sql)
     expect(r.to).toBe('l2')
     expect(writes.some((w) => /'l3'|"l3"/.test(w))).toBe(false)
   })

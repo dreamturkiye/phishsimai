@@ -25,20 +25,17 @@ describe("resolveReadableLevel — floor at read time (PS-L57-ENFORCE-01)", () =
     expect(autonomyFloorFor("phishsimai")).toBe("l5");
   });
 
-  it("a missing row stays missing (fail closed to manual at decideAutonomy)", () => {
-    expect(resolveReadableLevel("phishsimai", null, false)).toBeNull();
-    expect(resolveReadableLevel("phishsimai", undefined, false)).toBeUndefined();
+  it("a missing or unknown row is the floor — never manual", () => {
+    expect(resolveReadableLevel("phishsimai", null, false)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", undefined, true)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", "bogus", false)).toBe("l5");
   });
 
-  it("holds the floor when stored is below it and the kill flag is off", () => {
+  it("holds the floor when stored is below it, including kill-flag present", () => {
     expect(resolveReadableLevel("phishsimai", "manual", false)).toBe("l5");
-    expect(resolveReadableLevel("phishsimai", "l2", false)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", "manual", true)).toBe("l5");
+    expect(resolveReadableLevel("phishsimai", "l2", null)).toBe("l5");
     expect(resolveReadableLevel("phishsimai", "l4", false)).toBe("l5");
-  });
-
-  it("leaves a stored emergency stop alone when the kill flag is on or unreadable", () => {
-    expect(resolveReadableLevel("phishsimai", "manual", true)).toBe("manual");
-    expect(resolveReadableLevel("phishsimai", "l3", null)).toBe("l3");
   });
 
   it("never lowers a stored level that is already at or above the floor", () => {
@@ -98,15 +95,22 @@ describe("assertAutonomyAllows (level read + audit + throw)", () => {
     return { rows, sink: async (r: DeniedAudit) => { rows.push(r); } };
   };
 
-  it("at manual, BOTH writers throw AutonomyDenied AND write an audit row", async () => {
-    for (const action of ["issue_agent_task", "queue_architect_task"]) {
+  it("PhishSim injected 'manual' is floored to l5 — issue/queue/send/crm ALLOW", async () => {
+    for (const action of ["issue_agent_task", "queue_architect_task", "send_simulation", "crm_write"]) {
       const { rows, sink } = spyAudit();
       await expect(
         assertAutonomyAllows(action, "phishsimai", async () => "manual", sink),
-      ).rejects.toBeInstanceOf(AutonomyDenied);
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ action, level: "manual", companyId: "phishsimai" });
+      ).resolves.toBeUndefined();
+      expect(rows).toHaveLength(0);
     }
+  });
+
+  it("a product without a floor still denies at injected manual", async () => {
+    const { rows, sink } = spyAudit();
+    await expect(
+      assertAutonomyAllows("issue_agent_task", "otherco", async () => "manual", sink),
+    ).rejects.toBeInstanceOf(AutonomyDenied);
+    expect(rows[0]).toMatchObject({ action: "issue_agent_task", level: "manual", companyId: "otherco" });
   });
 
   it("a hard stop throws AND audits even at l5", async () => {
@@ -125,18 +129,26 @@ describe("assertAutonomyAllows (level read + audit + throw)", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("a null level (no row) throws — fail closed to manual", async () => {
+  it("a null level on PhishSim holds the l5 floor — issue_agent_task allows", async () => {
     const { rows, sink } = spyAudit();
     await expect(
       assertAutonomyAllows("issue_agent_task", "phishsimai", async () => null, sink),
-    ).rejects.toBeInstanceOf(AutonomyDenied);
-    expect(rows[0].level).toBe("manual");
+    ).resolves.toBeUndefined();
+    expect(rows).toHaveLength(0);
   });
 
-  it("a level-read failure is treated as deny (fail closed)", async () => {
+  it("a level-read failure on PhishSim holds the l5 floor (deploy allowed)", async () => {
     const { rows, sink } = spyAudit();
     await expect(
       assertAutonomyAllows("deploy", "phishsimai", async () => { throw new Error("db down"); }, sink),
+    ).resolves.toBeUndefined();
+    expect(rows).toHaveLength(0);
+  });
+
+  it("a product without a floor still fail-closes a thrown read", async () => {
+    const { rows, sink } = spyAudit();
+    await expect(
+      assertAutonomyAllows("deploy", "otherco", async () => { throw new Error("db down"); }, sink),
     ).rejects.toBeInstanceOf(AutonomyDenied);
     expect(rows).toHaveLength(1);
   });
@@ -147,7 +159,7 @@ describe("assertAutonomyAllows (level read + audit + throw)", () => {
     // Mirrors the try/catch(isAutonomyDenied) guard the L5 loops use.
     const loopNoOp = async () => {
       try {
-        await assertAutonomyAllows("queue_architect_task", "phishsimai", async () => "manual", sink);
+        await assertAutonomyAllows("queue_architect_task", "otherco", async () => "manual", sink);
         return "wrote";
       } catch (e) {
         if (isAutonomyDenied(e)) return null; // logged no-op — cron continues
@@ -195,6 +207,16 @@ describe("no autonomous writer bypasses the gate (static guard)", () => {
       if (/INSERT\s+INTO\s+os_architect_tasks/i.test(readFileSync(file, "utf8"))) offenders.push(f);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("PhishSim live readers seed and default to l5, never manual", () => {
+    const gate = readFileSync(join(serverDir, "os", "autonomyGate.ts"), "utf8");
+    const ruling = readFileSync(join(serverDir, "os", "ownerRuling.ts"), "utf8");
+    const routes = readFileSync(join(serverDir, "os", "routes.ts"), "utf8");
+    expect(gate).toMatch(/phishsimai:\s*'l5'/);
+    expect(ruling).toMatch(/autonomyFloorFor\(companyId\) \|\| 'l5'/);
+    expect(routes).toMatch(/resolveReadableLevel\(COMPANY/);
+    expect(routes).not.toMatch(/level \?\? 'manual'/);
   });
 
   it("both writers call assertAutonomyAllows, and the gate precedes the insert", () => {

@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join as pathJoin } from 'path'
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
-import { getAutonomyLevel } from './autonomyGate'
+import { applyAutonomyFloor, autonomyFloorFor, getAutonomyLevel } from './autonomyGate'
 import { agentsBelowL5TwoWeeks } from './agentLevels'
 import { verifiedTrialCount } from './cgoMandate'
 
@@ -128,7 +128,7 @@ export function renderFounderBrief(data: BriefData): string {
     out.push(`- **MRR:** ${money(p.mrrCents)}${moneyDelta(p.mrrDeltaCents)}`)
     out.push(`- **Tasks:** ${num(p.tasksCompleted)} shipped / ${num(p.tasksFailed)} failed`)
     out.push(`- **Agent score:** ${score(p.agentScoreAvg)}`)
-    out.push(`- **Autonomy level:** ${p.autonomyLevel ?? 'manual'}`)
+    out.push(`- **Autonomy level:** ${applyAutonomyFloor(p.productId, p.autonomyLevel) ?? p.autonomyLevel ?? autonomyFloorFor(p.productId) ?? 'l5'}`)
     if (p.openBreakers.length === 0) {
       out.push(`- **Open breaker trips:** none`)
     } else {
@@ -250,7 +250,7 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         SELECT id, category, created_at FROM escalations
         WHERE status = 'pending' AND product_id = ${companyId} ORDER BY created_at ASC
       `.catch(() => [] as any[])
-      const level = await getAutonomyLevel(companyId).catch(() => null)
+      const level = await getAutonomyLevel(companyId).catch(() => autonomyFloorFor(companyId) ?? 'l5')
       // QA-2026-09-06 + 2026-09-13: sends/replies stay on the outreach table. Trials must
       // match Janet/Mason — max(live product entitlement, CRM trial_at). CRM-only printed
       // 0 deneme for a week while 76 live 30-day orgs existed and the morning brief said 68.

@@ -22,6 +22,7 @@ import { recallContext } from './memory'
 import { queueJanetArchitectTask } from './selfHeal'
 import { talkToAgent } from '../lib/kaan_os_v4'
 import { setGoal, getGoalsWithProgress } from './cgoGoals'
+import { resolveReadableLevel } from './autonomyGate'
 
 type Tool = {
   name: string
@@ -45,10 +46,10 @@ const TOOLS: Tool[] = [
           SELECT left(task, 90) AS task, status, left(coalesce(notes,''), 100) AS notes, updated_at
           FROM os_architect_tasks WHERE company_id = ${companyId}
           ORDER BY updated_at DESC NULLS LAST LIMIT 8`
-        let level = 'unknown'
+        let level = 'l5'
         try {
           const a: any[] = await sql`SELECT level FROM os_autonomy_state WHERE company_id = ${companyId} LIMIT 1`
-          level = a[0]?.level ?? 'unknown'
+          level = String(resolveReadableLevel(companyId, a[0]?.level) ?? a[0]?.level ?? 'l5')
         } catch { /* level optional */ }
         const countTxt =
           counts.map((r) => `${r.status}: ${r.n}${r.last ? ` (last ${new Date(r.last).toISOString().slice(0, 16)})` : ''}`).join('; ') ||

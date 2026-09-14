@@ -6,9 +6,10 @@
 //  os_architect_tasks) with NO level check. This module is the single choke point
 //  those writers must pass through before they insert.
 //
-//  Default posture is 'manual': every autonomous action is DENIED. Levels are
-//  EARNED (trust + clean-day streak), never granted — the seed row is 'manual'.
-//  HARD_STOPS can never be auto-approved, at any level, ever.
+//  PhishSim (PS-L57-NO-MANUAL-01) has NO manual operating mode: the founder-set
+//  floor is l5. Missing/unknown/below-floor/kill-flag reads hold l5. HARD_STOPS
+//  and Dex/CAN-SPAM/geo rails stay denied at every level. Products without a
+//  floor keep the historical fail-closed read (null → manual).
 //
 //  Design: the DECISION (decideAutonomy) is pure and DB-free — fully unit
 //  testable. assertAutonomyAllows layers the two side effects (read level, write
@@ -97,8 +98,9 @@ export interface AutonomyDecision {
 }
 
 // ── PURE decision — no I/O, exhaustively unit-testable. ──────────────────────
-// Fail-closed everywhere: null/unknown level → 'manual'; unknown action → deny;
-// hard stop → deny regardless of level.
+// Pure ladder: null/unknown level → 'manual'; unknown action → deny;
+// hard stop → deny regardless of level. Live PhishSim callers must pass the
+// floor through resolveReadableLevel — they never feed this 'manual'.
 export function decideAutonomy(action: string, level: AutonomyLevel | string | null | undefined): AutonomyDecision {
   const effectiveLevel: AutonomyLevel =
     level && (LEVEL_ORDER as readonly string[]).includes(level) ? (level as AutonomyLevel) : 'manual'
@@ -171,59 +173,41 @@ export function applyAutonomyFloor(companyId: string, level: string | null | und
 }
 
 /**
- * Gate-time level: a stored value below the founder floor is an accident unless a kill flag
- * is active (or unreadable — fail closed, do not override an emergency stop we cannot see).
- * A missing row stays missing (null → decideAutonomy treats it as manual).
+ * Gate-time level for a floored product (PhishSim = l5).
+ *
+ * PS-L57-NO-MANUAL-01: a floor product has NO manual operating mode. Missing row, unknown
+ * token, kill flag, or stored-below-floor all resolve to the floor. Kill flags and Dex/
+ * CAN-SPAM/geo rails remain as safety — they do not collapse issue/send/crm/conversion
+ * to 'manual'. Products without a floor keep the historical fail-closed read.
  */
 export function resolveReadableLevel(
   companyId: string,
   stored: string | null | undefined,
-  killFlagActive: boolean | null,
+  _killFlagActive?: boolean | null,
 ): string | null | undefined {
-  if (stored == null) return stored
   const floor = autonomyFloorFor(companyId)
-  if (!floor || !(LEVEL_ORDER as readonly string[]).includes(stored)) return stored
-  if (levelRank(stored as AutonomyLevel) >= levelRank(floor)) return stored
-  if (killFlagActive !== false) return stored
-  return floor
-}
-
-async function killFlagActive(companyId: string): Promise<boolean | null> {
-  try {
-    const sql = getSql()
-    const rows = (await sql`SELECT 1 FROM os_kill_flags WHERE company_id=${companyId} AND active=true LIMIT 1`) as Array<unknown>
-    return rows.length > 0
-  } catch {
-    return null
-  }
+  if (!floor) return stored
+  if (stored == null || !(LEVEL_ORDER as readonly string[]).includes(stored)) return floor
+  if (levelRank(stored as AutonomyLevel) < levelRank(floor)) return floor
+  return stored
 }
 
 // Real level reader: os_autonomy_state.level for the company, never below the product's floor.
 export const getAutonomyLevel: GetLevel = async (companyId: string) => {
+  const floor = autonomyFloorFor(companyId)
   try {
     const sql = getSql()
     const rows = (await sql`
       SELECT level FROM os_autonomy_state WHERE company_id=${companyId} LIMIT 1
     `) as Array<{ level?: string }>
     const stored = rows[0]?.level ?? null
-    // A stored 'manual' WITH an active kill flag is the founder's emergency stop — never override.
-    // A stored level below the floor WITHOUT a kill flag is the accidental-demotion case
-    // (breaker cascade + Neon 402). Holding the floor at READ time stops Janet's whole morning
-    // from running denied until the 06:40 restore cron. The promotion cycle still persists it.
-    const killed = stored ? await killFlagActive(companyId) : false
-    const effective = resolveReadableLevel(companyId, stored, killed)
+    const effective = resolveReadableLevel(companyId, stored, false)
     if (effective !== stored) {
-      console.warn(`[autonomyGate] ${companyId}: stored level '${stored}' is BELOW the founder-set floor ` +
-        `'${autonomyFloorFor(companyId)}' with no kill flag — holding floor ${effective} for gate decisions`)
-    } else if (stored && autonomyFloorFor(companyId) && levelRank(stored as AutonomyLevel) < levelRank(autonomyFloorFor(companyId)!)) {
-      console.warn(`[autonomyGate] ${companyId}: stored level '${stored}' is BELOW the founder-set floor ` +
-        `'${autonomyFloorFor(companyId)}' — kill flag ${killed === null ? 'UNREADABLE' : 'ACTIVE'}; leaving stored value`)
+      console.warn(`[autonomyGate] ${companyId}: stored '${stored}' is not the operative level — ` +
+        `holding founder-set floor '${effective}' (no manual operating mode)`)
     }
     return effective
   } catch (e) {
-    // Unreadable is NOT manual. Say so loudly and hold the floor; products without a floor keep
-    // the original fail-closed behaviour.
-    const floor = autonomyFloorFor(companyId)
     console.error(`[autonomyGate] ${companyId}: level read FAILED (${String((e as Error)?.message || e).slice(0, 120)}) — ` +
       (floor ? `holding founder-set floor ${floor}` : 'failing closed to manual'))
     return floor
@@ -248,14 +232,14 @@ export const auditDeniedToDb: AuditSink = async ({ action, level, reason, compan
 // Same fail-closed decision as assertAutonomyAllows, but returns the decision
 // instead of throwing and writes NO audit row. Intended for the architect-task
 // poll (hit on a loop by the Marcus daemon) where auditing every denial would
-// flood audit_log. A read failure resolves to null → 'manual' → denied.
+// flood audit_log. A read failure on a floored product holds the floor.
 export async function checkAutonomyAllows(
   action: ActionClass | string,
   companyId: string = COMPANY_ID,
   getLevel: GetLevel = getAutonomyLevel,
 ): Promise<AutonomyDecision> {
-  const raw = await getLevel(companyId).catch(() => null)
-  return decideAutonomy(action, raw)
+  const raw = await getLevel(companyId).catch(() => autonomyFloorFor(companyId) ?? null)
+  return decideAutonomy(action, resolveReadableLevel(companyId, raw))
 }
 
 // ── The choke point. Call BEFORE any autonomous write. ───────────────────────
@@ -267,8 +251,8 @@ export async function assertAutonomyAllows(
   getLevel: GetLevel = getAutonomyLevel,
   audit: AuditSink = auditDeniedToDb,
 ): Promise<void> {
-  const raw = await getLevel(companyId).catch(() => null) // read failure → deny
-  const decision = decideAutonomy(action, raw)
+  const raw = await getLevel(companyId).catch(() => autonomyFloorFor(companyId) ?? null)
+  const decision = decideAutonomy(action, resolveReadableLevel(companyId, raw))
   if (!decision.allowed) {
     await audit({ action, level: decision.effectiveLevel, reason: decision.reason, companyId })
     throw new AutonomyDenied(action, decision.effectiveLevel, decision.reason)

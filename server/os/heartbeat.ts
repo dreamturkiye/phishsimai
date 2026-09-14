@@ -28,6 +28,12 @@ export async function runHeartbeat() {
     checks.push({ name: 'sequence_engine', ok: false, detail: e.message })
   }
 
+  const { tickAllAgentRuntimes } = await import('./agentRuntimeTick')
+  const runtime = await tickAllAgentRuntimes({ maxAgents: 10, companyId: 'phishsimai' }).catch((e: any) => ({
+    ticked: [] as string[],
+    error: String(e?.message || e).slice(0, 160),
+  }))
+
   await reportAgentRun('heartbeat', healthy, { checks }, healthy ? undefined : 'heartbeat unhealthy', 'phishsimai')
-  return { company: 'phishsimai', timestamp: new Date().toISOString(), checks, healthy, issues: checks.filter(c => !c.ok).map(c => c.name) }
+  return { company: 'phishsimai', timestamp: new Date().toISOString(), checks, healthy, runtime, issues: checks.filter(c => !c.ok).map(c => c.name) }
 }

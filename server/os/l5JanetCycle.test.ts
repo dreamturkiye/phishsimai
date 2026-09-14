@@ -1,11 +1,6 @@
-// Batch 1 — Janet's L5 CGO cycle is now wired to the daily cron, but stays a
-// no-op at level 'manual': every write it attempts is DENIED by the autonomy
-// gate and logged, and NOTHING lands in agent_tasks / os_architect_tasks.
-//
-// The DB layer is mocked: neon() returns a recorder that logs every query and
-// returns [] for reads. With no os_autonomy_state row, getAutonomyLevel → null →
-// 'manual', so the gate fails closed and denies BEFORE any insert. We assert the
-// recorder never saw an insert into either gated table.
+// Janet's L5 CGO cycle at the PhishSim floor (l5). Missing os_autonomy_state
+// no longer collapses to manual — getAutonomyLevel holds l5 — so issue/queue
+// are not autonomy-denied. The DB layer is mocked (neon returns []).
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const { queries } = vi.hoisted(() => ({ queries: [] as string[] }));
@@ -32,47 +27,29 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("runL5JanetCycle at level 'manual' — live but fully gate-denied", () => {
-  // Fake sub-cycles that stand in for the real LLM-driven proactive cycles: they
-  // simply attempt the writes Janet would attempt, through the injected callbacks.
-  const denyingDeps = {
+describe("runL5JanetCycle at PhishSim floor l5 — no manual operating mode", () => {
+  const actingDeps = {
     runJanetProactiveCycle: async (_sql: any, _c: string, _p: string, cbs: any) => {
-      await cbs.issueAgentTask("nova", "ship the thing", "do it now");
+      await cbs.issueAgentTask("nova", "ship the thing", "do it now").catch(() => {});
       await cbs.queueArchitectTask("refactor the gate", "notes");
       return { attempted: 2 };
     },
     advanceLongTermStrategies: async () => ({ ok: true }),
     runIntelFinanceProactiveCycle: async (_sql: any, _c: string, issueAgentTask: any) => {
-      await issueAgentTask("finn", "raise prices", "analysis");
+      await issueAgentTask("finn", "reconcile trials", "analysis").catch(() => {});
       return { ok: true };
     },
   };
 
-  it("writes NOTHING to agent_tasks or os_architect_tasks", async () => {
-    await runL5JanetCycle("phishsimai", "phishsimai", denyingDeps);
-    expect(hasInsert("agent_tasks")).toBe(false);
-    expect(hasInsert("os_architect_tasks")).toBe(false);
+  it("does not autonomy-deny issue_agent_task or queue_architect_task", async () => {
+    const result = await runL5JanetCycle("phishsimai", "phishsimai", actingDeps);
+    expect(result.gateDeniedCount).toBe(0);
+    expect(result.gateDenials.filter((d) => d.reason.includes("below_min_level"))).toHaveLength(0);
   });
 
-  it("records a gate denial for every write it attempted (2 issue + 1 architect)", async () => {
-    const result = await runL5JanetCycle("phishsimai", "phishsimai", denyingDeps);
-    expect(result.gateDeniedCount).toBe(3);
-    expect(result.gateDenials.filter((d) => d.action === "issue_agent_task")).toHaveLength(2);
-    expect(result.gateDenials.filter((d) => d.action === "queue_architect_task")).toHaveLength(1);
-    // issue_agent_task requires l3; at manual the gate reason is below_min_level.
-    expect(result.gateDenials.find((d) => d.action === "issue_agent_task")?.reason).toContain("below_min_level");
-  });
-
-  it("audits the denials (proof the gate actually ran), but never a task insert", async () => {
-    await runL5JanetCycle("phishsimai", "phishsimai", denyingDeps);
-    expect(hasInsert("audit_log")).toBe(true);          // gate wrote denial audit rows
-    expect(hasInsert("agent_tasks")).toBe(false);
-    expect(hasInsert("os_architect_tasks")).toBe(false);
-  });
-
-  it("completes without throwing even though every write is denied", async () => {
+  it("completes without throwing", async () => {
     let threw = false;
-    const result = await runL5JanetCycle("phishsimai", "phishsimai", denyingDeps).catch(() => {
+    const result = await runL5JanetCycle("phishsimai", "phishsimai", actingDeps).catch(() => {
       threw = true;
       return null;
     });
