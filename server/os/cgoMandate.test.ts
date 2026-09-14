@@ -73,7 +73,19 @@ describe('Janet CGO mandate', () => {
     expect(d.bottlenecks.join(' ')).toMatch(/auto_reply/)
     expect(d.bottlenecks.join(' ')).toMatch(/Grey Box/)
     expect(d.bottlenecks.join(' ')).toMatch(/canary noise/)
-    expect(d.nextActions.join(' ')).toMatch(/convert_warm|Grey Box/)
+    expect(d.nextActions.join(' ')).toMatch(/convert_warm|Grey Box|91\/92|follow-up/)
+  })
+
+  it('names parked touch-90 cooldown as the next crisis follow-up, not wait 4 days', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1, paying: 0,
+      warm: {
+        replied: 15, engaged: 14, sendable: 14, eligible: 0,
+        cooldown: 14, exhausted: 0, suppressed: 0, autoReplyPending: 12,
+      },
+    })
+    expect(d.nextActions.join(' ')).toMatch(/91\/92/)
+    expect(d.bottlenecks.join(' ')).toMatch(/cooldown=14/)
   })
 
   it('does not treat canary-inflated 92 as the operating number — 92 TRUE would be paid-only', () => {

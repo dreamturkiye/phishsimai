@@ -479,6 +479,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge (PR #313). Bandit remains `replied`. Not a declaration of L5.8. |
 | 2026-09-14 | M.5 / H / O.32.1 | `ensureRunningDrill` before posture write; `maybeStartDrill3` heals missing running row; heartbeat = 3 ticks (25s) + conversion cap 3 (12s race), parallel | Live verify on #313/`920bfeb`: posture=`drill_3` but autonomy said "start one"; heartbeat timed out on sequential all-10. Marcus remains Mac launchd, not GitHub Actions. |
 | 2026-09-14 | J / O.32.6–7 | Warm CTA COALESCE + follow-up 91/92; auto_reply reopen; D18 Grey Box upgrade; diagnoseRevenueFailure; crisis score cap 4 | Live: 15 replied / 14 engaged / 14 auto_reply drafts / sent:0. $0 MRR + 1 TRUE trial is L5.7 failure. |
+| 2026-09-14 | O.32.9 | Crisis 6h 91/92 follow-up when eligible=0 and cooldown=sendable; reopenFalseAutoReplies crisis-clears false auto_reply on convert_warm | Live `bad6786` 19:24Z: cooldown=14 eligible=0 autoReplyPending=12 sent=0. Dex/CAN-SPAM/geo unchanged. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -846,6 +847,16 @@ Fixes (do not invent cold copy; Dex/CAN-SPAM/geo/hard stops stay):
 - `AUTO_RE` no longer matches human “I will return…”. False `auto_reply` drafts are reopened (`reopenFalseAutoReplies`). Low-confidence auto_reply drafts for Kaan instead of no_action.
 - TRUE-trial upgrade: D18 (7–12 days left) uses existing D25 checkout copy (`/settings?tab=billing`) so Grey Box is not left in the D14-already-sent / wait-for-D25 gap.
 - Crisis pack names Grey Box. Failures persist as `revenue_diagnosis` and feed the next `reasonAndAct`.
+
+### O.32.9 Crisis follow-up — do not park 14 sendable leads on one touch-90 (2026-09-14 19:24Z)
+
+Production `bad6786` LIVE: gate `l5`, drill_3 running, Grey Box nudge sent=1, conversion lesson **REVENUE BLOCKER**. Census: replied=15 engaged=14 sendable=14 suppressed=0 **cooldown=14 exhausted=0 eligible=0 autoReplyPending=12**. Warm CTAs sent=0.
+
+- `reopenFalseAutoReplies` runs on `runCgoConversionShift` (task-runner + heartbeat) **and** the 15-min sales-replies sweep, with `crisis:true`. Neon `{rows}` vs array is normalized. Bounce/unsub/hostile/left-company stay closed; false auto_reply (incl. OOO-shaped model guesses) are cleared so `autoReplyPending` shrinks.
+- Dual crisis (`TRUE<20` or `paying<4`) + `eligible=0` + `cooldown≥sendable`: follow-up 91/92 after **6 hours**, not 4 days. Same frozen copy. Dex / MX / `assertSendable` / suppression / CAN-SPAM / geo unchanged. Max three warm touches. No new cold copy.
+- Default (not crisis, or some leads still eligible) stays 4 days.
+
+Do not declare L5.8.
 
 ### Evidence (do not invent rates)
 

@@ -117,6 +117,29 @@ export async function classifyReply(subject: string, body: string): Promise<Clas
   return classifyByRules(subject, body) ?? (await classifyByModel(subject, body))
 }
 
+/** Bounce / left-company / hostility — never reopen as convertible. OOO can reopen in crisis. */
+export function isHardDeadReply(text: string): boolean {
+  const t = String(text || '')
+  if (HOSTILE_RE.test(t) || UNSUB_RE.test(t)) return true
+  return /\b(delivery (status notification|has failed)|undeliverable|mailer.?daemon|no longer (with|at) (the )?(company|firm|us)|has left the (company|organisation|organization))\b/i.test(t)
+}
+
+export function sqlResultRows(result: unknown): any[] {
+  if (Array.isArray(result)) return result
+  if (result && typeof result === 'object' && Array.isArray((result as any).rows)) return (result as any).rows
+  return []
+}
+
+/** Reopen pending auto_reply unless it is a real bounce/unsub/hostile (or a strict OOO outside crisis). */
+export function shouldReopenAutoReply(snippet: string, opts: { crisis?: boolean; confidence?: number } = {}): boolean {
+  if (isHardDeadReply(snippet)) return false
+  const strict = classifyByRules('', snippet)
+  if (strict?.cls === 'hostile' || strict?.cls === 'unsubscribe') return false
+  if (opts.crisis) return true
+  if (typeof opts.confidence === 'number' && opts.confidence < 0.85) return true
+  return strict?.cls !== 'auto_reply'
+}
+
 /** What we do with a classification. Suppression is gated on confidence; interest converts. */
 export function decideAction(c: Classification): ReplyAction {
   if (SUPPRESSING.includes(c.cls)) {
@@ -171,29 +194,45 @@ export async function fetchReplyQueue(sql: any): Promise<QueuedReply[]> {
 }
 
 /**
- * 2026-09-14: 14 pending_review drafts classified auto_reply, 1 interested already sent.
- * Reopen rows that fail the *strict* OOO/bounce rules so the next sweep can convert them.
+ * 2026-09-14: pending_review drafts classified auto_reply hid 14 engaged leads.
+ * Production 19:24Z still had 12 after #314 because (a) neon `{rows}` vs array was not
+ * normalized so the loop never ran, (b) strict OOO matched and stayed parked, (c) conversion
+ * swallowed the throw. Crisis reopen clears false auto_replies (not bounce/unsub/hostile)
+ * so the next convert_warm / sales-replies sweep can send.
  */
-export async function reopenFalseAutoReplies(sql: any): Promise<number> {
-  const rows = (await sql`
-    SELECT id::text AS id, COALESCE(inbound_snippet,'') AS inbound_snippet
-    FROM outreach_reply_drafts
-    WHERE status = 'pending_review' AND classification = 'auto_reply'
-    LIMIT 100
-  `.catch(() => [])) as Array<{ id: string; inbound_snippet: string }>
+export async function reopenFalseAutoReplies(sql: any, opts: { crisis?: boolean } = {}): Promise<number> {
+  const crisis = !!opts.crisis
+  let raw: unknown
+  try {
+    raw = await sql`
+      SELECT id::text AS id, COALESCE(inbound_snippet,'') AS inbound_snippet,
+             COALESCE(classification_confidence, 1) AS confidence
+      FROM outreach_reply_drafts
+      WHERE status = 'pending_review' AND classification = 'auto_reply'
+      LIMIT 100
+    `
+  } catch (e) {
+    console.warn('[salesReplies] reopen SELECT failed:', String((e as Error)?.message || e).slice(0, 160))
+    return 0
+  }
+  const rows = sqlResultRows(raw) as Array<{ id: string; inbound_snippet: string; confidence?: number }>
   let n = 0
   for (const r of rows) {
-    const strict = classifyByRules('', r.inbound_snippet)
-    if (strict?.cls === 'auto_reply') continue
-    const updated = await sql`
-      UPDATE outreach_reply_drafts
-      SET classification = NULL, classification_confidence = NULL, classified_at = NULL,
-          action_taken = NULL, classification_claim_token = NULL, classification_claim_expires_at = NULL
-      WHERE id = ${r.id}::uuid AND classification = 'auto_reply'
-      RETURNING id
-    `.catch(() => [])
-    if ((updated as any[])[0]?.id) n++
+    if (!shouldReopenAutoReply(r.inbound_snippet, { crisis, confidence: Number(r.confidence) })) continue
+    try {
+      const updated = sqlResultRows(await sql`
+        UPDATE outreach_reply_drafts
+        SET classification = NULL, classification_confidence = NULL, classified_at = NULL,
+            action_taken = NULL, classification_claim_token = NULL, classification_claim_expires_at = NULL
+        WHERE id = ${r.id}::uuid AND classification = 'auto_reply'
+        RETURNING id
+      `)
+      if (updated[0]?.id) n++
+    } catch (e) {
+      console.warn(`[salesReplies] reopen UPDATE failed ${r.id}:`, String((e as Error)?.message || e).slice(0, 120))
+    }
   }
+  if (n > 0) console.log(`[salesReplies] reopened ${n} false auto_reply draft(s) crisis=${crisis}`)
   return n
 }
 
@@ -301,7 +340,10 @@ export async function runSalesReplyAgent(sqlOverride?: any): Promise<SalesReplyR
     queued: 0, classified: 0, tasksIssued: 0, suppressed: 0, draftsForKaan: 0, trialCtasSent: 0, noAction: 0,
     byClass: {}, line: EMPTY_LINE,
   }
-  await reopenFalseAutoReplies(sql).catch(() => 0)
+  await reopenFalseAutoReplies(sql, { crisis: true }).catch((e: any) => {
+    console.warn('[salesReplies] reopenFalseAutoReplies failed:', String(e?.message || e).slice(0, 160))
+    return 0
+  })
   const queue = await claimReplyQueue(sql)
   res.queued = queue.length
   if (queue.length === 0) return res // no queue, no work, no output. The anti-ghost path.

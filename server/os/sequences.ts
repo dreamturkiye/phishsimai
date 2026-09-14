@@ -11,6 +11,8 @@ import { COMPANY_ID } from './version'
 import { recordIncident } from './cleanDays'
 import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_SPACING_MS, COMBINED_DAILY_CAP } from './outreachThrottle'
 import { randomUUID } from 'node:crypto'
+import { isOperatingCrisis } from './cgoMandate'
+import { measureTrueOrgCounts } from './trueTrials'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -823,6 +825,8 @@ export const WARM_CONVERSION_TOUCH = 90
 export const WARM_FOLLOWUP_TOUCHES = [91, 92] as const
 export const WARM_CTA_TOUCHES = [90, 91, 92] as const
 export const WARM_CTA_COOLDOWN_DAYS = 4
+/** Dual-crisis follow-up: 6h between 90→91→92 instead of parking 14 leads for 4 days. */
+export const CRISIS_WARM_FOLLOWUP_HOURS = 6
 export const TRIAL_CTA_URL = 'https://phishsimai.com/login?mode=register'
 
 export type WarmPoolCensus = {
@@ -849,11 +853,45 @@ export type WarmCtaResult = {
   reason?: string
   results: { email: string; company: string; outcome: string }[]
   pool?: WarmPoolCensus
+  crisisFollowup?: boolean
+  cooldownHours?: number
+  reopenedAutoReplies?: number
+}
+
+/**
+ * Live 2026-09-14T19:24Z: eligible=0, cooldown=14=sendable, autoReplyPending=12.
+ * A single touch-90 must not park the whole warm pool for 4 days while TRUE<20 / paying<4.
+ */
+export function shouldCrisisWarmFollowup(pool: WarmPoolCensus, operatingCrisis: boolean): boolean {
+  if (!operatingCrisis) return false
+  if (pool.sendable <= 0) return false
+  if (pool.eligible > 0) return false
+  return pool.cooldown >= pool.sendable
+}
+
+export function warmCtaCooldownHours(pool: WarmPoolCensus, operatingCrisis: boolean): number {
+  return shouldCrisisWarmFollowup(pool, operatingCrisis)
+    ? CRISIS_WARM_FOLLOWUP_HOURS
+    : WARM_CTA_COOLDOWN_DAYS * 24
+}
+
+async function readOperatingCrisis(sql: any): Promise<boolean> {
+  try {
+    const c = await measureTrueOrgCounts(sql)
+    return isOperatingCrisis({
+      liveProductTrials: c.trueLiveTrials,
+      crmTrials: 0,
+      payingCustomers: c.truePaying,
+    })
+  } catch {
+    return true
+  }
 }
 
 /** Count why convert_warm returned empty. Live 2026-09-14: 15 replied / 14 engaged → sent:0 because
  *  the SELECT treated NULL bounce flags and a single prior CTA as "no leads". */
-export async function warmCtaPoolCensus(sql: any): Promise<WarmPoolCensus> {
+export async function warmCtaPoolCensus(sql: any, cooldownHours = WARM_CTA_COOLDOWN_DAYS * 24): Promise<WarmPoolCensus> {
+  const hours = Math.max(1, Math.floor(Number(cooldownHours) || WARM_CTA_COOLDOWN_DAYS * 24))
   const flags = (await sql`
     SELECT
       count(*) FILTER (WHERE replied = true)::int AS replied,
@@ -884,7 +922,7 @@ export async function warmCtaPoolCensus(sql: any): Promise<WarmPoolCensus> {
           AND EXISTS (
             SELECT 1 FROM outreach_sequence_outbox o
             WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
-              AND o.updated_at > NOW() - INTERVAL '4 days'
+              AND o.updated_at > NOW() - (${hours}::int * INTERVAL '1 hour')
           )
       )::int AS cooldown,
       count(*) FILTER (
@@ -907,7 +945,7 @@ export async function warmCtaPoolCensus(sql: any): Promise<WarmPoolCensus> {
           AND NOT EXISTS (
             SELECT 1 FROM outreach_sequence_outbox o
             WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
-              AND o.updated_at > NOW() - INTERVAL '4 days'
+              AND o.updated_at > NOW() - (${hours}::int * INTERVAL '1 hour')
           )
           AND (
             SELECT count(*) FROM outreach_sequence_outbox o
@@ -932,14 +970,18 @@ export async function warmCtaPoolCensus(sql: any): Promise<WarmPoolCensus> {
   }
 }
 
-export async function nextWarmCtaTouch(sql: any, leadId: string): Promise<number | null> {
+export async function nextWarmCtaTouch(
+  sql: any,
+  leadId: string,
+  cooldownHours = WARM_CTA_COOLDOWN_DAYS * 24,
+): Promise<number | null> {
   const rows = (await sql`
     SELECT touch, status, updated_at
     FROM outreach_sequence_outbox
     WHERE lead_id = ${leadId}::uuid AND touch IN (90, 91, 92)
   `.catch(() => [])) as Array<{ touch: number; status: string; updated_at: string }>
   const sent = rows.filter((r) => r.status === 'sent')
-  const coolMs = WARM_CTA_COOLDOWN_DAYS * 86_400_000
+  const coolMs = Math.max(1, Math.floor(Number(cooldownHours) || WARM_CTA_COOLDOWN_DAYS * 24)) * 3_600_000
   if (sent.some((r) => Date.now() - new Date(r.updated_at).getTime() < coolMs)) return null
   const used = new Set(sent.map((r) => Number(r.touch)))
   return WARM_CTA_TOUCHES.find((t) => !used.has(t)) ?? null
@@ -985,12 +1027,21 @@ export async function sendWarmTrialCtas(opts: {
     }
   }
 
-  out.pool = await warmCtaPoolCensus(sql).catch(() => ({ ...EMPTY_WARM_POOL }))
+  const baselinePool = await warmCtaPoolCensus(sql).catch(() => ({ ...EMPTY_WARM_POOL }))
+  const operatingCrisis = await readOperatingCrisis(sql)
+  const cooldownHours = warmCtaCooldownHours(baselinePool, operatingCrisis)
+  const crisisFollowup = shouldCrisisWarmFollowup(baselinePool, operatingCrisis)
+  out.crisisFollowup = crisisFollowup
+  out.cooldownHours = cooldownHours
+  out.pool = crisisFollowup
+    ? await warmCtaPoolCensus(sql, cooldownHours).catch(() => baselinePool)
+    : baselinePool
 
   const wanted = (opts.emails || []).map((e) => String(e).trim().toLowerCase()).filter(Boolean)
   // COALESCE bounce/unsub: NULL = false used to drop the whole 14-engaged pool.
   // Lifetime one-shot at touch 90 used to hide replied/engaged after the first CTA.
-  // Follow-ups use 91/92 after 4 days, still Dex-gated, same frozen copy.
+  // Follow-ups use 91/92. Default wait is 4 days; dual crisis + all-parked cooldown
+  // shortens to CRISIS_WARM_FOLLOWUP_HOURS so one old 90 cannot freeze revenue.
   const leads = wanted.length
     ? await sql`SELECT l.id, l.name, l.company, l.email, l.industry FROM ps_outreach_leads l
         WHERE lower(l.email) = ANY(${wanted})
@@ -1006,7 +1057,7 @@ export async function sendWarmTrialCtas(opts: {
         AND NOT EXISTS (
           SELECT 1 FROM outreach_sequence_outbox o
           WHERE o.lead_id = l.id AND o.touch IN (90, 91, 92) AND o.status='sent'
-            AND o.updated_at > NOW() - INTERVAL '4 days'
+            AND o.updated_at > NOW() - (${cooldownHours}::int * INTERVAL '1 hour')
         )
         AND (
           SELECT count(*) FROM outreach_sequence_outbox o
@@ -1059,7 +1110,7 @@ ${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
 <p style="color:#666;font-size:12px;margin:0">240 Queen Street N.E., Leesburg, VA 20176</p>
 <p style="color:#666;font-size:12px;margin:12px 0 0">You're receiving this because we work with MSPs on phishing-simulation and compliance tooling. Not a fit? <a href="https://phishsimai.com/unsubscribe?e={{TOKEN}}" style="color:#666">Unsubscribe</a> — one click, no hard feelings.</p>
 </div>`.replace(/\{\{TOKEN\}\}/g, token)
-      const touch = await nextWarmCtaTouch(sql, String(lead.id))
+      const touch = await nextWarmCtaTouch(sql, String(lead.id), cooldownHours)
       if (touch == null) {
         out.skipped++
         out.results.push({ email: String(lead.email), company: co, outcome: 'cooldown_or_exhausted' })

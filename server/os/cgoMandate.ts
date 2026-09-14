@@ -136,7 +136,11 @@ export function diagnoseRevenueFailure(input: {
         `${w.replied} replied / ${w.engaged} engaged but eligible=${w.eligible} ` +
         `(suppressed=${w.suppressed}, cooldown=${w.cooldown}, exhausted=${w.exhausted}, auto_reply_drafts=${w.autoReplyPending})`,
       )
-      nextActions.push('Fire convert_warm on sendable engaged leads; reopen false auto_reply drafts')
+      if (w.cooldown >= w.sendable && w.sendable > 0) {
+        nextActions.push('Crisis follow-up 91/92 on parked touch-90 leads (Dex rails, same frozen copy)')
+      } else {
+        nextActions.push('Fire convert_warm on sendable engaged leads; reopen false auto_reply drafts')
+      }
     } else if (w.eligible > 0) {
       bottlenecks.push(`${w.eligible} warm sendable leads waiting — convert_warm must send, not report`)
       nextActions.push(`convert_warm the ${w.eligible} eligible replied/engaged leads (Dex rails)`)
