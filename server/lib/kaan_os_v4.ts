@@ -2885,8 +2885,12 @@ export async function runJanetFullOrchestration(companyId = COMPANY_ID): Promise
   const nothingCompleted = (standup.reports || []).filter((r: AgentReport) =>
     /nothing completed/i.test(String(r.summary || '')),
   ).length
-  const trialFactsForHealth = await loadTrialFacts(sql).catch(() => ({
-    liveProductTrials: 0, crmTrials: 0, payingCustomers: null as number | null,
+  const trialFactsForHealth = await loadTrialFacts(sql).catch((): TrialFacts => ({
+    liveProductTrials: 0,
+    crmTrials: 0,
+    payingCustomers: null,
+    rawLiveTrials: 0,
+    excludedNonCustomerTrials: 0,
   }))
   const health = osHealthHonesty({
     completions24h: Number(completions24[0]?.n ?? 0),
