@@ -7,11 +7,15 @@ import {
   drainPlanDays,
   followUpHourlySlice,
   isStaleSilentLead,
+  postCutoffBatchHeadroom,
   secondTouchCopyKind,
   sequenceEngineCheck,
   shouldCrisisUnlockTouch2,
   shouldPauseTouch1,
   shouldSkipTouch2ForPriceEra,
+  TOUCH2_POST_ERA_BATCH1_LIMIT,
+  TOUCH2_POST_ERA_EPOCH,
+  TOUCH2_POST_ERA_SCALE_KEY,
 } from './sequenceBacklog'
 import { TOUCH2_COPY_ERA_CUTOFF } from './sequenceBacklog'
 
@@ -49,9 +53,49 @@ describe('sequence backlog routing (no invented copy)', () => {
   it('plans drain days at the Dex follow-up cap, not a burst', () => {
     expect(drainPlanDays(0)).toBe(0)
     expect(drainPlanDays(1565, 50)).toBe(32)
-    expect(drainPlanDays(100, 50)).toBe(2)
+    expect(drainPlanDays(1601, 50)).toBe(33)
     expect(followUpHourlySlice(true, 3)).toBe(CRISIS_FOLLOWUP_HOURLY_SLICE)
     expect(followUpHourlySlice(false, 3)).toBe(3)
+  })
+})
+
+describe('post-cutoff measured batch (prod SQL: pre=0 post=1601 eligible=0 scale=1)', () => {
+  it('does not treat old touch2_scale_approved as a 1600 unlock', () => {
+    expect(TOUCH2_POST_ERA_EPOCH).toBe('2026-09-14T22:00:00Z')
+    expect(TOUCH2_POST_ERA_BATCH1_LIMIT).toBe(150)
+    expect(TOUCH2_POST_ERA_SCALE_KEY).toBe('touch2_post_cutoff_scale_approved')
+    const first = postCutoffBatchHeadroom({
+      sentInPostEraBatch: 0, postCutoffScaleApproved: false, operatingCrisis: true,
+    })
+    expect(first.holding).toBe(false)
+    expect(first.crisisDrain).toBe(false)
+    expect(first.headroom).toBe(150)
+    expect(first.headroom).not.toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it('holds after 150 unless dual crisis (Dex drain) or the NEW scale key', () => {
+    const hold = postCutoffBatchHeadroom({
+      sentInPostEraBatch: 150, postCutoffScaleApproved: false, operatingCrisis: false,
+    })
+    expect(hold).toMatchObject({ headroom: 0, holding: true, crisisDrain: false })
+    const crisis = postCutoffBatchHeadroom({
+      sentInPostEraBatch: 150, postCutoffScaleApproved: false, operatingCrisis: true,
+    })
+    expect(crisis.holding).toBe(false)
+    expect(crisis.crisisDrain).toBe(true)
+    const scaled = postCutoffBatchHeadroom({
+      sentInPostEraBatch: 150, postCutoffScaleApproved: true, operatingCrisis: false,
+    })
+    expect(scaled.holding).toBe(false)
+    expect(scaled.crisisDrain).toBe(false)
+  })
+
+  it('never returns 1601 as a single-run headroom during batch 1', () => {
+    const h = postCutoffBatchHeadroom({
+      sentInPostEraBatch: 0, postCutoffScaleApproved: false, operatingCrisis: true,
+    })
+    expect(h.headroom).toBeLessThanOrEqual(TOUCH2_POST_ERA_BATCH1_LIMIT)
+    expect(h.headroom).toBe(150)
   })
 })
 
@@ -99,9 +143,11 @@ describe('drain is wired onto live send paths', () => {
 
   it('sequence-touch2 eligible includes post-cutoff T1 after 5 days (live empty-eligible fix)', () => {
     const seq = readFileSync('server/os/sequences.ts', 'utf8')
-    expect(seq).toMatch(/touch1_sent_at >= '\$\{TOUCH2_COPY_ERA_CUTOFF\}'::timestamptz/)
     expect(seq).toContain('seq_t3_as_t2')
     expect(seq).toContain('secondTouchCopyKind')
     expect(seq).toContain('touch2_sent_at=${ts}, touch3_sent_at=${ts}')
+    expect(seq).toContain('touch2PostEraHeadroom')
+    expect(seq).toContain('TOUCH2_POST_ERA_EPOCH')
+    expect(seq).toContain('includePostCutoff')
   })
 })

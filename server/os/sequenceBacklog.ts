@@ -33,6 +33,17 @@ export const CRISIS_FOLLOWUP_HOURLY_SLICE = 15
 export const FOLLOWUP_DAILY_CAP = 50
 export const DRAIN_STALE_MARK_CAP = 40
 
+/**
+ * Measured post-cutoff second-touch batch (O.32.11). Independent of the Aug-3
+ * TOUCH2_EPOCH (796 already sent) and of janet_memory touch2_scale_approved='1'.
+ * That flag unlocked the *price* T2 on the pre-cutoff 797 — it is NOT permission
+ * to dump ~1601 price-era T1 in a day. Confirmed prod 2026-09-14: stalled_pre=0,
+ * stalled_post≈1601, touch2_eligible=0, scale='1'.
+ */
+export const TOUCH2_POST_ERA_EPOCH = '2026-09-14T22:00:00Z'
+export const TOUCH2_POST_ERA_BATCH1_LIMIT = 150
+export const TOUCH2_POST_ERA_SCALE_KEY = 'touch2_post_cutoff_scale_approved'
+
 export type SequenceBacklogCensus = {
   rawUnsentTouch2Over5d: number
   drainableOverdue: number
@@ -101,6 +112,33 @@ export function shouldPauseTouch1(drainableOverdue: number, operatingCrisis: boo
 /** Dual crisis + owner 2026-09-14 mandate: drain remaining approved T2. Dex caps still bind. */
 export function shouldCrisisUnlockTouch2(operatingCrisis: boolean, scaleApproved: boolean): boolean {
   return operatingCrisis || scaleApproved
+}
+
+/**
+ * Headroom for T3-as-T2 on post-copy-era leads. Old touch2_scale_approved is intentionally
+ * not a parameter — that unlock spent the pre-cutoff list (796/797). Batch 1 = 150 of the
+ * DISTINCT approved T3 copy, Dex ≤10/run ≤50/day. After 150: HOLD unless dual crisis
+ * (continue at Dex caps, never a 1600 blast) or touch2_post_cutoff_scale_approved='1'.
+ */
+export function postCutoffBatchHeadroom(opts: {
+  sentInPostEraBatch: number
+  postCutoffScaleApproved: boolean
+  operatingCrisis: boolean
+  batchLimit?: number
+}): { headroom: number; sentInBatch: number; holding: boolean; crisisDrain: boolean } {
+  const limit = Math.max(1, Math.floor(opts.batchLimit ?? TOUCH2_POST_ERA_BATCH1_LIMIT) || TOUCH2_POST_ERA_BATCH1_LIMIT)
+  const sent = Math.max(0, Number(opts.sentInPostEraBatch) || 0)
+  const remaining = Math.max(0, limit - sent)
+  if (opts.postCutoffScaleApproved) {
+    return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch: sent, holding: false, crisisDrain: false }
+  }
+  if (remaining > 0) {
+    return { headroom: remaining, sentInBatch: sent, holding: false, crisisDrain: false }
+  }
+  if (opts.operatingCrisis) {
+    return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch: sent, holding: false, crisisDrain: true }
+  }
+  return { headroom: 0, sentInBatch: sent, holding: true, crisisDrain: false }
 }
 
 export function drainPlanDays(drainableOverdue: number, dailyCap = FOLLOWUP_DAILY_CAP): number {

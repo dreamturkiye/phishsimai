@@ -898,19 +898,15 @@ Do not declare L5.8. Do not scale T1 until the overdue drainable pool is small.
 
 Production cron (pre-#317 merge, still true of `touch2Eligible` on that branch):
 
-- `/api/os/sequence-touch2` → `attempted:0 sent:0 headroom:10 holding:false` — crisis unlock / batch headroom was NOT the blocker. Eligible SELECT was empty because it required `touch1_sent_at < TOUCH2_COPY_ERA_CUTOFF` (2026-08-03T01:36:00Z). Pre-cutoff pool exhausted; ~1565 stalled are POST copy-era and never got a second email. Single-touch TOF explains 136→2 replies.
-- `/api/os/sequence` → `sent:0` (pause T1 / empty T3 while T2 was never stamped).
-- `/api/os/msp-harvest` → `processed 50, domainsQueued:0, noDomain:50` — cursor advanced 50 JSON-LD-less listings and queued nothing.
-- Warm book: `cooldown=13 eligible=0` after sent=8 (6h crisis) — keep that cadence.
-- `trialNudges scanned:2 sent:0` — D18 already claimed; crisis D25 (`nudge_day=181`) was not on this cron; exact `lower(o.name) = 'grey box consulting'` could also miss.
+- Confirmed SQL on prod ep-spring-leaf (2026-09-14 night): stalled_heartbeat **1568**; stalled_pre_cutoff **0**; stalled_post_cutoff **1601**; touch2_eligible **0**; touch2_batch_sent since epoch **796**; `touch2_scale_approved='1'` (NOT the blocker).
 
 **Safety rationale for the second-touch unstick (no invented cold copy):**
 
-1. Pre-cutoff T1 still receives founder-approved `TOUCH2_VARIANT` (PS-TOUCH2-PRICE-01).
+1. Pre-cutoff T1 still receives founder-approved `TOUCH2_VARIANT` (PS-TOUCH2-PRICE-01). That cohort is spent (796/797).
 2. Post-cutoff T1 already got the price-led pitch. They are **not** eligible for that same T2 body. After **≥5 days**, `/api/os/sequence-touch2` / `runTouch2Batch` sends the **existing approved SEQUENCE touch-3** (value re-frame: flat MSP math, 10-minute setup, trial link — not a same-day double price-pitch).
 3. A successful post-cutoff second send stamps **both** `touch2_sent_at` and `touch3_sent_at` so heartbeat T1-no-T2 falls and the T3 loop cannot re-send the same copy. T4 remains the breakup after +6d.
-4. Dex still binds: bounce breaker, `assertSendable`, MX, suppression, geo US/GB/AU, `SEND_SPACING_MS=10s`, `SECOND_TOUCH_PER_RUN=10`, `SECOND_TOUCH_DAILY_CAP=50`, combined 100/day. Crisis unlocks the old 150-batch hold; it does not lift Dex caps. Heartbeat takes at most 2 T2s (spacing).
-5. Silent 45d no-open unreplied leads stay excluded / marked dead. New T1 stays paused while drainable overdue ≥50.
+4. **New epoch / measured batch:** `TOUCH2_POST_ERA_EPOCH=2026-09-14T22:00:00Z`, `TOUCH2_POST_ERA_BATCH1_LIMIT=150`. Counts only post-cutoff T1 that received T2 since that instant — the 796 old T2s do not fill this batch. `touch2_scale_approved='1'` does **not** unlock this list. After 150: HOLD unless dual crisis, which continues at Dex caps (≤10/run, ≤50/day, combined 100) — drain toward heartbeat healthy, never a 1600-in-one-day blast. Founder key for faster scale: `touch2_post_cutoff_scale_approved='1'`.
+5. Dex still binds on every send: bounce breaker, `assertSendable`, MX, suppression, geo US/GB/AU, `SEND_SPACING_MS=10s`. Heartbeat takes at most 2 T2s (spacing). Silent 45d no-open unreplied leads stay excluded. New T1 stays paused while drainable overdue ≥50.
 
 **Harvest:** do not treat `perRun` as a fixed sitemap slice. Walk up to `harvestScanCap` (8×, max 400) or until `domainsQueued` hits the target. Parse JSON-LD first, then `sameAs` / og:url / Website link. Cursor still advances over skips so we do not re-scrape the same empty window forever; wrap + ON CONFLICT remain the de-dup.
 

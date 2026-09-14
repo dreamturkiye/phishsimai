@@ -17,15 +17,19 @@ import {
   DRAIN_STALE_MARK_CAP,
   FOLLOWUP_DAILY_CAP,
   TOUCH2_COPY_ERA_CUTOFF,
+  TOUCH2_POST_ERA_BATCH1_LIMIT,
+  TOUCH2_POST_ERA_EPOCH,
+  TOUCH2_POST_ERA_SCALE_KEY,
   countSequenceBacklog,
   followUpHourlySlice,
+  postCutoffBatchHeadroom,
   secondTouchCopyKind,
   shouldCrisisUnlockTouch2,
   shouldPauseTouch1,
   type SequenceBacklogCensus,
 } from './sequenceBacklog'
 
-export { TOUCH2_COPY_ERA_CUTOFF } from './sequenceBacklog'
+export { TOUCH2_COPY_ERA_CUTOFF, TOUCH2_POST_ERA_EPOCH, TOUCH2_POST_ERA_BATCH1_LIMIT } from './sequenceBacklog'
 
 const FROM = 'Sarah Mitchell <sarah@phishsimai.com>'
 const REPLY_TO = 'sarah@phishsimai.com'
@@ -326,17 +330,43 @@ export async function touch2SentInBatch(sql: any): Promise<number> {
  * not unlocked scaling — a hard stop, not a warning. Exported so the caller can report the hold
  * rather than silently sending nothing.
  */
+/**
+ * Remaining pre-cutoff touch-2 headroom. Prod 2026-09-14: 796 sent since epoch, scale='1',
+ * pre-cutoff stalled=0 — this path is spent. Post-cutoff uses touch2PostEraHeadroom; the
+ * old scale flag must not unlock 1601 T3-as-T2 sends.
+ */
 export async function touch2Headroom(sql: any): Promise<{ headroom: number; sentInBatch: number; holding: boolean; crisisDrain?: boolean }> {
   const sentInBatch = await touch2SentInBatch(sql)
   if (await isTouch2ScaleApproved(sql)) return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch, holding: false }
-  // Owner 2026-09-14: dual crisis (TRUE<20 or paying<4) unlocks remaining approved T2.
-  // Dex daily caps still bind. Do not invent copy.
   const crisis = await readOperatingCrisis(sql).catch(() => true)
   if (shouldCrisisUnlockTouch2(crisis, false)) {
     return { headroom: Number.MAX_SAFE_INTEGER, sentInBatch, holding: false, crisisDrain: true }
   }
   const headroom = Math.max(0, TOUCH2_BATCH1_LIMIT - sentInBatch)
   return { headroom, sentInBatch, holding: headroom === 0 }
+}
+
+export async function touch2PostEraSentInBatch(sql: any): Promise<number> {
+  const r = await sql`SELECT count(*)::int AS n FROM ps_outreach_leads
+    WHERE touch2_sent_at IS NOT NULL
+      AND touch2_sent_at >= ${TOUCH2_POST_ERA_EPOCH}::timestamptz
+      AND touch1_sent_at >= ${TOUCH2_COPY_ERA_CUTOFF}::timestamptz`.catch(() => [])
+  return Number((r as any[])[0]?.n ?? 0)
+}
+
+async function isPostCutoffScaleApproved(sql: any): Promise<boolean> {
+  const r = await sql`SELECT value FROM janet_memory WHERE company_id=${COMPANY_ID}
+    AND type='operating' AND key=${TOUCH2_POST_ERA_SCALE_KEY} LIMIT 1`.catch(() => [])
+  return String((r as any[])[0]?.value ?? '') === '1'
+}
+
+export async function touch2PostEraHeadroom(sql: any): Promise<{
+  headroom: number; sentInBatch: number; holding: boolean; crisisDrain: boolean
+}> {
+  const sentInBatch = await touch2PostEraSentInBatch(sql)
+  const crisis = await readOperatingCrisis(sql).catch(() => true)
+  const postCutoffScaleApproved = await isPostCutoffScaleApproved(sql)
+  return postCutoffBatchHeadroom({ sentInPostEraBatch: sentInBatch, postCutoffScaleApproved, operatingCrisis: crisis })
 }
 
 /**
@@ -354,8 +384,15 @@ export async function touch2Headroom(sql: any): Promise<{ headroom: number; sent
  * approved SEQUENCE touch-3 (value re-frame) then stamps touch2_sent_at + touch3_sent_at.
  * Dex / MX / assertSendable / suppression / bounce breaker / 10s spacing still bind.
  */
-export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
+export async function touch2Eligible(sql: any, limit: number, opts?: { includePostCutoff?: boolean }): Promise<any[]> {
   if (limit <= 0) return []
+  const includePost = opts?.includePostCutoff !== false
+  const postCutoffClause = includePost
+    ? `OR (
+           l.touch1_sent_at >= '${TOUCH2_COPY_ERA_CUTOFF}'::timestamptz
+           AND l.touch1_sent_at < NOW() - INTERVAL '5 days'
+         )`
+    : ''
   return (await sql.query(
     `SELECT l.id, l.name, l.company, l.email, l.industry, l.touch1_sent_at
      FROM ps_outreach_leads l
@@ -372,10 +409,7 @@ export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
        AND NOT (COALESCE(l.open_count, 0) = 0 AND l.touch1_sent_at < NOW() - INTERVAL '45 days')
        AND (
          l.touch1_sent_at < '${TOUCH2_COPY_ERA_CUTOFF}'::timestamptz
-         OR (
-           l.touch1_sent_at >= '${TOUCH2_COPY_ERA_CUTOFF}'::timestamptz
-           AND l.touch1_sent_at < NOW() - INTERVAL '5 days'
-         )
+         ${postCutoffClause}
        )
      ORDER BY CASE WHEN l.industry IN (
        SELECT DISTINCT industry FROM ps_outreach_leads WHERE replied = true AND industry IS NOT NULL
@@ -406,11 +440,17 @@ export async function touch2Eligible(sql: any, limit: number): Promise<any[]> {
  * leave a row claiming it went out — that is PS-SEND-01's lesson, and it applies to every touch.
  */
 export async function runTouch2Batch(sqlOverride?: any, opts?: { maxSends?: number }): Promise<{
-  attempted: number; sent: number; failed: number; noMx: number; suppressed: number; headroom: number; holding: boolean; t3AsSecondTouch: number; reason?: string
+  attempted: number; sent: number; failed: number; noMx: number; suppressed: number; headroom: number; holding: boolean; t3AsSecondTouch: number
+  postEra?: { sentInBatch: number; limit: number; holding: boolean; crisisDrain: boolean; epoch: string }
+  reason?: string
 }> {
   const sql = sqlOverride ?? getSql()
   await ensureSequenceOutbox(sql)
-  const out = { attempted: 0, sent: 0, failed: 0, noMx: 0, suppressed: 0, headroom: 0, holding: false as boolean, t3AsSecondTouch: 0, reason: undefined as string | undefined }
+  const out = {
+    attempted: 0, sent: 0, failed: 0, noMx: 0, suppressed: 0, headroom: 0, holding: false as boolean, t3AsSecondTouch: 0,
+    postEra: undefined as { sentInBatch: number; limit: number; holding: boolean; crisisDrain: boolean; epoch: string } | undefined,
+    reason: undefined as string | undefined,
+  }
 
   const health = await getSequenceHealth(sql).catch(() => null)
   if (health?.paused) {
@@ -420,24 +460,33 @@ export async function runTouch2Batch(sqlOverride?: any, opts?: { maxSends?: numb
     return out
   }
 
-  const h = await touch2Headroom(sql)
-  out.holding = h.holding
-  if (h.holding) {
+  // Pre-cutoff pool is exhausted (prod: 0). Do not use touch2_scale_approved='1' as
+  // permission to send the 1601 post-cutoff list — that flag spent the 797 price-T2 cohort.
+  const postH = await touch2PostEraHeadroom(sql)
+  out.postEra = {
+    sentInBatch: postH.sentInBatch,
+    limit: TOUCH2_POST_ERA_BATCH1_LIMIT,
+    holding: postH.holding,
+    crisisDrain: postH.crisisDrain,
+    epoch: TOUCH2_POST_ERA_EPOCH,
+  }
+  const includePostCutoff = !postH.holding && postH.headroom > 0
+  if (postH.holding) {
+    out.holding = true
     out.headroom = 0
-    out.reason = `BATCH 1 COMPLETE — ${h.sentInBatch}/${TOUCH2_BATCH1_LIMIT} sent. Holding for founder read; ` +
-      `set janet_memory ${TOUCH2_SCALE_KEY}='1' to release the remainder. Dual crisis auto-unlocks remaining approved T2.`
+    out.reason = `POST-CUTOFF BATCH 1 COMPLETE — ${postH.sentInBatch}/${TOUCH2_POST_ERA_BATCH1_LIMIT} T3-as-T2 since ${TOUCH2_POST_ERA_EPOCH}. ` +
+      `Holding for founder read of this copy; set janet_memory ${TOUCH2_POST_ERA_SCALE_KEY}='1' to release more. ` +
+      `Dual crisis continues Dex-capped drain (≤10/run, ≤50/day) — never a 1600 blast. ` +
+      `Old touch2_scale_approved does not apply.`
     return out
   }
 
-  // PS-OUTREACH-THROTTLE-01: the HARD daily cap. Even once the founder unlocks scaling
-  // (touch2Headroom returns MAX_SAFE_INTEGER), a single run may never exceed the throttle:
-  // 50 second-touch/day, 100 combined/day (counting touch-1 already sent today), a small per-run
-  // batch, and inter-send spacing. This is what turns "unlock" from a 647-burst into 50/day spread.
   const counts = await sentTodayCounts(sql)
   const cap = opts?.maxSends != null && Number.isFinite(opts.maxSends)
     ? Math.max(0, Math.floor(opts.maxSends))
     : Number.MAX_SAFE_INTEGER
-  const runLimit = Math.min(h.headroom, secondTouchAllowance(counts), cap)
+  const postCap = postH.headroom === Number.MAX_SAFE_INTEGER ? Number.MAX_SAFE_INTEGER : postH.headroom
+  const runLimit = Math.min(postCap, secondTouchAllowance(counts), cap)
   out.headroom = runLimit
   if (runLimit <= 0) {
     out.reason = `daily cap reached — ${counts.secondSentToday}/50 second-touch and ` +
@@ -445,7 +494,7 @@ export async function runTouch2Batch(sqlOverride?: any, opts?: { maxSends?: numb
     return out
   }
 
-  const leads = await touch2Eligible(sql, runLimit)
+  const leads = await touch2Eligible(sql, runLimit, { includePostCutoff })
   const now = new Date()
   for (const lead of leads) {
     if (out.sent > 0) await sleep(SEND_SPACING_MS) // spread the run; never a burst
