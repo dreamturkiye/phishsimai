@@ -77,7 +77,11 @@ CAN-SPAM / Dex / geo allowlist / five hard stops unchanged. No invented cold cop
 ## Agent persistence / aggression (operational)
 
 - Task-runner tick: **5** agents / 10 min (was 2). Hourly heartbeat still ticks all 10.
-- `CONVERSION_AGENTS` = Janet, Mason, Aria, **Vera** — idle `none` still fires `convert_warm` (CTA + TRUE-org nudges + LinkedIn draft queue).
+- `CONVERSION_AGENTS` = Janet, Mason, Aria, Nova, **Vera** — idle `none` still fires `convert_warm` (CTA + TRUE-org nudges + LinkedIn draft queue).
+- Crisis idle rewrite: `resolveRuntimeAction` / `droughtIdleAction` so ticks never persist `none` as success while below targets.
+- Scout + Dex conversion-bound tasks in the true-trial pack; Dex also in the paid pack.
+- Hourly heartbeat runs `runCgoConversionShift` then ticks all 10.
+- Learning loop: bandit `replied`; Dex `getSequenceHealth().tripped` → Janet skips prospect/cold assigns; 14-day reviewed scores hint assign (unmeasured omitted).
 - `RUNTIME_PROMPTS` for Janet + 9: refuse idle/analysis while true trials < 20 OR paying < 4; keep pushing until ≥20 true / ≥4–5 paying; queue Marcus on a named code blocker.
 - `janetCgoMandate` / `employeeExecutionMandate` / crisis packs use TRUE counts. Dual crisis (1 true + 0 paying) keeps Mason on the **20 hottest MSPs** pack (TOF), and adds Vera/Finn for paid nurture.
 - OS Health + Telegram LIVE FACTS print `true_live_trials` vs raw/excluded. Canary inflation cannot read as “all agents normal”.

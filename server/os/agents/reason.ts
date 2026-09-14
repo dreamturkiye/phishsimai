@@ -4,11 +4,13 @@ import { rememberFact } from '../memory'
 import { queueJanetArchitectTask } from '../selfHeal'
 import { ensureMarcusProposalBugId } from '../marcusProposal'
 import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from '../agentRuntime'
+import { droughtIdleAction, isIdleNone, isOperatingCrisis } from '../cgoMandate'
+import { measureTrueOrgCounts } from '../trueTrials'
 
 const COMPANY = 'phishsimai'
 
 /** Agents whose daily reason-loop may fire the Dex-gated warm trial CTA / trial nudges. */
-export const CONVERSION_AGENTS = new Set(['janet', 'mason', 'aria', 'vera'])
+export const CONVERSION_AGENTS = new Set(['janet', 'mason', 'aria', 'nova', 'vera'])
 
 export type AgentDecision = {
     assessment: string
@@ -38,6 +40,33 @@ export function shouldFireConversionShift(agentId: string, action: string): bool
   const a = String(action || '').trim()
   if (!a || /^none$/i.test(a)) return true
   return wantsWarmConversion(agentId, action)
+}
+
+/** Crisis: idle `none` becomes the lane mandate so ticks never rest below targets. */
+export function resolveRuntimeAction(
+  agentId: string,
+  action: string,
+  operatingCrisis: boolean,
+): { action: string; rewritten: boolean } {
+  const a = String(action || '').trim() || 'none'
+  if (operatingCrisis && isIdleNone(a)) {
+    return { action: droughtIdleAction(agentId), rewritten: true }
+  }
+  return { action: a, rewritten: false }
+}
+
+async function loadOperatingCrisis(sql: any): Promise<boolean> {
+  try {
+    const counts = await measureTrueOrgCounts(sql)
+    return isOperatingCrisis({
+      liveProductTrials: counts.trueLiveTrials,
+      crmTrials: 0,
+      payingCustomers: counts.truePaying,
+    })
+  } catch {
+    // Instrument dark: do not rest. Warm CTA still Dex-gates.
+    return true
+  }
 }
 
 export async function reasonAndAct(
@@ -87,7 +116,9 @@ export async function reasonAndAct(
             }
 
       const assessment = String(parsed.assessment || 'no assessment produced').slice(0, 500)
-        const action = String(parsed.action || 'none').slice(0, 300)
+        const operatingCrisis = await loadOperatingCrisis(sql)
+        const resolved = resolveRuntimeAction(agentId, String(parsed.action || 'none').slice(0, 300), operatingCrisis)
+        const action = resolved.action
         const kind = classifySelfModification(action)
         const wantsTask = kind !== 'hard_stop' && !!parsed.queueTask && String(parsed.taskTitle || '').trim().length > 3
 
@@ -138,8 +169,12 @@ export async function reasonAndAct(
               currentGoal: runtime?.working.currentGoal || `${agentId} daily mandate`,
               nextAction: action,
               lastAssessment: assessment,
-              success: (action !== 'none' && kind !== 'hard_stop') || converted,
-              lesson: conversion ? `convert_warm sent=${conversion.sent}` : assessment,
+              success: (action !== 'none' && kind !== 'hard_stop') || converted || resolved.rewritten || !!taskId,
+              lesson: conversion
+                ? `convert_warm sent=${conversion.sent}`
+                : resolved.rewritten
+                  ? `idle rewritten to ${action}`
+                  : assessment,
       }).catch(() => {})
 
       return { assessment, action, queued: !!taskId, taskId, converted, conversion, provider: result.provider }

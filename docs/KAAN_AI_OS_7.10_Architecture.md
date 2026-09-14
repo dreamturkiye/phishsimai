@@ -1,11 +1,13 @@
-# Kaan AI OS 7.0 — Architecture
+# Kaan AI OS 7.10 — Architecture
+
+**Canonical OS source of truth.** Implement from this file only. Do not use or amend `docs/KAAN_AI_OS_7.0`–`7.9`, `KAAN_AI_OS_V7*` aliases, or `KAAN_AI_OS_V7.3` as governing design. Those files are archives. If code diverges from this document, either update **this** file (Section N changelog + Section O) or fix the code — never silently run an older spec.
 
 **L5.7 → L5.8 autonomy layer built on Kaan AI OS 6.0**
 
-- Version: `7.10.0`
-- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10 (O.30/O.31 — daily escalation triage closes the report-and-nothing-happens loop; agents ground self-originated work in current external best practice, both products). Section O supersedes conflicting details in B–N.
-- Author: Claude Fable 5 (design). Implementation: Claude orchestrating local Ollama models (kimi-k2.6:cloud for codegen, deepseek-r1:7b for analysis, gemma3:9b for drafts).
-- Extends: `KAAN_AI_OS_V6.md` in this repo. Read that first. This document's scope is exactly V6 Section 8 plus the autonomy model those mechanisms enable. V6 Sections 2–6 are not redesigned here.
+- Version: `7.10.1`
+- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + this follow-up: 7.10 doc sync, idle-rewrite, Scout/Dex pack, breaker+score assign, heartbeat conversion). Section O supersedes conflicting details in B–N.
+- Author: Claude Fable 5 (design). Implementation: Claude orchestrating local Ollama models (kimi-k2.6:cloud for codegen, deepseek-r1:7b for analysis, gemma3:9b for drafts). Amendments: Cursor Cloud Agent (PR #311 and follow-up).
+- Extends: `KAAN_AI_OS_V6.md` in this repo as **lineage**, not as a competing spec. This document's original scope was V6 Section 8 plus the autonomy model those mechanisms enable. V6 Sections 2–6 are not redesigned here. **Runtime design is 7.10.1.**
 - This is the handoff artifact between design and implementation. Every module named here gets built as named. If implementation must deviate, the deviation is recorded in Section N's changelog table, not silently absorbed.
 
 ---
@@ -15,7 +17,8 @@
 1. **One Marcus.** Single Mac-resident daemon (`/Users/kaan/HQ/marcus_watcher.py`, launchd `com.kaanos.architect`), polling all subsidiaries. No Super Marcus, no cloud duplicate. Re-confirmed July 4 after four production incidents.
 2. **One versioned core.** `@kaan/os-core` consumed via git tag (`github:dreamturkiye/kaan-os-core#v7.x.x`). No copied folders, ever.
 3. **Five hard stops, nothing more** (Section I). Pricing/billing changes; capital spend above configured threshold; legal contracts and vendor agreements; new subsidiary/product launch; protected-path changes (auth, webhooks, payment processing).
-4. **Honesty invariants.** Metrics are real-or-null (`no_data` beats an invented 8.5). Deploy claims require architect-log proof. Behavior-change claims require a code-path binding (Section E kills "memory theater" structurally).
+4. **Honesty invariants.** Metrics are real-or-null (`no_data` beats an invented 8.5). Deploy claims require architect-log proof. Behavior-change claims require a code-path binding (Section E kills "memory theater" structurally). Canary/test/walkthrough/Adeo orgs are not customer trials (O.32).
+5. **PhishSim has no live manual operating mode (O.32).** Enforcement floor is `l5`; posture is owner-declared `l5_7`. The `manual` token remains in the ladder type for other products and for pure tests. Kill flags are audit signals — they do not collapse PhishSim to `manual`.
 
 **Governing design assumption:** the Founder is AWAY by default. The system runs, self-improves, and grows revenue for multi-day stretches with zero human input. Every mechanism below is a safety net that makes that survivable, not a gate that slows it down.
 
@@ -33,6 +36,15 @@
 | Exit criterion (measurable) | 5 consecutive days on ScrollFuel: zero unhandled task failures, zero fabricated metrics, zero blind deploys, ≥1 breaker trip handled cleanly (natural or injected) | 15-day offline drill passed portfolio-wide: MRR non-negative drift, error rate non-increasing, ≥3 self-originated improvements shipped with proof, zero hard-stop violations |
 
 L5.7 is a property of the *infrastructure*. L5.8 is a property of the *learning loop running on that infrastructure*. Build order follows from this: infrastructure first (Phases 0–2), loop second (Phase 3).
+
+**Two axes, kept separate (do not collapse):**
+
+| Axis | Store | Meaning |
+|---|---|---|
+| Enforcement | `os_autonomy_state.level` = `manual\|l2\|l3\|l4\|l5` | WHAT an agent may do now (`autonomyGate.ts`). Max action class is `l5`. |
+| Posture | `os_posture_state.posture` = `pre_l5_7\|l5_7\|drill_3\|drill_7\|drill_15\|l5_8` | WHETHER the system has proven it runs unattended. Graduation is **declared**, never auto-promoted. |
+
+L5.7 does not add new action classes; it is the standing "Janet runs the company unattended" posture. PhishSim (PR #311 / O.32): owner ruling persists `l5` + `l5_7`; floor reads cannot return operative `manual`. Next step from held L5.7 is **`drill_3`** (`maybeStartDrill3`) — not a declaration of L5.8. L5.8 still requires the 15-day drill (M.5).
 
 ---
 
@@ -130,6 +142,8 @@ Hierarchy per subsidiary (unchanged shape from v6, responsibilities tightened):
 
 **Approval-gated: the five hard stops. Zero additions.** Per the brief, each gated item must be justified; each maps to a realized incident class: #1/#5 to the payment/compliance hold, #2/#3 to irreversible external commitments, #4 to portfolio focus. The breaker (Section M.1) is deliberately *not* an approval gate — it is an automatic quarantine that would have stopped the 33-asset deletion loop at attempt 3 with no human in the loop.
 
+**PhishSim floor (O.32, supersedes a stored `manual` row):** `AUTONOMY_FLOORS.phishsimai = 'l5'`. `resolveReadableLevel` / `assertAutonomyAllows` / `checkAutonomyAllows` treat missing, unknown, below-floor, kill-flag, or thrown reads as **l5** for this company. Injected `manual` cannot deny `issue_agent_task`, `send_simulation`, or `crm_write`. Other subsidiaries keep their own floors.
+
 ---
 
 ## E. Memory architecture
@@ -140,7 +154,7 @@ Six scopes. One table shape (`os_memory`, DDL in Section K), instantiated per da
 |---|---|---|---|
 | `global` | kaanhq DB | Portfolio principles, cross-company lessons, Founder standing instructions | Read-only to subsidiaries via kaanhq API, injected into Janet prompts |
 | `company` | each subsidiary DB | Product strategy, brand voice, learned operating preferences | Never leaves its DB as raw rows; may emit anonymized patterns (below) |
-| `agent` | each subsidiary DB | Per-agent lessons (`outcomeLearning.ts`), reflections (`agentReflection.ts`), skill records | Scoped by `agent_id`; other agents read via Janet only |
+| `agent` | each subsidiary DB | Per-agent lessons (`outcomeLearning.ts`), reflections (`agentReflection.ts`), skill records, **working state** (`os_agent_working_state`: `current_goal`, `next_action`, `last_assessment`) | Scoped by `agent_id`; other agents read via Janet only. Working state is durable Postgres, not a session buffer (O.32). |
 | `campaign` | each subsidiary DB | Campaign state, experiment context, content calendars | Company-internal |
 | `contact` | each subsidiary DB | Leads, subscribers, conversation history | **Never crosses a company boundary. No exceptions, no anonymized derivative** |
 | `audit` | each subsidiary DB + kaanhq | Append-only action log (Section K `audit_log`) | kaanhq receives rollup counts, not row contents |
@@ -159,6 +173,8 @@ interface MemoryWrite {
 ```
 
 Rule: any memory write whose `key` is prefixed `behavior:` MUST carry a `binding` naming the config key or code path that actually produces the behavior, and the writer auto-queues a verification task ("issue one task; confirm `due_in_hours` ≠ 48") due within 24h. Unverified `behavior:` writes older than 24h surface in the daily brief under "unproven claims." A Janet can no longer say "noted, fixed" without the system checking the code path.
+
+**L5.7 self-modification (PhishSim, O.32) — not L5.8 evalHarness.** `classifySelfModification` classes: `none | continue | marcus | hard_stop`. Agents may change the open thread (`current_goal` / `next_action` / `last_assessment`) and/or queue Marcus for a named file/route fix. They may **not** change price, billing, legal, or Dex rails (`assertSendable` / `hasMx` / suppression). `reasonAndAct` queues Marcus when `kind === 'marcus'` even if the model omitted `queueTask`. L5.8 `evalHarness` / golden-suite / Marcus self-PRs against os-core remain Phase 3 (O.2) — out of the L5.7 floor.
 
 Retention: `contact` and `audit` indefinite; `agent`/`campaign` pruned by relevance score after 180 days; `global`/`company` curated, no auto-prune.
 
@@ -210,6 +226,19 @@ Engine = cron (Vercel cron per subsidiary + launchd on the Mac) + Marcus's 3s po
 | 20:30 | each Janet | Phase 3: `hireFirePolicy` evaluation |
 | 21:00 | kaanhq | `founderBrief.compose()` → Telegram send + store |
 
+**PhishSim denser ticks (O.32, UTC; `vercel.json` + `server/os/cronOrdering.test.ts`):** the portfolio table above is the shared skeleton. PhishSim additionally runs:
+
+| Loop | Where | What |
+|---|---|---|
+| 06:00 UTC | `/api/os/metrics-snapshot` | `metrics_daily` for yesterday |
+| 06:30 UTC | `/api/os/architect/autonomy?compute` | judge yesterday (needs that snapshot) |
+| 06:40 UTC | `/api/os/autonomy-promote` | persist owner L5 / L5.7 floor, then earned ladder |
+| 08:00 UTC | `/api/os/janet` | CGO standup + crisis pack + `reasonAndAct('janet')` |
+| `*/10` | `/api/os/task-runner` | drain tasks + Dex-gated conversion shift + **5-agent** runtime tick |
+| hourly | `/api/os/heartbeat` | infra checks + Dex-gated conversion shift + **all 10** agents (Janet + 9) |
+
+`server/os/agentRuntimeTick.ts` is the shared tick. Roster = `@kaan/os-core` `AGENT_IDS`. Dual crisis (TRUE trials < 20 **or** paying < 4) issues conversion-bound work first; idle conversion agents still fire `convert_warm`; every runtime agent **refuses idle `none`** (`droughtIdleAction`). Analysis-only titles are refused in crisis. Dex breaker **tripped** → Janet does not assign prospect/cold sends (`breakerAwareAssignRule`). Reviewed-task scores bias assign (unmeasured omitted). Same-day follow-up is the job until targets are met (≥20 TRUE trials, ≥4–5 paying).
+
 **Multi-day unattended design rules:** every cron idempotent on `(product_id, snapshot_date)`-style keys; breaker quarantines are per-fingerprint so one poisoned task never blocks the queue (the v6 VellaChat failure shape); escalations never block — hard-stop work parks, adjacent work proceeds; Marcus self-health: launchd `KeepAlive` + a deduped health probe (one row per day, killing the v6 duplicate-probe noise); Mac-offline degradation: subsidiaries keep serving and queueing, Marcus drains the backlog on return — no code motion happens without Marcus, which is the safe failure mode.
 
 10x growth mechanics live *inside* this cycle, not beside it: Scout feeds opportunities → Janet converts to experiments (Nova) and content (Aria) → outcomes graded nightly → `outcomeLearning.ts` lessons bias tomorrow's plan → winning patterns propagate portfolio-wide on the bus. The loop compounds daily without anyone watching it.
@@ -227,6 +256,8 @@ The five hard stops. Mechanics: `escalations` row → Telegram message with appr
 Async brief model. Nobody is assumed to be watching anything in real time.
 
 **Daily founder brief** (21:00, Telegram + stored in `founder_briefs`): per subsidiary — MRR and delta (real, from `metrics_daily`), tasks shipped/failed, agent score avg (or `no data`), breaker trips + resolution state, pending escalations with age, active experiments + interim reads, unproven `behavior:` memory claims (Section E), anomalies (any metric ±2σ from 14-day mean). One screen, no filler.
+
+**PhishSim honesty (O.32):** the brief and CGO scorecard print **TRUE** live trials (canary/test/walkthrough/Adeo excluded) plus raw vs excluded so inflation cannot hide. OS Health (`osHealthHonesty`) is **not** "all agents normal" on zero completions with open work, an issuance gap, or a TRUE-trial drought (true trials < 20 or paying < 4). LIVE FACTS include `true_live_trials` / `paying_customers`. Analysis-only task reviews cannot score above 6 without conversion evidence.
 
 **On-demand:** `GET /hq/brief?date=YYYY-MM-DD` (kaanhq, Founder-token auth) regenerates any day's brief from stored tables.
 
@@ -413,7 +444,9 @@ Behavior: introspect env at call time — chain = [Groq, Gemini, OpenAI] filtere
 
 ### M.5 The 15-day offline drill (`drills/OFFLINE_DRILL.md`)
 
-Staged, real, scored: 3-day (Phase 2 exit) → 7-day → 15-day (L5.8 exit). During a drill the Founder genuinely does not respond; hard-stop escalations are expected to accumulate as `deferred` and the drill verifies the system *routed around them*. Pass = MRR drift ≥ 0, task failure rate non-increasing, all breaker trips auto-quarantined, brief generated all 15 days, ≥3 self-originated improvements shipped with commit-SHA proof, zero hard-stop violations. Fail on any violation → root-cause doc appended to this file before retry.
+Staged, real, scored: 3-day (Phase 2 / held-L5.7 exit) → 7-day → 15-day (L5.8 exit). During a drill the Founder genuinely does not respond; hard-stop escalations are expected to accumulate as `deferred` and the drill verifies the system *routed around them*. Pass = MRR drift ≥ 0, task failure rate non-increasing, all breaker trips auto-quarantined, brief generated all 15 days, ≥3 self-originated improvements shipped with commit-SHA proof, zero hard-stop violations. Fail on any violation → root-cause doc appended to this file before retry.
+
+**PhishSim (O.32):** when L5.7 is held, Janet's CGO cron may start **`drill_3` only** (`maybeStartDrill3`). It must not skip to L5.8. Declaring L5.8 still requires the 15-day drill pass above.
 
 **Recovery paths:** auto-rollback stays (v6 pipeline); breaker quarantine (above); Mac loss = subsidiaries serve traffic and queue work indefinitely (Marcus is the only writer of code — safe stall, not outage); secret leak = Mason rotates HQ secrets + provider keys, audit_log identifies exposure window.
 
@@ -436,7 +469,14 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 
 | Date | Section | Deviation | Why |
 |---|---|---|---|
-| — | — | — | — |
+| 2026-09-14 | 0, A, D | PhishSim live floor is `l5` / posture `l5_7`; stored `manual` is not operative | Owner ruling. Accidental demotion (breaker cascade + Neon 402) had denied issue/send/crm. O.32. |
+| 2026-09-14 | E | Working state + L5.7 self-mod (open thread / queue Marcus), not O.2 evalHarness | Persistent memory already named in E; PhishSim wired `os_agent_working_state` + `classifySelfModification`. L5.8 harness still Phase 3. |
+| 2026-09-14 | H | PhishSim `*/10` 5-agent tick + hourly all-10 heartbeat + conversion shift on both + 08:00 CGO | Portfolio daily cycle is LA-time skeleton; PhishSim UTC crons are denser. Dual crisis + idle rewrite + breaker-aware assign. |
+| 2026-09-14 | J | TRUE-trial counts + OS Health drought/idle lines | 2026-09-14 live DB: 98 raw free trials were ~94 Signup Canary + test + walkthrough + Adeo; Grey Box ≈ 1 true trial; paying = 0. Admin-email-only exclusion printed "92 verified". |
+| 2026-09-14 | C / O.15 | PhishSim Mason = pipeline conversion; Rex = data truth; Dex = deliverability (not the ScrollFuel-shaped C table) | O.15 divergence charter. Roster remains Janet + 9 from `@kaan/os-core` `AGENT_IDS`. |
+| 2026-09-14 | M.5 | Start `drill_3` from held L5.7; do not declare L5.8 | Owner: 3-day drill, not 15-day skip. |
+| 2026-09-14 | — | Acquisition besides cold email is Dex-gated warm CTA + TRUE-org nudges + MSP harvest + founder-review LinkedIn drafts; public social publish stays locked | PS-SOCIAL-LOCKOUT-01. No invented cold copy. Magic-link **trial** start staged (hard stop #5 / protected auth). |
+| 2026-09-14 | H / O.32.5 | Breaker + reviewed scores feed Janet assign; idle `none` rewritten to lane mandate; Scout/Dex in drought pack; heartbeat fires conversion | Completes O.32 after PR #311 merge. Bandit remains `replied`. Not a declaration of L5.8. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -539,6 +579,8 @@ Initial profiles: ScrollFuel standard; VellaChat strictest (adult-adjacent platf
 
 v5→v6 already proved this class of document rots against deployed reality. Two mechanisms: (1) `scripts/doc-truth-audit.mjs`, quarterly kaanhq cron — parses this document's module tables and `CREATE TABLE` names, verifies each file exists in `src/` and each table exists per subsidiary (information_schema via each subsidiary's `SqlLike` endpoint); mismatches produce a brief line item and a stub PR against this doc's deviation table. (2) `modelRegistry.ts` — the single mapping of purpose → current model (codegen/reasoning/drafting → Ollama or cloud choice). Model churn over the coming years is a one-file edit; a quarterly Scout task re-benchmarks the local lineup against the golden suite and proposes registry updates through the normal self-PR path.
 
+**Canonical file:** `docs/KAAN_AI_OS_7.10_Architecture.md` (this document, currently 7.10.1). Older `docs/KAAN_AI_OS_7.*` / `KAAN_AI_OS_V7*` copies are archives. A quarterly audit that "passes" against 7.3 while 7.10.1 disagrees is a failed audit.
+
 ### O.14 Amended build order (v7.2)
 
 `complianceGuard.ts` + initial three profiles land in **Phase 1** — before any subsidiary with a non-standard profile is cut over, and specifically before VellaChat's Phase 2 rollout. Distillation (O.10) lands in **Phase 3** (needs a month of graded data to distill). Bootstrap (O.11), doc-truth audit, and `modelRegistry.ts` land in **Phase 3** after v7 is validated on all four — bootstrapping a fifth company from an unvalidated OS would export bugs at birth.
@@ -580,7 +622,7 @@ Through v7.3, Janet's HQ chat was a single-shot completion over a pre-computed o
 ### O.19 Janet act-tools — she executes, not just observes (`janetAgent.ts`)
 - `dispatch_marcus(task)` — queues a Marcus fix via `queueJanetArchitectTask`, inheriting the **autonomy gate AND the Marcus circuit breaker**; Marcus's own gates (destructive-diff → CI → dev+prod QA → auto-revert) protect prod. This is the "founder tells Janet → she queues Marcus → it ships" loop.
 - `create_decision(title, detail, recommendation)` — writes a `founder_decision` escalation for HQ sign-off.
-- **Authority model:** investigate freely; `dispatch_marcus` directly (safe by construction); the five hard stops (Section I / OS 7.5: pricing/billing, spend, legal, subsidiary launch, protected paths) stay enforced **upstream** and are deliberately absent from Janet's tool surface.
+- **Authority model:** investigate freely; `dispatch_marcus` directly (safe by construction); the five hard stops (Section I: pricing/billing, spend, legal, subsidiary launch, protected paths) stay enforced **upstream** and are deliberately absent from Janet's tool surface.
 - **Honesty invariant extended.** A live test caught Janet *hallucinating* a completion and a fake task id instead of calling the tool. The agent protocol now mandates the act-tool for any action and forbids inventing a completion or id — reinforcing Section 0's "deploy claims require architect-log proof."
 
 ### O.20 Marcus reliability hardening (`/Users/kaan/HQ/marcus_watcher.py`, ARCH-04..08)
@@ -715,3 +757,83 @@ Extends the existing domain-default self-origination task (O.29 / PS-OWNERSHIP-0
 
 ### A caught mistake, documented for the record
 The first attempt widened `outcomeLearning.ts`'s source-type union to add `'web_research'` — but that file is a **pinned copy** of the canonical `kaan-os-core` package in both repos and must never be edited directly (PhishSim's CI `check-core-drift` correctly failed the PR on this; ScrollFuel has the identical script but pushes straight to master with no gate, so it was caught by hand before pushing, via a local `node ci/check-core-drift.mjs` run — 0 violations confirmed on both before shipping). Fixed by using the existing `'agent_task'` source value, distinguished by the lesson-text prefix and signature instead of a new enum value. No canonical-package edit was needed or made.
+
+---
+
+## O.32 — v7.10.1 amendment: PhishSim L5.7 floor, TRUE trials, dual crisis, multi-channel acquisition (BUILT — Sep 14, 2026)
+
+Owner mandate (PR #311 and follow-up): PhishSim is a **fully autonomous revenue company** under **this document only**. Live truth that morning: 98 raw free entitlements, ~94 Signup Canary + test + walkthrough + **Adeo (test)**, **Grey Box Consulting ≈ 1 true trial**, **0 paying**. Morning brief “92 verified” was canary inflation. Targets (operating, not slogans): **≥20 TRUE customer trials**, **≥4–5 paying**. Pricing is frozen and best-in-industry; product is sound. Drought is a funnel/honesty/idle-agent problem.
+
+Where this amendment conflicts with B–N, **O.32 wins for PhishSim**. ScrollFuel / VellaChat floors are unchanged.
+
+### O.32.1 L5.7 floor / no live manual gate
+
+- Enforcement floor: `AUTONOMY_FLOORS.phishsimai = 'l5'` (`autonomyGate.ts`).
+- Posture: owner ruling persists `l5_7` (`ownerRuling.ts`, 06:40 `runAutonomyPromotion`).
+- Missing / unknown / below-floor / kill-flag / thrown gate reads → **l5**. Kill flags are **audit**, not a collapse to `manual`.
+- `manual` remains in the ladder type for other products and for pure `decideAutonomy` tests. It is not a live PhishSim operating mode.
+- Next posture step: **`drill_3`** (`maybeStartDrill3` from the 08:00 Janet CGO cron). **Do not declare L5.8.**
+
+### O.32.2 Persistent memory, continuous ticks, L5.7 self-mod
+
+Meanings are Section E / H, wired in PhishSim as:
+
+| Mechanism | Module |
+|---|---|
+| Working state | `os_agent_working_state` via `agentRuntime.ts` |
+| Lessons / reflections | `outcomeLearning.ts` / `agentReflection.ts` |
+| Shared tick | `agentRuntimeTick.ts` — roster = `@kaan/os-core` `AGENT_IDS` (Janet + 9) |
+| `*/10` task-runner | drain + Dex-gated conversion shift + **5-agent** tick |
+| Hourly heartbeat | infra checks + Dex-gated conversion shift + **all 10** ticks |
+| 08:00 CGO | owner ruling + standup + crisis pack + `reasonAndAct('janet')` |
+
+Self-mod = change the open thread and/or queue Marcus (`classifySelfModification`). Not O.2 evalHarness.
+
+### O.32.3 TRUE-trial honesty + dual crisis
+
+Canonical exclusion: `server/os/trueTrials.ts`. A TRUE trial is `plan=free` + future `planExpiresAt`, minus:
+
+1. Founder/test admin emails (`kaanari@mac.com`, `asadbek.munasar@forliion.com`)
+2. Admin email containing `canary` or `@phishsimai.com`
+3. Org ids 6/7/8
+4. Exact names (lower): test, adeo, phishsim internal, ai worker, sending, trial walkthrough co, signup canary's organization
+5. Name matches `/canary\|walkthrough/`
+
+Never a slug rule “contains phishsim”. Crisis: `isTrialCrisis` if TRUE count < 20; `isPaidConversionCrisis` if paying (measured) < 4. Dual crisis keeps Mason on TOF (“20 hottest”) and adds Vera/Finn for paid nurture. Founder brief, Mason, funnel-health signups, CGO `live_trials`, OS Health, Telegram LIVE FACTS, trial nudges all use this definition. D14/D25/D30 must not blast canaries.
+
+### O.32.4 Multi-channel acquisition (not invented cold copy)
+
+Inventory `trialAcquisitionChannels.ts`, fired from `runCgoConversionShift`:
+
+| Channel | Status | Rail |
+|---|---|---|
+| Warm reply CTA | live | Dex MX / `assertSendable` / suppression; replied/engaged only |
+| TRUE-org D14/D25/D30 nudges | live | canary/test excluded |
+| MSP hub harvest | live | `/api/os/msp-harvest` → AMF/MX refill |
+| Magic-link checkout | live | paid HMAC `/checkout` |
+| LinkedIn founder-review draft | live, 1/day | frozen 60¢ / $299/500 + `TRIAL_CTA_URL`; **not published** |
+| Public social publish | **locked** | PS-SOCIAL-LOCKOUT-01 |
+| Magic-link **trial** start | **staged** | hard stop #5 / protected auth — do not build |
+
+Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. CAN-SPAM / geo allowlist / five hard stops unchanged.
+
+### O.32.5 Aggressive persistence + learning loop
+
+- Conversion agents (Janet, Mason, Aria, Nova, Vera) fire `convert_warm` even on LLM `none` while below targets.
+- Every runtime agent **refuses idle `none`** during operating crisis (`resolveRuntimeAction` / `droughtIdleAction`): next action is rewritten to the lane mandate; analysis-only titles skipped; score ceiling 6 without conversion evidence.
+- Dual-crisis pack includes Scout (“Drive trial starts from measured MSP segment”) and Dex (“Keep sending healthy so trial CTAs land”) so those lanes cannot sit idle.
+- Dex breaker **tripped** → Janet must not assign prospect/cold sends (`breakerAwareAssignRule` + `assignmentSkipReason`). Warm CTA already stands down on a measured trip. Do not send around Dex.
+- Reviewed-task scores (14-day, real-or-omit) bias assign via `scoreAwareAssignHint`. Unmeasured is not zero and is not a skip. This is L5.7-safe task selection, **not** L5.8 breaker-analytics / hire-fire.
+- Bandit: `computeAdaptiveSplit(..., 'replied')` on the live send path (O.25 / O.32.4).
+- Self-heal: `kind === 'marcus'` queues `os_architect_tasks` even without `queueTask`.
+- Hourly heartbeat runs the same Dex-gated conversion shift as `*/10` task-runner, then ticks all 10.
+- Keep pushing until ≥20 TRUE trials **and** ≥4–5 paying.
+
+### O.32.6 Honest OS Health / founder brief
+
+`osHealthHonesty`: WORKFORCE IDLE, ISSUANCE GAP, or TRUE-TRIAL DROUGHT are not “all agents normal.” Brief prints raw vs excluded. Unmeasured paying is not zero and is not a crisis trigger.
+
+### Evidence (do not invent rates)
+
+Owner DB paste 2026-09-14 + in-repo paths cited in `docs/architect/SPEC-true-trials-funnel.md`. Click→signup % is not claimed here.
+

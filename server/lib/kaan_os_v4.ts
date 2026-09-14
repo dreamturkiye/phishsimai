@@ -43,6 +43,8 @@ import { loadAgentRuntime, persistAgentRuntime } from '../os/agentRuntime'
 // duplicate-that-drifts pattern this fix exists to eliminate.
 import { evidenceBoundRoleBlock, AGENT_PROMPT_VERSION } from '../os/roleContracts'
 import {
+  assignmentSkipReason,
+  breakerAwareAssignRule,
   cgoScorecard,
   cgoStandupDirective,
   conversionDefaultTask,
@@ -55,9 +57,12 @@ import {
   janetCgoMandate,
   operatingCrisisTasks,
   researchGroundedConversionTask,
+  scoreAwareAssignHint,
   verifiedTrialCount,
+  type AgentScoreHint,
   type TrialFacts,
 } from '../os/cgoMandate'
+import { getSequenceHealth } from '../os/sequences'
 import { persistOutcomeTrace } from '../os/outcomeTrace'
 import { ensureMarcusProposalBugId } from '../os/marcusProposal'
 import { COMPANY_ID } from '../os/version'
@@ -2458,7 +2463,13 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
   // context, not a ban on conversion work.
   const pipelineFact = (await sql`SELECT value FROM janet_memory
     WHERE company_id=${companyId} AND type='company' AND key='real_pipeline' LIMIT 1`.catch(() => [])) as any[]
-  const trialFacts = await loadTrialFacts(sql).catch(() => ({ liveProductTrials: 0, crmTrials: 0, payingCustomers: null }))
+  const trialFacts = await loadTrialFacts(sql).catch((): TrialFacts => ({
+    liveProductTrials: 0,
+    crmTrials: 0,
+    payingCustomers: null,
+    rawLiveTrials: 0,
+    excludedNonCustomerTrials: 0,
+  }))
   const weekNum = Math.max(1, Math.ceil((Date.now() - new Date(process.env.MARKETING_START_DATE || Date.now()).getTime()) / (7 * 86400000)))
   const goals = goalsForWeek(weekNum)
   const pipelineNote = pipelineFact[0]?.value
@@ -2466,11 +2477,26 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
     : ''
   const acquisitionGate = `${pipelineNote}${cgoStandupDirective(trialFacts, goals)}`
   const operatingCrisis = isOperatingCrisis(trialFacts)
-  const assignRule = operatingCrisis
-    ? 'ASSIGN only conversion-bound work (warm CTA, trial nudge, upgrade, Stripe truth, trial start). Do NOT assign analyze/research/TOF/500-cold. One open task per agent.'
-    : 'Issue 1-3 conversion-critical task assignments.'
+  const seqHealth = await getSequenceHealth(sql).catch(() => null)
+  const breakerTripped = Boolean(seqHealth?.tripped)
+  const scoreRows = (await sql`
+    SELECT agent_id, count(*)::int AS n, avg(performance_score)::float AS avg
+    FROM agent_tasks
+    WHERE company_id=${companyId} AND status='reviewed' AND performance_score IS NOT NULL
+      AND completed_at > NOW() - interval '14 days'
+    GROUP BY agent_id
+  `.catch(() => [])) as Array<{ agent_id: string; n: number; avg: number }>
+  const agentScores: Record<string, AgentScoreHint> = {}
+  for (const r of scoreRows) {
+    const count = Number(r.n)
+    const avg = Number(r.avg)
+    if (!r.agent_id || !(count > 0) || !Number.isFinite(avg)) continue
+    agentScores[r.agent_id] = { count, avg: Math.round(avg * 10) / 10 }
+  }
+  const scoreHint = scoreAwareAssignHint(agentScores)
+  const assignRule = breakerAwareAssignRule(operatingCrisis, breakerTripped)
 
-  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO you run this company:\n1. Call out the trial/revenue crisis or progress — not activity theater\n2. ${assignRule} Each assignment on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid conversion task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern — an employee who only reported is failing\n4. Your ONE focus for the company today must move verified trials or paid MRR\n5. What to tell Kaan in 2 sentences`, 800)
+  const janetResponse = await llm(janetSystem, `${janetGrounding}${acquisitionGate}${scoreHint}You just ran your daily standup. Here are the team reports:\n\n${standupSummary}\n\nAs CGO you run this company:\n1. Call out the trial/revenue crisis or progress — not activity theater\n2. ${assignRule} Each assignment on its OWN line, in EXACTLY this format: ASSIGN <Name>: <task title>. Assign to IDLE agents, or agents whose current task is genuinely obsolete. Do NOT redirect an agent who is progressing on a valid conversion task — let them finish and DELIVER; reflexive redirecting churns work so nothing ever completes. ONLY when a task is truly wrong or overtaken by events, begin the replacement with "Pause ... and pivot to ..." to cancel the old one. Default to letting agents finish.\n3. Any performance concern — an employee who only reported is failing\n4. Your ONE focus for the company today must move verified trials or paid MRR\n5. What to tell Kaan in 2 sentences`, 800)
 
   // Parse and issue new tasks from Janet's response. Pure + exported → see the test file.
   const parsed = parseStandupAssignments(janetResponse)
@@ -2480,7 +2506,7 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
   // Dedupe is enforced centrally in issueTask (PS-DEDUPE-01 + one-open-task) so every issuer —
   // this standup, os6Autonomy, intelligenceFinance, janetProactive — obeys one rule.
   const newTasks: any[] = []
-  let skippedDuplicate = 0, deniedByGate = 0, refusedVoid = 0, supersededTasks = 0, skippedAnalysis = 0
+  let skippedDuplicate = 0, deniedByGate = 0, refusedVoid = 0, supersededTasks = 0, skippedAnalysis = 0, skippedBreaker = 0, skippedLowScore = 0
 
   // Crisis pack FIRST so Mason/Aria/Nova get conversion-bound work before Janet's analysis ASSIGNs.
   if (operatingCrisis) {
@@ -2505,8 +2531,22 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
 
   for (const { agentId, title, supersede } of parsed) {
     try {
-      if (operatingCrisis && isAnalysisOnlyTitle(title)) {
+      const skip = assignmentSkipReason({
+        title,
+        operatingCrisis,
+        breakerTripped,
+        agentScoreAvg: agentScores[agentId]?.avg ?? null,
+      })
+      if (skip === 'analysis_only') {
         skippedAnalysis++
+        continue
+      }
+      if (skip === 'breaker_tripped_cold_send') {
+        skippedBreaker++
+        continue
+      }
+      if (skip === 'low_score_non_conversion') {
+        skippedLowScore++
         continue
       }
       // PS-SUPERSEDE-01: a pause/pivot/replace directive CANCELS this agent's currently-open work
@@ -2538,6 +2578,7 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
   console.log(
     `[kaan_os_v4] standup task issuance: parsed=${parsed.length} issued=${newTasks.length} ` +
     `superseded=${supersededTasks} duplicate_skipped=${skippedDuplicate} analysis_skipped=${skippedAnalysis} ` +
+    `breaker_skipped=${skippedBreaker} low_score_skipped=${skippedLowScore} ` +
     `autonomy_denied=${deniedByGate} void_premise_refused=${refusedVoid}`,
   )
 
@@ -2613,6 +2654,8 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
     `${newTasks.length} tasks issued`,
     skippedDuplicate ? `${skippedDuplicate} dup skipped` : '',
     skippedAnalysis ? `${skippedAnalysis} analysis skipped` : '',
+    skippedBreaker ? `${skippedBreaker} breaker-skipped cold` : '',
+    skippedLowScore ? `${skippedLowScore} low-score skipped` : '',
     deniedByGate ? `${deniedByGate} gate-denied` : '',
     newTasks.length === 0 && parsed.length === 0 ? 'none proposed' : '',
   ].filter(Boolean).join(' | ')
