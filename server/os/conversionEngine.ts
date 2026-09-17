@@ -6,6 +6,7 @@ import { diagnoseRevenueFailure, isWarmPoolExhausted } from './cgoMandate'
 import { formatWarmCtaTrialRate, type WarmCtaTrialRate } from './warmCloseMetrics'
 import { linkedInFunnelLine, type LinkedInAcquisitionResult } from './trialAcquisitionChannels'
 import type { GreyBoxPaidNudgeResult } from './trialNudges'
+import { EMPTY_FOUNDER_1TO1, type FounderOneToOneResult } from './founderOneToOne'
 
 export type ConversionShiftResult = WarmCtaResult & {
   lesson: string
@@ -16,6 +17,7 @@ export type ConversionShiftResult = WarmCtaResult & {
   linkedinDraft?: { queued: boolean; reason: string; escalated?: boolean }
   greyBox?: GreyBoxPaidNudgeResult
   warmCtaTrialRate?: WarmCtaTrialRate
+  founderOneToOne?: FounderOneToOneResult
 }
 
 export function conversionLesson(
@@ -23,7 +25,7 @@ export function conversionLesson(
   nudges?: { sent: number; scanned?: number },
   draft?: { queued: boolean; reason: string; escalated?: boolean },
   pool?: WarmPoolCensus,
-  extra?: { greyBox?: GreyBoxPaidNudgeResult; warmRate?: WarmCtaTrialRate; t1Starved?: boolean },
+  extra?: { greyBox?: GreyBoxPaidNudgeResult; warmRate?: WarmCtaTrialRate; t1Starved?: boolean; founder1to1?: FounderOneToOneResult },
 ): { success: boolean; lesson: string } {
   if (r.tripped) {
     return {
@@ -48,23 +50,36 @@ export function conversionLesson(
       ? ` Grey Box: ${extra.greyBox.reason}.`
       : ''
   const rateNote = extra?.warmRate ? ` ${formatWarmCtaTrialRate(extra.warmRate)}.` : ''
+  const oneToOneNote = extra?.founder1to1?.queued
+    ? ` Queued ${extra.founder1to1.queued} founder 1:1 follow-up(s) for exhausted 90/91/92 leads (NOT email, not touch 93).`
+    : extra?.founder1to1?.escalated
+      ? ` Founder 1:1: ${extra.founder1to1.reason}.`
+      : extra?.founder1to1?.reason
+        ? ` Founder 1:1: ${extra.founder1to1.reason}.`
+        : ''
   if (r.sent > 0) {
     const extraNudge = nudgeSent > 0 ? ` Also sent ${nudgeSent} trial-org nudge(s).` : ''
     return {
       success: true,
-      lesson: `Sent ${r.sent} Dex-gated 30-day trial CTAs to warm leads. Same-day follow-up is the job until a verified trial starts. Blocked=${r.blocked} skipped=${r.skipped}.${extraNudge}${draftNote}${greyNote}${rateNote}`,
+      lesson: `Sent ${r.sent} Dex-gated 30-day trial CTAs to warm leads. Same-day follow-up is the job until a verified trial starts. Blocked=${r.blocked} skipped=${r.skipped}.${extraNudge}${draftNote}${greyNote}${rateNote}${oneToOneNote}`,
     }
   }
   if (nudgeSent > 0 || extra?.greyBox?.sent) {
     return {
       success: true,
-      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (activation / D14/D18/D25/D30). Convert remaining trials to paid.${draftNote}${greyNote}${rateNote}`,
+      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (activation / D14/D18/D25/D30). Convert remaining trials to paid.${draftNote}${greyNote}${rateNote}${oneToOneNote}`,
+    }
+  }
+  if ((extra?.founder1to1?.queued ?? 0) > 0) {
+    return {
+      success: true,
+      lesson: `No new warm CTAs (90/91/92 exhausted). Queued ${extra!.founder1to1!.queued} founder 1:1 follow-up(s) — not touch 93, not an email blast.${draftNote}${greyNote}${rateNote}${oneToOneNote}`,
     }
   }
   if (r.blocked > 0) {
     return {
       success: false,
-      lesson: `${r.blocked} warm leads blocked by Dex/MX/suppression and 0 CTAs sent. Convert only sendable replies. Do not invent a trial.${draftNote}${greyNote}${rateNote}`,
+      lesson: `${r.blocked} warm leads blocked by Dex/MX/suppression and 0 CTAs sent. Convert only sendable replies. Do not invent a trial.${draftNote}${greyNote}${rateNote}${oneToOneNote}`,
     }
   }
   const p = pool || r.pool
@@ -75,17 +90,17 @@ export function conversionLesson(
         'T1 starved / sanitizedEligible=0. Do not convert_warm an empty pool. ' +
         'ACTION: queue_marcus named bug PS-T1-STARVE — refill sanitize / check QEV. ' +
         'Do not raise DAILY_SEND_LIMIT or set REFILL_ALLOW_MX_ONLY=1.' +
-        draftNote + greyNote + rateNote,
+        draftNote + greyNote + rateNote + oneToOneNote,
     }
   }
   if (p && (p.replied > 0 || p.engaged > 0)) {
     const next =
       p.eligible === 0
         ? isWarmPoolExhausted(p)
-          ? 'Do not convert_warm an exhausted 90/91/92 pool. Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path. Keep Dex rails.'
+          ? 'Do not convert_warm an exhausted 90/91/92 pool. Queue founder 1:1 review (not touch 93). Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path. Keep Dex rails.'
           : p.cooldown >= p.sendable && p.sendable > 0
-            ? 'Crisis follow-up 91/92 on parked touch-90 (Dex rails). Also LinkedIn founder-review and Grey Box nurture — do not wait for more TOF.'
-            : 'Do not convert_warm an empty pool. Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path.'
+            ? 'Crisis follow-up 91/92 on parked touch-90 (Dex rails). Also founder 1:1 / LinkedIn / Grey Box — do not wait for more TOF.'
+            : 'Do not convert_warm an empty pool. Queue founder 1:1 if 90/91/92 exhausted. Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path.'
         : 'Reopen misclassified replies, follow up Grey Box to paid, fire convert_warm on sendable engaged leads.'
     return {
       success: false,
@@ -93,12 +108,12 @@ export function conversionLesson(
         `REVENUE BLOCKER: ${p.replied} replied / ${p.engaged} engaged exist but 0 CTAs sent ` +
         `(eligible=${p.eligible}, suppressed=${p.suppressed}, cooldown=${p.cooldown}, exhausted=${p.exhausted}, ` +
         `auto_reply_drafts=${p.autoReplyPending}). ${next}` +
-        draftNote + greyNote + rateNote,
+        draftNote + greyNote + rateNote + oneToOneNote,
     }
   }
   return {
     success: false,
-    lesson: 'No warm sendable leads this run. Fill the top of funnel via MSP harvest + founder-review social drafts AND wait for replies — activity without a TRUE trial is failure.' + draftNote + greyNote + rateNote,
+    lesson: 'No warm sendable leads this run. Fill the top of funnel via MSP harvest + founder-review social drafts AND wait for replies — activity without a TRUE trial is failure.' + draftNote + greyNote + rateNote + oneToOneNote,
   }
 }
 
@@ -119,6 +134,8 @@ export function conversionQueued(opts: {
   greyBoxSent?: boolean
   linkedinQueued?: boolean
   linkedinEscalated?: boolean
+  founderOneToOneQueued?: boolean
+  founderOneToOneEscalated?: boolean
 }): boolean {
   return (
     opts.sent > 0 ||
@@ -126,7 +143,9 @@ export function conversionQueued(opts: {
     (opts.nudgeSent ?? 0) > 0 ||
     !!opts.greyBoxSent ||
     !!opts.linkedinQueued ||
-    !!opts.linkedinEscalated
+    !!opts.linkedinEscalated ||
+    !!opts.founderOneToOneQueued ||
+    !!opts.founderOneToOneEscalated
   )
 }
 
@@ -184,6 +203,13 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
       funnel: { pendingReview: 0, queued: 0, approved: 0, posted: 0, oldestPendingHours: null },
     }
   }
+  let founderOneToOne: FounderOneToOneResult = { ...EMPTY_FOUNDER_1TO1 }
+  try {
+    const { queueFounderOneToOneReviews } = await import('./founderOneToOne')
+    founderOneToOne = await queueFounderOneToOneReviews()
+  } catch (e: any) {
+    founderOneToOne = { ...EMPTY_FOUNDER_1TO1, reason: String(e?.message || e).slice(0, 160) }
+  }
   let warmCtaTrialRate: WarmCtaTrialRate | undefined
   try {
     const { measureWarmCtaToTrial } = await import('./warmCloseMetrics')
@@ -201,9 +227,9 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     t1Starved = false
   }
   const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft, pool, {
-    greyBox, warmRate: warmCtaTrialRate, t1Starved,
+    greyBox, warmRate: warmCtaTrialRate, t1Starved, founder1to1: founderOneToOne,
   })
-  const executed = raw.sent > 0 || trialNudges.sent > 0 || !!greyBox?.sent
+  const executed = raw.sent > 0 || trialNudges.sent > 0 || !!greyBox?.sent || founderOneToOne.queued > 0
   const queued = conversionQueued({
     sent: raw.sent,
     eligible: pool.eligible,
@@ -211,6 +237,8 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     greyBoxSent: greyBox?.sent,
     linkedinQueued: linkedinDraft.queued,
     linkedinEscalated: linkedinDraft.escalated,
+    founderOneToOneQueued: founderOneToOne.queued > 0,
+    founderOneToOneEscalated: founderOneToOne.escalated,
   })
   if (raw.reason?.startsWith('autonomy:')) {
     await maybeQueueAutonomyBlocker(raw.reason).catch(() => {})
@@ -246,6 +274,7 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
       linkedin: linkedInFunnelLine(linkedinDraft.funnel),
       greyBox,
       warmCtaTrialRate,
+      founderOneToOne,
       ts: new Date().toISOString(),
     }).slice(0, 1800),
     confidence: 0.9,
@@ -261,11 +290,12 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     linkedinDraft,
     greyBox,
     warmCtaTrialRate,
+    founderOneToOne,
   }
   await learnFromOutcome(
     COMPANY_ID,
     'cgo_warm_trial_cta',
-    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent} linkedin_draft=${linkedinDraft.queued} linkedin_escalated=${linkedinDraft.escalated} greybox=${greyBox?.sent} eligible=${pool.eligible} replied=${pool.replied} engaged=${pool.engaged}`,
+    `sent=${raw.sent} blocked=${raw.blocked} skipped=${raw.skipped} tripped=${raw.tripped} trial_nudges=${trialNudges.sent} linkedin_draft=${linkedinDraft.queued} linkedin_escalated=${linkedinDraft.escalated} greybox=${greyBox?.sent} founder_1to1=${founderOneToOne.queued} eligible=${pool.eligible} replied=${pool.replied} engaged=${pool.engaged} exhausted=${pool.exhausted}`,
     lesson,
   ).catch(() => {})
   await persistOutcomeTrace({
@@ -274,7 +304,7 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     action: 'convert_warm',
     businessOutcome: raw.sent > 0 ? 'trial_cta_sent' : trialNudges.sent > 0 || greyBox?.sent ? 'trial_nudge_sent' : raw.tripped ? 'breaker_tripped' : raw.blocked > 0 ? 'blocked_dex' : 'no_warm_leads',
     liveness: true,
-    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason) || linkedinDraft.queued || linkedinDraft.escalated || pool.replied > 0 || !!greyBox?.sent,
+    usefulness: raw.sent > 0 || trialNudges.sent > 0 || raw.tripped || Boolean(raw.reason) || linkedinDraft.queued || linkedinDraft.escalated || pool.replied > 0 || !!greyBox?.sent || founderOneToOne.queued > 0 || founderOneToOne.escalated,
     schemaValid: true,
   }).catch(() => {})
   return result

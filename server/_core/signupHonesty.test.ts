@@ -14,6 +14,18 @@ describe('signup honesty + trial JSON (operator briefing 2026-09-14)', () => {
     expect(helper).toContain('trial_org_not_created')
   })
 
+  it('register does not require card, captcha, or email verify', () => {
+    expect(oauth).not.toMatch(/captcha|recaptcha/i)
+    expect(oauth).not.toMatch(/stripe/i)
+    expect(oauth).not.toMatch(/verif(y|ication).*email|email.*verif/i)
+    expect(oauth).toContain('parseSignupAttribution')
+    const app = readFileSync('client/src/App.tsx', 'utf8')
+    expect(app).toMatch(/path="\/trial"/)
+    expect(app).toMatch(/path="\/signup"/)
+    expect(app).toMatch(/path="\/register"/)
+    expect(app).toContain('TrialStart')
+  })
+
   it('register and login return 503 when the database is unreachable', () => {
     expect(oauth).toContain('isDatabaseUnavailable')
     expect(oauth).toMatch(/status\(503\)[\s\S]*Registration unavailable/)

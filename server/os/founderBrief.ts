@@ -46,6 +46,7 @@ export interface ProductBrief {
     customers: number
     sendsToday: number
     repliesPending: number // interested replies awaiting founder action
+    founderOneToOnePending?: number
     liveProductTrials?: number
     crmTrials?: number
     rawLiveTrials?: number
@@ -142,6 +143,9 @@ export function renderFounderBrief(data: BriefData): string {
       out.push(`- **Bugün:** ${num(f.sendsToday)} gönderim`)
       if (f.repliesPending > 0) {
         out.push(`- ⚠️ **${f.repliesPending} ilgili yanıt seni bekliyor** (cevaplanmadı)`)
+      }
+      if ((f.founderOneToOnePending ?? 0) > 0) {
+        out.push(`- ⚠️ **${f.founderOneToOnePending} founder 1:1** (exhausted 90/91/92 — NOT email, not touch 93)`)
       }
       if (f.revenueBlocker) {
         out.push(`- ⚠️ **REVENUE BLOCKER:** ${f.revenueBlocker}`)
@@ -313,6 +317,10 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         SELECT count(*)::int AS n FROM outreach_reply_drafts
         WHERE status = 'pending_review' AND classification = 'interested'
       `.catch(() => [] as any[])
+      const oneToOneRows = await sql`
+        SELECT count(*)::int AS n FROM outreach_reply_drafts
+        WHERE status = 'pending_review' AND classification = 'founder_1to1'
+      `.catch(() => [] as any[])
       const fr = (fRows as any[])[0] ?? null
       const crmTrials = Number(fr?.crm_trials) || 0
       const liveProductTrials = liveCounts.trueLiveTrials
@@ -327,6 +335,7 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         customers: Number(fr.customers) || 0,
         sendsToday: Number(fr.sends_today) || 0,
         repliesPending: Number((pendRows as any[])[0]?.n) || 0,
+        founderOneToOnePending: Number((oneToOneRows as any[])[0]?.n) || 0,
         revenueBlocker: null as string | null,
         warmCensus: null as string | null,
         warmCtaToTrial: null as string | null,

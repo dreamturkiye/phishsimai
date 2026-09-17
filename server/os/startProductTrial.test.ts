@@ -37,9 +37,14 @@ describe('register actually starts the 30-day trial', () => {
     const helper = readFileSync('server/os/startProductTrial.ts', 'utf8')
     expect(helper).toContain('createOrganization')
     expect(helper).toContain('markLeadTrial')
+    expect(helper).toMatch(/markLeadTrial\([\s\S]*attribution/)
     expect(helper).toContain('sendWelcomeEmail')
     expect(readFileSync('server/db.ts', 'utf8')).toContain('planExpiresAt')
+    expect(readFileSync('server/db.ts', 'utf8')).toContain('planActivatedAt')
+    expect(readFileSync('server/db.ts', 'utf8')).toMatch(/plan:\s*"free"/)
     expect(oauth).toContain('registerResponseBody')
+    expect(oauth).toContain('parseSignupAttribution')
+    expect(oauth).not.toMatch(/captcha|recaptcha|stripe.*register|email.?verif/i)
   })
 
   it('login also starts a trial org when the user has none (409-then-signin dead-end)', () => {

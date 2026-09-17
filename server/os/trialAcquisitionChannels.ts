@@ -37,6 +37,11 @@ export const TRIAL_ACQUISITION_CHANNELS = [
     how: '/checkout HMAC magic-link for interested leads (paid). Auth-path magic-link TRIAL is a five-hard-stop (protected auth) — staged, not built here.',
   },
   {
+    id: 'founder_1to1',
+    status: 'live' as const,
+    how: 'queueFounderOneToOneReviews — exhausted 90/91/92 replied/engaged leads get a founder-review 1:1 brief (Telegram + HQ). NOT email. NOT touch 93.',
+  },
+  {
     id: 'linkedin_founder_draft',
     status: 'live' as const,
     how: 'Queue LinkedIn trial-CTA drafts with preview URL; escalate when pending >2h. Publish remains lockout-blocked until founder approves.',

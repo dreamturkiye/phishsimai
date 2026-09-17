@@ -1,4 +1,5 @@
 import { getSql } from './conn'
+import { trialCtaUrl } from './trialCta'
 
 export interface ABVariant {
   id: string
@@ -103,7 +104,7 @@ Most MSPs pay triple that for platforms that take weeks to configure. With Phish
 
 Just upload your list and let the automation run. It's a set-and-forget compliance check that protects your clients and preserves your margins.
 
-Want to see the 10-minute setup? Start your free trial (30 days, no card): https://phishsimai.com/login?mode=register
+Want to see the 10-minute setup? Start your free trial (30 days, no card): ${trialCtaUrl({ source: 'cold', medium: 'email', campaign: 'touch1' })}
 
 Sarah Mitchell
 PhishSim AI
@@ -144,7 +145,7 @@ One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. D
 
 Live in 10 minutes, no engineer. 30-day trial, no card, full access.
 
-If it's worth 10 minutes: https://phishsimai.com/login?mode=register
+If it's worth 10 minutes: ${trialCtaUrl({ source: 'cold', medium: 'email', campaign: 'touch2' })}
 
 Sarah Mitchell
 PhishSim AI

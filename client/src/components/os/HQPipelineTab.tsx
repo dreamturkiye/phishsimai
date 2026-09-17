@@ -94,9 +94,19 @@ function filterLeads(view: PipelineView, filter: Filter): PipelineLeadView[] {
   }
 }
 
-type Props = { pipelineView?: PipelineView | null }
+export type FounderOneToOneItem = {
+  id: string
+  email: string
+  company: string
+  name: string
+  snippet: string
+  createdAt: string
+  draftBody: string
+}
 
-export function HQPipelineTab({ pipelineView: pv }: Props) {
+type Props = { pipelineView?: PipelineView | null; founderOneToOne?: FounderOneToOneItem[] | null }
+
+export function HQPipelineTab({ pipelineView: pv, founderOneToOne }: Props) {
   const [filter, setFilter] = useState<Filter>('action')
 
   const view = pv || {
@@ -141,6 +151,28 @@ export function HQPipelineTab({ pipelineView: pv }: Props) {
           ARIA sends T1 oldest-first. New imports show as <strong style={{ color: '#9090aa' }}>Awaiting T1</strong> until the daily run — not empty T1/T2 columns.
         </div>
       </div>
+
+      {Array.isArray(founderOneToOne) && founderOneToOne.length > 0 && (
+        <div style={s.card}>
+          <div style={s.cardTitle}>Founder 1:1 — exhausted warm (NOT email, not touch 93)</div>
+          <div style={{ fontSize: 11, color: '#6b6b8a', marginBottom: 10, lineHeight: 1.5 }}>
+            These people already got CTA 90+91+92. Send a personal note, call, or LinkedIn DM. Do not re-blast the sequence.
+          </div>
+          {founderOneToOne.slice(0, 8).map((item) => (
+            <div key={item.id} style={s.row}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#e8e8f0' }}>
+                  {item.name || item.email} <span style={{ fontWeight: 400, color: '#9090aa' }}>· {item.company || '—'}</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#6b6b8a', marginTop: 2 }}>{item.email}</div>
+                {item.snippet && (
+                  <div style={{ fontSize: 10, color: '#f5a623', marginTop: 4 }}>“{item.snippet.slice(0, 160)}”</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {view.actionQueue.length > 0 && filter !== 'new' && (
         <div style={s.card}>

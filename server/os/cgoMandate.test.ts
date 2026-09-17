@@ -105,6 +105,19 @@ describe('Janet CGO mandate', () => {
     expect(d.line).toMatch(/queue_marcus/)
   })
 
+  it('names exhausted 90/91/92 as founder 1:1, not touch 93', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1, paying: 0,
+      warm: {
+        replied: 15, engaged: 14, sendable: 14, eligible: 0,
+        cooldown: 0, exhausted: 14, suppressed: 0, autoReplyPending: 0,
+      },
+    })
+    expect(d.nextActions.join(' ')).toMatch(/founder-review 1:1|founder 1:1/)
+    expect(d.nextActions.join(' ')).toMatch(/NOT touch 93/)
+    expect(d.nextActions.join(' ')).not.toMatch(/touch 93 mass/)
+  })
+
   it('names parked touch-90 cooldown as the next crisis follow-up, not wait 4 days', () => {
     const d = diagnoseRevenueFailure({
       trueTrials: 1, paying: 0,

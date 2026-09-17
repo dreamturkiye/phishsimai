@@ -125,7 +125,13 @@ export async function createOrganization(data: { name: string; slug: string; use
   // passes, then the gated free tier (see server/lib/entitlements.ts). plan stays 'free'.
   const { TRIAL_DAYS } = await import("./lib/entitlements");
   const planExpiresAt = new Date(Date.now() + TRIAL_DAYS * 86_400_000);
-  const [row] = await db.insert(organizations).values({ name: data.name, slug: data.slug, planExpiresAt }).returning({ id: organizations.id });
+  const [row] = await db.insert(organizations).values({
+    name: data.name,
+    slug: data.slug,
+    plan: "free",
+    planActivatedAt: new Date(),
+    planExpiresAt,
+  }).returning({ id: organizations.id });
   const orgId = row.id;
   await db.insert(orgMembers).values({ orgId, userId: data.userId, role: "admin" });
   // Seed default departments

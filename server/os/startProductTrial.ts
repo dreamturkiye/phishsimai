@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid'
 import { createOrganization, getUserOrgs } from '../db'
 import { markLeadTrial } from './crmLink'
+import type { SignupAttribution } from './trialCta'
 
 /**
  * PS-TRIAL-AT-REGISTER-01 — the 30-day trial is a product entitlement, not a second form.
@@ -38,11 +39,12 @@ export async function startProductTrial(opts: {
   email: string
   name?: string
   company?: string
+  attribution?: SignupAttribution
 }): Promise<{ orgId: number; name: string; created: boolean } | null> {
   const existing = await getUserOrgs(opts.userId)
   const already = existing.find((row) => row.org)?.org
   if (already) {
-    markLeadTrial(opts.email).catch((e) =>
+    markLeadTrial(opts.email, { ...opts.attribution, orgId: already.id }).catch((e) =>
       console.error('[CRM] markLeadTrial failed (existing org, signup unaffected):', e),
     )
     return { orgId: already.id, name: already.name, created: false }
@@ -50,7 +52,7 @@ export async function startProductTrial(opts: {
 
   const name = defaultOrgName(opts)
   const org = await createOrganization({ name, slug: orgSlugFromName(name), userId: opts.userId })
-  markLeadTrial(opts.email).catch((e) =>
+  markLeadTrial(opts.email, { ...opts.attribution, orgId: org.id }).catch((e) =>
     console.error('[CRM] markLeadTrial failed (signup unaffected):', e),
   )
   import('../email/janet')

@@ -1,4 +1,6 @@
 import { getSql } from './conn'
+import { signupAttrMemoryKey, type SignupAttribution } from './trialCta'
+import { COMPANY_ID } from './version'
 
 /**
  * PS-CRM-01 — the join between billing and the CRM.
@@ -40,7 +42,10 @@ export async function linkStripeCustomerToLead(
  * revenue, and PhishSim had nothing here -- cold touches existed, reply handling existed,
  * and the gap between "signed up" and "paid" was empty.
  */
-export async function markLeadTrial(email: string): Promise<boolean> {
+export async function markLeadTrial(
+  email: string,
+  attribution?: SignupAttribution,
+): Promise<boolean> {
   const sql = getSql()
   const rows = (await sql`
     UPDATE ps_outreach_leads
@@ -50,5 +55,19 @@ export async function markLeadTrial(email: string): Promise<boolean> {
     WHERE LOWER(email) = LOWER(${email})
       AND pipeline_stage NOT IN ('customer', 'trial', 'dead')
     RETURNING id`) as any[]
+  if (attribution && (attribution.source || attribution.utm_source || attribution.orgId)) {
+    const key = signupAttrMemoryKey(email)
+    const value = JSON.stringify({
+      ...attribution,
+      email: String(email).trim().toLowerCase(),
+      matchedLead: rows.length > 0,
+      at: new Date().toISOString(),
+    }).slice(0, 1800)
+    await sql`
+      INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+      VALUES (${COMPANY_ID}, 'operating', ${key}, ${value}, 1, 'signup')
+      ON CONFLICT (company_id, type, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `.catch(() => {})
+  }
   return rows.length > 0
 }

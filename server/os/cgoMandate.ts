@@ -126,6 +126,7 @@ export function isT1Starved(t1?: T1DiagnosisFacts | null): boolean {
 /** Next owners when warm eligible=0 and T1 is not the named bug. Never convert_warm. */
 export function emptyWarmPoolNextActions(): string[] {
   return [
+    'Queue founder-review 1:1 follow-ups for exhausted 90/91/92 leads — NOT touch 93, not an email blast',
     'Advance LinkedIn founder-review (queue preview or escalate pending)',
     'Nurture Grey Box activation/upgrade toward paid',
     'Inspect /trial signup path (Nova) and Stripe truth (Finn/Rex)',
