@@ -143,13 +143,16 @@ export default function Home() {
             <a href="#compliance" className="hover:text-foreground transition-colors">Compliance</a>
             <a href="#msp" className="hover:text-foreground transition-colors">MSP / Partners</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="/trial" className="hover:text-foreground transition-colors">Free Trial</a>
             <a href="/msp" className="hover:text-foreground transition-colors">Partner Portal</a>
           </nav>
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-3">
               <Button variant="ghost" size="sm" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
-              <Button size="sm" onClick={() => window.location.href = getSignupUrl()}>
-                Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              <Button asChild size="sm">
+                <a href={getSignupUrl()}>
+                  Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                </a>
               </Button>
             </div>
             <Button variant="ghost" size="sm" className="md:hidden p-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
@@ -165,6 +168,7 @@ export default function Home() {
               { label: "Compliance", href: "#compliance" },
               { label: "MSP / Partners", href: "#msp" },
               { label: "Pricing", href: "#pricing" },
+              { label: "Free Trial", href: "/trial" },
               { label: "Partner Portal", href: "/msp" },
             ].map(({ label, href }) => (
               <a key={label} href={href} className="text-sm text-muted-foreground hover:text-foreground transition-colors py-3 border-b border-border/40 last:border-0"
@@ -172,8 +176,10 @@ export default function Home() {
             ))}
             <div className="flex flex-col gap-2 pt-3">
               <Button variant="ghost" size="sm" className="w-full justify-start" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
-              <Button size="sm" className="w-full bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
-                Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+              <Button asChild size="sm" className="w-full bg-violet-600 hover:bg-violet-500">
+                <a href={getSignupUrl()}>
+                  Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
+                </a>
               </Button>
             </div>
           </div>
@@ -213,8 +219,10 @@ export default function Home() {
               ))}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-12">
-              <Button size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
-                Start Free 30-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
+              <Button asChild size="lg" className="text-base px-8 h-12 bg-violet-600 hover:bg-violet-500">
+                <a href={getSignupUrl()}>
+                  Start Free 30-Day Trial <ArrowRight className="w-4 h-4 ml-2" />
+                </a>
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
@@ -293,8 +301,10 @@ export default function Home() {
                     </li>
                   ))}
                 </ul>
-                <Button className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"} onClick={() => plan.cta === "Contact Sales" ? window.location.href = "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : window.location.href = getSignupUrl()}>
-                  {plan.cta}
+                <Button asChild className={"w-full " + (plan.highlight ? "bg-violet-600 hover:bg-violet-500" : "")} variant={plan.highlight ? "default" : "outline"}>
+                  <a href={plan.cta === "Contact Sales" ? "mailto:sales@phishsimai.com?subject=Enterprise%20Inquiry" : getSignupUrl()}>
+                    {plan.cta}
+                  </a>
                 </Button>
               </div>
             ))}
@@ -398,8 +408,10 @@ export default function Home() {
             </div>
           </div>
           <div className="text-center">
-            <Button size="lg" className="bg-red-600 hover:bg-red-500 text-white" onClick={() => window.location.href = getSignupUrl()}>
-              <Shield className="w-4 h-4 mr-2" /> Get Compliant Today — Free Trial
+            <Button asChild size="lg" className="bg-red-600 hover:bg-red-500 text-white">
+              <a href={getSignupUrl()}>
+                <Shield className="w-4 h-4 mr-2" /> Get Compliant Today — Free Trial
+              </a>
             </Button>
           </div>
         </div>
@@ -511,8 +523,10 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-              <Button size="lg" className="bg-violet-600 hover:bg-violet-500 text-base px-8 h-12" onClick={() => window.location.href = getSignupUrl()}>
-                Generate Your First Evidence Pack <ArrowRight className="w-4 h-4 ml-2" />
+              <Button asChild size="lg" className="bg-violet-600 hover:bg-violet-500 text-base px-8 h-12">
+                <a href={getSignupUrl()}>
+                  Generate Your First Evidence Pack <ArrowRight className="w-4 h-4 ml-2" />
+                </a>
               </Button>
             </div>
             <div className="flex-shrink-0 w-full md:w-80">
@@ -663,8 +677,10 @@ export default function Home() {
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">to happen.</span>
           </h2>
           <p className="text-xl text-muted-foreground mb-8">Every day without a phishing training program is a day your clients are exposed. Launch PhishSim AI in 10 minutes — free trial, no credit card.</p>
-          <Button size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500" onClick={() => window.location.href = getSignupUrl()}>
-            Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
+          <Button asChild size="lg" className="text-base px-10 h-12 bg-violet-600 hover:bg-violet-500">
+            <a href={getSignupUrl()}>
+              Start Your Free Trial <ArrowRight className="w-4 h-4 ml-2" />
+            </a>
           </Button>
           <p className="text-xs text-muted-foreground mt-4">No credit card required · 30-day free trial · Cancel anytime</p>
         </div>
@@ -691,6 +707,7 @@ export default function Home() {
                 {[
                   { label: "Features", href: "#features" },
                   { label: "Pricing", href: "#pricing" },
+                  { label: "Free Trial", href: "/trial" },
                   { label: "Compliance Center", href: "#compliance" },
                   { label: "Training Modules", href: "#features" },
                   { label: "Template Library", href: "#features" },
