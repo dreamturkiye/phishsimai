@@ -15,10 +15,14 @@ export default function Login() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("mode") !== "register") return;
-    params.delete("mode");
-    const q = params.toString();
-    window.location.replace("/trial" + (q ? `?${q}` : ""));
+    if (params.get("mode") === "register") {
+      params.delete("mode");
+      const q = params.toString();
+      window.location.replace("/trial" + (q ? `?${q}` : ""));
+      return;
+    }
+    const prefill = (params.get("email") || "").trim();
+    if (prefill) setEmail(prefill);
   }, []);
 
   const redirectAfterLogin = () => {

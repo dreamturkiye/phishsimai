@@ -55,9 +55,12 @@ describe('register actually starts the 30-day trial', () => {
   it('register 409 tells the prospect to sign in rather than dead-ending', () => {
     const oauth = readFileSync('server/_core/oauth.ts', 'utf8')
     expect(oauth).toMatch(/already exists\. Sign in to continue your trial/)
+    const trial = readFileSync('client/src/pages/TrialStart.tsx', 'utf8')
+    expect(trial).toMatch(/res\.status === 409/)
+    expect(trial).toMatch(/window\.location\.href = "\/login"/)
     const login = readFileSync('client/src/pages/Login.tsx', 'utf8')
-    expect(login).toMatch(/setMode\("login"\)/)
-    expect(login).toMatch(/res\.status === 409/)
+    expect(login).toMatch(/window\.location\.replace\("\/trial"/)
+    expect(login).not.toMatch(/setMode\("login"\)/)
   })
 
   it('orgs.create also stamps CRM trial_at so /setup is not a silent miss', () => {

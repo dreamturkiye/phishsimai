@@ -88,6 +88,16 @@ export default function TrialStart() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (res.status === 409) {
+          const params = new URLSearchParams();
+          const existing = email.trim();
+          if (existing) params.set("email", existing);
+          const redirect = readRedirect();
+          if (redirect && redirect !== "/dashboard") params.set("redirect", redirect);
+          const q = params.toString();
+          window.location.href = "/login" + (q ? `?${q}` : "");
+          return;
+        }
         setError(typeof data.error === "string" ? data.error : "Something went wrong");
         return;
       }
