@@ -4,7 +4,7 @@ import { rememberFact } from '../memory'
 import { queueJanetArchitectTask } from '../selfHeal'
 import { ensureMarcusProposalBugId } from '../marcusProposal'
 import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from '../agentRuntime'
-import { droughtIdleAction, isIdleNone, isOperatingCrisis, type WarmPoolFacts } from '../cgoMandate'
+import { droughtIdleAction, isIdleNone, isOperatingCrisis, isWarmPoolExhausted, type WarmPoolFacts } from '../cgoMandate'
 import { measureTrueOrgCounts } from '../trueTrials'
 
 const COMPANY = 'phishsimai'
@@ -52,6 +52,13 @@ export function resolveRuntimeAction(
   warm?: WarmPoolFacts | null,
 ): { action: string; rewritten: boolean } {
   const a = String(action || '').trim() || 'none'
+  const exhausted = isWarmPoolExhausted(warm)
+  const convertWarmHammer = /convert_warm/i.test(a)
+  // Live miss: LLM kept saying convert_warm: hottest after 90/91/92 were spent.
+  // Idle rewrite alone left that hammer in working memory every tick.
+  if (operatingCrisis && exhausted && (isIdleNone(a) || convertWarmHammer)) {
+    return { action: droughtIdleAction(agentId, { warm }), rewritten: true }
+  }
   if (operatingCrisis && isIdleNone(a)) {
     return { action: droughtIdleAction(agentId, { warm }), rewritten: true }
   }

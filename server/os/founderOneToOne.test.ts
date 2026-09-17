@@ -8,6 +8,7 @@ import {
   WARM_EXHAUSTED_TOUCHES,
   founderOneToOneDraftBody,
   founderOneToOneTelegramHtml,
+  isWarmFounderOneToOneLead,
 } from './founderOneToOne'
 import { WARM_CTA_TOUCHES } from './sequences'
 import { DAILY_SEND_LIMIT } from './sequences'
@@ -64,5 +65,17 @@ describe('founder 1:1 queue — exhausted warm, NOT email', () => {
     expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('listFounderOneToOneQueue')
     expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toMatch(/founder 1:1|founder-review 1:1/)
     expect(readFileSync('server/os/trialAcquisitionChannels.ts', 'utf8')).toContain('founder_1to1')
+  })
+
+  it('does not treat OOO / auto-reply as warm founder 1:1 interest', () => {
+    expect(isWarmFounderOneToOneLead({ last_reply_snippet: 'send me pricing' })).toBe(true)
+    expect(isWarmFounderOneToOneLead({ last_reply_snippet: 'I am out of the office until Monday' })).toBe(false)
+    expect(isWarmFounderOneToOneLead({ last_reply_snippet: 'Automatic reply: OOO' })).toBe(false)
+    expect(isWarmFounderOneToOneLead({ last_reply_snippet: 'Thanks, I will return next week after our board meeting' })).toBe(true)
+    const src = readFileSync('server/os/founderOneToOne.ts', 'utf8')
+    expect(src).toContain('isAutoReplyText')
+    expect(src).toContain('dismissOooFounderOneToOne')
+    expect(readFileSync('server/os/social/replyCapture.ts', 'utf8')).toContain('inboundIsWarmReply')
+    expect(readFileSync('server/os/social/replyCapture.ts', 'utf8')).toContain("classification, action_taken")
   })
 })

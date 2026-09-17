@@ -37,6 +37,7 @@ import {
   sqlResultRows,
   reopenFalseAutoReplies,
   isHardDeadReply,
+  isAutoReplyText,
 } from './salesReplies'
 
 /** The actual row in outreach_reply_drafts on 2026-08-03. Not invented. */
@@ -194,11 +195,14 @@ describe('ASYMMETRIC SAFETY — ambiguity drafts, it never suppresses', () => {
     expect(c.cls).toBe('auto_reply')
   })
 
-  it('crisis reopen clears false auto_reply and {rows}-shaped neon results, not bounces', async () => {
+  it('crisis reopen clears false auto_reply and {rows}-shaped neon results, not bounces or strict OOO', async () => {
     expect(shouldReopenAutoReply('Thanks, I will return next week after our board meeting', { crisis: true })).toBe(true)
-    expect(shouldReopenAutoReply('I am out of the office until Monday', { crisis: true })).toBe(true)
+    expect(shouldReopenAutoReply('I am out of the office until Monday', { crisis: true })).toBe(false)
+    expect(shouldReopenAutoReply('OOO until next week', { crisis: true })).toBe(false)
     expect(shouldReopenAutoReply('Delivery has failed for this recipient', { crisis: true })).toBe(false)
     expect(isHardDeadReply('mailer-daemon: undeliverable')).toBe(true)
+    expect(isAutoReplyText('Automatic reply: I am out of the office')).toBe(true)
+    expect(isAutoReplyText('Thanks, I will return next week after our board meeting')).toBe(false)
     expect(sqlResultRows({ rows: [{ id: 1 }] })).toEqual([{ id: 1 }])
     expect(sqlResultRows([{ id: 2 }])).toEqual([{ id: 2 }])
 

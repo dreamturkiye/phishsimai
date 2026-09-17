@@ -5,6 +5,7 @@ import {
   isAlreadyAtL5FloorAutonomyNoise,
   shouldPageFounderForEscalation,
   isOperatorOwnedEscalation,
+  isCrisisAutoMarcusEscalation,
 } from './escalationTriagePolicy'
 
 const insertArtifact = {
@@ -120,6 +121,33 @@ describe('already-at-L5 autonomy_change is founder noise, not a nag', () => {
       companyId: 'scrollfuel',
       payload: insertArtifact.payload,
     })).toBe(false)
+  })
+})
+
+describe('send-path marcus_dispatch is not a founder gate under standing crisis', () => {
+  it('auto-approves PS-T1 / sanitize / QEV escalations and does not page the founder', () => {
+    const t1 = {
+      category: 'marcus_dispatch',
+      payload: { task: 'Named bug: PS-T1-STARVE — restore sanitize refill', source: 'agent:dex' },
+    }
+    expect(isCrisisAutoMarcusEscalation(t1)).toBe(true)
+    expect(shouldPageFounderForEscalation(t1)).toBe(false)
+    expect(isOperatorOwnedEscalation(t1)).toBe(true)
+    expect(isCrisisAutoMarcusEscalation({
+      category: 'marcus_dispatch',
+      payload: { task: 'QEV_API_KEY empty — mailbox verifier' },
+    })).toBe(true)
+    expect(isCrisisAutoMarcusEscalation({
+      category: 'pricing_billing',
+      payload: { task: 'PS-T1-STARVE' },
+    })).toBe(false)
+    expect(shouldPageFounderForEscalation({
+      category: 'marcus_dispatch',
+      payload: { task: 'Unrelated architect dispatch about fonts' },
+    })).toBe(true)
+    const triage = readFileSync('server/os/escalationTriage.ts', 'utf8')
+    expect(triage).toContain('CRISIS_AUTO_MARCUS')
+    expect(triage).toContain('maybeQueueT1Marcus')
   })
 })
 

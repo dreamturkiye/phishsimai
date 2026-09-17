@@ -71,4 +71,24 @@ describe('resolveRuntimeAction — refuse idle none during operating crisis', ()
     expect(aria.action).toMatch(/LinkedIn/)
     expect(aria.action).toMatch(/Do not convert_warm/)
   })
+
+  it('rewrites convert_warm hammer away from an exhausted warm pool', () => {
+    const warm = {
+      replied: 15, engaged: 14, sendable: 14, eligible: 0,
+      cooldown: 0, exhausted: 12, suppressed: 2, autoReplyPending: 0,
+    }
+    const mason = resolveRuntimeAction('mason', 'convert_warm: hottest', true, warm)
+    expect(mason.rewritten).toBe(true)
+    expect(mason.action).not.toMatch(/convert_warm:\s*hottest/)
+    expect(mason.action).toMatch(/Do not convert_warm/)
+    expect(mason.action).toMatch(/Grey Box|MSP harvest/)
+    const aria = resolveRuntimeAction('aria', 'ACTION: convert_warm: hottest', true, warm)
+    expect(aria.rewritten).toBe(true)
+    expect(aria.action).toMatch(/LinkedIn/)
+    const healthy = resolveRuntimeAction('mason', 'convert_warm: hottest', true, {
+      ...warm, eligible: 3, exhausted: 0,
+    })
+    expect(healthy.rewritten).toBe(false)
+    expect(healthy.action).toBe('convert_warm: hottest')
+  })
 })

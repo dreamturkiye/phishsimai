@@ -20,8 +20,10 @@ import { queueJanetArchitectTask } from './selfHeal'
 import {
   isOperatorOwnedEscalation,
   isAlreadyAtL5FloorAutonomyNoise,
+  isCrisisAutoMarcusEscalation,
   shouldPageFounderForEscalation,
   ALREADY_AT_L5_FLOOR,
+  CRISIS_AUTO_MARCUS,
   type AutonomyNagContext,
 } from './escalationTriagePolicy'
 import { resolveReadableLevel } from './autonomyGate'
@@ -97,6 +99,27 @@ async function autoResolveStale(sql: any, rows: PendingEscalation[], live?: Live
 
     if (isAlreadyAtL5FloorAutonomyNoise(nagContext(row, live))) {
       if (await deferAlreadyAtL5Floor(sql, row)) done.add(row.id)
+      continue
+    }
+
+    if (isCrisisAutoMarcusEscalation(row)) {
+      try {
+        const { maybeQueueT1Marcus } = await import('./t1MarcusHandoff')
+        await maybeQueueT1Marcus({ sql }).catch(() => null)
+        await sql`UPDATE escalations
+          SET status='approved', resolved_at=NOW(), resolved_via=${CRISIS_AUTO_MARCUS},
+              payload = payload || ${JSON.stringify({
+                autoResolved: true,
+                crisis_auto_marcus: true,
+                janetTriage: CRISIS_AUTO_MARCUS,
+                janetReasoning: 'Send-path T1/sanitize/QEV is Marcus-owned under standing crisis — queued named bug, no founder gate',
+              })}::jsonb
+          WHERE id=${row.id}`
+        console.log(`[escalationTriage] auto-resolved #${row.id} (${row.category}): ${CRISIS_AUTO_MARCUS}`)
+        done.add(row.id)
+      } catch (e: any) {
+        console.error(`[escalationTriage] crisis_auto_marcus write failed #${row.id}: ${e?.message}`)
+      }
       continue
     }
 
@@ -263,6 +286,21 @@ export async function triageEscalations(companyId: string): Promise<{ reviewed: 
       // Already-at-L5 autonomy_change is not a founder decision — never stamp founder_required.
       if (isAlreadyAtL5FloorAutonomyNoise(ctx)) {
         if (await deferAlreadyAtL5Floor(sql, row)) resolved++
+        continue
+      }
+      if (isCrisisAutoMarcusEscalation(row)) {
+        try {
+          const { maybeQueueT1Marcus } = await import('./t1MarcusHandoff')
+          await maybeQueueT1Marcus({ sql }).catch(() => null)
+          await sql`UPDATE escalations SET status='approved', resolved_at=NOW(), resolved_via=${CRISIS_AUTO_MARCUS},
+            payload = payload || ${JSON.stringify({
+              autoResolved: true,
+              crisis_auto_marcus: true,
+              janetTriage: CRISIS_AUTO_MARCUS,
+            })}::jsonb
+            WHERE id=${row.id}`
+          resolved++
+        } catch { /* leave pending */ }
         continue
       }
       const reasoning = decision?.reasoning || 'Could not be auto-triaged — needs your review.'

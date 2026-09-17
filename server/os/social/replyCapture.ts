@@ -9,6 +9,7 @@
 import { getSql } from '../conn'
 import { sendTelegram } from '../telegram'
 import { llmComplete } from '../llmChat'
+import { isAutoReplyText } from '../agents/salesReplies'
 
 const COMPANY = 'phishsimai'
 
@@ -106,6 +107,11 @@ function extractEmail(raw: string): string {
   return m ? m[0].toLowerCase() : ''
 }
 
+/** OOO / bounce / left-company is captured, not marked engaged, not drafted as warm. */
+export function inboundIsWarmReply(subject: string, body: string): boolean {
+  return !isAutoReplyText(`${subject || ''}\n${body || ''}`)
+}
+
 async function draftReply(fromEmail: string, lead: any, snippet: string): Promise<string> {
   const { text } = await llmComplete({
     messages: [
@@ -171,6 +177,17 @@ export async function resendInbound(req: any, res: any) {
     const lead = rows[0]
 
     if (lead) {
+      if (!inboundIsWarmReply(subject, text)) {
+        await sql`UPDATE ps_outreach_leads SET last_reply_snippet=${snippet}, stage_updated_at=NOW()
+          WHERE id=${lead.id}`.catch(() => {})
+        await sql`INSERT INTO outreach_reply_drafts
+          (lead_id, from_email, inbound_snippet, draft_body, status, classification, action_taken, classified_at)
+          VALUES (${lead.id}, ${from}, ${snippet},
+            ${'(auto-reply / OOO — not a warm lead; no founder 1:1)'},
+            'pending_review', 'auto_reply', 'no_action', NOW())`.catch(() => {})
+        console.log('[reply-capture] auto-reply/OOO parked, not engaged:', from)
+        return res.json({ ok: true, matched: true, replied: false, drafted: false, autoReply: true })
+      }
       await sql`UPDATE ps_outreach_leads SET replied=true, replied_at=NOW(), last_reply_snippet=${snippet},
         pipeline_stage='engaged', stage_updated_at=NOW() WHERE id=${lead.id}`.catch(() => {})
       // PS-REPLY-TRIPWIRE-01: assert the writer actually ran. This handler swallows its own errors

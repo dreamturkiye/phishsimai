@@ -368,6 +368,8 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('7.10.2')
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('breakerAwareAssignRule')
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('O.32.14')
+    expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('O.32.16')
+    expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('isWarmPoolExhausted')
     expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('isWarmPoolExhausted')
     expect(os).toContain('HONEST_BLOCKER_SCORE_FLOOR')
     expect(os).not.toMatch(/runner only acts on >4h-idle/)

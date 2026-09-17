@@ -6,9 +6,15 @@ import {
   ACTIVATION_BATCH_CAP,
   ACTIVATION_MIN_AGE_DAYS,
   ACTIVATION_NUDGE_DAY,
+  ACTIVATION_CRISIS_HOURS,
+  ACTIVATION_CRISIS_NUDGE_DAYS,
+  ORG_LIFECYCLE_MIN_HOURS,
   isActivationEligible,
+  nextCrisisActivationDay,
+  runCrisisActivationNudges,
   runTrialActivationNudges,
   selectActivationCandidates,
+  shouldSendCrisisActivation,
   type ActivationOrg,
 } from "./trialActivation";
 import { WARM_CTA_TOUCHES, nextWarmCtaTouch } from "./sequences";
@@ -98,17 +104,27 @@ describe("selectActivationCandidates — cap ≤5, TRUE unused only", () => {
 function fakeActivationSql(opts: {
   orgs: ActivationOrg[]
   claimed?: Set<string>
+  history?: Array<{ org_id: number; nudge_day: number; sent_at: string }>
 }) {
   const claimed = opts.claimed ?? new Set<string>();
+  const history = opts.history ?? [];
   const deletes: string[] = [];
   const fn = (async (strings: TemplateStringsArray, ...vals: unknown[]) => {
     const q = strings.join("?").replace(/\s+/g, " ");
     if (/CREATE TABLE/i.test(q)) return [];
+    if (/true_trials|is_live_trial|is_excluded/i.test(q)) {
+      return [{ true_trials: 1, excluded_trials: 0, raw_trials: 1, true_paying: 0 }];
+    }
     if (/FROM organizations/i.test(q)) return opts.orgs;
+    if (/SELECT nudge_day, sent_at FROM trial_nudges_sent/i.test(q)) {
+      const orgId = Number(vals[0]);
+      return history.filter((h) => h.org_id === orgId);
+    }
     if (/INSERT INTO trial_nudges_sent/i.test(q)) {
       const key = `${vals[0]}:${vals[1]}`;
       if (claimed.has(key)) return [];
       claimed.add(key);
+      history.push({ org_id: Number(vals[0]), nudge_day: Number(vals[1]), sent_at: new Date().toISOString() });
       return [{ org_id: vals[0] }];
     }
     if (/DELETE FROM trial_nudges_sent/i.test(q)) {
@@ -218,9 +234,69 @@ describe("activation copy + spam-safe rails", () => {
     expect(vercel).toContain("/api/os/trial-nudges");
     expect(readFileSync("api/handler.ts", "utf8")).toContain("/api/os/trial-activation");
     expect(readFileSync("server/os/trialNudges.ts", "utf8")).toContain("runTrialActivationNudges");
+    expect(readFileSync("server/os/trialNudges.ts", "utf8")).toContain("runCrisisActivationNudges");
     const cron = readFileSync("server/os/trialActivation.ts", "utf8");
     expect(cron).toContain("Bearer ${secret}");
     expect(cron).toContain("CRON_SECRET");
     expect(ACTIVATION_BATCH_CAP).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("crisis activation loop — unused TRUE trials, not one-shot", () => {
+  it("spaces 3 extra activation sends at 48h behind a 24h org throttle", () => {
+    expect(ACTIVATION_CRISIS_NUDGE_DAYS).toEqual([182, 183, 184]);
+    expect(ACTIVATION_CRISIS_HOURS).toBe(48);
+    expect(ORG_LIFECYCLE_MIN_HOURS).toBe(24);
+    expect(nextCrisisActivationDay([])).toBe(182);
+    expect(nextCrisisActivationDay([4, 182])).toBe(183);
+    expect(nextCrisisActivationDay([182, 183, 184])).toBeNull();
+    expect(shouldSendCrisisActivation({
+      lastAnyNudgeHours: 10,
+      lastActivationHours: 80,
+      claimedActivationDays: [4],
+    }).send).toBe(false);
+    expect(shouldSendCrisisActivation({
+      lastAnyNudgeHours: 30,
+      lastActivationHours: 10,
+      claimedActivationDays: [4],
+    }).send).toBe(false);
+    const due = shouldSendCrisisActivation({
+      lastAnyNudgeHours: 30,
+      lastActivationHours: 50,
+      claimedActivationDays: [4],
+    });
+    expect(due).toEqual({ send: true, day: 182, reason: "due" });
+  });
+
+  it("re-sends the existing 3-click copy to Grey Box after the day-4 claim, not touch 93", async () => {
+    const sends: string[] = [];
+    const { sql, claimed } = fakeActivationSql({
+      orgs: [greyBox],
+      claimed: new Set(["11:4"]),
+      history: [{ org_id: 11, nudge_day: 4, sent_at: ago(5) }],
+    });
+    const r = await runCrisisActivationNudges(sql, {
+      now,
+      send: async (to) => { sends.push(to); return true; },
+    });
+    expect(r.sent).toEqual([{ orgId: 11, nudge: 182 }]);
+    expect(sends).toEqual(["dcharit@gmail.com"]);
+    expect(claimed.has("11:182")).toBe(true);
+    expect(WARM_CTA_TOUCHES).not.toContain(93);
+  });
+
+  it("does not send a fourth crisis activation after 182-184 are claimed", async () => {
+    const { sql } = fakeActivationSql({
+      orgs: [greyBox],
+      claimed: new Set(["11:4", "11:182", "11:183", "11:184"]),
+      history: [
+        { org_id: 11, nudge_day: 4, sent_at: ago(20) },
+        { org_id: 11, nudge_day: 182, sent_at: ago(10) },
+        { org_id: 11, nudge_day: 183, sent_at: ago(5) },
+        { org_id: 11, nudge_day: 184, sent_at: ago(3) },
+      ],
+    });
+    const r = await runCrisisActivationNudges(sql, { now, send: async () => true });
+    expect(r.sent).toEqual([]);
   });
 });

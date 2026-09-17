@@ -45,6 +45,7 @@ describe("nudgeFor (30-day trial, by days-left)", () => {
   it("wires unused-trial activation without adding warm-CTA touch 93", () => {
     const src = readFileSync("server/os/trialNudges.ts", "utf8");
     expect(src).toContain("runTrialActivationNudges");
+    expect(src).toContain("runCrisisActivationNudges");
     expect(src).not.toMatch(/touch 93|WARM_CTA_TOUCHES.*,\s*93/);
     expect(readFileSync("server/os/sequences.ts", "utf8")).toContain("export const WARM_CTA_TOUCHES = [90, 91, 92]");
   });

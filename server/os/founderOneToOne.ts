@@ -13,6 +13,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { trialCtaUrl } from './trialCta'
 import { COMPANY_ID } from './version'
+import { isAutoReplyText } from './agents/salesReplies'
 
 export const FOUNDER_1TO1_CLASS = 'founder_1to1'
 export const FOUNDER_1TO1_CAP = 5
@@ -50,6 +51,11 @@ export const EMPTY_FOUNDER_1TO1: FounderOneToOneResult = {
   skipped: 0,
   reason: 'not attempted',
   drafts: [],
+}
+
+/** Exhausted warm 1:1 is for human interest — OOO / bounce / left-company is not. */
+export function isWarmFounderOneToOneLead(lead: Pick<FounderOneToOneLead, 'last_reply_snippet'>): boolean {
+  return !isAutoReplyText(String(lead.last_reply_snippet || ''))
 }
 
 export function founderOneToOneDraftBody(lead: FounderOneToOneLead): string {
@@ -115,7 +121,7 @@ function sqlRows(result: unknown): any[] {
   return []
 }
 
-export async function listFounderOneToOneQueue(sqlOverride?: any): Promise<Array<{
+export async function listFounderOneToOneQueue(sqlOverride?: any, opts?: { includeAutoReply?: boolean }): Promise<Array<{
   id: string
   email: string
   company: string
@@ -138,7 +144,7 @@ export async function listFounderOneToOneQueue(sqlOverride?: any): Promise<Array
     ORDER BY d.created_at ASC
     LIMIT 20
   `.catch(() => []))
-  return rows.map((r) => ({
+  const mapped = rows.map((r) => ({
     id: String(r.id),
     email: String(r.email || ''),
     company: String(r.company || ''),
@@ -147,6 +153,8 @@ export async function listFounderOneToOneQueue(sqlOverride?: any): Promise<Array
     createdAt: String(r.created_at || ''),
     draftBody: String(r.draft_body || ''),
   }))
+  if (opts?.includeAutoReply) return mapped
+  return mapped.filter((r) => isWarmFounderOneToOneLead({ last_reply_snippet: r.snippet }))
 }
 
 /**
@@ -157,16 +165,19 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
   const sql = sqlOverride ?? getSql()
   const out: FounderOneToOneResult = { queued: 0, escalated: false, skipped: 0, reason: '', drafts: [] }
 
-  const pending = await listFounderOneToOneQueue(sql).catch(() => [])
-  const oldestHours = pending[0]?.createdAt
-    ? Math.max(0, Math.round((Date.now() - new Date(pending[0].createdAt).getTime()) / 3_600_000))
+  const pending = await listFounderOneToOneQueue(sql, { includeAutoReply: true }).catch(() => [])
+  const dismissedOoo = await dismissOooFounderOneToOne(sql, pending)
+  const livePending = pending.filter((p) => isWarmFounderOneToOneLead({ last_reply_snippet: p.snippet }))
+  out.skipped += dismissedOoo
+  const oldestHours = livePending[0]?.createdAt
+    ? Math.max(0, Math.round((Date.now() - new Date(livePending[0].createdAt).getTime()) / 3_600_000))
     : null
 
-  if (pending.length > 0 && oldestHours != null && oldestHours >= FOUNDER_1TO1_ESCALATE_HOURS) {
+  if (livePending.length > 0 && oldestHours != null && oldestHours >= FOUNDER_1TO1_ESCALATE_HOURS) {
     const due = await shouldEscalate(sql)
     if (due) {
       await sendTelegram(founderOneToOneTelegramHtml({
-        queued: pending.map((p) => ({ leadId: p.id, email: p.email, company: p.company })),
+        queued: livePending.map((p) => ({ leadId: p.id, email: p.email, company: p.company })),
         kind: 'pending',
         hours: oldestHours,
       })).catch(() => {})
@@ -193,19 +204,24 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
         WHERE d.lead_id = l.id AND d.classification = ${FOUNDER_1TO1_CLASS}
       )
     ORDER BY l.replied_at DESC NULLS LAST, l.stage_updated_at DESC NULLS LAST
-    LIMIT ${FOUNDER_1TO1_CAP}
+    LIMIT 25
   `.catch(() => [])) as FounderOneToOneLead[]
 
-  if (!leads.length) {
+  const warmLeads = leads.filter(isWarmFounderOneToOneLead).slice(0, FOUNDER_1TO1_CAP)
+  out.skipped += leads.length - warmLeads.length
+
+  if (!warmLeads.length) {
     out.reason = out.escalated
-      ? `escalated ${pending.length} pending founder 1:1 (oldest ${oldestHours}h)`
-      : pending.length
-        ? `${pending.length} founder 1:1 already pending review`
-        : 'no exhausted warm leads without a 1:1 draft'
+      ? `escalated ${livePending.length} pending founder 1:1 (oldest ${oldestHours}h)`
+      : livePending.length
+        ? `${livePending.length} founder 1:1 already pending review`
+        : dismissedOoo
+          ? `dismissed ${dismissedOoo} OOO founder 1:1 draft(s); no warm exhausted leads`
+          : 'no exhausted warm leads without a 1:1 draft'
     return out
   }
 
-  for (const lead of leads) {
+  for (const lead of warmLeads) {
     const body = founderOneToOneDraftBody(lead)
     const inserted = sqlRows(await sql`
       INSERT INTO outreach_reply_drafts
@@ -236,6 +252,25 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
     out.reason = out.reason || 'insert missed (table/columns?)'
   }
   return out
+}
+
+async function dismissOooFounderOneToOne(
+  sql: any,
+  pending: Array<{ id: string; snippet: string }>,
+): Promise<number> {
+  const ooo = pending.filter((p) => !isWarmFounderOneToOneLead({ last_reply_snippet: p.snippet }))
+  let n = 0
+  for (const row of ooo) {
+    const updated = sqlRows(await sql`
+      UPDATE outreach_reply_drafts
+      SET classification = 'auto_reply', action_taken = 'no_action',
+          draft_body = COALESCE(draft_body,'') || E'\n\n[auto] OOO / auto-reply — not founder_1to1 warm interest'
+      WHERE id = ${row.id}::uuid AND classification = ${FOUNDER_1TO1_CLASS} AND status = 'pending_review'
+      RETURNING id
+    `.catch(() => []))
+    if (updated[0]?.id) n++
+  }
+  return n
 }
 
 async function shouldEscalate(sql: any): Promise<boolean> {

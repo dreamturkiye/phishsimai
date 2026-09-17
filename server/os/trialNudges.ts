@@ -7,7 +7,7 @@ import { sendTelegram } from "./telegram";
 import { sendTrialDay14, sendTrialDay25, sendTrialDay30, type TrialStats } from "../email/janet";
 import { isNonCustomerOrg, measureTrueOrgCounts } from "./trueTrials";
 import { isPaidConversionCrisis } from "./cgoMandate";
-import { runTrialActivationNudges, type ActivationNudgeResult } from "./trialActivation";
+import { runTrialActivationNudges, runCrisisActivationNudges, hoursSinceLastTrialNudge, ORG_LIFECYCLE_MIN_HOURS, type ActivationNudgeResult } from "./trialActivation";
 
 export const GREY_BOX_ORG_NAME = "Grey Box Consulting";
 export const GREY_BOX_ORG_IDS = [11] as const;
@@ -44,7 +44,7 @@ export function nudgeFor(daysLeft: number): 14 | 18 | 25 | 30 | null {
   return null; // first ~10 days of the trial
 }
 
-export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }>; greyBox: GreyBoxPaidNudgeResult | null; activation: ActivationNudgeResult | null }> {
+export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }>; greyBox: GreyBoxPaidNudgeResult | null; activation: ActivationNudgeResult | null; crisisActivation: ActivationNudgeResult | null }> {
   const sql = sqlOverride ?? getSql();
   await sql`CREATE TABLE IF NOT EXISTS trial_nudges_sent (
     org_id INTEGER NOT NULL, nudge_day INTEGER NOT NULL, sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -94,22 +94,27 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
       await sql`DELETE FROM trial_nudges_sent WHERE org_id = ${org.id} AND nudge_day = ${nudge}`.catch(() => {});
     }
   }
+  // Unused TRUE trials: one-shot day-4 then 48h crisis activation BEFORE another Grey Box D25,
+  // so idle orgs get the 3-click launch loop first. 24h org throttle then interleaves 181.
+  const activation = await runTrialActivationNudges(sql).catch(() => null);
+  if (activation?.sent?.length) {
+    for (const s of activation.sent) sent.push(s);
+  }
+  const crisisActivation = await runCrisisActivationNudges(sql).catch(() => null);
+  if (crisisActivation?.sent?.length) {
+    for (const s of crisisActivation.sent) sent.push(s);
+  }
   // Live 2026-09-14: scanned:2 sent:0 because D18 was already claimed and the crisis D25
   // loop was not on this cron. Always attempt Grey Box paid nudge from THIS function so
-  // /api/os/trial-nudges actually sends while D18 sits claimed.
+  // /api/os/trial-nudges actually sends while D18 sits claimed. Shared 24h org throttle
+  // skips 181 when activation just sent.
   const greyBox = await runGreyBoxPaidNudge(sql).catch((e: any) => ({
     attempted: false, sent: false, reason: String(e?.message || e).slice(0, 160),
   } as GreyBoxPaidNudgeResult));
   if (greyBox.sent && greyBox.orgId != null) {
     sent.push({ orgId: greyBox.orgId, nudge: GREY_BOX_CRISIS_NUDGE_DAY });
   }
-  // PS-ACTIVATE-01: unused TRUE trials get a one-shot 3-click / white-glove mail.
-  // Separate nudge_day from billing 14/18/25/30/181. Does not touch warm CTA 90–92.
-  const activation = await runTrialActivationNudges(sql).catch(() => null);
-  if (activation?.sent?.length) {
-    for (const s of activation.sent) sent.push(s);
-  }
-  return { scanned, sent, greyBox, activation };
+  return { scanned, sent, greyBox, activation, crisisActivation };
 }
 
 export type GreyBoxPaidNudgeResult = {
@@ -168,6 +173,14 @@ export async function runGreyBoxPaidNudge(sqlOverride?: any): Promise<GreyBoxPai
   }
   if (!org.admin_email) return { attempted: false, sent: false, reason: 'Grey Box has no admin email' };
 
+  const lastAnyH = await hoursSinceLastTrialNudge(sql, org.id).catch(() => null)
+  if (lastAnyH != null && lastAnyH < ORG_LIFECYCLE_MIN_HOURS) {
+    return {
+      attempted: false, sent: false, orgId: org.id,
+      reason: `Grey Box lifecycle throttle (${Math.round(lastAnyH)}h/${ORG_LIFECYCLE_MIN_HOURS}h) — activation loop may own unused orgs`,
+    }
+  }
+
   const last = (await sql`
     SELECT sent_at FROM trial_nudges_sent
     WHERE org_id = ${org.id} AND nudge_day = ${GREY_BOX_CRISIS_NUDGE_DAY}
@@ -217,7 +230,7 @@ export async function cronTrialNudges(req: any, res: any) {
     if (r.sent.length > 0) {
       await sendTelegram(`✉️ <b>PhishSim trial nudges</b> — sent ${r.sent.length}: ${r.sent.map(s => `org ${s.orgId} (D${s.nudge})`).join(", ")}`).catch(() => {});
     }
-    return res.json({ ok: true, scanned: r.scanned, sent: r.sent, greyBox: r.greyBox, activation: r.activation });
+    return res.json({ ok: true, scanned: r.scanned, sent: r.sent, greyBox: r.greyBox, activation: r.activation, crisisActivation: r.crisisActivation });
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }
