@@ -1,5 +1,5 @@
 import { getSql } from './conn'
-import { NON_CUSTOMER_ORG_NAMES, INTERNAL_ORG_IDS, NON_LEAD_ORG_ADMIN_EMAILS } from './trueTrials'
+import { measureTrueOrgCounts } from './trueTrials'
 
 /**
  * PS-CGO-OKR-01: Janet's OKR / Goal engine (audit #3). Complements janetStrategy.ts (long-term
@@ -75,29 +75,7 @@ async function computeMetric(sql: ReturnType<typeof getSql>, metric: string): Pr
       return r[0]?.n ?? 0
     }
     if (metric === 'live_trials') {
-      const r = (await sql`
-        SELECT count(*) FILTER (WHERE is_live_trial AND NOT is_excluded)::int AS n
-        FROM (
-          SELECT
-            o.plan = 'free' AND o."planExpiresAt" IS NOT NULL AND o."planExpiresAt" > now() AS is_live_trial,
-            (
-              COALESCE(a.admin_email = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false)
-              OR COALESCE(a.admin_email LIKE '%canary%', false)
-              OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsimai.com', false)
-              OR lower(o.name) = ANY(${NON_CUSTOMER_ORG_NAMES})
-              OR o.name ILIKE '%canary%'
-              OR o.name ILIKE '%walkthrough%'
-              OR o.id = ANY(${INTERNAL_ORG_IDS}::int[])
-            ) AS is_excluded
-          FROM organizations o
-          LEFT JOIN LATERAL (
-            SELECT lower(u.email) AS admin_email
-            FROM org_members m JOIN users u ON u.id = m."userId"
-            WHERE m."orgId" = o.id AND m.role = 'admin' AND u.email IS NOT NULL
-            ORDER BY m.id ASC LIMIT 1
-          ) a ON true
-        ) t`) as Array<{ n: number }>
-      return r[0]?.n ?? 0
+      return (await measureTrueOrgCounts(sql)).trueLiveTrials
     }
     return null // unknown metric -> manual
   } catch {

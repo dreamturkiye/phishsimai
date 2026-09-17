@@ -487,6 +487,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-17 | O.32.13 | T1 starve → Marcus: named bugs PS-T1-STARVE / QEV empty / pause lock; watchdog+refill auto-queue; crisis Marcus task; escalate CHECK-legal; 24h architect title dedupe; no convert_warm when T1 dead | Live miss: last T1 2026-09-12, sanitized=0, pauseNewTouch1, QEV empty. Telegram-only. Dual-crisis skip forbade the fix. |
 | 2026-09-17 | O.32.14 | Exhausted warm pool (eligible=0 exhausted>0): crisis pack / droughtIdleAction must not assign convert_warm; diagnose nextActions → LinkedIn / Grey Box / /trial; honest blocker diagnosis scores ≥5, idle/wrong hammer ≤3 | Live 2026-09-14→17: convert_warm sent=0 every tick, agent_tasks scored ~2/10. No touch 93. No DAILY_SEND_LIMIT raise. No REFILL_ALLOW_MX_ONLY. |
 | 2026-09-17 | O.32.15 | `/trial` one-form start (aliases `/signup` `/register`); UTM + email prefill; `planActivatedAt` at signup; `markLeadTrial` attribution. Exhausted 90/91/92 → founder 1:1 queue (Telegram + HQ). No touch 93. No cap raise. | Live 2026-09-17: TRUE=1, paying=0, warm CTA 0/17, 90/91/92 exhausted. `/signup` 404'd. CTA was login-looking `/login?mode=register`. |
+| 2026-09-17 | O.32.3 | TRUE counts exclude `@phishsim-e2e.test` / `*.phishsim-e2e.test` admin or member emails. Count exclusion only — do not delete leftover `/trial` E2E orgs. | Leftover orgs 178–180 inflated `true_trials` to 4; only Grey Box (org 11) is a real operating trial. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -805,9 +806,10 @@ Canonical exclusion: `server/os/trueTrials.ts`. A TRUE trial is `plan=free` + fu
 
 1. Founder/test admin emails (`kaanari@mac.com`, `asadbek.munasar@forliion.com`)
 2. Admin email containing `canary` or `@phishsimai.com`
-3. Org ids 6/7/8
-4. Exact names (lower): test, adeo, phishsim internal, ai worker, sending, trial walkthrough co, signup canary's organization
-5. Name matches `/canary\|walkthrough/`
+3. Admin or member email domain `phishsim-e2e.test` or `*.phishsim-e2e.test` (leftover `/trial` E2E; count exclusion only — do not delete prod rows)
+4. Org ids 6/7/8
+5. Exact names (lower): test, adeo, phishsim internal, ai worker, sending, trial walkthrough co, signup canary's organization
+6. Name matches `/canary\|walkthrough/`
 
 Never a slug rule “contains phishsim”. Crisis: `isTrialCrisis` if TRUE count < 20; `isPaidConversionCrisis` if paying (measured) < 4. Dual crisis keeps Mason on TOF (“20 hottest”) and adds Vera/Finn for paid nurture. Founder brief, Mason, funnel-health signups, CGO `live_trials`, OS Health, Telegram LIVE FACTS, trial nudges all use this definition. D14/D25/D30 must not blast canaries.
 
