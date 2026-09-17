@@ -10,6 +10,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import BlogPost from "./pages/BlogPost";
 import BlogIndex from "./pages/BlogIndex";
+import KnowBe4Alternative from "./pages/KnowBe4Alternative";
 import TrialStart from "./pages/TrialStart";
 import { seoForPath, headTags, jsonLdFor } from "./lib/seoMeta";
 import { BLOG_POSTS } from "./content/blog";
@@ -23,6 +24,7 @@ const ROUTES: Record<string, React.ComponentType> = {
   "/privacy": PrivacyPolicy,
   "/terms": TermsOfService,
   "/blog": BlogIndex,
+  "/knowbe4-alternative": KnowBe4Alternative,
   "/trial": TrialStart,
 };
 // Every blog post prerenders through BlogPost (it reads its slug from the ssrPath).

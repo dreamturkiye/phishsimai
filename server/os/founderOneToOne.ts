@@ -13,6 +13,14 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { trialCtaUrl } from './trialCta'
 import { COMPANY_ID } from './version'
+import { classifyByRules } from './agents/salesReplies'
+
+/** OOO / bounce / left-company inbound is not a warm close — never queue founder_1to1. */
+export function isOooOrAutoReplyInbound(text: string | null | undefined): boolean {
+  const t = String(text || '').trim()
+  if (!t) return false
+  return classifyByRules('', t)?.cls === 'auto_reply'
+}
 
 export const FOUNDER_1TO1_CLASS = 'founder_1to1'
 export const FOUNDER_1TO1_CAP = 5
@@ -192,6 +200,10 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
         SELECT 1 FROM outreach_reply_drafts d
         WHERE d.lead_id = l.id AND d.classification = ${FOUNDER_1TO1_CLASS}
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM outreach_reply_drafts d
+        WHERE d.lead_id = l.id AND d.classification = 'auto_reply'
+      )
     ORDER BY l.replied_at DESC NULLS LAST, l.stage_updated_at DESC NULLS LAST
     LIMIT ${FOUNDER_1TO1_CAP}
   `.catch(() => [])) as FounderOneToOneLead[]
@@ -206,6 +218,10 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
   }
 
   for (const lead of leads) {
+    if (isOooOrAutoReplyInbound(lead.last_reply_snippet)) {
+      out.skipped++
+      continue
+    }
     const body = founderOneToOneDraftBody(lead)
     const inserted = sqlRows(await sql`
       INSERT INTO outreach_reply_drafts

@@ -8,6 +8,7 @@ import {
   WARM_EXHAUSTED_TOUCHES,
   founderOneToOneDraftBody,
   founderOneToOneTelegramHtml,
+  isOooOrAutoReplyInbound,
 } from './founderOneToOne'
 import { WARM_CTA_TOUCHES } from './sequences'
 import { DAILY_SEND_LIMIT } from './sequences'
@@ -55,6 +56,16 @@ describe('founder 1:1 queue — exhausted warm, NOT email', () => {
     expect(html).toMatch(/NOT email/)
     expect(html).toMatch(/touch 93/)
     expect(html).toContain('Acme')
+  })
+
+  it('OOO / auto-reply inbound is not a warm close and must not queue founder_1to1', () => {
+    expect(isOooOrAutoReplyInbound('I am out of the office until Monday and will return then')).toBe(true)
+    expect(isOooOrAutoReplyInbound('This is an automatic reply: away from my desk')).toBe(true)
+    expect(isOooOrAutoReplyInbound('send me pricing')).toBe(false)
+    expect(isOooOrAutoReplyInbound('Thanks, I will return next week after our board meeting')).toBe(false)
+    const src = readFileSync('server/os/founderOneToOne.ts', 'utf8')
+    expect(src).toContain('isOooOrAutoReplyInbound')
+    expect(src).toContain("classification = 'auto_reply'")
   })
 
   it('conversion shift and HQ surface the queue', () => {

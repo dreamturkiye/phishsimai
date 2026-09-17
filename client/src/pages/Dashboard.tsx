@@ -82,6 +82,22 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {campaigns && campaigns.length === 0 && (
+          <Card className="border-violet-500/30 bg-violet-500/5">
+            <CardContent className="p-6">
+              <h3 className="text-lg font-bold mb-1">Your trial is live — first value is 3 clicks</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                1. Add employees under Targets · 2. Pick a template · 3. Launch. About 10 minutes.
+                That first sim shows who would fall for a real attack.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => navigate("/targets")}>Add employees</Button>
+                <Button variant="outline" onClick={() => navigate("/campaigns")}>Launch first campaign</Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* PS-HUMAN-RISK-01 tile — the single QBR number. Null reads "Not enough data yet", never a
             fabricated score; the "N of 3 dimensions" context stays honest about how complete it is. */}
         <Card className="border-border/60 mb-4">

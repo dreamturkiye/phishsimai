@@ -127,7 +127,7 @@ export function isT1Starved(t1?: T1DiagnosisFacts | null): boolean {
 export function emptyWarmPoolNextActions(): string[] {
   return [
     'Queue founder-review 1:1 follow-ups for exhausted 90/91/92 leads — NOT touch 93, not an email blast',
-    'Advance LinkedIn founder-review (queue preview or escalate pending)',
+    'Auto-queue and auto-publish LinkedIn trial CTA (≤1/day, quality, no dup). Kill SOCIAL_CRISIS_PUBLISH=0. No founder approval gate.',
     'Nurture Grey Box activation/upgrade toward paid',
     'Inspect /trial signup path (Nova) and Stripe truth (Finn/Rex)',
   ]
@@ -170,7 +170,7 @@ export function diagnoseRevenueFailure(input: {
   const w = input.warm
   if (w) {
     if (w.replied === 0 && w.engaged === 0) {
-      bottlenecks.push('TOF empty: 0 replied/engaged — MSP harvest + LinkedIn founder-review (queue + escalate, not draft theater)')
+      bottlenecks.push('TOF empty: 0 replied/engaged — MSP harvest + LinkedIn auto-publish (1/day, not draft theater)')
       nextActions.push('Run MSP harvest and advance LinkedIn trial draft (queue or escalate pending review)')
     } else if (w.eligible === 0 && (w.replied > 0 || w.engaged > 0)) {
       bottlenecks.push(

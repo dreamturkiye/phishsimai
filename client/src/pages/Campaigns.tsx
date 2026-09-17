@@ -204,7 +204,8 @@ export default function Campaigns() {
             <CardContent className="py-16 text-center">
               <Mail className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
               <h3 className="font-semibold mb-2">No campaigns yet</h3>
-              <p className="text-sm text-muted-foreground mb-4">Create your first phishing simulation campaign.</p>
+              <p className="text-sm text-muted-foreground mb-1">First value is three clicks:</p>
+              <p className="text-sm text-muted-foreground mb-4">Add employees → pick a template → Launch. About 10 minutes.</p>
               <Button onClick={openWizard}>
                 <Plus className="w-4 h-4 mr-2" />
                 Create Campaign

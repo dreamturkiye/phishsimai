@@ -43,4 +43,4 @@ Pick KnowBe4 if you're an enterprise that needs its depth. Pick a lean alternati
 
 *Related: before your first campaign, make sure tests reach the inbox — see [how to allowlist phishing simulations in Microsoft 365](/blog/allowlist-phishing-simulation-microsoft-365).*
 
-> **Want the core loop without the enterprise contract?** PhishSim AI runs realistic simulations, trains your clickers, and exports the reports — month to month. [Start a free trial →](/signup)
+> **Want the core loop without the enterprise contract?** PhishSim AI: 60¢/user, $299/mo for 500 seats, 30-day trial, no credit card. [Start a free trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=knowbe4_alternative)

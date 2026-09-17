@@ -218,7 +218,7 @@ export default function Home() {
               </Button>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
-              {["No credit card required", "Setup in under 10 minutes", "30-day free trial"].map(t => (
+              {["No credit card required", "Setup in under 10 minutes", "30-day free trial", "60¢/user · $299/500 seats"].map(t => (
                 <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />{t}</span>
               ))}
             </div>
@@ -712,6 +712,7 @@ export default function Home() {
               <div className="font-semibold text-sm mb-3">Company</div>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 {[
+                  { label: "KnowBe4 alternative", href: "/knowbe4-alternative" },
                   { label: "MSP Partner Portal", href: "/msp" },
                   { label: "About Us", href: "mailto:info@phishsimai.com" },
                   { label: "Contact Sales", href: "mailto:sales@phishsimai.com" },

@@ -11,13 +11,19 @@ import {
   verifyRedditLogin,
   clearRedditSessionCache,
 } from './redditClient'
+import {
+  REDDIT_ALLOWED_SUBS,
+  REDDIT_DAILY_COMMENT_LIMIT,
+  REDDIT_DAILY_POST_LIMIT,
+  redditDraftIsPublishable,
+} from './crisisSocialPublish'
 
 export type SocialPlatform = 'reddit' | 'linkedin' | 'x' | 'facebook' | 'threads'
 export type SocialAction = 'comment' | 'post'
 
-const TARGET_SUBS = ['msp', 'MSSP', 'sysadmin', 'cybersecurity', 'compliance']
-const DAILY_COMMENT_LIMIT = 3
-const DAILY_POST_LIMIT = 1
+const TARGET_SUBS = [...REDDIT_ALLOWED_SUBS]
+const DAILY_COMMENT_LIMIT = REDDIT_DAILY_COMMENT_LIMIT
+const DAILY_POST_LIMIT = REDDIT_DAILY_POST_LIMIT
 
 export async function ensureSocialTables() {
   const sql = getSql()
@@ -124,8 +130,10 @@ export async function generateSarahRedditDrafts(): Promise<{ queued: number; ite
         if (!pick) continue
 
         const body = await draftWithJanet(
-          `Draft a helpful Reddit comment for r/${sub} on this thread:\nTitle: ${pick.title}\nURL: ${pick.permalink}\n\nAnswer the implied question. No links.`
+          `Draft a helpful Reddit comment for r/${sub} on this thread:\nTitle: ${pick.title}\nURL: ${pick.permalink}\n\nAnswer the implied question. No links. No product URLs. Do not mention PhishSimAI unless the thread already names a vendor.`
         )
+        const quality = redditDraftIsPublishable('comment', body, sub)
+        if (!quality.ok) continue
         const row = await queueSocialItem({
           action: 'comment',
           subreddit: sub,
@@ -148,8 +156,10 @@ export async function generateSarahRedditDrafts(): Promise<{ queued: number; ite
         `Write a concise Reddit post TITLE for r/${sub} about MSP compliance or phishing awareness. One line only, no quotes.`
       )
       const body = await draftWithJanet(
-        `Write a Reddit self-post body for r/${sub}. Title: ${title}. Educational, compliance-focused, invite discussion. No product links.`
+        `Write a Reddit self-post body for r/${sub}. Title: ${title}. Educational, compliance-focused, invite discussion. No product links. No URL.`
       )
+      const quality = redditDraftIsPublishable('post', body, sub)
+      if (!quality.ok) throw new Error(quality.reason)
       const row = await queueSocialItem({
         action: 'post',
         subreddit: sub,
@@ -205,6 +215,13 @@ export async function processSarahSocialQueue(maxItems = 2): Promise<{
   for (const item of pending as any[]) {
     if (item.action === 'comment' && commentsToday + posted >= DAILY_COMMENT_LIMIT) break
     if (item.action === 'post' && postsToday + posted >= DAILY_POST_LIMIT) break
+
+    const quality = redditDraftIsPublishable(item.action, String(item.body || ''), item.subreddit)
+    if (!quality.ok) {
+      await sql`UPDATE os_social_queue SET status='held_quality', error=${quality.reason} WHERE id=${item.id}`.catch(() => {})
+      results.push({ id: item.id, status: 'held_quality', error: quality.reason })
+      continue
+    }
 
     try {
       let resultUrl = ''

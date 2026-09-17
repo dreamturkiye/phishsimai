@@ -1,20 +1,26 @@
 /**
- * Acquisition besides cold email. PS-SOCIAL-LOCKOUT-01 stays ON: we queue founder-review
- * drafts with a real preview URL, we do not publish. MSP hub harvest and magic-link checkout already exist.
+ * Acquisition besides cold email. PS-SOCIAL-LOCKOUT-01 stays the structural flag
+ * (PUBLIC_SOCIAL_POSTING_ENABLED=false). Owner 2026-09-17: during crisis / week-challenge,
+ * Sarah auto-queues AND auto-publishes LinkedIn via PostForMe when credentials exist.
+ * Founder draft-review is NOT a gate. Kill switch: SOCIAL_CRISIS_PUBLISH=0.
  *
  * Do not invent cold copy. Trial URL and price claims are the frozen sequence strings.
- *
- * "already queued a founder-review trial draft today" is NOT a permanent dead end:
- * pending drafts escalate on a 2h cadence until the founder reviews, and the funnel
- * (queued → pending_review → approved → posted → reply → trial) is returned every tick.
+ * LinkedIn ≤1 post/day, quality + de-dupe. No touch 93. No cold blast.
  */
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { rememberFact } from './memory'
 import { TRIAL_CTA_URL } from './sequences'
-import { PUBLIC_SOCIAL_POSTING_ENABLED } from './social/publicPostingLockout'
+import { canPublishPublicSocial } from './social/publicPostingLockout'
 import { previewPublicUrl, savePreviewForReview, linkedInPreviewTelegramHtml } from './social/socialPreviewPage'
 import { REFERENCE_PUBLIC_URL } from './social/linkedinHeroFallback'
+import { publishSarahLinkedInPost } from './social/publishSarahLinkedIn'
+import {
+  LINKEDIN_DAILY_POST_CAP,
+  crisisPublishBlockReason,
+  isDuplicateSocialBody,
+  linkedInBodyIsPublishable,
+} from './social/crisisSocialPublish'
 
 export const TRIAL_ACQUISITION_CHANNELS = [
   {
@@ -40,17 +46,22 @@ export const TRIAL_ACQUISITION_CHANNELS = [
   {
     id: 'founder_1to1',
     status: 'live' as const,
-    how: 'queueFounderOneToOneReviews — exhausted 90/91/92 replied/engaged leads get a founder-review 1:1 brief (Telegram + HQ). NOT email. NOT touch 93.',
+    how: 'queueFounderOneToOneReviews — exhausted 90/91/92 HUMAN replies (not OOO/auto-reply) get a 1:1 brief. NOT email. NOT touch 93.',
   },
   {
     id: 'linkedin_founder_draft',
     status: 'live' as const,
-    how: 'Queue LinkedIn trial-CTA drafts with preview URL; escalate when pending >2h. Publish remains lockout-blocked until founder approves.',
+    how: 'Queue LinkedIn trial-CTA drafts and auto-publish via PostForMe during crisis (≤1/day, quality, no dup). Kill: SOCIAL_CRISIS_PUBLISH=0. No founder approval gate.',
   },
   {
     id: 'public_social_publish',
-    status: 'locked' as const,
-    how: 'PS-SOCIAL-LOCKOUT-01. Drafting/queueing allowed; outbound Reddit/LinkedIn publish throws.',
+    status: 'crisis' as const,
+    how: 'Crisis override: LinkedIn + Reddit publish when credentials exist. Structural PUBLIC_SOCIAL_POSTING_ENABLED stays false. Kill SOCIAL_CRISIS_PUBLISH=0.',
+  },
+  {
+    id: 'knowbe4_seo',
+    status: 'live' as const,
+    how: 'Public /knowbe4-alternative comparison page CTAs to /trial (60¢/user, $299/500, 30-day no-card).',
   },
 ] as const
 
@@ -74,6 +85,7 @@ export type LinkedInAcquisitionFunnel = {
 export type LinkedInAcquisitionResult = {
   queued: boolean
   escalated: boolean
+  posted?: boolean
   reason: string
   previewUrl?: string
   funnel: LinkedInAcquisitionFunnel
@@ -86,6 +98,12 @@ export const EMPTY_LINKEDIN_FUNNEL: LinkedInAcquisitionFunnel = {
 export function linkedInFunnelLine(f: LinkedInAcquisitionFunnel): string {
   const age = f.oldestPendingHours == null ? 'none pending' : `oldest pending ${f.oldestPendingHours}h`
   return `LinkedIn funnel queued=${f.queued} pending_review=${f.pendingReview} approved=${f.approved} posted=${f.posted} (${age})`
+}
+
+function sqlRows(result: unknown): any[] {
+  if (Array.isArray(result)) return result
+  if (result && typeof result === 'object' && Array.isArray((result as any).rows)) return (result as any).rows
+  return []
 }
 
 export async function measureLinkedInFunnel(sql: any): Promise<LinkedInAcquisitionFunnel> {
@@ -112,77 +130,124 @@ export async function measureLinkedInFunnel(sql: any): Promise<LinkedInAcquisiti
   }
 }
 
+async function countLinkedInPostedToday(sql: any): Promise<number> {
+  const rows = sqlRows(await sql`
+    SELECT count(*)::int AS n FROM os_social_queue
+    WHERE platform='linkedin' AND company_id='phishsimai' AND status='posted'
+      AND posted_at > date_trunc('day', NOW() AT TIME ZONE 'UTC')
+  `.catch(() => [{ n: 0 }]))
+  return Number(rows[0]?.n || 0)
+}
+
+/**
+ * Auto-publish one quality, non-duplicate LinkedIn trial draft. No founder approval.
+ * Caps at LINKEDIN_DAILY_POST_CAP. Kill switch / missing creds → no-op.
+ */
+export type CrisisLinkedInPublishAttempt = {
+  posted: boolean
+  reason: string
+  previewUrl?: string
+}
+
+function missedPublish(reason: string): CrisisLinkedInPublishAttempt {
+  return { posted: false, reason }
+}
+
+export async function tryCrisisPublishLinkedIn(sqlOverride?: any): Promise<CrisisLinkedInPublishAttempt> {
+  if (!canPublishPublicSocial('LinkedIn (PostForMe / publishSarahLinkedIn)')) {
+    return missedPublish(crisisPublishBlockReason('linkedin'))
+  }
+  const sql = sqlOverride ?? getSql()
+  const postedToday = await countLinkedInPostedToday(sql).catch(() => 0)
+  if (postedToday >= LINKEDIN_DAILY_POST_CAP) {
+    return missedPublish(`linkedin ${LINKEDIN_DAILY_POST_CAP}/day cap already reached`)
+  }
+
+  const prior = sqlRows(await sql`
+    SELECT body FROM os_social_queue
+    WHERE platform='linkedin' AND company_id='phishsimai' AND status='posted'
+      AND posted_at > NOW() - INTERVAL '14 days'
+    ORDER BY posted_at DESC
+    LIMIT 20
+  `.catch(() => []))
+  const previousBodies = prior.map((r) => String(r.body || ''))
+
+  const candidates = sqlRows(await sql`
+    SELECT preview_token, title, body, status FROM os_social_queue
+    WHERE platform='linkedin' AND company_id='phishsimai'
+      AND status IN ('draft','queued','pending_review')
+      AND COALESCE(review_status, 'pending_review') NOT IN ('rejected','held_content_safety')
+      AND preview_token IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 8
+  `.catch(() => []))
+
+  for (const item of candidates) {
+    const quality = linkedInBodyIsPublishable(String(item.body || ''))
+    if (!quality.ok) continue
+    if (isDuplicateSocialBody(String(item.body || ''), previousBodies)) continue
+    const token = String(item.preview_token || '')
+    if (!token) continue
+    try {
+      const result = await publishSarahLinkedInPost(token)
+      return {
+        posted: true,
+        reason: `published LinkedIn trial CTA via PostForMe (crisis override, ${LINKEDIN_DAILY_POST_CAP}/day)`,
+        previewUrl: result.linkedInUrl || previewPublicUrl(token),
+      }
+    } catch (e: any) {
+      return missedPublish(String(e?.message || e).slice(0, 180))
+    }
+  }
+  return missedPublish('no quality non-duplicate LinkedIn draft ready')
+}
+
 /** @deprecated use advanceLinkedInAcquisition — kept so existing tests/callers compile. */
 export async function queueFounderReviewTrialDraft(sqlOverride?: any): Promise<LinkedInAcquisitionResult> {
   return advanceLinkedInAcquisition(sqlOverride)
 }
 
 /**
- * Crisis-tick multi-channel: queue a previewable LinkedIn trial draft if none is pending,
- * escalate when a draft sits unreviewed >2h, always return the funnel. Public publish stays locked.
- * "already queued today" with pendingReview=0 is a failed queue — retry, do not park.
+ * Crisis-tick multi-channel: queue a LinkedIn trial draft if none is pending today,
+ * then auto-publish when the crisis override + credentials + 1/day + quality rails pass.
+ * Founder approval is not required. Kill switch SOCIAL_CRISIS_PUBLISH=0.
  */
 export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<LinkedInAcquisitionResult> {
-  if (PUBLIC_SOCIAL_POSTING_ENABLED) {
+  const sql = sqlOverride ?? getSql()
+  let funnel = await measureLinkedInFunnel(sql).catch(() => ({ ...EMPTY_LINKEDIN_FUNNEL }))
+
+  const published: CrisisLinkedInPublishAttempt = await tryCrisisPublishLinkedIn(sql).catch((e: any) =>
+    missedPublish(String(e?.message || e).slice(0, 160)),
+  )
+  if (published.posted) {
+    funnel = await measureLinkedInFunnel(sql).catch(() => funnel)
     return {
-      queued: false,
-      escalated: false,
-      reason: 'lockout unexpectedly off — refusing to auto-queue while publish is live',
-      funnel: { ...EMPTY_LINKEDIN_FUNNEL },
+      queued: true,
+      escalated: true,
+      posted: true,
+      reason: published.reason,
+      previewUrl: published.previewUrl,
+      funnel,
     }
   }
-  const sql = sqlOverride ?? getSql()
-  const funnel = await measureLinkedInFunnel(sql).catch(() => ({ ...EMPTY_LINKEDIN_FUNNEL }))
 
-  if (funnel.pendingReview > 0) {
-    const hours = funnel.oldestPendingHours ?? 0
-    if (hours >= LINKEDIN_PENDING_ESCALATE_HOURS) {
-      const last = (await sql`
-        SELECT value FROM janet_memory
-        WHERE company_id='phishsimai' AND type='operating' AND key=${ESCALATE_MEMORY_KEY}
-        LIMIT 1
-      `.catch(() => [])) as Array<{ value?: string }>
-      const lastAt = Date.parse(String(last[0]?.value || ''))
-      const due = !Number.isFinite(lastAt) || Date.now() - lastAt >= LINKEDIN_PENDING_ESCALATE_HOURS * 3_600_000
-      if (due) {
-        const pending = (await sql`
-          SELECT preview_token, title FROM os_social_queue
-          WHERE platform='linkedin' AND company_id='phishsimai'
-            AND (review_status='pending_review' OR status IN ('draft','queued'))
-          ORDER BY created_at ASC LIMIT 1
-        `.catch(() => [])) as Array<{ preview_token?: string; title?: string }>
-        const token = String(pending[0]?.preview_token || '')
-        const url = token ? previewPublicUrl(token) : 'https://phishsimai.com/preview/social'
-        await sendTelegram(linkedInPreviewTelegramHtml({
-          title: String(pending[0]?.title || '30-day no-card trial for MSPs'),
-          previewUrl: url,
-          hours,
-          kind: 'pending',
-        })).catch(() => {})
-        await sql`
-          INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
-          VALUES ('phishsimai', 'operating', ${ESCALATE_MEMORY_KEY}, ${new Date().toISOString()}, 1, 'trial_acquisition')
-          ON CONFLICT (company_id, type, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-        `.catch(() => {})
-        return {
-          queued: false,
-          escalated: true,
-          reason: `pending founder-review LinkedIn draft ${hours}h — escalated (not a dead end)`,
-          previewUrl: token ? url : undefined,
-          funnel,
-        }
-      }
-      return {
-        queued: false,
-        escalated: false,
-        reason: `pending founder-review LinkedIn draft ${hours}h — next escalate in <${LINKEDIN_PENDING_ESCALATE_HOURS}h`,
-        funnel,
-      }
-    }
+  const postedToday = await countLinkedInPostedToday(sql).catch(() => 0)
+  if (postedToday >= LINKEDIN_DAILY_POST_CAP) {
     return {
       queued: false,
       escalated: false,
-      reason: `LinkedIn trial draft pending review (${hours}h old) — waiting for founder, will escalate at ${LINKEDIN_PENDING_ESCALATE_HOURS}h`,
+      posted: false,
+      reason: `already posted LinkedIn today (${LINKEDIN_DAILY_POST_CAP}/day cap) — ${published.reason}`,
+      funnel,
+    }
+  }
+
+  if (funnel.pendingReview > 0 || funnel.queued > 0) {
+    return {
+      queued: false,
+      escalated: false,
+      posted: false,
+      reason: `LinkedIn draft already queued — publish blocked (${published.reason}). Not waiting on founder review.`,
       funnel,
     }
   }
@@ -193,29 +258,8 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
     WHERE company_id='phishsimai' AND type='operating' AND key=${DRAFT_MEMORY_KEY}
     LIMIT 1
   `.catch(() => [])) as Array<{ value?: string }>
-  if (String(prior[0]?.value || '') === day) {
-    // Memory says we queued today but pendingReview is 0 — the insert never became
-    // reviewable. Live dead end was returning here. Retry on the escalate cadence only.
-    const last = (await sql`
-      SELECT value FROM janet_memory
-      WHERE company_id='phishsimai' AND type='operating' AND key=${ESCALATE_MEMORY_KEY}
-      LIMIT 1
-    `.catch(() => [])) as Array<{ value?: string }>
-    const lastAt = Date.parse(String(last[0]?.value || ''))
-    const due = !Number.isFinite(lastAt) || Date.now() - lastAt >= LINKEDIN_PENDING_ESCALATE_HOURS * 3_600_000
-    if (!due) {
-      return {
-        queued: false,
-        escalated: false,
-        reason: `queued-today memory but pending_review=0 — retrying in <${LINKEDIN_PENDING_ESCALATE_HOURS}h (not a dead end)`,
-        funnel,
-      }
-    }
-    await sendTelegram(linkedInPreviewTelegramHtml({
-      title: '30-day no-card trial for MSPs',
-      previewUrl: 'https://phishsimai.com/preview/social',
-      kind: 'retry',
-    })).catch(() => {})
+  if (String(prior[0]?.value || '') === day && funnel.pendingReview === 0 && funnel.queued === 0) {
+    // Memory says queued today but nothing is reviewable — retry the insert.
     await sql`
       INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
       VALUES ('phishsimai', 'operating', ${ESCALATE_MEMORY_KEY}, ${new Date().toISOString()}, 1, 'trial_acquisition')
@@ -244,12 +288,39 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
     confidence: 0.9,
     source: 'trial_acquisition',
   }).catch(() => {})
+
+  const publishedAfter: CrisisLinkedInPublishAttempt = await tryCrisisPublishLinkedIn(sql).catch((e: any) =>
+    missedPublish(String(e?.message || e).slice(0, 160)),
+  )
   const nextFunnel = await measureLinkedInFunnel(sql).catch(() => funnel)
+
+  if (publishedAfter.posted) {
+    await sendTelegram(
+      `✅ Sarah LinkedIn AUTO-PUBLISHED (crisis override, 1/day).\nKill: SOCIAL_CRISIS_PUBLISH=0\n${publishedAfter.previewUrl || saved.previewUrl}`,
+    ).catch(() => {})
+    return {
+      queued: true,
+      escalated: true,
+      posted: true,
+      reason: publishedAfter.reason,
+      previewUrl: publishedAfter.previewUrl || saved.previewUrl,
+      funnel: nextFunnel,
+    }
+  }
+
+  await sendTelegram(linkedInPreviewTelegramHtml({
+    title: '30-day no-card trial for MSPs',
+    previewUrl: saved.previewUrl,
+    kind: 'new',
+  })).catch(() => {})
+
   return {
     queued: true,
     escalated: true,
-    reason: `queued LinkedIn trial CTA for founder review (preview ${saved.previewUrl}) — not published`,
+    posted: false,
+    reason: `queued LinkedIn trial CTA (not published: ${publishedAfter.reason})`,
     previewUrl: saved.previewUrl,
     funnel: nextFunnel,
   }
 }
+

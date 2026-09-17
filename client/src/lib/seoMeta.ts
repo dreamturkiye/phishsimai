@@ -54,8 +54,15 @@ export function seoForPath(pathname: string): RouteMeta {
   if (pathname === "/trial" || pathname === "/signup" || pathname === "/register") {
     return {
       title: "Start your 30-day free trial — PhishSim AI",
-      description: "Full access for 30 days. No credit card. No email verification to start. Live in 10 minutes.",
+      description: "Full access for 30 days. No credit card. 60¢/user, $299/mo for 500 seats. Live in 10 minutes.",
       path: "/trial",
+    };
+  }
+  if (pathname === "/knowbe4-alternative" || pathname === "/knowbe4" || pathname.startsWith("/knowbe4-alternative")) {
+    return {
+      title: "KnowBe4 Alternative for MSPs — PhishSim AI",
+      description: "Honest KnowBe4 alternative for MSPs and small teams: 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card. Live in 10 minutes.",
+      path: "/knowbe4-alternative",
     };
   }
   return {
