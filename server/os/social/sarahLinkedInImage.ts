@@ -44,6 +44,7 @@ export function wantsPricingFirstMarketing(feedback: string): boolean {
   if (!c.trim()) return false
   if (/pricing[-\s]?first|lead with price/.test(c)) return true
   if (/seats framing/.test(c)) return true
+  if (/per-?seat|best.{0,24}pric|industry pric|showcase.{0,24}pric/.test(c)) return true
   const mentionsSeatsBand = /50\s*[–-]\s*500/.test(c)
   const asksToDrop = /drop|remove|don'?t|do not|stop|no more|instead of|replace/.test(c)
   return mentionsSeatsBand && (asksToDrop || /seat/.test(c))

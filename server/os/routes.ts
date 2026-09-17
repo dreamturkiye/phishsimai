@@ -43,7 +43,7 @@ import { runJanetReport } from './janetReport'
 import { getAllAgentHealth, reportAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
 import { runSarahSocialCron, listSocialQueue, queueSocialItem } from './social/sarahSocial'
-import { handleLinkedInPreview } from './social/linkedinPreviewDispatch'
+import { handleLinkedInPreview, dispatchSarahSocialRoute } from './social/linkedinPreviewDispatch'
 import { buildAnalyticsView, ingestAnalyticsEvent } from './siteAnalytics'
 import { verifyRedditLogin } from './social/redditClient'
 
@@ -345,15 +345,17 @@ export async function cronSarahSocial(req: Request, res: Response) {
   if (!okCronOrHq(req, res)) return
   try {
     // Production review auto-revise uses CRON_SECRET against this route with
-    // action=linkedin-preview&mode=revise. Bare cron (no action) stays Reddit + LinkedIn monitor.
-    if (await handleLinkedInPreview(req, res)) return
-    const reddit = await runSarahSocialCron()
-    // PS-SARAH-LINKEDIN-01: LinkedIn monitor (safe from day 1) + publish approved posts. Publish is
-    // hard-gated behind the Aug-5 start + approval + content-safety; before Aug-5 it no-ops (drafts-only).
-    const { publishApprovedLinkedIn, runLinkedInMonitor } = await import('./social/linkedInPublisher')
-    const linkedinMonitor = await runLinkedInMonitor().catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
-    const linkedinPublish = await publishApprovedLinkedIn(1).catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
-    res.json({ ok: true, reddit, linkedinMonitor, linkedinPublish })
+    // action=linkedin-preview&mode=revise. Query may live on originalUrl after the
+    // Vercel rewrite to /api/index.js. Bare cron (no action) stays Reddit + LinkedIn monitor.
+    await dispatchSarahSocialRoute(req, res, async () => {
+      const reddit = await runSarahSocialCron()
+      // PS-SARAH-LINKEDIN-01: LinkedIn monitor (safe from day 1) + publish approved posts. Publish is
+      // hard-gated behind the Aug-5 start + approval + content-safety; before Aug-5 it no-ops (drafts-only).
+      const { publishApprovedLinkedIn, runLinkedInMonitor } = await import('./social/linkedInPublisher')
+      const linkedinMonitor = await runLinkedInMonitor().catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
+      const linkedinPublish = await publishApprovedLinkedIn(1).catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
+      return { reddit, linkedinMonitor, linkedinPublish }
+    })
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })
   }
@@ -493,6 +495,10 @@ export async function socialPreviewReview(req: Request, res: Response) {
     }
     const { submitSocialReview, getPreviewByToken, renderSocialPreviewPage } = await import('./social/socialPreviewPage')
     const result = await submitSocialReview(token, decision, comment)
+    if (result.previewToken && result.previewToken !== token) {
+      res.redirect(302, `/preview/social/${result.previewToken}`)
+      return
+    }
     const item = await getPreviewByToken(token)
     if (item) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8')

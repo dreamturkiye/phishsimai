@@ -36,6 +36,7 @@ describe('pricing-first marketing default', () => {
     expect(wantsPricingFirstMarketing('drop the 50–500 seats framing')).toBe(true)
     expect(wantsPricingFirstMarketing('Do not use 50-500 seats')).toBe(true)
     expect(wantsPricingFirstMarketing('pricing-first, lead with price')).toBe(true)
+    expect(wantsPricingFirstMarketing('showcase best industry per-seat pricing')).toBe(true)
     expect(wantsPricingFirstMarketing('Match first LinkedIn post quality')).toBe(false)
   })
 

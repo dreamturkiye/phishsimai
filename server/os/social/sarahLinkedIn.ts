@@ -2,7 +2,7 @@ import { llmComplete } from '../llmChat'
 import { ensureSocialTables, queueSocialItem } from './sarahSocial'
 import { getSql } from '../conn'
 import { savePreviewForReview, previewPublicUrl, getPreviewByToken } from './socialPreviewPage'
-import { createSarahLinkedInHeroImage, type SarahMarketingImageSpec, marketingImageFromFeedback } from './sarahLinkedInImage'
+import { createSarahLinkedInHeroImage, type SarahMarketingImageSpec, marketingImageFromFeedback, wantsPricingFirstMarketing } from './sarahLinkedInImage'
 import { renderLinkedInFeedPost } from './linkedinFeedPreview'
 import { sendTelegram } from '../telegram'
 import { rememberFact } from '../memory'
@@ -29,6 +29,14 @@ const SARAH = {
   name: 'Sarah Mitchell',
   title: 'Head of Compliance Partnerships @ PhishSimAI',
   initials: 'SM',
+}
+
+export function shouldReviseLinkedInCopy(feedback: string): boolean {
+  const c = String(feedback || '')
+  if (/tone|copy|cta|stat|soften|add |rewrite|paragraph|position|fram|pric|seat|per-?seat|60.?¢|60c|\$299/i.test(c)) {
+    return true
+  }
+  return wantsPricingFirstMarketing(c)
 }
 
 const FIRST_POST_REFERENCE = `Reference: Sarah's first LinkedIn post paired a split-screen marketing graphic (phishing email vs compliance dashboard, headline "Phishing Simulation. One-Click Compliance.") with long-form MSP copy. Every new post needs the same quality: designed marketing image WITH readable headline text on the image, not a generic stock photo.`
@@ -264,14 +272,15 @@ export async function reviseSarahLinkedInDraft(sourceToken: string): Promise<Lin
 
   let revisedHook = hook
   let revisedBody = body
-  const copyFeedback = /tone|copy|cta|stat|soften|add |rewrite|paragraph/i.test(feedback)
+  const reviseCopy = shouldReviseLinkedInCopy(feedback)
 
-  if (copyFeedback) {
+  if (reviseCopy) {
     const { text } = await llmComplete({
       messages: [
         {
           role: 'system',
-          content: `Revise Sarah Mitchell's LinkedIn post per founder feedback. Keep MSP/compliance voice. Use delimiter format only.`,
+          content: `Revise Sarah Mitchell's LinkedIn post per founder feedback. Keep MSP/compliance voice. Use delimiter format only.
+If feedback drops 50–500 seats framing or asks for pricing-first, rewrite copy to lead with frozen price: 60¢/user, $299/mo for 500, 30-day no-card trial. Do not mention 50–500 seats.`,
         },
         {
           role: 'user',

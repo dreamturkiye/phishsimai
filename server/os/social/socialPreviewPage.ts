@@ -176,7 +176,7 @@ export async function submitSocialReview(
   token: string,
   decision: ReviewDecision,
   comment: string
-): Promise<{ ok: boolean; message: string }> {
+): Promise<{ ok: boolean; message: string; previewToken?: string; previewUrl?: string }> {
   await ensureSocialPreviewColumns()
   const sql = getSql()
   const item = await getPreviewByToken(token)
@@ -238,15 +238,24 @@ export async function submitSocialReview(
   }
 
   if (decision === 'changes_requested' && comment) {
-    void (async () => {
-      try {
-        const { reviseSarahLinkedInDraft } = await import('./sarahLinkedIn')
-        await reviseSarahLinkedInDraft(token)
-      } catch (err) {
-        console.error('[SocialReview] Auto-revision failed:', err)
-        await sendTelegram(`⚠️ Sarah LinkedIn auto-revision failed: ${String(err).slice(0, 200)}`).catch(() => {})
+    try {
+      const { reviseSarahLinkedInDraft } = await import('./sarahLinkedIn')
+      const revised = await reviseSarahLinkedInDraft(token)
+      return {
+        ok: true,
+        message:
+          'Feedback received — revised preview is ready (new Safari link).',
+        previewToken: revised.previewToken,
+        previewUrl: revised.previewUrl,
       }
-    })()
+    } catch (err) {
+      console.error('[SocialReview] Auto-revision failed:', err)
+      await sendTelegram(`⚠️ Sarah LinkedIn auto-revision failed: ${String(err).slice(0, 200)}`).catch(() => {})
+      return {
+        ok: false,
+        message: `Feedback saved but auto-revision failed: ${String(err).slice(0, 180)}`,
+      }
+    }
   }
 
   if (decision === 'approved') {

@@ -1,13 +1,13 @@
 /**
  * LinkedIn founder-preview HTTP dispatch.
  *
- * Production review auto-revise (and curl with CRON_SECRET) hits
- * GET /api/os/sarah-social?action=linkedin-preview&mode=revise&token=…
- * cronSarahSocial used to ignore action/mode/token and always run the Reddit cron.
- * HQ /api/os/hq/social had the real dispatcher. Both routes now share this handler.
+ * Live 2026-09-17: GET /api/os/sarah-social?action=linkedin-preview&mode=revise
+ * with Bearer CRON_SECRET returned the Reddit cron payload because:
+ *   1. cronSarahSocial never read action/mode/token (HQ-only dispatcher).
+ *   2. Vercel rewrite to /api/index.js can leave Express req.query empty while
+ *      the original query still sits on originalUrl / x-invoke-query.
  *
- * Publish stays lockout-gated inside publishSarahLinkedInPost — this does not enable
- * public LinkedIn auto-publish.
+ * Both cron and HQ routes share handleLinkedInPreview. Publish stays lockout-gated.
  */
 import type { Request, Response } from 'express'
 
@@ -21,10 +21,64 @@ export type LinkedInPreviewDispatch =
   | { kind: 'queue'; topic?: string; method: string }
   | { kind: 'next' }
 
-function q(query: Request['query'] | Record<string, unknown>, key: string): string {
-  const v = (query as Record<string, unknown>)[key]
-  if (Array.isArray(v)) return String(v[0] || '').trim()
-  return String(v || '').trim()
+function assignQuery(out: Record<string, string>, key: string, v: unknown) {
+  if (v == null || v === '') return
+  if (Array.isArray(v)) {
+    assignQuery(out, key, v[0])
+    return
+  }
+  if (typeof v === 'object') return
+  const s = String(v).trim()
+  if (s) out[key] = s
+}
+
+function parseSearch(search: string, out: Record<string, string>) {
+  const qs = search.startsWith('?') ? search.slice(1) : search
+  if (!qs) return
+  const sp = new URLSearchParams(qs.split('#')[0])
+  for (const [k, v] of sp.entries()) assignQuery(out, k, v)
+}
+
+/**
+ * Merge query from Express, the original URL, and Vercel's x-invoke-query.
+ * A rewrite to /api/index.js can drop req.query while leaving the string on originalUrl.
+ */
+export function collectOsQuery(req: {
+  query?: Record<string, unknown>
+  url?: string
+  originalUrl?: string
+  headers?: Record<string, unknown>
+  body?: Record<string, unknown>
+}): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(req.query || {})) assignQuery(out, k, v)
+
+  for (const src of [req.originalUrl, req.url]) {
+    if (typeof src !== 'string' || !src.includes('?')) continue
+    parseSearch(src.slice(src.indexOf('?')), out)
+  }
+
+  const invoke = req.headers?.['x-invoke-query']
+  if (typeof invoke === 'string' && invoke.trim()) {
+    try {
+      const decoded = decodeURIComponent(invoke)
+      if (decoded.startsWith('{')) {
+        const obj = JSON.parse(decoded) as Record<string, unknown>
+        for (const [k, v] of Object.entries(obj)) assignQuery(out, k, v)
+      } else {
+        parseSearch(decoded, out)
+      }
+    } catch {
+      /* ignore malformed invoke query */
+    }
+  }
+
+  if (req.body && typeof req.body === 'object') {
+    for (const k of ['action', 'mode', 'token', 'topic'] as const) {
+      assignQuery(out, k, req.body[k])
+    }
+  }
+  return out
 }
 
 /** Parse query so cron vs HQ share one contract. Bare /sarah-social stays the Reddit cron. */
@@ -32,12 +86,13 @@ export function parseLinkedInPreviewDispatch(
   query: Request['query'] | Record<string, unknown>,
   method = 'get',
 ): LinkedInPreviewDispatch {
-  const action = q(query, 'action')
+  const collected = collectOsQuery({ query: query as Record<string, unknown> })
+  const action = collected.action || ''
   if (action !== 'linkedin-preview') return { kind: 'cron' }
 
-  const mode = q(query, 'mode') || 'next'
-  const token = q(query, 'token')
-  const topic = q(query, 'topic') || undefined
+  const mode = collected.mode || 'next'
+  const token = collected.token || ''
+  const topic = collected.topic || undefined
 
   if (mode === 'draft') return { kind: 'draft', topic }
   if (mode === 'revise') {
@@ -62,7 +117,8 @@ export function parseLinkedInPreviewDispatch(
  * the default Reddit/LinkedIn cron payload.
  */
 export async function handleLinkedInPreview(req: Request, res: Response): Promise<boolean> {
-  const parsed = parseLinkedInPreviewDispatch(req.query, req.method)
+  const query = collectOsQuery(req as unknown as Parameters<typeof collectOsQuery>[0])
+  const parsed = parseLinkedInPreviewDispatch(query, req.method)
   if (parsed.kind === 'cron') return false
   if (parsed.kind === 'error') {
     res.status(parsed.status).json({ error: parsed.error })
@@ -106,4 +162,16 @@ export async function handleLinkedInPreview(req: Request, res: Response): Promis
 
   res.json({ ok: true, preview: await getNextSarahLinkedInPreview() })
   return true
+}
+
+/** Cron Bearer path: preview dispatch first; Reddit/LinkedIn monitor only when action is unset. */
+export async function dispatchSarahSocialRoute(
+  req: Request,
+  res: Response,
+  cronFallback: () => Promise<{ reddit: unknown; linkedinMonitor: unknown; linkedinPublish: unknown }>,
+): Promise<boolean> {
+  if (await handleLinkedInPreview(req, res)) return true
+  const payload = await cronFallback()
+  res.json({ ok: true, ...payload })
+  return false
 }
