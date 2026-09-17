@@ -6,6 +6,7 @@ import {
   breakerAwareAssignRule,
   conversionDefaultTask,
   droughtIdleAction,
+  emptyWarmPoolNextActions,
   employeeExecutePrompt,
   employeeExecutionMandate,
   goalsForWeek,
@@ -14,7 +15,9 @@ import {
   isOperatingCrisis,
   isPaidConversionCrisis,
   isProspectColdSendTitle,
+  isT1Starved,
   isTrialCrisis,
+  isWarmPoolExhausted,
   janetCgoMandate,
   operatingCrisisTasks,
   paidConversionCrisisTasks,
@@ -114,6 +117,40 @@ describe('Janet CGO mandate', () => {
     expect(d.bottlenecks.join(' ')).toMatch(/cooldown=14/)
   })
 
+  it('eligible=0 + exhausted + T1 healthy → LinkedIn / Grey Box / trial path, not convert_warm', () => {
+    const warm = {
+      replied: 15, engaged: 14, sendable: 14, eligible: 0,
+      cooldown: 0, exhausted: 12, suppressed: 2, autoReplyPending: 0,
+    }
+    expect(isWarmPoolExhausted(warm)).toBe(true)
+    expect(isT1Starved({
+      daysSinceLastT1: 0.2,
+      sanitizedEligible: 400,
+      unsanitizedEligible: 6000,
+      pauseNewTouch1: false,
+      verifier: { mev: true, qev: true, any: true },
+    })).toBe(false)
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1,
+      paying: 0,
+      warm,
+      t1: {
+        daysSinceLastT1: 0.2,
+        sanitizedEligible: 400,
+        unsanitizedEligible: 6000,
+        pauseNewTouch1: false,
+        verifier: { mev: true, qev: true, any: true },
+      },
+    })
+    const next = d.nextActions.join(' ')
+    expect(next).not.toMatch(/convert_warm/)
+    expect(next).toMatch(/LinkedIn/)
+    expect(next).toMatch(/Grey Box/)
+    expect(next).toMatch(/\/trial|Stripe/)
+    expect(d.line).not.toMatch(/Fire convert_warm/)
+    expect(emptyWarmPoolNextActions().join(' ')).not.toMatch(/convert_warm/)
+  })
+
   it('does not treat canary-inflated 92 as the operating number — 92 TRUE would be paid-only', () => {
     const inflatedWouldHaveBeen = { liveProductTrials: 92, crmTrials: 0, payingCustomers: 0 }
     expect(isTrialCrisis(inflatedWouldHaveBeen)).toBe(false)
@@ -197,6 +234,50 @@ describe('Janet CGO mandate', () => {
     expect(isProspectColdSendTitle('Send warm trial CTAs to replied leads')).toBe(false)
   })
 
+  it('does not assign convert_warm as the idle mandate when the warm pool is exhausted', () => {
+    const warm = {
+      replied: 15, engaged: 14, sendable: 14, eligible: 0,
+      cooldown: 0, exhausted: 12, suppressed: 2, autoReplyPending: 0,
+    }
+    for (const id of ['janet', 'mason', 'aria', 'nova', 'vera'] as const) {
+      const action = droughtIdleAction(id, { warm })
+      expect(action).not.toMatch(/convert_warm:\s*hottest/)
+      expect(action).toMatch(/Do not convert_warm/)
+      expect(isConversionBoundTitle(action)).toBe(true)
+    }
+    expect(droughtIdleAction('mason', { warm })).toMatch(/Grey Box|MSP harvest/)
+    expect(droughtIdleAction('aria', { warm })).toMatch(/LinkedIn/)
+    expect(droughtIdleAction('nova', { warm })).toMatch(/\/trial|queue_marcus/)
+    expect(droughtIdleAction('finn', { warm })).toMatch(/Stripe/)
+    expect(droughtIdleAction('rex', { warm })).toMatch(/TRUE-trial/)
+    expect(droughtIdleAction('dex', { warm })).toMatch(/sending healthy/)
+  })
+
+  it('crisis pack prefers Grey Box / LinkedIn / MSP / trial when warm eligible=0 exhausted', () => {
+    const warm = {
+      replied: 15, engaged: 14, sendable: 14, eligible: 0,
+      cooldown: 0, exhausted: 12, suppressed: 2, autoReplyPending: 0,
+    }
+    const dual = operatingCrisisTasks({ liveProductTrials: 1, crmTrials: 0, payingCustomers: 0 }, { warm })
+    const mason = dual.find((t) => t.agentId === 'mason')
+    const aria = dual.find((t) => t.agentId === 'aria')
+    expect(mason?.title).not.toMatch(/convert_warm/i)
+    expect(mason?.description).toMatch(/do NOT convert_warm/)
+    expect(mason?.title).toMatch(/Grey Box|MSP harvest/)
+    expect(aria?.title).toMatch(/LinkedIn/)
+    expect(aria?.description).toMatch(/do NOT convert_warm/)
+    for (const task of dual) {
+      expect(isConversionBoundTitle(task.title, task.description)).toBe(true)
+      expect(isAnalysisOnlyTitle(task.title, task.description)).toBe(false)
+      expect(voidPremiseFor(task.title, task.description)).toBeNull()
+    }
+    const paid = paidConversionCrisisTasks({ warm })
+    const paidMason = paid.find((t) => t.agentId === 'mason')
+    expect(paidMason?.title).toMatch(/Grey Box/)
+    expect(paidMason?.description).toMatch(/do NOT convert_warm/)
+    expect(paidMason?.description).not.toMatch(/Fire convert_warm/)
+  })
+
   it('feeds Dex breaker + reviewed scores into Janet assign (7.10 learning loop, not L5.8)', () => {
     expect(breakerAwareAssignRule(true, false)).toMatch(/conversion-bound/)
     expect(breakerAwareAssignRule(true, true)).toMatch(/TRIPPED/)
@@ -273,6 +354,10 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('## O.32')
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('7.10.2')
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('breakerAwareAssignRule')
+    expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('O.32.14')
+    expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('isWarmPoolExhausted')
+    expect(os).toContain('HONEST_BLOCKER_SCORE_FLOOR')
+    expect(os).not.toMatch(/runner only acts on >4h-idle/)
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)
   })
 

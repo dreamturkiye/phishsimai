@@ -3,6 +3,10 @@ import {
   ANALYSIS_SCORE_CEILING,
   applyConversionScoreCeiling,
   conversionEvidenceInResult,
+  HONEST_BLOCKER_SCORE_FLOOR,
+  IDLE_THEATER_SCORE_CEILING,
+  isHonestStructuralBlockerDiagnosis,
+  isIdleTheaterOrWrongConvertWarm,
   osHealthHonesty,
   pickOpenTaskToKeep,
 } from './kaan_os_v4'
@@ -81,6 +85,28 @@ describe('applyConversionScoreCeiling', () => {
 
   it('leaves an unscored review unscored', () => {
     expect(applyConversionScoreCeiling(null, 'no score')).toBeNull()
+  })
+
+  it('floors honest structural-blocker diagnosis + correct next step at 5, even if Janet scored 2', () => {
+    const honest =
+      'Warm pool blocked: eligible=0 exhausted=12 (90/91/92 already sent). ' +
+      'Do not convert_warm. Next: ACTION: queue_marcus if CTA path is broken; otherwise LinkedIn founder-review and Grey Box nurture.'
+    expect(isHonestStructuralBlockerDiagnosis(honest)).toBe(true)
+    expect(applyConversionScoreCeiling(2, honest, true)).toBe(HONEST_BLOCKER_SCORE_FLOOR)
+    expect(applyConversionScoreCeiling(9, honest, true)).toBe(ANALYSIS_SCORE_CEILING)
+    expect(applyConversionScoreCeiling(5, honest, true)).toBeGreaterThanOrEqual(5)
+  })
+
+  it('caps idle theater and wrong convert_warm hammer at 3', () => {
+    const idle = 'Nothing completed. All agents normal. Confidence: 8'
+    expect(isIdleTheaterOrWrongConvertWarm(idle)).toBe(true)
+    expect(applyConversionScoreCeiling(8, idle, true)).toBe(IDLE_THEATER_SCORE_CEILING)
+    const hammer =
+      'CONVERSION SHIFT: sent=0 blocked=0 skipped=0\nconvert_warm sent=0\n' +
+      'eligible=0 exhausted=12. Fire convert_warm: hottest again tomorrow.'
+    expect(isIdleTheaterOrWrongConvertWarm(hammer)).toBe(true)
+    expect(applyConversionScoreCeiling(9, hammer, true)).toBeLessThanOrEqual(3)
+    expect(applyConversionScoreCeiling(2, hammer, true)).toBeLessThanOrEqual(3)
   })
 })
 

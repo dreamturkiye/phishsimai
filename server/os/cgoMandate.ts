@@ -106,6 +106,32 @@ export type T1DiagnosisFacts = {
   warmCtaToTrue?: { ctaSent: number; trueTrials: number } | null
 }
 
+export type CrisisTaskOpts = {
+  warm?: WarmPoolFacts | null
+}
+
+/** Live 2026-09-14→17: convert_warm sent=0 because 90/91/92 already went out. */
+export function isWarmPoolExhausted(w?: WarmPoolFacts | null): boolean {
+  return !!w && w.eligible === 0 && w.exhausted > 0
+}
+
+/** T1 unknown is not starved — that starve path is named only from measured facts. */
+export function isT1Starved(t1?: T1DiagnosisFacts | null): boolean {
+  if (!t1) return false
+  const sanitizedDead = t1.sanitizedEligible != null && t1.sanitizedEligible <= 0
+  const verifierEmpty = !!t1.verifier && !t1.verifier.any
+  return sanitizedDead || verifierEmpty
+}
+
+/** Next owners when warm eligible=0 and T1 is not the named bug. Never convert_warm. */
+export function emptyWarmPoolNextActions(): string[] {
+  return [
+    'Advance LinkedIn founder-review (queue preview or escalate pending)',
+    'Nurture Grey Box activation/upgrade toward paid',
+    'Inspect /trial signup path (Nova) and Stripe truth (Finn/Rex)',
+  ]
+}
+
 /**
  * Name WHY we are at $0 MRR / 1 TRUE trial. Live 2026-09-14:
  * 15 replied, 14 engaged, 14 auto_reply drafts, conversion sent:0.
@@ -150,10 +176,13 @@ export function diagnoseRevenueFailure(input: {
         `${w.replied} replied / ${w.engaged} engaged but eligible=${w.eligible} ` +
         `(suppressed=${w.suppressed}, cooldown=${w.cooldown}, exhausted=${w.exhausted}, auto_reply_drafts=${w.autoReplyPending})`,
       )
-      if (w.cooldown >= w.sendable && w.sendable > 0) {
+      if (isWarmPoolExhausted(w)) {
+        nextActions.push(...emptyWarmPoolNextActions())
+      } else if (w.cooldown >= w.sendable && w.sendable > 0) {
         nextActions.push('Crisis follow-up 91/92 on parked touch-90 leads (Dex rails, same frozen copy)')
+        nextActions.push(...emptyWarmPoolNextActions())
       } else {
-        nextActions.push('Fire convert_warm on sendable engaged leads; reopen false auto_reply drafts')
+        nextActions.push(...emptyWarmPoolNextActions())
       }
     } else if (w.eligible > 0) {
       bottlenecks.push(`${w.eligible} warm sendable leads waiting — convert_warm must send, not report`)
@@ -225,16 +254,19 @@ export function diagnoseRevenueFailure(input: {
     nextActions.push('Send Grey Box the existing D18/D25 upgrade/checkout nudge (settings?tab=billing)')
   }
   if (!nextActions.length && crisis) {
-    nextActions.push('convert_warm hottest', 'nurture Grey Box to paid', 'MSP harvest')
+    if (w && w.eligible === 0) {
+      nextActions.push(...emptyWarmPoolNextActions())
+    } else {
+      nextActions.push('convert_warm hottest', 'nurture Grey Box to paid', 'MSP harvest')
+    }
   }
   const t1Now = input.t1
-  if (
-    t1Now &&
-    ((t1Now.sanitizedEligible != null && t1Now.sanitizedEligible <= 0) || (t1Now.verifier && !t1Now.verifier.any))
-  ) {
+  const stripConvertWarm = (w && w.eligible === 0) || isT1Starved(t1Now)
+  if (stripConvertWarm) {
     for (let i = nextActions.length - 1; i >= 0; i--) {
       if (/convert_warm/i.test(nextActions[i])) nextActions.splice(i, 1)
     }
+    if (!nextActions.length) nextActions.push(...emptyWarmPoolNextActions())
   }
   const line = crisis || bottlenecks.length
     ? `REVENUE FAILURE: ${bottlenecks.join('; ') || '$0 MRR / TRUE-trial drought'}. Never declare healthy. Next: ${nextActions.slice(0, 3).join(' · ')}.`
@@ -270,7 +302,28 @@ export function isIdleNone(action: string): boolean {
 }
 
 /** Lane mandate when an agent would rest during an operating crisis. */
-export function droughtIdleAction(agentId: string): string {
+export function droughtIdleAction(agentId: string, opts?: CrisisTaskOpts): string {
+  if (isWarmPoolExhausted(opts?.warm)) {
+    const exhausted: Record<string, string> = {
+      janet:
+        'Nurture Grey Box to paid + advance LinkedIn trial founder-review + MSP harvest. Do not convert_warm an exhausted 90/91/92 pool.',
+      mason:
+        'Nurture Grey Box Consulting trial org to paid + MSP harvest fill. Do not convert_warm — warm eligible=0 exhausted 90/91/92.',
+      aria:
+        'Advance LinkedIn trial CTA founder-review (queue preview or escalate pending). Do not convert_warm an exhausted warm pool.',
+      nova:
+        'Inspect the /trial signup path; name where visitors fail to become a trial org. ACTION: queue_marcus if the CTA path is a named bug. Do not convert_warm an exhausted pool.',
+      vera:
+        'Grey Box activation/nurture toward paid (D18/D25/activation). Do not convert_warm — pool exhausted 90/91/92.',
+      rex: 'Publish TRUE-trial vs paying integers (canary excluded)',
+      scout: 'Drive trial starts from measured MSP harvest segment',
+      finn: 'Publish paying vs free-trial integers from Stripe and plan',
+      dex: 'Keep sending healthy so trial CTAs land. ACTION: queue_marcus immediately for sanitize refill / QEV empty / pause locking T1 — do not wait for a human',
+      marcus:
+        'Named bug PS-T1-STARVE / QEV empty / pause locks quality pool: restore sanitize refill so TRUE trials can start. Do not write analysis theater.',
+    }
+    return exhausted[agentId] || 'Nurture Grey Box trial org to paid + LinkedIn founder-review. Do not convert_warm an exhausted pool.'
+  }
   const map: Record<string, string> = {
     janet: 'convert_warm: hottest',
     mason: 'convert_warm: hottest',
@@ -380,7 +433,7 @@ export function janetCgoMandate(): string {
     'Be persistent and aggressive: same-day follow-up on every warm lead and every true trial org. An employee who reported "nothing completed" failed. Queue Marcus when a code path blocks a trial start or a paid conversion.',
     '$0 MRR and TRUE trials < 20 is a PERMANENT operating crisis, not a yellow flag. Diagnose the bottleneck every cycle (TOF empty vs replied/engaged not getting CTAs vs auto_reply trap vs Grey Box not upgrading vs Dex). Then execute. Never declare health. Analysis theater is a miss.',
     'Convert Grey Box Consulting (the only TRUE trial) to paid via the existing upgrade/checkout path. Do not wait for day-25 if they have ~10 days left.',
-    'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened). Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
+    'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened) when eligible>0. If warm eligible=0 and 90/91/92 are exhausted, do NOT assign convert_warm — prefer Grey Box activation/nurture, LinkedIn founder-review, MSP harvest, T1/sanitize health, /trial funnel (Nova), Stripe truth (Finn/Rex). Keep Dex rails. Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
     'Hold Mason, Aria, and Nova to a daily conversion number. An employee who only reported failed. Follow up the same day. "I delegated" is not a result.',
     'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Multi-channel (LinkedIn founder-review with preview + escalate) executes every crisis tick — not optional, not "already queued today" as a dead end.',
     'You still cannot fake numbers, change price, skip Dex send-safety, or bypass Marcus approval. Shrewd means sequencing and follow-through, not breaking gates.',
@@ -456,27 +509,37 @@ export function researchGroundedConversionTask(
   return `As ${title}: current best practice (verified ${asOf}) — ${researchSummary} Apply this to ${domain} to produce a verified 30-day no-card trial this week, not a report. Sources: ${sources}`
 }
 
-export function zeroTrialCrisisTasks(): CrisisTask[] {
+export function zeroTrialCrisisTasks(opts?: CrisisTaskOpts): CrisisTask[] {
+  const exhausted = isWarmPoolExhausted(opts?.warm)
   return [
     {
       agentId: 'mason',
-      title: 'Drive the 20 hottest MSPs to a 30-day trial start today',
-      description:
-        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now (canary/test/walkthrough/Adeo excluded). Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Also use MSP harvest + LinkedIn founder-review (queue preview, escalate if pending >6h — do not stop at already-queued-today). Drain stuck sequences (approved T2/T3) before scaling T1. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
+      title: exhausted
+        ? 'Nurture Grey Box and fill TOF via MSP harvest — warm pool exhausted'
+        : 'Drive the 20 hottest MSPs to a 30-day trial start today',
+      description: exhausted
+        ? `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now (canary/test/walkthrough/Adeo excluded). Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. Nurture Grey Box Consulting (activation + upgrade). Run MSP harvest. Advance LinkedIn founder-review (queue preview or escalate pending). Keep Dex rails. Do not add touch 93. Do not raise DAILY_SEND_LIMIT. Do not set REFILL_ALLOW_MX_ONLY=1.`
+        : `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now (canary/test/walkthrough/Adeo excluded). Rank external leads replied > engaged > opened. Work the top 20 with the frozen 30-day no-card trial CTA. Also use MSP harvest + LinkedIn founder-review (queue preview, escalate if pending >6h — do not stop at already-queued-today). Drain stuck sequences (approved T2/T3) before scaling T1. Name each lead, stage, and next action. Do not produce another outreach analysis.`,
       priority: 'high',
     },
     {
       agentId: 'aria',
-      title: 'Ship one experiment whose KPI is live 30-day trials this week',
-      description:
-        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. One conversion-focused message or channel test. Success is a live trial org, not opens. Lead with price/speed/MSP margin. Kill anything that does not ask for the trial in the first screen.`,
+      title: exhausted
+        ? 'Advance LinkedIn trial CTA founder-review — warm pool exhausted'
+        : 'Ship one experiment whose KPI is live 30-day trials this week',
+      description: exhausted
+        ? `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. Advance LinkedIn trial founder-review (queue preview or escalate pending >6h). MSP harvest fills TOF. Success is a live trial org, not opens. Keep Dex rails.`
+        : `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. One conversion-focused message or channel test. Success is a live trial org, not opens. Lead with price/speed/MSP margin. Kill anything that does not ask for the trial in the first screen.`,
       priority: 'high',
     },
     {
       agentId: 'nova',
       title: 'Make the 30-day trial start take under 60 seconds',
       description:
-        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Inspect the live signup and first-campaign path. Name where eligible visitors fail to become a trial org, with a denominator. ` +
+        `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Inspect the live /trial signup and first-campaign path. Name where eligible visitors fail to become a trial org, with a denominator. ` +
+        (exhausted
+          ? `Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. `
+          : '') +
         `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately. Do not wait for a human. Do not escalate a send-path bug.`,
       priority: 'high',
     },
@@ -490,8 +553,9 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
     {
       agentId: 'scout',
       title: 'Drive trial starts from measured MSP segment',
-      description:
-        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now. From measured reply/ICP data only, name the MSP segment most likely to start a trial THIS WEEK and hand Mason that list for convert_warm / MSP harvest. Do not invent competitor prices. Do not write a TOF research essay.`,
+      description: exhausted
+        ? `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now. Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. From measured reply/ICP data only, name the MSP segment most likely to start a trial THIS WEEK and hand Mason that list for MSP harvest / Grey Box nurture. Do not invent competitor prices. Do not write a TOF research essay.`
+        : `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE customer free trials now. From measured reply/ICP data only, name the MSP segment most likely to start a trial THIS WEEK and hand Mason that list for convert_warm / MSP harvest. Do not invent competitor prices. Do not write a TOF research essay.`,
       priority: 'high',
     },
     {
@@ -519,20 +583,27 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
  * 92 trials / $0 MRR pack. Warm CTA + trial-org nurture + upgrade path.
  * Not "analyze funnel", not "research TOF", not "500 MSP cold outreach".
  */
-export function paidConversionCrisisTasks(): CrisisTask[] {
+export function paidConversionCrisisTasks(opts?: CrisisTaskOpts): CrisisTask[] {
+  const exhausted = isWarmPoolExhausted(opts?.warm)
   return [
     {
       agentId: 'mason',
-      title: 'Convert Grey Box Consulting to paid and fire warm CTAs today',
-      description:
-        'PAID CONVERSION CRISIS: trials exist and paying is below 4. Fire convert_warm on replied > engaged leads (Dex MX + suppression + bounce breaker). Aggressively nurture Grey Box Consulting (org 11, the only TRUE trial) toward paid via D18/D25 upgrade /settings?tab=billing — leave send evidence. Do not open a 500-lead cold blast. Do not write another sequence analysis. Do not count Signup Canary as a trial.',
+      title: exhausted
+        ? 'Convert Grey Box Consulting to paid — warm pool exhausted, no convert_warm'
+        : 'Convert Grey Box Consulting to paid and fire warm CTAs today',
+      description: exhausted
+        ? 'PAID CONVERSION CRISIS: trials exist and paying is below 4. Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. Aggressively nurture Grey Box Consulting (org 11, the only TRUE trial) toward paid via D18/D25 upgrade /settings?tab=billing — leave send evidence. MSP harvest fills TOF. Keep Dex rails. Do not open a 500-lead cold blast. Do not write another sequence analysis. Do not count Signup Canary as a trial. Do not add touch 93.'
+        : 'PAID CONVERSION CRISIS: trials exist and paying is below 4. Fire convert_warm on replied > engaged leads (Dex MX + suppression + bounce breaker). Aggressively nurture Grey Box Consulting (org 11, the only TRUE trial) toward paid via D18/D25 upgrade /settings?tab=billing — leave send evidence. Do not open a 500-lead cold blast. Do not write another sequence analysis. Do not count Signup Canary as a trial.',
       priority: 'high',
     },
     {
       agentId: 'aria',
-      title: 'Ship one trial-to-paid experiment with a live upgrade CTA',
-      description:
-        'PAID CONVERSION CRISIS: the KPI is a paying org from an existing trial, not opens. One experiment: upgrade/pay CTA to trial admins or a warm reply. Success is Stripe paid or a real send of that CTA. Do not stop at a funnel write-up.',
+      title: exhausted
+        ? 'Advance LinkedIn trial-to-paid founder-review — warm pool exhausted'
+        : 'Ship one trial-to-paid experiment with a live upgrade CTA',
+      description: exhausted
+        ? 'PAID CONVERSION CRISIS: the KPI is a paying org from an existing trial, not opens. Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. Advance LinkedIn trial founder-review (queue preview or escalate pending). Success is Stripe paid or a real LinkedIn/Grey Box send. Do not stop at a funnel write-up.'
+        : 'PAID CONVERSION CRISIS: the KPI is a paying org from an existing trial, not opens. One experiment: upgrade/pay CTA to trial admins or a warm reply. Success is Stripe paid or a real send of that CTA. Do not stop at a funnel write-up.',
       priority: 'high',
     },
     {
@@ -540,6 +611,7 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
       title: 'Make the in-app upgrade path from a live trial take under 60 seconds',
       description:
         'PAID CONVERSION CRISIS: inspect the live billing/upgrade path for an org already on the 30-day trial. Name where trial admins fail to start paid, with a denominator. ' +
+        (exhausted ? 'Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. ' : '') +
         'If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with that named send-path bug immediately. Do not wait for a human. Do not research TOF channels beyond email.',
       priority: 'high',
     },
@@ -547,7 +619,9 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
       agentId: 'vera',
       title: 'Nurture Grey Box and every TRUE trial toward paid (D14/D18/D25/D30)',
       description:
-        'PAID CONVERSION CRISIS: Grey Box Consulting is the only TRUE trial (~10 days left on 2026-09-14) and paying is 0. Run trial nudges (idempotent D14/D18 upgrade/D25/D30) using existing billing checkout copy. Retention theater with no send is a miss. Name orgs nudged and evidence ids.',
+        'PAID CONVERSION CRISIS: Grey Box Consulting is the only TRUE trial (~10 days left on 2026-09-14) and paying is 0. Run trial nudges (idempotent D14/D18 upgrade/D25/D30) using existing billing checkout copy. ' +
+        (exhausted ? 'Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. Activation/nurture Grey Box. ' : '') +
+        'Retention theater with no send is a miss. Name orgs nudged and evidence ids.',
       priority: 'high',
     },
     {
@@ -569,13 +643,13 @@ export function paidConversionCrisisTasks(): CrisisTask[] {
 }
 
 /** True-trial drought takes Mason/Aria/Nova; paying gap adds Vera/Finn. Both can fire. */
-export function operatingCrisisTasks(facts: TrialFacts): CrisisTask[] {
+export function operatingCrisisTasks(facts: TrialFacts, opts?: CrisisTaskOpts): CrisisTask[] {
   const byAgent = new Map<CrisisTask['agentId'], CrisisTask>()
   if (isTrialCrisis(facts)) {
-    for (const t of zeroTrialCrisisTasks()) byAgent.set(t.agentId, t)
+    for (const t of zeroTrialCrisisTasks(opts)) byAgent.set(t.agentId, t)
   }
   if (isPaidConversionCrisis(facts)) {
-    for (const t of paidConversionCrisisTasks()) {
+    for (const t of paidConversionCrisisTasks(opts)) {
       if (!byAgent.has(t.agentId)) byAgent.set(t.agentId, t)
     }
   }
@@ -595,6 +669,7 @@ export function cgoStandupDirective(facts: TrialFacts, goals: WeeklyGoals): stri
       `TRUE trials = ${trials} / ${TRIAL_SPRINT_TARGET}, paying = ${paying ?? 0} / ${PAYING_SPRINT_TARGET} (stretch ${PAYING_STRETCH_TARGET}).${rawNote} ` +
       `Fill the funnel with real MSP trials AND convert existing true trials / warm replies to paid.\n` +
       `ASSIGN conversion-bound work only. Do NOT assign funnel analysis, TOF research, or 500-lead cold volume. ` +
+      `If warm eligible=0 exhausted 90/91/92, do NOT assign convert_warm as the primary task — Grey Box nurture, LinkedIn founder-review, MSP harvest, /trial funnel, Stripe truth, T1/sanitize Marcus ticket. Keep Dex rails. ` +
       `Named T1 starve / sanitize-refill / missing QEV IS conversion-bound — Nova/Dex ACTION: queue_marcus immediately, do not wait for a human, do not skip as TOF. ` +
       `Do NOT count Signup Canary, test, walkthrough, or Adeo as trials. An employee who only reported failed.\n\n`
     )

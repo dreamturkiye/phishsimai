@@ -2,7 +2,7 @@ import { learnFromOutcome, rememberFact } from './memory'
 import { persistOutcomeTrace } from './outcomeTrace'
 import { COMPANY_ID } from './version'
 import { sendWarmTrialCtas, type WarmCtaResult, type WarmPoolCensus, EMPTY_WARM_POOL } from './sequences'
-import { diagnoseRevenueFailure } from './cgoMandate'
+import { diagnoseRevenueFailure, isWarmPoolExhausted } from './cgoMandate'
 import { formatWarmCtaTrialRate, type WarmCtaTrialRate } from './warmCloseMetrics'
 import { linkedInFunnelLine, type LinkedInAcquisitionResult } from './trialAcquisitionChannels'
 import type { GreyBoxPaidNudgeResult } from './trialNudges'
@@ -79,13 +79,20 @@ export function conversionLesson(
     }
   }
   if (p && (p.replied > 0 || p.engaged > 0)) {
+    const next =
+      p.eligible === 0
+        ? isWarmPoolExhausted(p)
+          ? 'Do not convert_warm an exhausted 90/91/92 pool. Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path. Keep Dex rails.'
+          : p.cooldown >= p.sendable && p.sendable > 0
+            ? 'Crisis follow-up 91/92 on parked touch-90 (Dex rails). Also LinkedIn founder-review and Grey Box nurture — do not wait for more TOF.'
+            : 'Do not convert_warm an empty pool. Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path.'
+        : 'Reopen misclassified replies, follow up Grey Box to paid, fire convert_warm on sendable engaged leads.'
     return {
       success: false,
       lesson:
         `REVENUE BLOCKER: ${p.replied} replied / ${p.engaged} engaged exist but 0 CTAs sent ` +
         `(eligible=${p.eligible}, suppressed=${p.suppressed}, cooldown=${p.cooldown}, exhausted=${p.exhausted}, ` +
-        `auto_reply_drafts=${p.autoReplyPending}). Do not wait for more TOF. Reopen misclassified replies, ` +
-        `follow up Grey Box to paid, fire convert_warm on sendable engaged leads.` +
+        `auto_reply_drafts=${p.autoReplyPending}). ${next}` +
         draftNote + greyNote + rateNote,
     }
   }

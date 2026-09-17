@@ -71,6 +71,23 @@ describe('conversionLesson is honest', () => {
     expect(l.lesson).not.toMatch(/fire convert_warm/)
   })
 
+  it('eligible=0 exhausted + T1 healthy → LinkedIn / Grey Box, not fire convert_warm', () => {
+    const l = conversionLesson(
+      { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] },
+      undefined,
+      undefined,
+      { replied: 15, engaged: 14, sendable: 14, suppressed: 2, cooldown: 0, exhausted: 12, eligible: 0, autoReplyPending: 0 },
+      { t1Starved: false },
+    )
+    expect(l.success).toBe(false)
+    expect(l.lesson).toMatch(/REVENUE BLOCKER/)
+    expect(l.lesson).toMatch(/exhausted=12/)
+    expect(l.lesson).toMatch(/Do not convert_warm/)
+    expect(l.lesson).toMatch(/LinkedIn/)
+    expect(l.lesson).toMatch(/Grey Box/)
+    expect(l.lesson).not.toMatch(/fire convert_warm/)
+  })
+
   it('counts trial-org nudges as conversion progress when warm CTAs are empty', () => {
     const l = conversionLesson({ sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }, { sent: 3, scanned: 93 })
     expect(l.success).toBe(true)

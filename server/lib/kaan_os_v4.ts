@@ -62,8 +62,9 @@ import {
   verifiedTrialCount,
   type AgentScoreHint,
   type TrialFacts,
+  type WarmPoolFacts,
 } from '../os/cgoMandate'
-import { getSequenceHealth } from '../os/sequences'
+import { getSequenceHealth, warmCtaPoolCensus } from '../os/sequences'
 import { persistOutcomeTrace } from '../os/outcomeTrace'
 import { ensureMarcusProposalBugId } from '../os/marcusProposal'
 import { COMPANY_ID } from '../os/version'
@@ -1477,6 +1478,8 @@ export function osHealthHonesty(f: WorkforceFacts): { healthy: boolean; line: st
 
 export const ANALYSIS_SCORE_CEILING = 6
 export const CRISIS_ANALYSIS_SCORE_CEILING = 4
+export const HONEST_BLOCKER_SCORE_FLOOR = 5
+export const IDLE_THEATER_SCORE_CEILING = 3
 
 export function conversionEvidenceInResult(result: string): boolean {
   const t = String(result || '')
@@ -1488,10 +1491,55 @@ export function conversionEvidenceInResult(result: string): boolean {
   return false
 }
 
-/** Analysis-only output cannot score above 6 (4 in operating crisis) even if Janet's LLM is generous. */
+/** Eligible=0 exhausted, pauseNewTouch1, sanitize starve, or a named CTA-path bug. */
+export function namesStructuralBlocker(result: string): boolean {
+  const t = String(result || '')
+  if (/eligible\s*=\s*0/i.test(t) && /exhaust/i.test(t)) return true
+  if (/pauseNewTouch1/i.test(t)) return true
+  if (/sanitizedEligible\s*=\s*0/i.test(t)) return true
+  if (/T1 sanitiz(e|ed|ation).{0,60}(starv|bottleneck|0)/i.test(t)) return true
+  if (/PS-T1-(STARVE|QEV-EMPTY|PAUSE-LOCK)/i.test(t)) return true
+  if (/CTA path (bug|broken|blocked)/i.test(t)) return true
+  return false
+}
+
+/** Correct next owner when convert_warm cannot send: Marcus, LinkedIn, Grey Box. */
+export function proposesCorrectBlockerNextStep(result: string): boolean {
+  const t = String(result || '')
+  return /queue_marcus|PS-T1-|LinkedIn|Grey Box|founder[- ]review|\/trial/i.test(t)
+}
+
+export function isHonestStructuralBlockerDiagnosis(result: string): boolean {
+  return namesStructuralBlocker(result) && proposesCorrectBlockerNextStep(result)
+}
+
+/** Idle rest, or hammering convert_warm on an exhausted pool. Analysis-only still uses the 6/4 ceilings. */
+export function isIdleTheaterOrWrongConvertWarm(result: string): boolean {
+  const t = String(result || '')
+  if (isHonestStructuralBlockerDiagnosis(t)) return false
+  const idle = /nothing completed|all agents normal|\ball normal\b|workforce idle/i.test(t) && !namesStructuralBlocker(t)
+  const hammer =
+    /(?:fire |ACTION:\s*)convert_warm|convert_warm:\s*hottest/i.test(t) &&
+    /eligible\s*=\s*0/i.test(t) &&
+    /exhaust/i.test(t) &&
+    !/do not convert_warm/i.test(t)
+  return idle || hammer
+}
+
+/**
+ * Analysis-only output cannot score above 6 (4 in operating crisis) even if Janet's LLM is generous.
+ * Honest diagnosis of a structural blocker + the correct next owner floors at 5 (not a ≤2 fail).
+ * Idle theater / wrong convert_warm hammer still caps at 3.
+ */
 export function applyConversionScoreCeiling(score: number | null, result: string, operatingCrisis = false): number | null {
   if (score == null) return null
   if (conversionEvidenceInResult(result)) return score
+  if (isHonestStructuralBlockerDiagnosis(result)) {
+    return Math.min(Math.max(score, HONEST_BLOCKER_SCORE_FLOOR), ANALYSIS_SCORE_CEILING)
+  }
+  if (isIdleTheaterOrWrongConvertWarm(result)) {
+    return Math.min(score, IDLE_THEATER_SCORE_CEILING)
+  }
   return Math.min(score, operatingCrisis ? CRISIS_ANALYSIS_SCORE_CEILING : ANALYSIS_SCORE_CEILING)
 }
 
@@ -1883,10 +1931,12 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   // the outcome so the stored result records what actually happened, not just what was recommended.
   const actionSummary = await executeAgentAction(sql, task, result, companyId).catch(() => '')
   let conversionNote = ''
+  let warmPool: WarmPoolFacts | null = null
   if (CONVERSION_AGENTS.has(durable.owner)) {
     const { runCgoConversionShift } = await import('../os/conversionEngine')
     const shift = await runCgoConversionShift({ cap: 5 }).catch(() => null)
     if (shift) {
+      warmPool = shift.pool || null
       conversionNote = `\n\n---\n**CONVERSION SHIFT:** sent=${shift.sent} blocked=${shift.blocked} skipped=${shift.skipped}` +
         (shift.trialNudges ? ` trial_nudges sent=${shift.trialNudges.sent}` : '') +
         (shift.reason ? ` ${shift.reason}` : '') + `\n${shift.lesson}`
@@ -1925,7 +1975,7 @@ export async function executeTask(taskId: string, companyId = COMPANY_ID): Promi
   }).catch(() => {})
   await persistAgentRuntime(sql, companyId, durable.owner, {
     currentGoal: task.title,
-    nextAction: converted ? 'follow up the same warm leads today' : droughtIdleAction(durable.owner),
+    nextAction: converted ? 'follow up the same warm leads today' : droughtIdleAction(durable.owner, { warm: warmPool }),
     lastAssessment: finalResult.slice(0, 400),
     success: converted || queuedMarcus,
     lesson: finalResult.slice(0, 200),
@@ -1973,12 +2023,14 @@ ${agent.name.toUpperCase()}'S OUTPUT:
 ${task.result}
 
 As their manager (CGO), assess:
-1. Did they move a verified 30-day trial or a real send (convert_warm / trial CTA) — or only write analysis?
-2. If a conversion shift ran, was the number real (sent/blocked/tripped)? A report with no send is a miss when warm leads exist.
-3. What they got right
-4. What needs improvement (be specific)
-5. Performance score: X/10 with rationale — analysis-only on a conversion task scores below 7
-6. Follow-up task that produces a trial or paid MRR
+1. Did they move a verified 30-day trial or a real send (convert_warm / trial CTA) — or name a structural blocker with the correct next owner?
+2. If convert_warm sent=0 because eligible=0 exhausted 90/91/92, pauseNewTouch1, sanitize starved, or a CTA path bug, AND they proposed queue_marcus / LinkedIn founder-review / Grey Box, score at least 5/10. That is diagnosis, not a fail.
+3. If a conversion shift ran, was the number real (sent/blocked/tripped)? A report with no send is a miss when warm leads are still eligible.
+4. Idle theater ("nothing completed" / analyze-only) or hammering convert_warm on an exhausted pool scores ≤3.
+5. What they got right
+6. What needs improvement (be specific)
+7. Performance score: X/10 with rationale — analysis-only on a conversion task scores below 7 unless it is an honest structural-blocker diagnosis with the correct next step (≥5)
+8. Follow-up task that produces a trial or paid MRR (not another convert_warm if the pool is exhausted)
 
 Format: SCORE: X/10 | FEEDBACK: [your direct feedback] | FOLLOW-UP: [next assignment if any]`
 
@@ -2506,6 +2558,7 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
   const acquisitionGate = `${pipelineNote}${cgoStandupDirective(trialFacts, goals)}`
   const operatingCrisis = isOperatingCrisis(trialFacts)
   const seqHealth = await getSequenceHealth(sql).catch(() => null)
+  const warmCensus = await warmCtaPoolCensus(sql).catch(() => null)
   const breakerTripped = Boolean(seqHealth?.tripped)
   const scoreRows = (await sql`
     SELECT agent_id, count(*)::int AS n, avg(performance_score)::float AS avg
@@ -2538,7 +2591,7 @@ Do NOT paste, quote, or restate the agent reports in your synthesis — the tran
 
   // Crisis pack FIRST so Mason/Aria/Nova get conversion-bound work before Janet's analysis ASSIGNs.
   if (operatingCrisis) {
-    for (const crisis of operatingCrisisTasks(trialFacts)) {
+    for (const crisis of operatingCrisisTasks(trialFacts, { warm: warmCensus })) {
       try {
         const t = await issueTask(crisis.agentId, {
           title: crisis.title.slice(0, 100),
