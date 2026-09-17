@@ -66,10 +66,10 @@ export const SEND_PATHS: SendPath[] = [
   {
     key: 'trial_nudge',
     file: 'server/os/trialNudges.ts',
-    where: 'runTrialNudges D14/D25/D30 to signed-up trial orgs',
+    where: 'runTrialNudges D14/D25/D30 + unused-trial activation to signed-up trial orgs',
     cls: 'internal',
     exemptionReason:
-      'transactional mail to organizations that already created a trial account. Consent is the signup, not prospect outreach. Copy is the frozen D14/D25/D30 templates — do not invent cold subjects.',
+      'transactional mail to organizations that already created a trial account. Consent is the signup, not prospect outreach. Copy is the frozen D14/D25/D30 billing templates plus the unused-trial activation (3-click + white-glove) — do not invent cold subjects or a fourth warm-CTA touch.',
   },
   {
     key: 'reply_send',

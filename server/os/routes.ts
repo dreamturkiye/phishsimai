@@ -1333,6 +1333,7 @@ export { cronMspHubHarvest } from './agents/mspHubHarvest'
 // PS-FUNNEL-01: one daily Telegram line — harvest → queue → enriched → valid → sendable → sent.
 export { cronOutreachFunnel } from './agents/mspHubHarvest'
 export { cronTrialNudges } from './trialNudges'
+export { cronTrialActivation } from './trialActivation'
 
 // PS-REPLY-CAPTURE-01: inbound reply webhook (Option B forward relay -> here).
 export { resendInbound } from './social/replyCapture'

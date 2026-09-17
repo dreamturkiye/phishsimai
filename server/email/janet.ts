@@ -96,6 +96,31 @@ export async function sendTrialDay30(to: string, orgName: string): Promise<boole
   return sendLifecycle("trial-d30", to, `${orgName}: your trial ended — here's how to restore full access`, nudgeHtml("#dc2626", "Your trial has ended", body, "Restore full access", APP_URL + "/settings?tab=billing"));
 }
 
+// PS-ACTIVATE-01: unused-trial activation (separate from D14/D18/D25/D30 billing).
+// Vera no_campaign_14d: 3-click first-campaign path + offer to run the first one.
+export function trialActivationCopy(orgName: string): { subject: string; title: string; bodyInner: string; ctaLabel: string; ctaUrl: string } {
+  const bodyInner = `<p>Hi ${orgName} team — your trial is live, but you haven't created a campaign yet. First value is three clicks:</p>
+     <ol style="color:#e2e8f0;padding-left:18px">
+       <li>Add employees under <b style="color:#f8fafc">Targets</b></li>
+       <li>Pick a template (or generate one with AI)</li>
+       <li>Click <b style="color:#f8fafc">Launch</b></li>
+     </ol>
+     <p>About 10 minutes. That first sim shows who on your team would fall for a real attack.</p>
+     <p>Want us to run the first one for you? <b style="color:#86efac">Reply to this email</b> and I'll set it up — white-glove, no extra cost during your trial.</p>`;
+  return {
+    subject: `${orgName}: launch your first campaign in 3 clicks — or I'll run it for you`,
+    title: "Your first campaign is 3 clicks",
+    bodyInner,
+    ctaLabel: "Launch your first campaign",
+    ctaUrl: APP_URL + "/campaigns",
+  };
+}
+
+export async function sendTrialActivation(to: string, orgName: string): Promise<boolean> {
+  const c = trialActivationCopy(orgName);
+  return sendLifecycle("trial-activation", to, c.subject, nudgeHtml("#0ea5e9", c.title, c.bodyInner, c.ctaLabel, c.ctaUrl));
+}
+
 // Legacy generic ender — kept for back-compat; superseded by the D14/D25/D30 sequence above.
 export async function sendTrialEndingEmail(to: string, orgName: string, daysLeft: number): Promise<void> {
   await sendTrialDay25(to, orgName, { sent: 0, opened: 0, clicked: 0, reported: 0 }, daysLeft);

@@ -58,7 +58,7 @@ export function conversionLesson(
   if (nudgeSent > 0 || extra?.greyBox?.sent) {
     return {
       success: true,
-      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (D14/D18/D25/D30). Convert remaining trials to paid.${draftNote}${greyNote}${rateNote}`,
+      lesson: `No new warm CTAs this run. Sent ${nudgeSent} trial nudge(s) to existing TRUE free-trial orgs (activation / D14/D18/D25/D30). Convert remaining trials to paid.${draftNote}${greyNote}${rateNote}`,
     }
   }
   if (r.blocked > 0) {
