@@ -117,8 +117,11 @@ export default function TrialStart() {
           <a href="/" className="inline-flex items-center justify-center mb-6">
             <img src="/brand/phishsim-nav.png" alt="PhishSim AI" className="h-8 w-auto" />
           </a>
-          <h1 className="text-3xl font-black tracking-tight mb-2">Start your 30-day free trial</h1>
-          <p className="text-muted-foreground text-sm leading-relaxed">
+          <h1 className="text-3xl font-black tracking-tight mb-3">Start your 30-day free trial</h1>
+          <p className="rounded-lg border border-violet-500/30 bg-violet-950/40 px-3 py-2 text-sm font-semibold text-violet-100 leading-snug">
+            60¢/user · $299/mo for 500 · 30-day, no card · live in 10 min.
+          </p>
+          <p className="text-muted-foreground text-sm leading-relaxed mt-3">
             Full access. No credit card. Live in 10 minutes.
           </p>
         </div>
