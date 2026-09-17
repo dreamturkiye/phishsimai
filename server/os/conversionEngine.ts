@@ -38,7 +38,7 @@ export function conversionLesson(
   }
   const nudgeSent = Math.max(0, Number(nudges?.sent) || 0)
   const draftNote = draft?.queued
-    ? ` Queued one LinkedIn trial CTA for founder review (${draft.reason}).`
+    ? ` Queued one LinkedIn trial CTA (${draft.reason}).`
     : draft?.escalated
       ? ` LinkedIn: ${draft.reason}.`
       : draft?.reason
@@ -97,10 +97,10 @@ export function conversionLesson(
     const next =
       p.eligible === 0
         ? isWarmPoolExhausted(p)
-          ? 'Do not convert_warm an exhausted 90/91/92 pool. Queue founder 1:1 review (not touch 93). Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path. Keep Dex rails.'
+          ? 'Do not convert_warm an exhausted 90/91/92 pool. Queue founder 1:1 for human replies (not OOO, not touch 93). Auto-queue/auto-publish LinkedIn (1/day), nurture Grey Box to paid, inspect /trial path. Keep Dex rails.'
           : p.cooldown >= p.sendable && p.sendable > 0
-            ? 'Crisis follow-up 91/92 on parked touch-90 (Dex rails). Also founder 1:1 / LinkedIn / Grey Box — do not wait for more TOF.'
-            : 'Do not convert_warm an empty pool. Queue founder 1:1 if 90/91/92 exhausted. Advance LinkedIn founder-review, nurture Grey Box to paid, inspect /trial path.'
+            ? 'Crisis follow-up 91/92 on parked touch-90 (Dex rails). Also founder 1:1 for human replies / LinkedIn auto-publish / Grey Box — do not wait for more TOF.'
+            : 'Do not convert_warm an empty pool. Queue founder 1:1 if 90/91/92 exhausted (skip OOO). Auto-publish LinkedIn, nurture Grey Box to paid, inspect /trial path.'
         : 'Reopen misclassified replies, follow up Grey Box to paid, fire convert_warm on sendable engaged leads.'
     return {
       success: false,
@@ -113,7 +113,7 @@ export function conversionLesson(
   }
   return {
     success: false,
-    lesson: 'No warm sendable leads this run. Fill the top of funnel via MSP harvest + founder-review social drafts AND wait for replies — activity without a TRUE trial is failure.' + draftNote + greyNote + rateNote + oneToOneNote,
+    lesson: 'No warm sendable leads this run. Fill the top of funnel via MSP harvest + LinkedIn auto-publish (1/day) AND wait for replies — activity without a TRUE trial is failure.' + draftNote + greyNote + rateNote + oneToOneNote,
   }
 }
 

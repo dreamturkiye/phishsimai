@@ -1,9 +1,9 @@
 // PS-SOCIAL-LOCKOUT-01 (2026-07-25) — ONE structural lockout on public community/social posting.
 //
 // Requirement: no code path may publish to a public community or social channel under any
-// identity. This module is the single enforcement point; every outbound publish call site calls
-// assertPublicPostingDisabled() BEFORE its network request, so the capability is absent by
-// construction rather than by configuration.
+// identity UNLESS a reviewed always-on flag is flipped OR the week-challenge crisis override
+// is active with channel credentials. Every outbound publish call site still calls
+// assertPublicPostingDisabled() BEFORE its network request.
 //
 // WHY THIS EXISTS — what the audit found on 2026-07-25:
 //
@@ -24,26 +24,41 @@
 //
 // Empirically nothing has ever been published: os_social_queue was EMPTY at audit time (zero
 // queued, zero posted, on ep-spring-leaf). This lockout preserves that state deliberately instead
-// of by luck.
+// of by luck — until a founder-authorized crisis override (O.32.16) is active.
 //
 // SCOPE — blocked vs allowed:
-//    BLOCKED: any outbound POST that creates public content (Reddit submit/comment, LinkedIn
-//             publish via PostForMe).
+//    BLOCKED: any outbound POST that creates public content, unless canPublishPublicSocial().
 //    ALLOWED: read/monitor paths (Reddit hot.json, /api/v1/me, login/session), drafting, queueing,
-//             preview rendering, and founder-facing review UI. Monitoring and drafting are safe and
-//             stay on; only the publish step is severed.
+//             preview rendering. Crisis override (credentials + window, kill SOCIAL_CRISIS_PUBLISH=0)
+//             may publish LinkedIn ≤1/day and Reddit within comment/post caps.
 //
-// TO RE-ENABLE deliberately: flip the constant below in a reviewed commit AND add a real
-// founder-approval predicate to the publish selectors (status='queued' is not approval, and a
-// self-approving check is not approval). Do NOT re-enable by deleting call sites.
+// TO RE-ENABLE permanently: flip PUBLIC_SOCIAL_POSTING_ENABLED in a reviewed commit.
+// Crisis / week-challenge: leave the constant false; set credentials; unset or SOCIAL_CRISIS_PUBLISH=1.
+// Kill immediately: SOCIAL_CRISIS_PUBLISH=0.
+import {
+  hasChannelPublishCredentials,
+  isCrisisPublishWindow,
+  type CrisisPublishEnv,
+} from './crisisSocialPublish'
+
 export const PUBLIC_SOCIAL_POSTING_ENABLED = false
+
+export function canPublishPublicSocial(
+  channel: string,
+  env: CrisisPublishEnv = process.env,
+  now: Date = new Date(),
+): boolean {
+  if (PUBLIC_SOCIAL_POSTING_ENABLED) return true
+  return isCrisisPublishWindow(env, now) && hasChannelPublishCredentials(channel, env)
+}
 
 /** Throws before any network call when the lockout is active. `channel` names the blocked target. */
 export function assertPublicPostingDisabled(channel: string): void {
-  if (PUBLIC_SOCIAL_POSTING_ENABLED) return
+  if (canPublishPublicSocial(channel)) return
   throw new Error(
     `PS-SOCIAL-LOCKOUT-01: public social posting is disabled at the source — refusing to publish to ${channel}. ` +
     'No code path may post to a public community channel under any identity. ' +
-    'Drafting, queueing, monitoring and preview still work; only the publish step is blocked.',
+    'Drafting, queueing, monitoring and preview still work; only the publish step is blocked. ' +
+    'Kill switch: SOCIAL_CRISIS_PUBLISH=0. Crisis override needs channel credentials + window through 2026-09-25 (or SOCIAL_CRISIS_PUBLISH=1).',
   )
 }

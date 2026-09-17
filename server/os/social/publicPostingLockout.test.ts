@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { PUBLIC_SOCIAL_POSTING_ENABLED, assertPublicPostingDisabled } from './publicPostingLockout'
+import { PUBLIC_SOCIAL_POSTING_ENABLED, assertPublicPostingDisabled, canPublishPublicSocial } from './publicPostingLockout'
 
 const here = (f: string) => readFileSync(join(__dirname, f), 'utf8')
 
@@ -21,13 +21,39 @@ function bodyOf(src: string, fnName: string): string {
 }
 
 describe('PS-SOCIAL-LOCKOUT-01', () => {
-  it('the lockout is ON', () => {
+  it('the structural always-on flag stays OFF (crisis override is separate)', () => {
     expect(PUBLIC_SOCIAL_POSTING_ENABLED).toBe(false)
   })
 
-  it('assert throws, and names the channel it blocked', () => {
-    expect(() => assertPublicPostingDisabled('Reddit /api/submit')).toThrow(/PS-SOCIAL-LOCKOUT-01/)
-    expect(() => assertPublicPostingDisabled('Reddit /api/submit')).toThrow(/Reddit \/api\/submit/)
+  it('assert throws, and names the channel it blocked, when the kill switch is on', () => {
+    expect(canPublishPublicSocial('Reddit /api/submit', {})).toBe(false)
+    const prev = process.env.SOCIAL_CRISIS_PUBLISH
+    process.env.SOCIAL_CRISIS_PUBLISH = '0'
+    try {
+      expect(() => assertPublicPostingDisabled('Reddit /api/submit')).toThrow(/PS-SOCIAL-LOCKOUT-01/)
+      expect(() => assertPublicPostingDisabled('Reddit /api/submit')).toThrow(/Reddit \/api\/submit/)
+    } finally {
+      if (prev === undefined) delete process.env.SOCIAL_CRISIS_PUBLISH
+      else process.env.SOCIAL_CRISIS_PUBLISH = prev
+    }
+  })
+
+  it('crisis override allows publish only with credentials + window, and kill switch wins', () => {
+    const during = new Date('2026-09-20T12:00:00Z')
+    expect(canPublishPublicSocial('Reddit /api/submit', {
+      SARAH_REDDIT_USERNAME: 'sarah',
+      SARAH_REDDIT_PASSWORD: 'pw',
+    }, during)).toBe(true)
+    expect(canPublishPublicSocial('LinkedIn (PostForMe / publishSarahLinkedIn)', {
+      SOCIAL_CRISIS_PUBLISH: '0',
+      POSTFORME_API_KEY: 'pk',
+      POSTFORME_SARAH_LINKEDIN_ID: 'acc',
+    }, during)).toBe(false)
+    expect(canPublishPublicSocial('LinkedIn (PostForMe / publishSarahLinkedIn)', {
+      SOCIAL_CRISIS_PUBLISH: '1',
+      POSTFORME_API_KEY: 'pk',
+      POSTFORME_SARAH_LINKEDIN_ID: 'acc',
+    }, new Date('2026-09-26T12:00:00Z'))).toBe(true)
   })
 
   // Each entry is a publish choke point: the ONE function through which outbound public content

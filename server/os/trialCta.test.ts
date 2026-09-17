@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   TRIAL_CTA_PATH,
   TRIAL_CTA_URL,
@@ -56,5 +57,19 @@ describe('trial-start paths', () => {
     expect(isTrialStartPath('/login')).toBe(false)
     expect(isTrialStartPath('/setup')).toBe(false)
     expect(signupAttrMemoryKey('Pat@MSP.com')).toBe('signup_attr:pat@msp.com')
+  })
+
+  it('prerenders /trial so sitemap + SSR title use seoForPath, with the frozen offer strip', () => {
+    const prerender = readFileSync('client/src/prerender.tsx', 'utf8')
+    expect(prerender).toMatch(/["']\/trial["']:\s*TrialStart/)
+    expect(prerender).toContain('"/knowbe4-alternative": KnowBe4Alternative')
+    expect(prerender).toContain('headTags(seoForPath(route))')
+    const seo = readFileSync('client/src/lib/seoMeta.ts', 'utf8')
+    expect(seo).toContain('pathname === "/trial"')
+    expect(seo).toContain('Start your 30-day free trial — PhishSim AI')
+    const page = readFileSync('client/src/pages/TrialStart.tsx', 'utf8')
+    expect(page).toContain('60¢/user · $299/mo for 500 · 30-day, no card · live in 10 min.')
+    expect(page).toContain('seoForPath("/trial")')
+    expect(readFileSync('scripts/gen-sitemap.mjs', 'utf8')).toContain('r === "/trial"')
   })
 })

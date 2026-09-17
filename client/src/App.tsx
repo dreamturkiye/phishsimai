@@ -24,6 +24,7 @@ import BlogIndex from "./pages/BlogIndex";
 import TermsOfService from "./pages/TermsOfService";
 import Login from "./pages/Login";
 import TrialStart from "./pages/TrialStart";
+import KnowBe4Alternative from "./pages/KnowBe4Alternative";
 import HQ from "./pages/HQ";
 import HealTest from "./pages/HealTest";
 import { GlobalErrorHandler } from "./components/GlobalErrorHandler";
@@ -45,6 +46,8 @@ function Router() {
       <Route path="/register" component={TrialStart} />
       <Route path="/signup" component={TrialStart} />
       <Route path="/trial" component={TrialStart} />
+      <Route path="/knowbe4-alternative" component={KnowBe4Alternative} />
+      <Route path="/knowbe4" component={KnowBe4Alternative} />
       <Route path="/pricing" component={Home} />
       <Route path="/invite/:token" component={AcceptInvite} />
       <Route path="/compliance" component={ComplianceCenter} />

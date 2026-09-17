@@ -62,6 +62,14 @@
       "destination": "/trial/index.html"
     },
     {
+      "source": "/knowbe4-alternative",
+      "destination": "/knowbe4-alternative/index.html"
+    },
+    {
+      "source": "/knowbe4",
+      "destination": "/knowbe4-alternative/index.html"
+    },
+    {
       "source": "/privacy",
       "destination": "/privacy/index.html"
     },
