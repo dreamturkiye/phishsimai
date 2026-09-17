@@ -7,7 +7,7 @@ import {
   T1_MARCUS_EMPTY_HOURS,
   diagnoseFromT1Scoreboard,
 } from './t1MarcusHandoff'
-import { SMALL_T1_QUALITY_POOL } from './sequenceBacklog'
+import { T1_QUALITY_REFILL_MAX } from './sequenceBacklog'
 
 const liveSep17 = {
   operatingCrisis: true,
@@ -58,7 +58,7 @@ describe('t1MarcusTicket — dual crisis + T1 dead must queue a NAMED bug', () =
     expect(t.queue).toBe(true)
     expect(t.bug).toBe('PS-T1-PAUSE-LOCK')
     expect(t.task).toMatch(/PS-T1-PAUSE-LOCK/)
-    expect(t.task).toMatch(String(SMALL_T1_QUALITY_POOL))
+    expect(t.task).toMatch(String(T1_QUALITY_REFILL_MAX))
   })
 
   it('does not queue a healthy T1 with a large sanitized pool', () => {

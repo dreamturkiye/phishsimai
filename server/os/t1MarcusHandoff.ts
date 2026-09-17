@@ -13,11 +13,11 @@
 import { COMPANY_ID } from './version'
 import { mailboxVerifierKeys, type MailboxVerifierKeys } from './touch1Health'
 import { diagnoseRevenueFailure, isOperatingCrisis, type RevenueDiagnosis } from './cgoMandate'
-import { SMALL_T1_QUALITY_POOL } from './sequenceBacklog'
+import { T1_QUALITY_REFILL_MAX, isSmallQualityT1Refill } from './sequenceBacklog'
 
 export const T1_MARCUS_EMPTY_HOURS = 6
 export const T1_MARCUS_DAY_KEY = 't1_marcus_handoff_day'
-export { SMALL_T1_QUALITY_POOL }
+export { T1_QUALITY_REFILL_MAX }
 
 /** Named bugs the founder asked for — not analysis theater. */
 export type T1MarcusBug = 'PS-T1-STARVE' | 'PS-T1-QEV-EMPTY' | 'PS-T1-PAUSE-LOCK'
@@ -72,7 +72,7 @@ function namedTask(bug: T1MarcusBug, detail: string): string {
   if (bug === 'PS-T1-PAUSE-LOCK') {
     return (
       `Named bug: PS-T1-PAUSE-LOCK — pauseNewTouch1 locked a small quality pool. ` +
-      `Files: server/os/sequenceBacklog.ts shouldPauseTouch1. Allow T1 drip while 0 < sanitizedEligible≤${SMALL_T1_QUALITY_POOL}. ` +
+      `Files: server/os/sequenceBacklog.ts shouldPauseTouch1 / isSmallQualityT1Refill. Allow T1 drip while 0 < sanitizedEligible≤${T1_QUALITY_REFILL_MAX}. ` +
       `${detail} ${forbid}`
     )
   }
@@ -121,7 +121,7 @@ export function t1MarcusTicket(input: {
     return { queue: true, bug: 'PS-T1-STARVE', task: namedTask('PS-T1-STARVE', detail), notes: detail }
   }
 
-  const smallPool = sendable > 0 && sendable <= SMALL_T1_QUALITY_POOL
+  const smallPool = isSmallQualityT1Refill(sendable)
   if (input.pauseNewTouch1 && smallPool) {
     return { queue: true, bug: 'PS-T1-PAUSE-LOCK', task: namedTask('PS-T1-PAUSE-LOCK', detail), notes: detail }
   }
