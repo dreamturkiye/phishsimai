@@ -72,4 +72,18 @@ describe('trial-start paths', () => {
     expect(page).toContain('seoForPath("/trial")')
     expect(readFileSync('scripts/gen-sitemap.mjs', 'utf8')).toContain('r === "/trial"')
   })
+
+  it('homepage header/hero/footer trial CTAs are crawlable <a href> not onClick-only', () => {
+    const home = readFileSync('client/src/pages/Home.tsx', 'utf8')
+    expect(home).not.toMatch(/onClick=\{[^}]*getSignupUrl\(\)/)
+    expect(home).toContain('href={getSignupUrl()}')
+    expect(home).toContain('href="/trial"')
+    expect(home).toContain('{ label: "Free Trial", href: "/trial" }')
+    const signupAnchors = home.match(/getSignupUrl\(\)/g) ?? []
+    expect(signupAnchors.length).toBeGreaterThanOrEqual(7)
+    const constSrc = readFileSync('client/src/const.ts', 'utf8')
+    expect(constSrc).toContain('return `/trial?${params.toString()}`')
+    expect(constSrc).toContain('utm_source')
+    expect(constSrc).toContain('marketing_site')
+  })
 })
