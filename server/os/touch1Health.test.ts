@@ -59,8 +59,9 @@ describe('whyT1SentZero — Sep 12 sanitized-pool starve', () => {
   })
 
   it('names pause_new_touch1 only when the sanitized pool still has leads to send', () => {
+    // Pause is for mass scale (>150), not a 12-lead quality refill.
     expect(
-      whyT1SentZero({ sanitizedEligible: 12, unsanitizedEligible: 100, pauseNewTouch1: true }).reason,
+      whyT1SentZero({ sanitizedEligible: 400, unsanitizedEligible: 100, pauseNewTouch1: true }).reason,
     ).toBe('pause_new_touch1')
     expect(
       whyT1SentZero({ sanitizedEligible: 0, unsanitizedEligible: 6435, pauseNewTouch1: true }).reason,

@@ -20,6 +20,7 @@
 | **4.5.5** | **Jul 2026** | **Frontend QA smoke** — cron + post-deploy checks for missing CSS/JS bundles; critical fail → Marcus + Telegram |
 | **4.5.6** | **Jul 2026** | **Sarah LinkedIn** — WYSIWYG preview, reference-template hero images, PostForMe publish |
 | **4.5.8** | **Sep 17 2026** | **T1 sanitize restore** — QEV wired into `sanitizeRefill`; empty MEV no longer silently starves T1. See `docs/architect/SPEC-t1-sanitize-restore.md` |
+| **4.5.9** | **Sep 17 2026** | **T1 quality-refill no-pause** — crisis drain does not zero T1 when sanitized eligible is 1–150. See `docs/architect/SPEC-t1-quality-refill-no-pause.md` |
 
 ---
 

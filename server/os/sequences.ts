@@ -645,15 +645,15 @@ const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 // null. If this needs pausing again, set this back to true -- in CODE, not an env var. The
 // July-12 lesson on the other product was an env flag everyone believed was set and never was.
 
-/** Drain tick + sequence JSON share this so pauseNewTouch1 cannot freeze T1 while the sanitized pool is 0. */
-async function loadTouch1HealthForPause(sql: any): Promise<{ t1Starved: boolean }> {
+/** Drain tick + sequence JSON share this so pauseNewTouch1 cannot freeze T1 while starved or a small quality refill. */
+async function loadTouch1HealthForPause(sql: any): Promise<{ t1Starved: boolean; sanitizedEligible: number }> {
   try {
     const { loadTouch1Health } = await import('./touch1Health')
     const t1 = await loadTouch1Health(sql)
-    return { t1Starved: t1.sanitizedEligible <= 0 }
+    return { t1Starved: t1.sanitizedEligible <= 0, sanitizedEligible: t1.sanitizedEligible }
   } catch {
     // Fail toward T1 — a health-read failure must not freeze the money path behind pauseNewTouch1.
-    return { t1Starved: true }
+    return { t1Starved: true, sanitizedEligible: 0 }
   }
 }
 
@@ -700,7 +700,10 @@ export async function runFullSequence() {
   const { loadTouch1Health, whyT1SentZero } = await import('./touch1Health')
   const t1Health = await loadTouch1Health(sql, now).catch(() => null)
   const t1Starved = !t1Health || t1Health.sanitizedEligible <= 0
-  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis, { t1Starved })
+  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis, {
+    t1Starved,
+    sanitizedEligible: t1Health?.sanitizedEligible ?? 0,
+  })
   if (operatingCrisis) {
     await runTouch2Batch(sql).catch(() => {})
   }
