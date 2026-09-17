@@ -5,6 +5,7 @@ import { getSql } from './conn'
 import { ensureSocialTables, listSocialQueue } from './social/sarahSocial'
 import { getAllAgentHealth } from './agentHealth_v2'
 import { AGENTS } from '../lib/kaan_os_v4'
+import { blobReadWriteTokenConfigured } from '../storage'
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://phishsimai.com'
 
@@ -129,6 +130,11 @@ export async function getJanetOpsSnapshot(companyId = 'phishsimai'): Promise<Jan
   }))
 
   const openAlerts = (alerts as any[]).map((a) => `${a.key}: ${String(a.detail || '').slice(0, 100)}`)
+  if (!blobReadWriteTokenConfigured()) {
+    openAlerts.unshift(
+      'BLOB_READ_WRITE_TOKEN missing — LinkedIn hero blob persist skipped; drafts fall back to the public reference image',
+    )
+  }
 
   const employeeLines = employees
     .filter((e) => e.id !== 'janet')
