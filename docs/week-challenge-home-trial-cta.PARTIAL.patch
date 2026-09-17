@@ -1,0 +1,21 @@
+diff --git a/client/src/pages/Home.tsx b/client/src/pages/Home.tsx
+index 25dfac0..76a020a 100644
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -143,13 +143,16 @@ export default function Home() {
+             <a href="#compliance" className="hover:text-foreground transition-colors">Compliance</a>
+             <a href="#msp" className="hover:text-foreground transition-colors">MSP / Partners</a>
+             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
++            <a href="/trial" className="hover:text-foreground transition-colors">Free Trial</a>
+             <a href="/msp" className="hover:text-foreground transition-colors">Partner Portal</a>
+           </nav>
+           <div className="flex items-center gap-3">
+             <div className="hidden md:flex items-center gap-3">
+               <Button variant="ghost" size="sm" onClick={() => window.location.href = getLoginUrl()}>Sign In</Button>
+-              <Button size="sm" onClick={() => window.location.href = getSignupUrl()}>
++              <Button asChild size="sm">
++                <a href={getSignupUrl()}>
+                 Start Free Trial <ChevronRight className="w-3.5 h-3.5 ml-1" />
++              </a>
+               </Button>
+             </div>
