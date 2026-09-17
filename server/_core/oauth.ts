@@ -52,7 +52,7 @@ export function registerOAuthRoutes(app: any) {
       }
       const existing = await db.getUserByEmail(email);
       if (existing) {
-        return res.status(409).json({ error: "An account with this email already exists" });
+        return res.status(409).json({ error: "An account with this email already exists. Sign in to continue your trial." });
       }
       const salt = generateSalt();
       const passwordHash = hashPassword(password, salt);
@@ -109,6 +109,17 @@ export function registerOAuthRoutes(app: any) {
         return res.status(401).json({ error: "Invalid email or password" });
       }
       await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+      // PS-T1-STARVE-01 / signup: a 409-then-signin dead-end left a USER with no trial org.
+      // Register already stamps planExpiresAt via startProductTrial; login must too when
+      // the user has no org. Failures never fail the session.
+      await startProductTrial({
+        userId: user.id,
+        email: String(user.email || email),
+        name: user.name ?? undefined,
+      }).catch((err) => {
+        console.error("[Auth] startProductTrial failed on login (session still ok, /setup remains):", err);
+        return null;
+      });
       const token = await sdk.createSessionToken(user.openId, { name: user.name ?? "" });
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, token, cookieOptions);

@@ -592,9 +592,14 @@ export async function hqData(req: Request, res: Response) {
       ? (Number(pipeline.bounced) / Number(pipeline.apollo_sent) * 100).toFixed(1)
       : '0.0'
 
+    const { loadTouch1Health } = await import('./touch1Health')
+    const touch1Health = await loadTouch1Health(sql).catch(() => null)
+
     res.json({
       ok: true,
       ts: new Date().toISOString(),
+      touch1LastAt: touch1Health?.touch1LastAt ?? null,
+      touch1Health,
       pipeline: {
         touched: Number(pipeline.touched),
         replied: Number(pipeline.replied),

@@ -43,7 +43,13 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? "Something went wrong");
+        const errText = data.error ?? "Something went wrong";
+        if (mode === "register" && res.status === 409) {
+          setMode("login");
+          setError("An account with this email already exists. Sign in to continue your trial.");
+        } else {
+          setError(errText);
+        }
       } else {
         redirectAfterLogin();
       }

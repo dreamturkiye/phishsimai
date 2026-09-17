@@ -449,6 +449,9 @@ export async function cronOutreachFunnel(req: any, res: any) {
     } else if (poolWasAvailable) {
       healthLine = `🚨 SEND RAN but sent 0 with ${sendableNow} sendable`
       sendAlerts.push(`🚨 <b>PhishSim SEND BROKEN</b> — the send ran but delivered 0 while ${sendableNow} leads were sendable. This is NOT the pool being empty — the send path is broken. Check /api/os/sequence.`)
+    } else if (backlogVerifiable > 100) {
+      healthLine = `🚨 sent 0 — sanitized pool empty while ${backlogVerifiable} GEO-eligible unsanitized remain`
+      sendAlerts.push(`🚨 <b>PhishSim T1 STARVED</b> — sanitized sendable=0 while ${backlogVerifiable} GEO-eligible never-touched remain. This is NOT "supply expected". Check /api/os/sanitize-refill (QEV_API_KEY / non-empty MYEMAILVERIFIER_API_KEY).`)
     } else {
       healthLine = `⚪ sent 0 — pool empty (supply, expected, not a fault)`
     }

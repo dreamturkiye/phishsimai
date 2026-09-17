@@ -1,27 +1,70 @@
-// PS-REFILL-01/02/03 (2026-07-21) — daily auto-refill of the sendable pool.
+// PS-REFILL-01/02/03 (2026-07-21) — auto-refill of the sendable pool.
 //
 // THE GAP this closes: the sendable pool was sanitized ONCE by a manual one-off script and never
-// wired to a cron, so it depleted as sends drew it down. This tops it up before the 0 7 send.
+// wired to a cron, so it depleted as sends drew it down. This tops it up before the send cron.
 //
 // PS-REFILL-03 — VERIFY-ONLY, NEVER FIND. Every lead in ps_outreach_leads ALREADY has an email
 // (6,127/6,127 populated). AMF's *finder* is for domain-only leads (that path lives in the
 // researcher, over lead_research_queue). Running AMF here re-found emails we already had — pure
 // wasted spend. This module now VERIFIES the existing address and NEVER calls AMF:
-//   • MyEmailVerifier when MYEMAILVERIFIER_API_KEY is set — real per-mailbox check, detects catch-all;
+//   • QEV when QEV_API_KEY is set (canonical — verifierClient.ts; local .env.local has this key);
+//   • MyEmailVerifier when MYEMAILVERIFIER_API_KEY is a NON-EMPTY value — empty string (Vercel
+//     name-exists-value-empty, measured 2026-09-17) is unset and must not fail-close the pool;
 //   • else a free MX check (domain-level) — which CANNOT detect catch-all, so it is OFF unless the
 //     operator opts in with REFILL_ALLOW_MX_ONLY=1 (accepting that ~82% of this list is catch-all
 //     and MX alone will pass them, risking bounces). SMTP RCPT is not usable — Vercel blocks port 25.
-// Fail-closed: no verifier keyed and no opt-in => promote nothing (and never spend a finder credit).
+// PS-T1-STARVE-01 (2026-09-17): fail-closed with empty MEV + unused QEV emptied sanitized eligible
+// on 2026-09-12 while 6435 GEO never-touched remained. QEV is now wired. Last-resort maps personal
+// MX bridge (NOT REFILL_ALLOW_MX_ONLY) can promote google_maps/mymsphub personal inboxes when both
+// mailbox keys are missing AND the sanitized pool is already 0.
 import { getSql } from './conn'
 import { COMPANY_ID } from './version'
 import { hasMx, domainOf } from './mxGate'
 import { dailySendCap } from './sequences'
 import { sendTelegram } from './telegram'
+import { verifyViaService, type VerifierVerdict } from './verifierClient'
+import {
+  mailboxVerifierKeys,
+  verifierEmptyAlertMessage,
+  GEO_ALLOWLIST,
+} from './touch1Health'
 
-const GEO = ['US', 'GB', 'AU'] as const
+const GEO = GEO_ALLOWLIST
 const MAX_LOOKUPS_PER_RUN = 500 // per-run verification ceiling
 const CONCURRENCY = 10
 const TIME_BUDGET_MS = 240_000
+/** 3-day sanitized buffer so one missed refill cannot starve hourly T1 (PS-RAMP-HOLD-01 lesson). */
+export const SANITIZE_BUFFER_DAYS = 3
+export const MAPS_SOURCES = ['google_maps', 'mymsphub'] as const
+
+export function sendablePoolTarget(cap: number): number {
+  return Math.max(cap, cap * SANITIZE_BUFFER_DAYS)
+}
+
+export function isMapsSourced(source: string | null | undefined): boolean {
+  return (MAPS_SOURCES as readonly string[]).includes(String(source || '').toLowerCase())
+}
+
+/** Last-resort: MX for personal Maps/MSP-hub leads when BOTH mailbox verifiers are empty and pool is 0. */
+export function shouldUseMapsMxBridge(opts: {
+  hasMailboxVerifier: boolean
+  allowMxOnly: boolean
+  sendableBefore: number
+}): boolean {
+  if (opts.hasMailboxVerifier) return false
+  if (opts.allowMxOnly) return false
+  return opts.sendableBefore <= 0
+}
+
+export type Verdict = 'valid' | 'catchall' | 'invalid' | 'mx_ok' | 'no_mx' | 'unknown'
+
+export function mapQevToRefillVerdict(v: Pick<VerifierVerdict, 'status' | 'catchAll' | 'reached'>): Verdict {
+  if (!v.reached) return 'unknown'
+  if (v.catchAll || v.status === 'risky') return 'catchall'
+  if (v.status === 'valid') return 'valid'
+  if (v.status === 'invalid') return 'invalid'
+  return 'unknown'
+}
 
 // PS-REFILL-04 (2026-07-22) — measured on prod: of 5,529 unverified candidates, 4,944 (89%) had
 // ALREADY been labelled unusable by an earlier sanitization pass, and the old `ORDER BY created_at
@@ -68,27 +111,40 @@ export function isOrgInbox(email: string): boolean {
   return ORG_INBOX_LOCALPARTS.has(local) || ORG_INBOX_LOCALPARTS.has(base)
 }
 
-type Verdict = 'valid' | 'catchall' | 'invalid' | 'mx_ok' | 'no_mx' | 'unknown'
+export type RefillVerifyMode = 'qev' | 'mev' | 'mx_opt_in' | 'maps_mx_bridge' | 'none'
 
-// Verify an EXISTING email. NEVER AMF's finder. MyEmailVerifier when keyed (per-mailbox + catch-all
-// detection); else a free MX check (domain-level only). Returns a verdict; the caller decides.
-async function verifyEmail(email: string): Promise<Verdict> {
+export async function verifyEmail(
+  email: string,
+  opts: { allowMx: boolean; qev: boolean; mev: boolean } = {
+    allowMx: false,
+    qev: mailboxVerifierKeys().qev,
+    mev: mailboxVerifierKeys().mev,
+  },
+): Promise<Verdict> {
   const domain = domainOf(email)
   if (!domain) return 'invalid'
-  const key = process.env.MYEMAILVERIFIER_API_KEY?.trim()
-  if (key) {
+  if (opts.qev) {
+    try {
+      return mapQevToRefillVerdict(await verifyViaService(email))
+    } catch (e: any) {
+      console.error(`[refill/qev] ${domain} threw: ${String(e?.message || e).slice(0, 120)}`)
+      return 'unknown'
+    }
+  }
+  if (opts.mev) {
+    const key = process.env.MYEMAILVERIFIER_API_KEY?.trim()
+    if (!key) return 'unknown'
     try {
       const res = await fetch(
         `https://api.myemailverifier.com/api/validate_single.php?apikey=${encodeURIComponent(key)}&email=${encodeURIComponent(email)}`,
         { cache: 'no-store', signal: AbortSignal.timeout(20000) },
       )
       if (res.ok) {
-        // Shape: { Status:"Valid"|"Invalid"|"Catch-all"|..., catch_all:0|1, Role_Based, Disposable_Domain, ... }
         const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string }
         const status = String(d.Status || '').toLowerCase()
         const isCatchAll = ['1', 'true'].includes(String(d.catch_all).toLowerCase()) || status.includes('catch')
-        if (isCatchAll) return 'catchall' // deliverability unverifiable — never promote
-        if (status === 'valid') return 'valid' // mailbox exists + not catch-all → safe to send
+        if (isCatchAll) return 'catchall'
+        if (status === 'valid') return 'valid'
         if (status === 'invalid') return 'invalid'
         return 'unknown'
       }
@@ -96,14 +152,22 @@ async function verifyEmail(email: string): Promise<Verdict> {
     } catch (e: any) {
       console.error(`[refill/mev] ${domain} threw: ${String(e?.message || e).slice(0, 120)}`)
     }
-    return 'unknown' // keyed but the call failed — don't guess, don't fall back to MX
+    return 'unknown'
   }
-  // free fallback (no key): MX only — CANNOT detect catch-all.
-  return (await hasMx(domain)) ? 'mx_ok' : 'no_mx'
+  if (opts.allowMx) return (await hasMx(domain)) ? 'mx_ok' : 'no_mx'
+  return 'unknown'
+}
+
+function rejectReason(verdict: Verdict): string | null {
+  if (verdict === 'catchall') return 'catchall'
+  if (verdict === 'invalid') return 'mev_invalid'
+  if (verdict === 'no_mx') return 'no_mx'
+  return null
 }
 
 export interface RefillResult {
   cap: number
+  target: number
   sendableBefore: number
   needed: number
   checked: number
@@ -111,42 +175,90 @@ export interface RefillResult {
   skippedOrgInbox: number
   promotedLeads: Array<{ id: string; email: string; verdict: Verdict }>
   reason: string
+  verifier: { mev: boolean; qev: boolean; any: boolean }
+  verifyMode: RefillVerifyMode
+  verifierAlert: boolean
 }
 
-// Top the sendable pool up to `cap` by VERIFYING existing emails (never finding). Pulls-until-cap,
-// bounded by the per-run ceiling + time budget. Idempotent when already at/above cap.
-export async function refillSendablePool(sqlOverride?: any, now: Date = new Date()): Promise<RefillResult> {
+export type RefillOpts = { timeBudgetMs?: number; maxLookups?: number }
+
+// Top the sendable pool up to a 3-day buffer by VERIFYING existing emails (never finding).
+export async function refillSendablePool(
+  sqlOverride?: any,
+  now: Date = new Date(),
+  opts: RefillOpts = {},
+): Promise<RefillResult> {
   const sql = sqlOverride ?? getSql()
   await ensureRefillColumn(sql)
   const cap = dailySendCap(now)
+  const target = sendablePoolTarget(cap)
+  const timeBudgetMs = opts.timeBudgetMs ?? TIME_BUDGET_MS
+  const maxLookups = opts.maxLookups ?? MAX_LOOKUPS_PER_RUN
   const before = (await sql`SELECT count(*)::int AS n FROM ps_outreach_leads
      WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL AND country = ANY(${GEO})
        AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')`) as Array<{ n: number }>
   const sendableBefore = Number(before[0]?.n ?? 0)
-  const needed = Math.max(0, cap - sendableBefore)
-  const base = { cap, sendableBefore, needed, checked: 0, promoted: 0, skippedOrgInbox: 0, promotedLeads: [] as RefillResult['promotedLeads'] }
+  const needed = Math.max(0, target - sendableBefore)
+  const keys = mailboxVerifierKeys()
+  const allowMxOnly = process.env.REFILL_ALLOW_MX_ONLY === '1'
+  const mapsBridge = shouldUseMapsMxBridge({
+    hasMailboxVerifier: keys.any,
+    allowMxOnly,
+    sendableBefore,
+  })
+  const verifyMode: RefillVerifyMode = keys.qev
+    ? 'qev'
+    : keys.mev
+      ? 'mev'
+      : allowMxOnly
+        ? 'mx_opt_in'
+        : mapsBridge
+          ? 'maps_mx_bridge'
+          : 'none'
+  const base = {
+    cap,
+    target,
+    sendableBefore,
+    needed,
+    checked: 0,
+    promoted: 0,
+    skippedOrgInbox: 0,
+    promotedLeads: [] as RefillResult['promotedLeads'],
+    verifier: keys,
+    verifyMode,
+    verifierAlert: !keys.any,
+  }
 
   if (needed === 0) return { ...base, reason: 'pool already at cap — no refill needed' }
 
-  const hasVerifier = !!process.env.MYEMAILVERIFIER_API_KEY?.trim()
-  const allowMxOnly = process.env.REFILL_ALLOW_MX_ONLY === '1'
-  if (!hasVerifier && !allowMxOnly) {
+  if (verifyMode === 'none') {
     return {
       ...base,
       reason:
-        'no email verifier: set MYEMAILVERIFIER_API_KEY (recommended — detects catch-all), or ' +
-        'REFILL_ALLOW_MX_ONLY=1 to promote on MX alone (WARNING: ~82% of this pool is catch-all, ' +
-        'MX cannot detect it → bounce risk). Promoted 0. No AMF/finder spend either way.',
+        'no email verifier: set QEV_API_KEY (canonical — detects catch-all), or a non-empty ' +
+        'MYEMAILVERIFIER_API_KEY. Empty-string MEV is unset. Do not set REFILL_ALLOW_MX_ONLY=1 ' +
+        '(~82% catch-all). Promoted 0.',
     }
   }
 
-  // PS-REFILL-04: freshest first, and never re-verify a row a previous pass already disqualified.
-  const candidates = (await sql`SELECT id, email FROM ps_outreach_leads
+  const mapsOnly = verifyMode === 'maps_mx_bridge'
+  const candidates = (mapsOnly
+    ? await sql`SELECT id, email, source FROM ps_outreach_leads
+     WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
+       AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
+       AND pipeline_stage NOT IN ('dead','customer')
+       AND lower(COALESCE(source, '')) = ANY(${[...MAPS_SOURCES]})
+       AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
+     ORDER BY created_at DESC LIMIT ${maxLookups}`
+    : await sql`SELECT id, email, source FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND refill_checked_at IS NULL AND touch1_sent_at IS NULL
        AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
        AND pipeline_stage NOT IN ('dead','customer')
        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
-     ORDER BY created_at DESC LIMIT ${MAX_LOOKUPS_PER_RUN}`) as Array<{ id: string; email: string }>
+     ORDER BY created_at DESC LIMIT ${maxLookups}`) as Array<{ id: string; email: string; source?: string }>
+
+  const allowMx = verifyMode === 'mx_opt_in' || verifyMode === 'maps_mx_bridge'
+  const verifyOpts = { allowMx, qev: verifyMode === 'qev', mev: verifyMode === 'mev' }
 
   const started = Date.now()
   let idx = 0
@@ -156,16 +268,22 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
   let timedOut = false
   const promotedLeads: RefillResult['promotedLeads'] = []
 
+  function promoteReason(verdict: Verdict): string {
+    if (verdict === 'valid') return verifyMode === 'qev' ? 'qev_valid' : 'mev_valid'
+    if (verifyMode === 'maps_mx_bridge') return 'mx_maps_personal_bridge'
+    return 'mx_only_unverified'
+  }
+
   async function worker(): Promise<void> {
     while (true) {
       if (promoted >= needed) return
-      if (Date.now() - started >= TIME_BUDGET_MS) { timedOut = true; return }
+      if (Date.now() - started >= timeBudgetMs) { timedOut = true; return }
       const i = idx++
       if (i >= candidates.length) return
       const lead = candidates[i]
+      if (mapsOnly && !isMapsSourced(lead.source)) continue
       // PS-REFILL-04: reject org inboxes BEFORE spending a verifier credit — MEV will happily
       // confirm info@ exists, which is how 12 role accounts reached the send on 2026-07-22.
-      // Label it so the candidate query filters it out for good instead of re-deciding it daily.
       if (isOrgInbox(lead.email)) {
         skippedOrgInbox++
         await sql`UPDATE ps_outreach_leads
@@ -173,14 +291,13 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
            WHERE id = ${lead.id} AND sanitized_at IS NULL`.catch(() => {})
         continue
       }
-      checked++ // counts only rows we actually spend a verifier credit on
-      const verdict = await verifyEmail(lead.email) // verify the EXISTING email — never AMF
-      const promote = verdict === 'valid' || (verdict === 'mx_ok' && allowMxOnly)
+      checked++
+      const verdict = await verifyEmail(lead.email, verifyOpts)
+      const promote = verdict === 'valid' || (verdict === 'mx_ok' && allowMx)
       if (promote && promoted < needed) {
         try {
-          // Keep the existing email — we verified it, we did not find a new one. Mark it checked.
           await sql`UPDATE ps_outreach_leads
-             SET sanitized_at = now(), sanitize_reason = ${verdict === 'valid' ? 'mev_valid' : 'mx_only_unverified'}, refill_checked_at = now()
+             SET sanitized_at = now(), sanitize_reason = ${promoteReason(verdict)}, refill_checked_at = now()
              WHERE id = ${lead.id} AND sanitized_at IS NULL`
           promoted++
           promotedLeads.push({ id: String(lead.id), email: lead.email, verdict })
@@ -188,25 +305,35 @@ export async function refillSendablePool(sqlOverride?: any, now: Date = new Date
           await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
         }
       } else if (verdict === 'unknown') {
-        // Inconclusive (verifier call failed) — DON'T mark checked, so a later run re-verifies.
+        // Inconclusive — DON'T mark checked, so a later run re-verifies.
       } else {
-        // Definitive reject (catchall / invalid / no_mx) — mark checked so we don't re-verify it.
-        await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
+        const label = rejectReason(verdict)
+        if (label) {
+          await sql`UPDATE ps_outreach_leads
+             SET refill_checked_at = now(), sanitize_reason = COALESCE(sanitize_reason, ${label})
+             WHERE id = ${lead.id}`.catch(() => {})
+        } else {
+          await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
+        }
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, candidates.length) || 1 }, () => worker()))
 
-  const mode = hasVerifier ? 'MyEmailVerifier' : 'MX-only (catch-all NOT filtered)'
+  const mode =
+    verifyMode === 'qev' ? 'QEV'
+      : verifyMode === 'mev' ? 'MyEmailVerifier'
+        : verifyMode === 'maps_mx_bridge' ? 'maps personal MX bridge (not REFILL_ALLOW_MX_ONLY)'
+          : 'MX-only opt-in (catch-all NOT filtered)'
   const reason =
     promoted >= needed
-      ? `refilled to cap via ${mode}`
+      ? `refilled to ${target} via ${mode}`
       : timedOut
-        ? `hit ${TIME_BUDGET_MS / 1000}s budget at ${promoted}/${needed} (${mode}) — resumes next run`
-        : checked >= MAX_LOOKUPS_PER_RUN
-          ? `hit ${MAX_LOOKUPS_PER_RUN}-lookup ceiling at ${promoted}/${needed} (${mode}) — resumes next run`
+        ? `hit ${timeBudgetMs / 1000}s budget at ${promoted}/${needed} (${mode}) — resumes next run`
+        : checked >= maxLookups
+          ? `hit ${maxLookups}-lookup ceiling at ${promoted}/${needed} (${mode}) — resumes next run`
           : `pool exhausted at ${promoted}/${needed} verified-valid (${mode})`
-  return { cap, sendableBefore, needed, checked, promoted, skippedOrgInbox, promotedLeads, reason }
+  return { ...base, needed, checked, promoted, skippedOrgInbox, promotedLeads, reason }
 }
 
 // One-time additive column: which leads the refill has already verified, so runs resume instead of
@@ -226,9 +353,13 @@ export async function cronSanitizeRefill(req: any, res: any) {
   if (!okCron && !okHq) return res.status(401).json({ error: 'Unauthorized' })
   try {
     const r = await refillSendablePool(getSql())
+    if (r.verifierAlert) {
+      await sendTelegram(verifierEmptyAlertMessage(r.verifier)).catch(() => {})
+    }
     await sendTelegram(
       `🔁 <b>PhishSim pool refill</b> (${COMPANY_ID})\n` +
-        `cap ${r.cap} · sendable ${r.sendableBefore}→${r.sendableBefore + r.promoted} · promoted ${r.promoted}/${r.needed} (verified ${r.checked}, org-inbox skipped ${r.skippedOrgInbox})\n` +
+        `mode ${r.verifyMode} · mev ${r.verifier.mev ? 'set' : 'empty'} · qev ${r.verifier.qev ? 'set' : 'empty'}\n` +
+        `cap ${r.cap} · target ${r.target} · sendable ${r.sendableBefore}→${r.sendableBefore + r.promoted} · promoted ${r.promoted}/${r.needed} (verified ${r.checked}, org-inbox skipped ${r.skippedOrgInbox})\n` +
         `${r.reason}`,
     ).catch(() => {})
     return res.json({ ok: true, ...r })

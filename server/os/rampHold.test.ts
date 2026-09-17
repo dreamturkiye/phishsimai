@@ -1,7 +1,7 @@
 // PS-RAMP-HOLD-01 — the ramp is gated on lead SUPPLY, not just elapsed days. Day 8 (2026-07-26)
 // would have stepped 50 -> 100/day against a 475-lead buffer that the refill does not maintain
-// (sanitizeRefill tops up to dailySendCap() and no further). This pins the hold so the step to 100
-// cannot return by accident — only by a reviewed change with supply evidence.
+// (sanitizeRefill tops up to 3× dailySendCap() so one missed refill cannot starve hourly T1).
+// This pins the hold so the step to 100 cannot return by accident — only by a reviewed change with supply evidence.
 import { describe, it, expect } from 'vitest'
 import { dailySendCap } from './sequences'
 

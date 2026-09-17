@@ -123,13 +123,19 @@ export async function buildTruthReport(): Promise<string> {
   const sentToday =
     Number(sentRows[0].t1) + Number(sentRows[0].t2) + Number(sentRows[0].t3) + Number(sentRows[0].t4)
 
-  L.push(`SENT           ${sentToday === 0 ? 'ZERO emails today' : sentToday + ' emails today'}`)
+  L.push(`SENT           ${sentToday === 0 ? 'ZERO emails today' : sentToday + ' emails today'} (T1 ${Number(sentRows[0].t1)} / T2 ${Number(sentRows[0].t2)} / T3 ${Number(sentRows[0].t3)} / T4 ${Number(sentRows[0].t4)})`)
   L.push(
     `BOUNCED        ${health.bounced} of ${health.sent} lifetime (${pct(health.bounced, health.sent)})`,
   )
   L.push(
     `BREAKER        ${health.paused ? RED + ' TRIPPED' : OK + ' armed'} — ${(health.rate * 100).toFixed(1)}% vs ${(health.threshold * 100).toFixed(2)}% threshold (Dex-derived)` +
       (health.paused ? ' — OUTBOUND HALTED' : ''),
+  )
+  const t1LastRows = (await sql`SELECT max(touch1_sent_at) AS t FROM ps_outreach_leads`) as any[]
+  const t1Last = t1LastRows[0]?.t ? new Date(t1LastRows[0].t) : null
+  const t1AgeHours = t1Last ? (Date.now() - t1Last.getTime()) / 3_600_000 : Infinity
+  L.push(
+    `T1 LAST        ${t1AgeHours > 36 ? RED : OK} ${t1Last ? t1Last.toISOString().slice(0, 16).replace('T', ' ') + ` (${t1AgeHours.toFixed(0)}h ago)` : 'never — T1 has not produced output'}`,
   )
 
   // PS-LABEL-HONESTY-01: these are NOT broken instruments — they are elsewhere / off by choice, so

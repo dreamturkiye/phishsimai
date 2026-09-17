@@ -720,12 +720,25 @@ export async function runFullSequence() {
     // PS-DEX-GATE-01: `AND NOT EXISTS (suppression)` added here. Touch-1 filtered on `unsubscribed`
     // alone and never consulted ps_outreach_suppression — a provider-suppressed lead whose flag was
     // unset (Rex found 8 on 2026-08-03) was fully eligible for a first touch.
-    const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
+    const t1Select = () => sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
       WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND l.unsubscribed=false
       AND sanitized_at IS NOT NULL
       AND pipeline_stage NOT IN ('dead','customer')
       AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
       ORDER BY created_at ASC LIMIT ${cap - totalSent}`
+    let t1Leads = await t1Select()
+    // PS-T1-STARVE-01: sanitized pool hit 0 on 2026-09-12 while 6435 unsanitized remained because
+    // refill fail-closed on empty MEV and never called QEV. If this hour's T1 query is empty,
+    // top up in-process (short budget) then re-query so the hourly slice is not a silent zero.
+    if ((!t1Leads || t1Leads.length === 0) && cap > 0) {
+      try {
+        const { refillSendablePool } = await import('./sanitizeRefill')
+        await refillSendablePool(sql, now, { timeBudgetMs: 45_000, maxLookups: 80 })
+        t1Leads = await t1Select()
+      } catch (e: any) {
+        console.error('[sequence] in-process refill failed:', String(e?.message || e).slice(0, 160))
+      }
+    }
 
     for (const lead of t1Leads) {
       if (totalSent >= cap) break
@@ -937,6 +950,15 @@ export async function runFullSequence() {
   }
   await reportAgentRun('aria', totalSent >= 0, { sent: totalSent }, undefined, 'phishsimai').catch(() => {})
   await reportAgentHealth('aria', true, 0, undefined, 'phishsimai').catch(() => {})
+  const { loadTouch1Health, whyT1SentZero } = await import('./touch1Health')
+  const t1Health = await loadTouch1Health(sql, now).catch(() => null)
+  const t1Sent = results.filter((r: any) => r.touch === 1).length
+  const t1Starve = t1Health
+    ? whyT1SentZero({
+        sanitizedEligible: t1Health.sanitizedEligible,
+        unsanitizedEligible: t1Health.unsanitizedEligible,
+      })
+    : null
   return {
     sent: totalSent,
     results,
@@ -944,6 +966,10 @@ export async function runFullSequence() {
     pauseNewTouch1,
     drainableOverdue: backlog?.drainableOverdue ?? null,
     followUpSent,
+    touch1LastAt: t1Health?.touch1LastAt ?? null,
+    sanitizedEligible: t1Health?.sanitizedEligible ?? null,
+    unsanitizedEligible: t1Health?.unsanitizedEligible ?? null,
+    t1StarveReason: t1Sent === 0 ? t1Starve?.reason : null,
   }
 }
 
