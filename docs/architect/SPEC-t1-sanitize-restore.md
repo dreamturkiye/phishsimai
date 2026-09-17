@@ -28,6 +28,8 @@
 | sequence | sent=0, `pauseNewTouch1=true`, drainableOverdue=1120 |
 | msp-harvest | domainsQueued=0 after walking 1200 listings |
 
+**Round 3 (same day, after 40 QEV promotions):** sendable_left=40 (`sanitize_reason=qev_valid`), `GET /api/os/sequence` still `sent:0`, `pauseNewTouch1:true`, drainableOverdue≈1112. Pause zeroes `dailyAllowance` so freshly verified never-touched leads sit forever while overdue T2 drains at ~8/hr.
+
 MEV ran. 0 valid. Leftover stock is role/catchall/inconclusive — not a hidden mev_valid pool. `pauseNewTouch1` would still zero T1 even after a refill. Harvest 1200 empty is a cursor desert, not new personal inboxes.
 
 ## Root cause (measured)
@@ -52,7 +54,8 @@ Bounce breaker did not pause T1. Autonomy/ramp is not the measured blocker.
 6. HQ + watchdog field `touch1LastAt`. Alert if T1 silent **>36h** while GEO-eligible never-touched **>100**, OR sanitized eligible **= 0** while that reservoir **>100**.
 7. Harvest must not call sanitized=0 “expected” when the unsanitized GEO reservoir is >100. After a 1200-listing parser desert (`domainsQueued=0`, `noDomain=processed`), **wrap the harvest cursor to 0**.
 8. Finder skip only **promotable** held addresses (`isPromotableHeldAddress`). Catchall/role do **not** skip. Re-open `lead_research_queue` rows retired as `duplicate` when the domain only holds DISQUALIFIED addresses. Finder budget counts `qev_valid` as well as `mev_valid`.
-9. `shouldPauseTouch1` returns **false** when the sanitized untouched pool is starved (`t1Starved`). Drain tick and `runFullSequence` share `loadTouch1HealthForPause`. `whyT1SentZero` names `pause_new_touch1` only when sanitized eligible > 0.
+9. `shouldPauseTouch1` returns **false** when the sanitized untouched pool is starved (`t1Starved`). When pause **would** fire (crisis + overdue≥50 + sendable>0), T1 still drips `touch1RunCap` = min(Dex remaining, HOURLY_SLICE, ≤10). Prefer `sanitize_reason IN ('qev_valid','mev_valid')` AND `sanitized_at > now()-7d`. Follow-up drain stays; cold caps stay on Dex rails.
+10. Alert if `pauseNewTouch1` has been true for **>24h** while sendable sanitized untouched **>20** (sequence cron + watchdog).
 
 Keep Dex / geo / CAN-SPAM / hourly drip / `DAILY_SEND_LIMIT` ramp caps. No warm touch 93. No LinkedIn autopost.
 
@@ -67,11 +70,11 @@ Keep Dex / geo / CAN-SPAM / hourly drip / `DAILY_SEND_LIMIT` ramp caps. No warm 
 
 Vercel → PhishSim production env:
 
-- Set **`QEV_API_KEY`** to the real QuickEmailVerification key already in local `.env.local` (password manager / local env — **never commit the value**). Confirm it is present in **PhishSim Production**, not ScrollFuel.
-- `MYEMAILVERIFIER_API_KEY` currently exists. Empty string is unset. A real MEV key is used first; QEV still runs on unknown/fail. Prefer keeping QEV set even if MEV is live.
+- `QEV_API_KEY` is now on Vercel **Production + Preview** (owner 2026-09-17). Needs a **redeploy of this code** to take effect.
+- `MYEMAILVERIFIER_API_KEY` currently exists. Empty string is unset. A real MEV key is used first; QEV still runs on unknown/fail.
 - Do **not** set `REFILL_ALLOW_MX_ONLY=1`.
 
-Verify: `/api/os/sanitize-refill` `promoted > 0` (QEV fallback or MEV valid) while inconclusive GEO leads exist; `/api/os/sequence` must **not** return `pauseNewTouch1: true` while `sanitizedEligible=0`; T1 `sent > 0` within the hourly slice once sanitized eligible > 0.
+Verify: `/api/os/sanitize-refill` `promoted > 0` (QEV fallback or MEV valid); `/api/os/sequence` may still return `pauseNewTouch1: true` during overdue drain **but `t1DripCap` > 0 and T1 `sent > 0`** on freshly verified never-touched (prefer last-7d qev_valid/mev_valid). Do not raise cold caps above Dex rails.
 
 ## Tests (must fail the Sep-12 / live-fire shapes)
 
@@ -80,6 +83,9 @@ Verify: `/api/os/sanitize-refill` `promoted > 0` (QEV fallback or MEV valid) whi
 - MEV unknown + QEV valid ⇒ promote (`mev_qev`); MEV valid does not spend QEV.
 - T1 SQL still requires `sanitized_at`; `sanitized=0` + `unsanitized=6435` ⇒ sent:0 reason `pool_starved_sanitized`.
 - `pauseNewTouch1` with drainable=1120 does **not** pause when `t1Starved`.
+- Crisis pause still drips T1: `touch1RunCap({ pause: true, allowance: 50, slice: 3 }) === 3`, never 0; slice 24 clamps to ≤10.
+- Pause + 40 sendable + dripCap 3 ⇒ reason `t1_crisis_drip_not_sent`, not a hard pause.
+- Pause stuck >24h + sendable>20 ⇒ alert; sendable≤20 or fresh T1 or pause off ⇒ no alert.
 - T1 silence >36h + eligible>100 ⇒ alert; sanitized=0 + reservoir>100 ⇒ alert; sendable untouched=0 ⇒ alert.
 - Finder proceeds on catchall/role; harvest wraps after a 1200 parser desert.
 - Login calls `startProductTrial`; register 409 points at sign-in.

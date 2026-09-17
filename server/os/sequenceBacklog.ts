@@ -28,6 +28,8 @@ export const SEQUENCE_STALL_DAYS = 5
 export const STALE_SILENT_DAYS = 45
 export const DRAINABLE_HEALTHY_MAX = 10
 export const PAUSE_T1_WHEN_DRAINABLE_AT = 50
+/** Dual-crisis T1 is a drip, not a zero. Live 2026-09-17: 40 qev_valid sendable, pauseNewTouch1=true, sent=0. */
+export const CRISIS_T1_DRIP_MAX = 10
 /** Crisis T3/T4 hourly slice — Dex daily cap still binds. Was 3/hour, which cannot drain 1565. */
 export const CRISIS_FOLLOWUP_HOURLY_SLICE = 15
 export const FOLLOWUP_DAILY_CAP = 50
@@ -115,6 +117,28 @@ export function shouldPauseTouch1(
   // guarantees the money path stays dead. Never pause T1 when the sanitized untouched pool is empty.
   if (opts?.t1Starved) return false
   return operatingCrisis && drainableOverdue >= PAUSE_T1_WHEN_DRAINABLE_AT
+}
+
+/** Hourly T1 cap during dual-crisis pause: HOURLY_SLICE, never above CRISIS_T1_DRIP_MAX (Dex rails). */
+export function crisisTouch1DripCap(hourlySlice: number, dripMax = CRISIS_T1_DRIP_MAX): number {
+  const slice = Math.max(1, Math.floor(hourlySlice) || 1)
+  const max = Math.max(1, Math.floor(dripMax) || CRISIS_T1_DRIP_MAX)
+  return Math.min(slice, max)
+}
+
+/**
+ * Per-run T1 cap. Pause still prefers follow-up drain (flag stays true) but MUST NOT zero
+ * freshly-verified never-touched leads. Dex daily allowance still binds.
+ */
+export function touch1RunCap(opts: {
+  pauseNewTouch1: boolean
+  dailyAllowance: number
+  hourlySlice: number
+}): number {
+  const allowance = Math.max(0, Math.floor(opts.dailyAllowance) || 0)
+  const slice = Math.max(1, Math.floor(opts.hourlySlice) || 1)
+  if (!opts.pauseNewTouch1) return Math.min(allowance, slice)
+  return Math.min(allowance, crisisTouch1DripCap(slice))
 }
 
 /** Dual crisis + owner 2026-09-14 mandate: drain remaining approved T2. Dex caps still bind. */

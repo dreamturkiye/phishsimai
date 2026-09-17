@@ -49,16 +49,19 @@ export type T1StarveInput = {
   tripped?: boolean
   autonomyDenied?: boolean
   pauseNewTouch1?: boolean
+  t1DripCap?: number
 }
 
 /**
  * Why runFullSequence's T1 loop sends 0 when the send path is otherwise healthy.
  * Bounce/autonomy are checked first by the caller; this is the sanitized-pool gate.
+ * Dual-crisis pause is a drip, not a hard zero — do not blame pause when t1DripCap > 0.
  */
 export function whyT1SentZero(input: T1StarveInput): { sent: 0; reason: string } {
   if (input.tripped) return { sent: 0, reason: 'bounce_breaker_tripped' }
   if (input.autonomyDenied) return { sent: 0, reason: 'autonomy_denied' }
-  if (input.pauseNewTouch1 && input.sanitizedEligible > 0) {
+  const drip = Math.max(0, Number(input.t1DripCap) || 0)
+  if (input.pauseNewTouch1 && input.sanitizedEligible > 0 && drip <= 0) {
     return { sent: 0, reason: 'pause_new_touch1' }
   }
   if (input.sanitizedEligible <= 0 && input.unsanitizedEligible > 0) {
@@ -68,7 +71,35 @@ export function whyT1SentZero(input: T1StarveInput): { sent: 0; reason: string }
     }
   }
   if (input.sanitizedEligible <= 0) return { sent: 0, reason: 'no_t1_eligible' }
+  if (input.pauseNewTouch1 && drip > 0) {
+    return { sent: 0, reason: 't1_crisis_drip_not_sent' }
+  }
   return { sent: 0, reason: 't1_eligible_but_not_sent' }
+}
+
+export const PAUSE_STUCK_MS = 24 * 60 * 60 * 1000
+export const PAUSE_STUCK_SENDABLE_FLOOR = 20
+
+/** Dual-crisis pause stuck >24h while freshly verified never-touched sit unsent. */
+export function pauseTouch1StuckAlert(input: {
+  pauseNewTouch1: boolean
+  sanitizedEligible: number
+  touch1LastAt: Date | string | null
+  now?: Date
+}): { alert: boolean; message: string | null } {
+  if (!input.pauseNewTouch1) return { alert: false, message: null }
+  if (input.sanitizedEligible <= PAUSE_STUCK_SENDABLE_FLOOR) return { alert: false, message: null }
+  const now = input.now ?? new Date()
+  const last = input.touch1LastAt ? new Date(input.touch1LastAt).getTime() : NaN
+  const stuck = !Number.isFinite(last) || now.getTime() - last > PAUSE_STUCK_MS
+  if (!stuck) return { alert: false, message: null }
+  const hours = Number.isFinite(last) ? ((now.getTime() - last) / 3_600_000).toFixed(0) : 'never'
+  return {
+    alert: true,
+    message:
+      `🚨 PhishSim T1 PAUSED >24h (${hours}h since last T1) while ${input.sanitizedEligible} sendable sanitized untouched remain. ` +
+      `Crisis drip should still send an hourly slice (≤10) of qev_valid/mev_valid. Check /api/os/sequence pauseNewTouch1.`,
+  }
 }
 
 export type Touch1Starvation = {

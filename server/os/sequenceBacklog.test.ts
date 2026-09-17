@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
   CRISIS_FOLLOWUP_HOURLY_SLICE,
+  CRISIS_T1_DRIP_MAX,
   DRAINABLE_HEALTHY_MAX,
   PAUSE_T1_WHEN_DRAINABLE_AT,
+  crisisTouch1DripCap,
   drainPlanDays,
   followUpHourlySlice,
   isStaleSilentLead,
@@ -13,6 +15,7 @@ import {
   shouldCrisisUnlockTouch2,
   shouldPauseTouch1,
   shouldSkipTouch2ForPriceEra,
+  touch1RunCap,
   TOUCH2_POST_ERA_BATCH1_LIMIT,
   TOUCH2_POST_ERA_EPOCH,
   TOUCH2_POST_ERA_SCALE_KEY,
@@ -50,6 +53,19 @@ describe('sequence backlog routing (no invented copy)', () => {
     expect(shouldPauseTouch1(1120, true, { t1Starved: true })).toBe(false)
     expect(shouldPauseTouch1(1120, true, { t1Starved: false })).toBe(true)
     expect(shouldPauseTouch1(PAUSE_T1_WHEN_DRAINABLE_AT, true, { t1Starved: true })).toBe(false)
+  })
+
+  it('crisis pause still drips T1 up to HOURLY_SLICE (≤10), never zeroes freshly verified leads', () => {
+    // Live: 40 qev_valid sendable, pauseNewTouch1=true, drainableOverdue≈1112, sent=0.
+    expect(shouldPauseTouch1(1112, true, { t1Starved: false })).toBe(true)
+    expect(crisisTouch1DripCap(3)).toBe(3)
+    expect(crisisTouch1DripCap(24)).toBe(CRISIS_T1_DRIP_MAX)
+    expect(CRISIS_T1_DRIP_MAX).toBe(10)
+    expect(touch1RunCap({ pauseNewTouch1: true, dailyAllowance: 50, hourlySlice: 3 })).toBe(3)
+    expect(touch1RunCap({ pauseNewTouch1: true, dailyAllowance: 50, hourlySlice: 24 })).toBe(10)
+    expect(touch1RunCap({ pauseNewTouch1: true, dailyAllowance: 0, hourlySlice: 3 })).toBe(0)
+    expect(touch1RunCap({ pauseNewTouch1: false, dailyAllowance: 50, hourlySlice: 3 })).toBe(3)
+    expect(touch1RunCap({ pauseNewTouch1: false, dailyAllowance: 50, hourlySlice: 24 })).toBe(24)
   })
 
   it('unlocks remaining approved T2 during operating crisis without waiting for the Aug-3 hold flag', () => {
@@ -145,6 +161,8 @@ describe('drain is wired onto live send paths', () => {
     expect(seq).toMatch(/touch1_sent_at >= \$\{TOUCH2_COPY_ERA_CUTOFF\}/)
     expect(seq).toContain('loadTouch1HealthForPause')
     expect(seq).toContain('t1Starved')
+    expect(seq).toContain('touch1RunCap')
+    expect(seq).toContain("sanitize_reason IN ('qev_valid','mev_valid')")
     expect(hb).toContain('runSequenceDrainTick')
     expect(hb).toContain('sequenceEngineCheck')
     expect(hb).toContain('includeTouch2: true')

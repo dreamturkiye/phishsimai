@@ -26,6 +26,7 @@ import {
   secondTouchCopyKind,
   shouldCrisisUnlockTouch2,
   shouldPauseTouch1,
+  touch1RunCap,
   type SequenceBacklogCensus,
 } from './sequenceBacklog'
 
@@ -697,7 +698,7 @@ export async function runFullSequence() {
   const now = new Date()
   const operatingCrisis = await readOperatingCrisis(sql).catch(() => true)
   const backlog = await countSequenceBacklog(sql).catch(() => null)
-  const { loadTouch1Health, whyT1SentZero } = await import('./touch1Health')
+  const { loadTouch1Health, whyT1SentZero, pauseTouch1StuckAlert } = await import('./touch1Health')
   const t1Health = await loadTouch1Health(sql, now).catch(() => null)
   const t1Starved = !t1Health || t1Health.sanitizedEligible <= 0
   const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis, { t1Starved })
@@ -706,12 +707,12 @@ export async function runFullSequence() {
   }
   // PS-OUTREACH-THROTTLE-01: touch-1 obeys the SAME combined 100/day ceiling as touch-2, so new +
   // second-touch can never exceed 100 on the domain in a day. Its own type cap stays 50 (the ramp).
-  // Dual crisis + large overdue follow-up pool: pause NEW T1 this hour so Dex budget drains
-  // stuck sequences first (2/136 7d reply rate — do not scale bad TOF).
+  // Dual crisis + large overdue follow-up pool: prefer drain, but still drip T1 hourly
+  // (≤HOURLY_SLICE, ≤10) of freshly verified never-touched. Do not scale bad TOF; do not zero T1.
   const throttleCounts = await sentTodayCounts(sql)
-  const dailyAllowance = pauseNewTouch1
-    ? 0
-    : Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
+  // Dex / ramp remaining — pause must NOT zero this. Live 2026-09-17: 40 qev_valid sendable,
+  // pauseNewTouch1=true, dailyAllowance=0, sent=0 while 1112 overdue T2 drained at ~8/hr.
+  const dexAllowance = Math.min(dailySendCap(now), newTouchAllowance(throttleCounts))
   // PS-DRIP-01 (2026-08-24, founder-directed): send the day's allowance as a DRIP, not a burst.
   // This route ran once at 07:00 and fired the entire remaining allowance in one go — 50 messages
   // from the same domain inside a couple of minutes, which is the pattern spam filtering is built
@@ -720,7 +721,7 @@ export async function runFullSequence() {
   // unchanged and still enforced from the database (sentTodayCounts), so this only changes the
   // SHAPE of the day, never the volume: PS-RAMP-HOLD-01's 50/day hold still binds.
   const HOURLY_SLICE = Math.max(1, Math.ceil(dailySendCap(now) / 24))
-  const cap = Math.min(dailyAllowance, HOURLY_SLICE)
+  const cap = touch1RunCap({ pauseNewTouch1, dailyAllowance: dexAllowance, hourlySlice: HOURLY_SLICE })
   let totalSent = 0
   const results: any[] = []
 
@@ -740,7 +741,11 @@ export async function runFullSequence() {
       AND sanitized_at IS NOT NULL
       AND pipeline_stage NOT IN ('dead','customer')
       AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
-      ORDER BY created_at ASC LIMIT ${cap - totalSent}`
+      ORDER BY
+        CASE WHEN sanitize_reason IN ('qev_valid','mev_valid') AND sanitized_at > NOW() - INTERVAL '7 days' THEN 0 ELSE 1 END,
+        sanitized_at DESC NULLS LAST,
+        created_at ASC
+      LIMIT ${cap - totalSent}`
     let t1Leads = await t1Select()
     // PS-T1-STARVE-01: sanitized pool hit 0 on 2026-09-12 while 6435 unsanitized remained because
     // refill fail-closed on empty MEV and never called QEV. If this hour's T1 query is empty,
@@ -971,14 +976,27 @@ export async function runFullSequence() {
         sanitizedEligible: t1Health.sanitizedEligible,
         unsanitizedEligible: t1Health.unsanitizedEligible,
         pauseNewTouch1,
+        t1DripCap: pauseNewTouch1 ? cap : undefined,
       })
     : null
+  const pauseStuck = t1Health
+    ? pauseTouch1StuckAlert({
+        pauseNewTouch1,
+        sanitizedEligible: t1Health.sanitizedEligible,
+        touch1LastAt: t1Health.touch1LastAt,
+        now,
+      })
+    : { alert: false, message: null }
+  if (pauseStuck.alert && pauseStuck.message) {
+    await sendTelegram(pauseStuck.message).catch(() => {})
+  }
   return {
     sent: totalSent,
     results,
     bounceRate: health.rate,
     pauseNewTouch1,
     t1Starved,
+    t1DripCap: pauseNewTouch1 ? cap : null,
     drainableOverdue: backlog?.drainableOverdue ?? null,
     followUpSent,
     touch1LastAt: t1Health?.touch1LastAt ?? null,

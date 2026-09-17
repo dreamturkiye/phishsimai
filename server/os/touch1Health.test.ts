@@ -6,8 +6,10 @@ import {
   touch1Starvation,
   verifierEmptyAlertMessage,
   sendablePoolEmptyAlertMessage,
+  pauseTouch1StuckAlert,
   T1_SILENCE_MS,
   ELIGIBLE_ALERT_FLOOR,
+  PAUSE_STUCK_SENDABLE_FLOOR,
 } from './touch1Health'
 
 describe('mailboxVerifierKeys — empty Vercel MEV is unset', () => {
@@ -58,13 +60,21 @@ describe('whyT1SentZero — Sep 12 sanitized-pool starve', () => {
     )
   })
 
-  it('names pause_new_touch1 only when the sanitized pool still has leads to send', () => {
+  it('names pause_new_touch1 only when drip cap is also zero', () => {
     expect(
       whyT1SentZero({ sanitizedEligible: 12, unsanitizedEligible: 100, pauseNewTouch1: true }).reason,
     ).toBe('pause_new_touch1')
     expect(
       whyT1SentZero({ sanitizedEligible: 0, unsanitizedEligible: 6435, pauseNewTouch1: true }).reason,
     ).toMatch(/pool_starved_sanitized/)
+    expect(
+      whyT1SentZero({
+        sanitizedEligible: 40,
+        unsanitizedEligible: 100,
+        pauseNewTouch1: true,
+        t1DripCap: 3,
+      }).reason,
+    ).toBe('t1_crisis_drip_not_sent')
   })
 })
 
@@ -106,12 +116,44 @@ describe('touch1Starvation alerts', () => {
   })
 })
 
+describe('pauseNewTouch1 stuck >24h while sendable >20', () => {
+  const now = new Date('2026-09-17T08:00:00Z')
+
+  it('alerts the live-fire shape: pause true, 40 qev_valid, last T1 Sep 12', () => {
+    const a = pauseTouch1StuckAlert({
+      pauseNewTouch1: true,
+      sanitizedEligible: 40,
+      touch1LastAt: '2026-09-12T07:00:00Z',
+      now,
+    })
+    expect(a.alert).toBe(true)
+    expect(a.message).toMatch(/PAUSED >24h/)
+    expect(a.message).toMatch(/40 sendable/)
+  })
+
+  it('does not alert when sendable is at or under the floor, or T1 is fresh, or pause is off', () => {
+    expect(PAUSE_STUCK_SENDABLE_FLOOR).toBe(20)
+    expect(pauseTouch1StuckAlert({
+      pauseNewTouch1: true, sanitizedEligible: 20, touch1LastAt: '2026-09-12T07:00:00Z', now,
+    }).alert).toBe(false)
+    expect(pauseTouch1StuckAlert({
+      pauseNewTouch1: true, sanitizedEligible: 40, touch1LastAt: now.toISOString(), now,
+    }).alert).toBe(false)
+    expect(pauseTouch1StuckAlert({
+      pauseNewTouch1: false, sanitizedEligible: 40, touch1LastAt: '2026-09-12T07:00:00Z', now,
+    }).alert).toBe(false)
+  })
+})
+
 describe('runFullSequence T1 SQL still requires sanitized_at (the starve gate)', () => {
   it('the T1 select is fail-closed on sanitized_at IS NOT NULL', () => {
     const seq = readFileSync('server/os/sequences.ts', 'utf8')
+    const wd = readFileSync('server/os/watchdog.ts', 'utf8')
     expect(seq).toMatch(/sanitized_at IS NOT NULL/)
     expect(seq).toMatch(/t1StarveReason/)
     expect(seq).toMatch(/touch1LastAt/)
     expect(seq).toContain('loadTouch1HealthForPause')
+    expect(seq).toContain('touch1RunCap')
+    expect(wd).toContain('pauseTouch1StuckAlert')
   })
 })

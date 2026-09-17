@@ -107,6 +107,29 @@ export async function runWatchdog() {
       await sendTelegram(t1.starvation.message)
       result.actions_taken.push(`T1 starvation alert: ${t1.starvation.code}`)
     }
+    try {
+      const { countSequenceBacklog, shouldPauseTouch1 } = await import('./sequenceBacklog')
+      const { isOperatingCrisis } = await import('./cgoMandate')
+      const { measureTrueOrgCounts } = await import('./trueTrials')
+      const { pauseTouch1StuckAlert } = await import('./touch1Health')
+      const crisis = await measureTrueOrgCounts(sql)
+        .then((c) => isOperatingCrisis({ liveProductTrials: c.trueLiveTrials, crmTrials: 0, payingCustomers: c.truePaying }))
+        .catch(() => true)
+      const backlog = await countSequenceBacklog(sql)
+      const pause = shouldPauseTouch1(backlog.drainableOverdue, crisis, { t1Starved: t1.sanitizedEligible <= 0 })
+      const stuck = pauseTouch1StuckAlert({
+        pauseNewTouch1: pause,
+        sanitizedEligible: t1.sanitizedEligible,
+        touch1LastAt: t1.touch1LastAt,
+      })
+      if (stuck.alert && stuck.message) {
+        result.issues_found++
+        await sendTelegram(stuck.message)
+        result.actions_taken.push('T1 pause stuck >24h with sendable sanitized untouched')
+      }
+    } catch (e: any) {
+      result.actions_taken.push('T1 pause-stuck check error: ' + e.message?.slice(0, 100))
+    }
     if (!t1.verifier.any) {
       result.issues_found++
       const { verifierEmptyAlertMessage } = await import('./touch1Health')
