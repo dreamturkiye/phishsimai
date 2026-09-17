@@ -1730,13 +1730,25 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
         : `queue_marcus blocked by the autonomy gate / circuit breaker and parked — not executed`
     } else {
       const [title, detail] = arg.split('|').map((x) => x.trim())
-      const { escalateCategoryFor } = await import('../os/escalateCategory')
+      const { escalateCategoryFor, escalateShouldQueueMarcus } = await import('../os/escalateCategory')
       const category = escalateCategoryFor(title || arg, detail || '')
-      const rows = (await sql`INSERT INTO escalations (product_id, category, payload, status)
-        VALUES (${companyId}, ${category},
-          ${JSON.stringify({ title: title || arg, detail: detail || '', from: agentId })}::jsonb, 'pending')
-        RETURNING id`) as any[]
-      outcome = `escalated a decision to Janet/founder (id ${rows[0]?.id || '?'}, category=${category}, pending sign-off)`
+      // Prod CHECK has no founder_decision. Send-path/ops → queue_marcus (marcus_dispatch).
+      if (escalateShouldQueueMarcus(category)) {
+        const id = await queueJanetArchitectTask({
+          task: (title || arg).slice(0, 2000),
+          source: `agent:${agentId}`,
+          notes: `escalate→queue_marcus (${category}): ${String(detail || '').slice(0, 400)}`,
+        })
+        outcome = id
+          ? `send-path escalate routed to Marcus (id ${id}, category=${category})`
+          : `queue_marcus blocked by the autonomy gate / circuit breaker and parked — not executed`
+      } else {
+        const rows = (await sql`INSERT INTO escalations (product_id, category, payload, status)
+          VALUES (${companyId}, ${category},
+            ${JSON.stringify({ title: title || arg, detail: detail || '', from: agentId })}::jsonb, 'pending')
+          RETURNING id`) as any[]
+        outcome = `escalated a decision to Janet/founder (id ${rows[0]?.id || '?'}, category=${category}, pending sign-off)`
+      }
     }
   } catch (e: any) {
     outcome = `action failed: ${String(e?.message || e).slice(0, 120)}`

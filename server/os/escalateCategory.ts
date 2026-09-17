@@ -5,6 +5,7 @@
  */
 import { isSendPathFixTitle } from './cgoMandate'
 
+/** Prod 0010 CHECK — exact set. There is NO founder_decision. */
 export const ESCALATION_CATEGORIES = [
   'pricing_billing',
   'capital_spend',
@@ -16,6 +17,7 @@ export const ESCALATION_CATEGORIES = [
   'marcus_dispatch',
   'agent_critical',
 ] as const
+export const PROD_ESCALATION_CHECK = ESCALATION_CATEGORIES
 
 export type EscalationCategory = (typeof ESCALATION_CATEGORIES)[number]
 
@@ -31,4 +33,9 @@ export function escalateCategoryFor(title: string, detail = ''): EscalationCateg
     return 'marcus_dispatch'
   }
   return 'agent_critical'
+}
+
+/** Send-path/ops escalate must queue Marcus, not a founder_decision row. */
+export function escalateShouldQueueMarcus(category: EscalationCategory): boolean {
+  return category === 'marcus_dispatch'
 }

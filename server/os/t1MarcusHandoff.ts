@@ -287,28 +287,34 @@ export function isLeadEligibilitySpam(task: string): boolean {
   return /lead eligibility checker/i.test(String(task || ''))
 }
 
-/** One-shot: cancel the "Fix Lead Eligibility Checker" clone storm when the real T1 bug is queued. */
+export function isNamedT1MarcusTask(task: string): boolean {
+  return /PS-T1-(STARVE|QEV-EMPTY|PAUSE-LOCK)/i.test(String(task || ''))
+}
+
+/** One-shot: cancel every open "Fix Lead Eligibility Checker" clone when the real T1 bug is queued. */
 export async function supersedeLeadEligibilitySpam(sql: any, keepId?: string): Promise<number> {
-  const open = (await sql`
-    SELECT id, task FROM os_architect_tasks
-    WHERE status IN ('queued','pending','approved','running')
-    LIMIT 200
-  `.catch(() => [])) as Array<{ id: string; task: string }>
-  const ids = open
-    .filter((r) => isLeadEligibilitySpam(r.task) && String(r.id) !== String(keepId || ''))
-    .map((r) => String(r.id))
-  if (!ids.length) return 0
-  let n = 0
-  for (const id of ids) {
-    const out = (await sql`
-      UPDATE os_architect_tasks
-      SET status='cancelled',
-          notes=COALESCE(notes,'') || ' | superseded by PS-T1-STARVE',
-          updated_at=NOW()
-      WHERE id=${id} AND status IN ('queued','pending','approved','running')
-      RETURNING id
-    `.catch(() => [])) as Array<{ id: string }>
-    n += out.length
-  }
-  return n
+  const keep = String(keepId || '')
+  const rows = (
+    keep
+      ? await sql`
+          UPDATE os_architect_tasks
+          SET status='cancelled',
+              notes=COALESCE(notes,'') || ' | superseded by PS-T1-STARVE',
+              updated_at=NOW()
+          WHERE status IN ('queued','pending','approved','running')
+            AND task ILIKE '%lead eligibility checker%'
+            AND id::text <> ${keep}
+          RETURNING id
+        `.catch(() => [])
+      : await sql`
+          UPDATE os_architect_tasks
+          SET status='cancelled',
+              notes=COALESCE(notes,'') || ' | superseded by PS-T1-STARVE',
+              updated_at=NOW()
+          WHERE status IN ('queued','pending','approved','running')
+            AND task ILIKE '%lead eligibility checker%'
+          RETURNING id
+        `.catch(() => [])
+  ) as Array<{ id: string }>
+  return rows.length
 }
