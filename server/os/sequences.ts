@@ -13,6 +13,8 @@ import { secondTouchAllowance, newTouchAllowance, sentTodayCounts, sleep, SEND_S
 import { randomUUID } from 'node:crypto'
 import { isOperatingCrisis } from './cgoMandate'
 import { measureTrueOrgCounts } from './trueTrials'
+import { trialCtaUrl } from './trialCta'
+export { TRIAL_CTA_URL, trialCtaUrl } from './trialCta'
 import {
   DRAIN_STALE_MARK_CAP,
   FOLLOWUP_DAILY_CAP,
@@ -268,7 +270,7 @@ PhishSim AI is flat MSP pricing, never per seat: $149/mo for your first client, 
 
 Setup is about ten minutes for one client. After that it runs itself: simulations fire on schedule, training goes out the moment someone clicks, and the per-tenant evidence builds in the background for QBRs. Fully automated — no engineer, nothing to babysit.
 
-Start free, 30 days, no card: https://phishsimai.com/login?mode=register
+Start free, 30 days, no card: ${trialCtaUrl({ source: 'cold', medium: 'email', campaign: 'touch3' })}
 
 Sarah Mitchell
 PhishSim AI${CANSPAM_TEXT}`,
@@ -288,7 +290,7 @@ Is phishing training for your clients something you already handle in-house, or 
 
 Either answer is genuinely useful and one word is plenty. If it is simply the wrong month, say so and I will close the file.
 
-If you would rather just look: https://phishsimai.com/login?mode=register (30 days, no card, about ten minutes to set up)
+If you would rather just look: ${trialCtaUrl({ source: 'cold', medium: 'email', campaign: 'touch4' })} (30 days, no card, about ten minutes to set up)
 
 Sarah Mitchell
 PhishSim AI${CANSPAM_TEXT}`,
@@ -1177,7 +1179,6 @@ export const WARM_CTA_TOUCHES = [90, 91, 92] as const
 export const WARM_CTA_COOLDOWN_DAYS = 4
 /** Dual-crisis follow-up: 6h between 90→91→92 instead of parking 14 leads for 4 days. */
 export const CRISIS_WARM_FOLLOWUP_HOURS = 6
-export const TRIAL_CTA_URL = 'https://phishsimai.com/login?mode=register'
 
 export type WarmPoolCensus = {
   replied: number
@@ -1435,6 +1436,12 @@ export async function sendWarmTrialCtas(opts: {
       const token = Buffer.from(String(lead.email)).toString('base64url')
       const greet = deriveFirstName(String(lead.email))
       const co = String(lead.company || 'your MSP')
+      const cta = trialCtaUrl({
+        source: 'warm_cta',
+        medium: 'email',
+        campaign: 'convert_warm',
+        email: String(lead.email),
+      })
       const subject = `${greet}, start the 30-day trial — no card`
       const text = `Hi ${greet},
 
@@ -1444,7 +1451,7 @@ One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. D
 
 Live in 10 minutes, no engineer. 30-day trial, no card, full access.
 
-Start here: ${TRIAL_CTA_URL}
+Start here: ${cta}
 
 Sarah
 ${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
@@ -1453,7 +1460,7 @@ ${CANSPAM_TEXT}`.replace(/\{\{TOKEN\}\}/g, token)
 <p>You wrote back. Shortest path from here:</p>
 <p>One of the lowest per-seat prices in the industry: 60¢/user, $299/mo for 500. Drops to 30¢ on Pro. Flat MSP pricing — every client you add widens your margin instead of eating it.</p>
 <p>Live in 10 minutes, no engineer. 30-day trial, no card, full access.</p>
-<p><a href="${TRIAL_CTA_URL}">Start the 30-day no-card trial</a></p>
+<p><a href="${cta}">Start the 30-day no-card trial</a></p>
 <p>Sarah</p>
 <hr style="border:0;border-top:1px solid #eee;margin:24px 0 12px">
 <p style="color:#666;font-size:12px;margin:0">Sarah Mitchell · PhishSim AI</p>

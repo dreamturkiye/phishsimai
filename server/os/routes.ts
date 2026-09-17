@@ -42,6 +42,7 @@ import { runAgentLevels } from './agentLevels'
 import { runJanetReport } from './janetReport'
 import { getAllAgentHealth, reportAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
+import { listFounderOneToOneQueue } from './founderOneToOne'
 import { runSarahSocialCron, listSocialQueue, queueSocialItem } from './social/sarahSocial'
 import { handleLinkedInPreview, dispatchSarahSocialRoute } from './social/linkedinPreviewDispatch'
 import { buildAnalyticsView, ingestAnalyticsEvent } from './siteAnalytics'
@@ -571,6 +572,7 @@ export async function hqData(req: Request, res: Response) {
 
     const socialQueue = await listSocialQueue(15).catch(() => [] as any[])
     const analyticsView = await buildAnalyticsView(COMPANY).catch(() => null)
+    const founderOneToOne = await listFounderOneToOneQueue(sql).catch(() => [])
 
     const bounceRate = Number(pipeline.apollo_sent) > 0
       ? (Number(pipeline.bounced) / Number(pipeline.apollo_sent) * 100).toFixed(1)
@@ -610,6 +612,7 @@ export async function hqData(req: Request, res: Response) {
       architectMemory,
       qaRuns,
       socialQueue,
+      founderOneToOne,
       sarahSocialConfigured: !!(process.env.SARAH_REDDIT_USERNAME && process.env.SARAH_REDDIT_PASSWORD),
       analyticsView,
     })

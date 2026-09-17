@@ -56,7 +56,7 @@ export async function checkFunnelHealth(sqlOverride?: any): Promise<FunnelHealth
   const detail = !measured
       ? `not measured: ${sent} sends in ${WINDOW_DAYS}d (< ${MIN_SENDS_TO_JUDGE})`
         : broken
-        ? `FUNNEL FLATLINE: ${sent} emails sent in ${WINDOW_DAYS}d -> ${signups} signups, ${replies} replies. Post-click conversion is 0. Check the signup path (should be /login?mode=register).`
+        ? `FUNNEL FLATLINE: ${sent} emails sent in ${WINDOW_DAYS}d -> ${signups} signups, ${replies} replies. Post-click conversion is 0. Check the signup path (should be /trial).`
           : `ok: ${sent} sent, ${signups} signups, ${replies} replies (${WINDOW_DAYS}d)`
 
   return { measured, sent, signups, replies, broken, windowDays: WINDOW_DAYS, detail }
@@ -73,7 +73,7 @@ export async function runFunnelHealthCheck(sqlOverride?: any): Promise<FunnelHea
         await sendTelegram(
                 `\u{1F6A8} <b>PHISHSIM FUNNEL FLATLINE</b>\n` +
                 `${h.sent} emails sent in ${h.windowDays}d \u2192 <b>${h.signups} signups</b>, ${h.replies} replies.\n` +
-                `People are being emailed but nobody is converting. Verify the signup path is /login?mode=register ` +
+                `People are being emailed but nobody is converting. Verify the signup path is /trial ` +
                 `and that /register + /setup redirect logged-out visitors to it.`
               ).catch(() => {})
         await recordIncident(sql, COMPANY_ID, `funnel flatline: ${h.sent} sent / ${h.signups} signups (${h.windowDays}d)`, 'funnel-health').catch(() => {})

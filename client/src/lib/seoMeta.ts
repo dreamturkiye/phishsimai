@@ -51,6 +51,13 @@ export function seoForPath(pathname: string): RouteMeta {
       path: "/terms",
     };
   }
+  if (pathname === "/trial" || pathname === "/signup" || pathname === "/register") {
+    return {
+      title: "Start your 30-day free trial — PhishSim AI",
+      description: "Full access for 30 days. No credit card. No email verification to start. Live in 10 minutes.",
+      path: "/trial",
+    };
+  }
   return {
     title: "PhishSim AI — AI Phishing Simulation & Security Awareness for MSPs",
     description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 30-day free trial.",

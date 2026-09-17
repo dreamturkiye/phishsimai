@@ -7,6 +7,7 @@ import { COOKIE_NAME } from "@shared/const";
 import * as db from "../db";
 import { sdk } from "./sdk";
 import { startProductTrial } from "../os/startProductTrial";
+import { parseSignupAttribution } from "../os/trialCta";
 import { isDatabaseUnavailable, registerResponseBody } from "./registerResult";
 
 // Simple password hashing using Node.js built-in crypto (no bcrypt dependency)
@@ -44,6 +45,7 @@ export function registerOAuthRoutes(app: any) {
   app.post("/api/auth/register", async (req: any, res: any) => {
     try {
       const { email, password, name, company } = req.body ?? {};
+      const attribution = parseSignupAttribution(req.body ?? {});
       if (!email || !password) {
         return res.status(400).json({ error: "email and password are required" });
       }
@@ -76,6 +78,7 @@ export function registerOAuthRoutes(app: any) {
         email: String(email),
         name: typeof name === "string" ? name : user.name ?? undefined,
         company: typeof company === "string" ? company : undefined,
+        attribution,
       }).catch((err) => {
         console.error("[Auth] startProductTrial failed (account created, /setup remains):", err);
         return null;

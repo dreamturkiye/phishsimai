@@ -338,7 +338,7 @@ export default function HQPage() {
           </div>
         </>}
 
-        {tab === 'pipeline' && <HQPipelineTab pipelineView={data?.pipelineView} />}
+        {tab === 'pipeline' && <HQPipelineTab pipelineView={data?.pipelineView} founderOneToOne={data?.founderOneToOne} />}
 
         {tab === 'approvals' && <>
           <div style={s.card}>

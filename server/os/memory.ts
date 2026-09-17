@@ -129,7 +129,7 @@ export const PERMANENT_LESSONS: { signature: string; lesson: string }[] = [
     signature: 'phishsim:warm-replies-must-get-trial-cta',
     lesson:
       'A REPLIED LEAD THAT ONLY GETS A DRAFT FOR KAAN DOES NOT CONVERT. Interested replies ' +
-      'must receive the frozen 30-day no-card trial CTA at https://phishsimai.com/login?mode=register ' +
+      'must receive the frozen 30-day no-card trial CTA at https://phishsimai.com/trial ' +
       'through sendWarmTrialCtas (Dex MX + assertSendable + suppression). Lead with the founder-' +
       'approved lowest-per-seat claim (60¢ / $299/500 / 30¢ on Pro). Objections still draft. ' +
       'Never use /register (dead). Never skip Dex. Never fake a trial row.',

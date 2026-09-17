@@ -37,9 +37,14 @@ describe('register actually starts the 30-day trial', () => {
     const helper = readFileSync('server/os/startProductTrial.ts', 'utf8')
     expect(helper).toContain('createOrganization')
     expect(helper).toContain('markLeadTrial')
+    expect(helper).toMatch(/markLeadTrial\([\s\S]*attribution/)
     expect(helper).toContain('sendWelcomeEmail')
     expect(readFileSync('server/db.ts', 'utf8')).toContain('planExpiresAt')
+    expect(readFileSync('server/db.ts', 'utf8')).toContain('planActivatedAt')
+    expect(readFileSync('server/db.ts', 'utf8')).toMatch(/plan:\s*"free"/)
     expect(oauth).toContain('registerResponseBody')
+    expect(oauth).toContain('parseSignupAttribution')
+    expect(oauth).not.toMatch(/captcha|recaptcha|stripe.*register|email.?verif/i)
   })
 
   it('login also starts a trial org when the user has none (409-then-signin dead-end)', () => {
@@ -50,9 +55,12 @@ describe('register actually starts the 30-day trial', () => {
   it('register 409 tells the prospect to sign in rather than dead-ending', () => {
     const oauth = readFileSync('server/_core/oauth.ts', 'utf8')
     expect(oauth).toMatch(/already exists\. Sign in to continue your trial/)
+    const trial = readFileSync('client/src/pages/TrialStart.tsx', 'utf8')
+    expect(trial).toMatch(/res\.status === 409/)
+    expect(trial).toMatch(/window\.location\.href = "\/login"/)
     const login = readFileSync('client/src/pages/Login.tsx', 'utf8')
-    expect(login).toMatch(/setMode\("login"\)/)
-    expect(login).toMatch(/res\.status === 409/)
+    expect(login).toMatch(/window\.location\.replace\("\/trial"/)
+    expect(login).not.toMatch(/setMode\("login"\)/)
   })
 
   it('orgs.create also stamps CRM trial_at so /setup is not a silent miss', () => {

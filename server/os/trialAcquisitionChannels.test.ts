@@ -19,6 +19,7 @@ describe('trial acquisition besides cold email', () => {
       'trial_org_nudges',
       'msp_hub_harvest',
       'magic_link_checkout',
+      'founder_1to1',
       'linkedin_founder_draft',
       'public_social_publish',
     ]))

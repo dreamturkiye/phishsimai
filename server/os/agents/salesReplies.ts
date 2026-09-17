@@ -35,7 +35,8 @@ import { requireTrustedCron } from '../cronAuth'
 import { randomUUID } from 'node:crypto'
 
 const COMPANY = 'phishsimai'
-export const TRIAL_URL = 'https://phishsimai.com/login?mode=register'
+import { TRIAL_CTA_URL } from '../trialCta'
+export const TRIAL_URL = TRIAL_CTA_URL
 
 export type ReplyClass = 'interested' | 'objection' | 'unsubscribe' | 'auto_reply' | 'hostile'
 export type ReplyAction = 'draft_for_kaan' | 'auto_suppress' | 'no_action' | 'send_trial_cta'

@@ -20,7 +20,7 @@ export default function OrgSetup() {
     // there is no user once auth has resolved, send them to the real signup form instead.
     const authResolved = user !== undefined;
     useEffect(() => {
-          if (authResolved && !user) navigate("/login?mode=register");
+          if (authResolved && !user) navigate("/trial");
     }, [authResolved, user, navigate]);
     if (authResolved && !user) return null;
 

@@ -23,6 +23,7 @@ import BlogPost from "./pages/BlogPost";
 import BlogIndex from "./pages/BlogIndex";
 import TermsOfService from "./pages/TermsOfService";
 import Login from "./pages/Login";
+import TrialStart from "./pages/TrialStart";
 import HQ from "./pages/HQ";
 import HealTest from "./pages/HealTest";
 import { GlobalErrorHandler } from "./components/GlobalErrorHandler";
@@ -41,7 +42,9 @@ function Router() {
       <Route path="/gamification" component={Gamification} />
       <Route path="/settings" component={OrgSettings} />
       <Route path="/setup" component={OrgSetup} />
-      <Route path="/register" component={OrgSetup} />
+      <Route path="/register" component={TrialStart} />
+      <Route path="/signup" component={TrialStart} />
+      <Route path="/trial" component={TrialStart} />
       <Route path="/pricing" component={Home} />
       <Route path="/invite/:token" component={AcceptInvite} />
       <Route path="/compliance" component={ComplianceCenter} />

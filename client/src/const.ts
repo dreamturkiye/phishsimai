@@ -10,9 +10,10 @@ export const getLoginUrl = (returnPath?: string) => {
 };
 
 export const getSignupUrl = (returnPath?: string) => {
-  const base = "/login?mode=register";
-  if (returnPath) {
-    return `${base}&redirect=${encodeURIComponent(returnPath)}`;
-  }
-  return base;
+  const params = new URLSearchParams();
+  params.set("utm_source", "marketing_site");
+  params.set("utm_medium", "web");
+  params.set("utm_campaign", "homepage");
+  if (returnPath) params.set("redirect", returnPath);
+  return `/trial?${params.toString()}`;
 };

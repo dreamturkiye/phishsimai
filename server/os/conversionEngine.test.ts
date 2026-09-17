@@ -88,6 +88,19 @@ describe('conversionLesson is honest', () => {
     expect(l.lesson).not.toMatch(/fire convert_warm/)
   })
 
+  it('counts founder 1:1 queue as conversion progress when 90/91/92 are exhausted', () => {
+    const l = conversionLesson(
+      { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] },
+      undefined,
+      undefined,
+      { replied: 15, engaged: 14, sendable: 14, suppressed: 0, cooldown: 0, exhausted: 14, eligible: 0, autoReplyPending: 0 },
+      { founder1to1: { queued: 3, escalated: false, skipped: 0, reason: 'queued 3', drafts: [] } },
+    )
+    expect(l.success).toBe(true)
+    expect(l.lesson).toMatch(/founder 1:1/)
+    expect(l.lesson).toMatch(/not touch 93/i)
+  })
+
   it('counts trial-org nudges as conversion progress when warm CTAs are empty', () => {
     const l = conversionLesson({ sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] }, { sent: 3, scanned: 93 })
     expect(l.success).toBe(true)
@@ -99,7 +112,7 @@ describe('warm CTA stays on the Dex-registered send path', () => {
   it('lives in sequences.ts with rails and the live trial URL', () => {
     const seq = readFileSync('server/os/sequences.ts', 'utf8')
     expect(seq).toContain('export async function sendWarmTrialCtas')
-    expect(seq).toContain(TRIAL_CTA_URL)
+    expect(seq).toContain('trialCtaUrl')
     expect(seq).toContain('assertSendable')
     expect(seq).toContain('hasMx')
     expect(seq).toContain('ps_outreach_suppression')
@@ -112,7 +125,8 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(seq).toContain("INTERVAL '1 hour'")
     expect(readFileSync('server/os/agents/salesReplies.ts', 'utf8')).toContain('reopenFalseAutoReplies')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain("reopenFalseAutoReplies(getSql(), { crisis: true })")
-    expect(TRIAL_CTA_URL).toContain('login?mode=register')
+    expect(TRIAL_CTA_URL).toContain('/trial')
+    expect(TRIAL_CTA_URL).not.toContain('login')
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('warm_conversion')
     expect(readFileSync('server/os/agents/dex.ts', 'utf8')).toContain('trial_nudge')
     expect(seq).toMatch(/one of the lowest per-seat prices in the industry/i)
@@ -120,6 +134,7 @@ describe('warm CTA stays on the Dex-registered send path', () => {
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('advanceLinkedInAcquisition')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('runGreyBoxPaidNudge')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('measureWarmCtaToTrial')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('queueFounderOneToOneReviews')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueAutonomyBlocker')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('autonomyGate.ts')
   })
@@ -160,6 +175,7 @@ describe('convert_warm is queued/executed when work is available', () => {
     expect(conversionQueued({ sent: 2, eligible: 0 })).toBe(true)
     expect(conversionQueued({ sent: 0, eligible: 0, linkedinEscalated: true })).toBe(true)
     expect(conversionQueued({ sent: 0, eligible: 0, greyBoxSent: true })).toBe(true)
+    expect(conversionQueued({ sent: 0, eligible: 0, founderOneToOneQueued: true })).toBe(true)
     expect(conversionQueued({ sent: 0, eligible: 0 })).toBe(false)
   })
 })
