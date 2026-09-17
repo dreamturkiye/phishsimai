@@ -212,6 +212,8 @@ export async function applyT1MarcusTicket(
   const day = deps.day ?? new Date().toISOString().slice(0, 10)
   const dayBug = `${day}:${ticket.bug}`
   if (await deps.alreadyQueuedToday(dayBug)) {
+    // Day-dedupe must still cancel the Lead Eligibility Checker clone storm.
+    if (deps.supersedeSpam) await deps.supersedeSpam('')
     return { queued: false, bug: ticket.bug, id: null }
   }
   const id = await deps.queueTask({

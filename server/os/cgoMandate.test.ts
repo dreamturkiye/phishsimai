@@ -76,6 +76,32 @@ describe('Janet CGO mandate', () => {
     expect(d.nextActions.join(' ')).toMatch(/convert_warm|Grey Box|91\/92|follow-up/)
   })
 
+  it('eligible=0 + T1 starved → queue Marcus / refill / QEV, not another convert_warm', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1,
+      paying: 0,
+      warm: {
+        replied: 15, engaged: 14, sendable: 14, eligible: 0,
+        cooldown: 0, exhausted: 0, suppressed: 0, autoReplyPending: 14,
+      },
+      t1: {
+        daysSinceLastT1: 5,
+        sanitizedEligible: 0,
+        unsanitizedEligible: 6435,
+        pauseNewTouch1: true,
+        verifier: { mev: false, qev: false, any: false },
+        warmCtaToTrue: { ctaSent: 17, trueTrials: 0 },
+      },
+    })
+    const next = d.nextActions.join(' ')
+    expect(next).toMatch(/queue_marcus/)
+    expect(next).toMatch(/PS-T1-/)
+    expect(next).toMatch(/QEV|sanitize/)
+    expect(next).not.toMatch(/convert_warm/)
+    expect(d.line).not.toMatch(/Fire convert_warm/)
+    expect(d.line).toMatch(/queue_marcus/)
+  })
+
   it('names parked touch-90 cooldown as the next crisis follow-up, not wait 4 days', () => {
     const d = diagnoseRevenueFailure({
       trueTrials: 1, paying: 0,

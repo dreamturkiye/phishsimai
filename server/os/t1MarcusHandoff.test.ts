@@ -107,6 +107,22 @@ describe('applyT1MarcusTicket actually queues (not Telegram theater)', () => {
     expect(second.queued).toBe(false)
     expect(queued).toHaveLength(1)
   })
+
+  it('still cancels Lead Eligibility Checker clones when the named bug is already queued today', async () => {
+    const ticket = t1MarcusTicket(liveSep17)
+    const superseded: string[] = []
+    const second = await applyT1MarcusTicket(ticket, {
+      queueTask: async () => 'arch-2',
+      alreadyQueuedToday: async () => true,
+      markQueuedToday: async () => {},
+      day: '2026-09-17',
+      supersedeSpam: async (keepId) => {
+        superseded.push(keepId)
+      },
+    })
+    expect(second.queued).toBe(false)
+    expect(superseded).toHaveLength(1)
+  })
 })
 
 describe('diagnoseRevenueFailure names the T1/sanitize bottleneck', () => {
