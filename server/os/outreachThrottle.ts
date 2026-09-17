@@ -11,8 +11,8 @@
 //   • Every allowance is min(per-run batch, per-type remaining, COMBINED remaining). A path can
 //     therefore never push the COMBINED total past 100, nor its own type past 50, no matter how
 //     many times it runs.
-//   • Counts come from sentTodayCounts() — a COUNT over touch{1,2}_sent_at::date = today — so two
-//     concurrent-ish runs both see what has actually been stamped, not an in-memory guess.
+//   • Counts come from sentTodayCounts() — T1 stamps today + REAL T2 only (T3 dual-stamps without
+//     an outbox touch=2 row do not count). Two concurrent-ish runs both see the DB, not a guess.
 //   • Overflow "queues" implicitly: the eligibility query is ordered oldest-first with LIMIT =
 //     allowance, so the 51st second-touch simply isn't selected today and remains eligible tomorrow
 //     when the counter has reset. No queue table is needed — the daily count IS the queue boundary.
@@ -31,6 +31,29 @@ export const SEND_SPACING_MS = 10_000;     // 5× touch-1's 2s; a run of 10 take
 export interface SentToday {
   newSentToday: number;
   secondSentToday: number;
+}
+
+export type SecondTouchCountRow = {
+  touch2SentAt: Date | string | null
+  touch3SentAt: Date | string | null
+  /** True when outreach_sequence_outbox has touch=2 status=sent with a provider id. */
+  hasTouch2OutboxSent?: boolean
+}
+
+/**
+ * Dual-stamped skip-T2 T3 (touch2_sent_at == touch3_sent_at, no T2 outbox) is a T3 send, not Dex T2.
+ * Live 2026-09-17: ~114 of those stamps were counted as secondSentToday and zeroed T1 combined headroom.
+ * runTouch2Batch T3-as-T2 writes outbox touch=2 — those still count (real second-touch budget).
+ */
+export function countsTowardSecondSentToday(row: SecondTouchCountRow): boolean {
+  if (!row.touch2SentAt) return false
+  const t2 = new Date(row.touch2SentAt).getTime()
+  if (!Number.isFinite(t2)) return false
+  if (row.hasTouch2OutboxSent) return true
+  if (!row.touch3SentAt) return true
+  const t3 = new Date(row.touch3SentAt).getTime()
+  if (!Number.isFinite(t3)) return true
+  return t2 !== t3
 }
 
 function clampAllowance(perTypeRemaining: number, combinedRemaining: number, perRun: number): number {
@@ -53,12 +76,29 @@ export function newTouchAllowance(counts: SentToday, perRun = NEW_TOUCH_PER_RUN)
 }
 
 /** Today's stamped sends, counted from the DB (UTC day). The cap is enforced against reality, not a
- *  process-local counter that a redeploy would reset. */
+ *  process-local counter that a redeploy would reset.
+ *
+ *  secondSentToday is REAL T2 only (see countsTowardSecondSentToday). Skip-T2 / crisis T3 that
+ *  dual-stamped touch2_sent_at == touch3_sent_at without an outbox touch=2 row must not consume
+ *  the T2/50 or combined/100 budget — that is what starved T1 on 2026-09-17. */
 export async function sentTodayCounts(sql: any): Promise<SentToday> {
   const rows = (await sql`
     SELECT
       count(*) FILTER (WHERE touch1_sent_at::date = (now() AT TIME ZONE 'utc')::date)::int AS new_today,
-      count(*) FILTER (WHERE touch2_sent_at::date = (now() AT TIME ZONE 'utc')::date)::int AS second_today
+      count(*) FILTER (
+        WHERE touch2_sent_at::date = (now() AT TIME ZONE 'utc')::date
+          AND (
+            touch3_sent_at IS NULL
+            OR touch2_sent_at IS DISTINCT FROM touch3_sent_at
+            OR EXISTS (
+              SELECT 1 FROM outreach_sequence_outbox o
+              WHERE o.lead_id = ps_outreach_leads.id
+                AND o.touch = 2
+                AND o.status = 'sent'
+                AND o.provider_message_id IS NOT NULL
+            )
+          )
+      )::int AS second_today
     FROM ps_outreach_leads
   `.catch(() => [])) as any[];
   return {

@@ -177,9 +177,19 @@ describe('drain is wired onto live send paths', () => {
     const seq = readFileSync('server/os/sequences.ts', 'utf8')
     expect(seq).toContain('seq_t3_as_t2')
     expect(seq).toContain('secondTouchCopyKind')
-    expect(seq).toContain('touch2_sent_at=${ts}, touch3_sent_at=${ts}')
     expect(seq).toContain('touch2PostEraHeadroom')
     expect(seq).toContain('TOUCH2_POST_ERA_EPOCH')
     expect(seq).toContain('includePostCutoff')
+    expect(seq).toContain('AND l.touch3_sent_at IS NULL')
+    const backlog = readFileSync('server/os/sequenceBacklog.ts', 'utf8')
+    expect(backlog).toMatch(/AND touch3_sent_at IS NULL\s+AND touch1_sent_at < NOW\(\) - INTERVAL '5 days'/)
+  })
+
+  it('skip-T2 T3 stamps T3 only; runTouch2Batch T3-as-T2 is the sole dual-stamp (T1 starve 2026-09-17)', () => {
+    const seq = readFileSync('server/os/sequences.ts', 'utf8')
+    const dual = seq.match(/touch2_sent_at=\$\{ts\}, touch3_sent_at=\$\{ts\}/g) || []
+    expect(dual).toHaveLength(1)
+    expect(seq).toMatch(/T3-only stamp/)
+    expect(seq).not.toMatch(/Skip-T2 path: this T3 copy IS the second email — stamp T2/)
   })
 })

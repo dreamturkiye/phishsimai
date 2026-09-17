@@ -16,8 +16,9 @@
  *
  * Drain doctrine: resume approved T2 copy for pre-cutoff ICP; for post-cutoff T1 after
  * ≥5 days send the EXISTING approved SEQUENCE touch-3 (value re-frame, not a same-day
- * double price-pitch) via runTouch2Batch and stamp touch2_sent_at (and touch3_sent_at
- * so the T3 loop does not re-send the same copy). T4 after T3+6d. Suppress silent stale.
+ * double price-pitch) via runTouch2Batch (outbox touch=2 + dual-stamp; Dex T2/50 binds)
+ * or drain/sequence T3 (stamp touch3_sent_at ONLY — never dual-stamp T2, which starved
+ * T1 combined headroom on 2026-09-17). T4 after T3+6d. Suppress silent stale.
  * Pause new T1 while the overdue drainable pool is large. No invented cold copy.
  */
 
@@ -227,6 +228,7 @@ export async function countSequenceBacklog(sql: any): Promise<SequenceBacklogCen
       count(*) FILTER (
         WHERE touch1_sent_at IS NOT NULL
           AND touch2_sent_at IS NULL
+          AND touch3_sent_at IS NULL
           AND touch1_sent_at < NOW() - INTERVAL '5 days'
           AND COALESCE(replied, false) = false
           AND COALESCE(bounced, false) = false
@@ -236,6 +238,7 @@ export async function countSequenceBacklog(sql: any): Promise<SequenceBacklogCen
       count(*) FILTER (
         WHERE touch1_sent_at IS NOT NULL
           AND touch2_sent_at IS NULL
+          AND touch3_sent_at IS NULL
           AND touch1_sent_at < ${TOUCH2_COPY_ERA_CUTOFF}::timestamptz
           AND touch1_sent_at < NOW() - INTERVAL '5 days'
           AND COALESCE(replied, false) = false

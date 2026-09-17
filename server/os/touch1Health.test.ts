@@ -67,6 +67,40 @@ describe('whyT1SentZero — Sep 12 sanitized-pool starve', () => {
       whyT1SentZero({ sanitizedEligible: 0, unsanitizedEligible: 6435, pauseNewTouch1: true }).reason,
     ).toMatch(/pool_starved_sanitized/)
   })
+
+  it('names combined_daily_cap when the sanitized pool is healthy and Dex combined is the blocker', () => {
+    // Live 2026-09-17: sanitizedEligible≈150, pauseNewTouch1=false, sent=0,
+    // naive secondSentToday≈134 → combined 149/100. Do not hide that as t1_eligible_but_not_sent.
+    expect(
+      whyT1SentZero({
+        sanitizedEligible: 150,
+        unsanitizedEligible: 6000,
+        pauseNewTouch1: false,
+        newSentToday: 15,
+        secondSentToday: 134,
+        newTouchAllowance: 0,
+      }).reason,
+    ).toBe('combined_daily_cap')
+    expect(
+      whyT1SentZero({
+        sanitizedEligible: 150,
+        unsanitizedEligible: 6000,
+        newSentToday: 50,
+        secondSentToday: 0,
+        newTouchAllowance: 0,
+      }).reason,
+    ).toBe('new_touch_daily_cap')
+    expect(
+      whyT1SentZero({
+        sanitizedEligible: 150,
+        unsanitizedEligible: 6000,
+        pauseNewTouch1: false,
+        newSentToday: 15,
+        secondSentToday: 20,
+        newTouchAllowance: 35,
+      }).reason,
+    ).toBe('t1_eligible_but_not_sent')
+  })
 })
 
 describe('touch1Starvation alerts', () => {
@@ -114,5 +148,7 @@ describe('runFullSequence T1 SQL still requires sanitized_at (the starve gate)',
     expect(seq).toMatch(/t1StarveReason/)
     expect(seq).toMatch(/touch1LastAt/)
     expect(seq).toContain('loadTouch1HealthForPause')
+    expect(seq).toContain('secondSentToday: throttleCounts.secondSentToday')
+    expect(seq).toContain('newTouchAllowance: newTouchAllowance(throttleCounts)')
   })
 })

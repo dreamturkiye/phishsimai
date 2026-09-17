@@ -1,3 +1,5 @@
+import { COMBINED_DAILY_CAP, NEW_TOUCH_DAILY_CAP } from './outreachThrottle'
+
 /**
  * PS-T1-STARVE-01 — why cold touch-1 died 2026-09-12 and how to alarm next time.
  *
@@ -49,11 +51,18 @@ export type T1StarveInput = {
   tripped?: boolean
   autonomyDenied?: boolean
   pauseNewTouch1?: boolean
+  newSentToday?: number
+  secondSentToday?: number
+  newTouchAllowance?: number
+  combinedDailyCap?: number
+  newTouchDailyCap?: number
 }
 
 /**
  * Why runFullSequence's T1 loop sends 0 when the send path is otherwise healthy.
  * Bounce/autonomy are checked first by the caller; this is the sanitized-pool gate.
+ * Live 2026-09-17: sanitizedEligible≈150, pause=false, sent=0 because inflated T2 stamps
+ * exhausted combined — name combined_daily_cap, not t1_eligible_but_not_sent.
  */
 export function whyT1SentZero(input: T1StarveInput): { sent: 0; reason: string } {
   if (input.tripped) return { sent: 0, reason: 'bounce_breaker_tripped' }
@@ -68,6 +77,18 @@ export function whyT1SentZero(input: T1StarveInput): { sent: 0; reason: string }
     }
   }
   if (input.sanitizedEligible <= 0) return { sent: 0, reason: 'no_t1_eligible' }
+  const combinedCap = input.combinedDailyCap ?? COMBINED_DAILY_CAP
+  const newCap = input.newTouchDailyCap ?? NEW_TOUCH_DAILY_CAP
+  const newSent = input.newSentToday ?? 0
+  const secondSent = input.secondSentToday ?? 0
+  const combinedUsed = newSent + secondSent
+  const allowance = input.newTouchAllowance
+  if (typeof allowance === 'number' && allowance <= 0) {
+    if (combinedUsed >= combinedCap) return { sent: 0, reason: 'combined_daily_cap' }
+    if (newSent >= newCap) return { sent: 0, reason: 'new_touch_daily_cap' }
+    return { sent: 0, reason: 'combined_daily_cap' }
+  }
+  if (combinedUsed >= combinedCap) return { sent: 0, reason: 'combined_daily_cap' }
   return { sent: 0, reason: 't1_eligible_but_not_sent' }
 }
 

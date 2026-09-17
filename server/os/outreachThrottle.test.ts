@@ -5,8 +5,9 @@
 //  not a cap; a function that returns 0 at the boundary is.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
-  secondTouchAllowance, newTouchAllowance,
+  secondTouchAllowance, newTouchAllowance, countsTowardSecondSentToday,
   NEW_TOUCH_DAILY_CAP, SECOND_TOUCH_DAILY_CAP, COMBINED_DAILY_CAP, SECOND_TOUCH_PER_RUN,
 } from "./outreachThrottle";
 
@@ -61,5 +62,68 @@ describe("new-touch (touch-1) shares the same combined ceiling", () => {
     expect(newTouchAllowance({ newSentToday: NEW_TOUCH_DAILY_CAP, secondSentToday: 0 }, 1)).toBe(0);
     // If 60 second-touch had somehow gone out, new is clamped so combined stays ≤ 100.
     expect(newTouchAllowance({ newSentToday: 0, secondSentToday: 60 }, 100)).toBe(COMBINED_DAILY_CAP - 60);
+  });
+});
+
+describe("T3 dual-stamp must not count as Dex T2 (live 2026-09-17 T1 starve)", () => {
+  const ts = "2026-09-17T18:00:00.000Z";
+
+  it("does not raise 50/50/100 caps", () => {
+    expect(NEW_TOUCH_DAILY_CAP).toBe(50);
+    expect(SECOND_TOUCH_DAILY_CAP).toBe(50);
+    expect(COMBINED_DAILY_CAP).toBe(100);
+  });
+
+  it("skip-T2 T3 (equal stamps, no T2 outbox) is not secondSentToday", () => {
+    expect(countsTowardSecondSentToday({
+      touch2SentAt: ts,
+      touch3SentAt: ts,
+      hasTouch2OutboxSent: false,
+    })).toBe(false);
+  });
+
+  it("real T2 (T2 stamp, no T3) counts", () => {
+    expect(countsTowardSecondSentToday({
+      touch2SentAt: ts,
+      touch3SentAt: null,
+    })).toBe(true);
+  });
+
+  it("T2 then later T3 (distinct stamps) still counts as T2", () => {
+    expect(countsTowardSecondSentToday({
+      touch2SentAt: ts,
+      touch3SentAt: "2026-09-22T18:00:00.000Z",
+    })).toBe(true);
+  });
+
+  it("runTouch2Batch T3-as-T2 (dual-stamp + outbox touch=2) still consumes T2 budget", () => {
+    expect(countsTowardSecondSentToday({
+      touch2SentAt: ts,
+      touch3SentAt: ts,
+      hasTouch2OutboxSent: true,
+    })).toBe(true);
+  });
+
+  it("live shape: 15 T1 + 20 real T2 + 114 T3 dual-stamps leaves T1 combined headroom", () => {
+    const rows = [
+      ...Array.from({ length: 20 }, () => ({ touch2SentAt: ts, touch3SentAt: null as string | null, hasTouch2OutboxSent: true })),
+      ...Array.from({ length: 114 }, () => ({ touch2SentAt: ts, touch3SentAt: ts, hasTouch2OutboxSent: false })),
+    ];
+    const secondSentToday = rows.filter(countsTowardSecondSentToday).length;
+    expect(secondSentToday).toBe(20);
+    const naive = 15 + 134;
+    expect(naive).toBeGreaterThan(COMBINED_DAILY_CAP);
+    expect(newTouchAllowance({ newSentToday: 15, secondSentToday: 134 })).toBe(0);
+    const allow = newTouchAllowance({ newSentToday: 15, secondSentToday });
+    expect(allow).toBeGreaterThan(0);
+    expect(15 + secondSentToday).toBeLessThan(COMBINED_DAILY_CAP);
+  });
+
+  it("sentTodayCounts SQL excludes dual-stamps unless outbox touch=2 exists", () => {
+    const src = readFileSync("server/os/outreachThrottle.ts", "utf8");
+    expect(src).toMatch(/touch2_sent_at IS DISTINCT FROM touch3_sent_at/);
+    expect(src).toMatch(/outreach_sequence_outbox/);
+    expect(src).toMatch(/o\.touch = 2/);
+    expect(src).toMatch(/countsTowardSecondSentToday/);
   });
 });
