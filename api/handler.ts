@@ -194,6 +194,7 @@ async function dispatchOsRoute(req: any, res: any) {
     if (path === "/api/os/msp-harvest") return routes.cronMspHubHarvest(req, res);
     if (path === "/api/os/outreach-funnel") return routes.cronOutreachFunnel(req, res);
     if (path === "/api/os/trial-nudges") return routes.cronTrialNudges(req, res);
+    if (path === "/api/os/trial-activation") return routes.cronTrialActivation(req, res);
     if (path === "/api/os/architect/incident" && method === "post") return routes.architectIncident(req, res);
     if (path === "/api/os/architect/wake") return routes.architectWake(req, res);
     if (path === "/api/os/architect/code" && method === "post") return routes.architectCode(req, res);

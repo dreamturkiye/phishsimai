@@ -7,6 +7,7 @@ import { sendTelegram } from "./telegram";
 import { sendTrialDay14, sendTrialDay25, sendTrialDay30, type TrialStats } from "../email/janet";
 import { isNonCustomerOrg, measureTrueOrgCounts } from "./trueTrials";
 import { isPaidConversionCrisis } from "./cgoMandate";
+import { runTrialActivationNudges, type ActivationNudgeResult } from "./trialActivation";
 
 export const GREY_BOX_ORG_NAME = "Grey Box Consulting";
 export const GREY_BOX_ORG_IDS = [11] as const;
@@ -43,7 +44,7 @@ export function nudgeFor(daysLeft: number): 14 | 18 | 25 | 30 | null {
   return null; // first ~10 days of the trial
 }
 
-export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }>; greyBox: GreyBoxPaidNudgeResult | null }> {
+export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: number; sent: Array<{ orgId: number; nudge: number }>; greyBox: GreyBoxPaidNudgeResult | null; activation: ActivationNudgeResult | null }> {
   const sql = sqlOverride ?? getSql();
   await sql`CREATE TABLE IF NOT EXISTS trial_nudges_sent (
     org_id INTEGER NOT NULL, nudge_day INTEGER NOT NULL, sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -102,7 +103,13 @@ export async function runTrialNudges(sqlOverride?: any): Promise<{ scanned: numb
   if (greyBox.sent && greyBox.orgId != null) {
     sent.push({ orgId: greyBox.orgId, nudge: GREY_BOX_CRISIS_NUDGE_DAY });
   }
-  return { scanned, sent, greyBox };
+  // PS-ACTIVATE-01: unused TRUE trials get a one-shot 3-click / white-glove mail.
+  // Separate nudge_day from billing 14/18/25/30/181. Does not touch warm CTA 90–92.
+  const activation = await runTrialActivationNudges(sql).catch(() => null);
+  if (activation?.sent?.length) {
+    for (const s of activation.sent) sent.push(s);
+  }
+  return { scanned, sent, greyBox, activation };
 }
 
 export type GreyBoxPaidNudgeResult = {
@@ -210,7 +217,7 @@ export async function cronTrialNudges(req: any, res: any) {
     if (r.sent.length > 0) {
       await sendTelegram(`✉️ <b>PhishSim trial nudges</b> — sent ${r.sent.length}: ${r.sent.map(s => `org ${s.orgId} (D${s.nudge})`).join(", ")}`).catch(() => {});
     }
-    return res.json({ ok: true, scanned: r.scanned, sent: r.sent, greyBox: r.greyBox });
+    return res.json({ ok: true, scanned: r.scanned, sent: r.sent, greyBox: r.greyBox, activation: r.activation });
   } catch (e: any) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
   }

@@ -184,6 +184,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/os/trial-activation",
+      "schedule": "15 9 * * *"
+    },
+    {
       "path": "/api/os/researcher",
       "schedule": "*/30 * * * *"
     },

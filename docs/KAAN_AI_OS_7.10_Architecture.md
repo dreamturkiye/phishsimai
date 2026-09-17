@@ -4,10 +4,10 @@
 
 **L5.7 → L5.8 autonomy layer built on Kaan AI OS 6.0**
 
-- Version: `7.10.3`
-- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + PR #313 denser ticks + drill-row heal / budgeted heartbeat follow-up). **O.32.8:** Janet does not nag about `autonomy_change` / `raise_refused` when already at L5 / L5.7 — do not demote. **O.32.9:** crisis 6h warm follow-up so one touch-90 cannot park all sendable leads. Amended Sep 14, 2026 (later): **v7.10.2 / O.32.10** — sequence backlog drain, Grey Box paid loop, LinkedIn past draft theater, warm CTA→trial instrumentation. Amended Sep 14, 2026 (later still): **v7.10.3 / O.32.11** — post-cutoff second-touch on `/api/os/sequence-touch2` (approved T3 copy), MSP harvest skip-ahead, Grey Box D25 from trial-nudges cron. Section O supersedes conflicting details in B–N.
-- Author: Claude Fable 5 (design). Implementation: Claude orchestrating local Ollama models (kimi-k2.6:cloud for codegen, deepseek-r1:7b for analysis, gemma3:9b for drafts). Amendments: Cursor Cloud Agent (PR #311, #313, #314, #316, O.32.10, O.32.11).
-- Extends: `KAAN_AI_OS_V6.md` in this repo as **lineage**, not as a competing spec. This document's original scope was V6 Section 8 plus the autonomy model those mechanisms enable. V6 Sections 2–6 are not redesigned here. **Runtime design is 7.10.3.**
+- Version: `7.10.4`
+- Status: approved-for-build, July 4, 2026. Amended same day: v7.1 (O.1–O.9 — resilience, self-propagation, growth allocation), v7.2 (O.10–O.14 — portability and permanence), v7.3 (O.15–O.17 — divergence charter, SME agents, measurable agent L-levels). Amended Aug 12, 2026: v7.6 (O.18–O.22 — Janet agentic CGO, Marcus reliability + durability, PhishSim↔ScrollFuel Marcus parity; BUILT + proven live, not design). Amended Aug 12, 2026 (later): v7.7 (O.23–O.27 — Janet agent routing, the revenue learning loop CONNECTED + ADAPTIVE, subject A/B activated, branded warm-email signature; ScrollFuel parity). Amended Aug 12, 2026 (later still): v7.8 (O.28 — Janet OKR/Goal engine, both products). Amended Aug 13, 2026: v7.9 (O.29 — agent ownership + real actions under Janet supervision, both products). Amended Aug 13, 2026 (later): v7.10.0 (O.30/O.31 — daily escalation triage; agents ground self-originated work in current external best practice). Amended Sep 14, 2026: **v7.10.1 / O.32** (PR #311 metric/runtime floor + PR #313 denser ticks + drill-row heal / budgeted heartbeat follow-up). **O.32.8:** Janet does not nag about `autonomy_change` / `raise_refused` when already at L5 / L5.7 — do not demote. **O.32.9:** crisis 6h warm follow-up so one touch-90 cannot park all sendable leads. Amended Sep 14, 2026 (later): **v7.10.2 / O.32.10** — sequence backlog drain, Grey Box paid loop, LinkedIn past draft theater, warm CTA→trial instrumentation. Amended Sep 14, 2026 (later still): **v7.10.3 / O.32.11** — post-cutoff second-touch on `/api/os/sequence-touch2` (approved T3 copy), MSP harvest skip-ahead, Grey Box D25 from trial-nudges cron. Amended Sep 17, 2026: **v7.10.4 / O.32.12** — unused TRUE-trial activation nudge (3-click + white-glove), one email max, no warm-CTA touch 93. Section O supersedes conflicting details in B–N.
+- Author: Claude Fable 5 (design). Implementation: Claude orchestrating local Ollama models (kimi-k2.6:cloud for codegen, deepseek-r1:7b for analysis, gemma3:9b for drafts). Amendments: Cursor Cloud Agent (PR #311, #313, #314, #316, O.32.10, O.32.11, O.32.12).
+- Extends: `KAAN_AI_OS_V6.md` in this repo as **lineage**, not as a competing spec. This document's original scope was V6 Section 8 plus the autonomy model those mechanisms enable. V6 Sections 2–6 are not redesigned here. **Runtime design is 7.10.4.**
 - This is the handoff artifact between design and implementation. Every module named here gets built as named. If implementation must deviate, the deviation is recorded in Section N's changelog table, not silently absorbed.
 
 ---
@@ -483,6 +483,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-14 | O.32.9 | Crisis 6h 91/92 follow-up when eligible=0 and cooldown=sendable; reopenFalseAutoReplies crisis-clears false auto_reply on convert_warm | Live `bad6786` 19:24Z: cooldown=14 eligible=0 autoReplyPending=12 sent=0. Dex/CAN-SPAM/geo unchanged. |
 | 2026-09-14 | O.32.10 | Sequence drain (crisis T2 unlock + price-era skip-T2→T3 + stale suppress + pause T1); Grey Box 24h D25 paid loop; LinkedIn preview+6h escalate; warm CTA→TRUE trial rate; convert_warm queued when eligible>0 | Live: ~1565 T1-no-T2>5d (T2 hold + T3 required T2); LinkedIn `already queued today` dead end; 1 TRUE trial / $0 MRR. No invented cold copy. Do not demote L5/drill_3. |
 | 2026-09-14 | O.32.11 | Harvest: MyMSPHub now sets LocalBusiness.url to the directory page; take first `s2/favicons?domain=` host. Empty-scan cap 1200 so noDomain≠batch. LinkedIn Telegram uses clickable `<a href>`. Publish stays locked. | Live after #317: harvest domainsQueued=0 noDomain=400 cursor 3500→3900. Founder skipped unlock widget. |
+| 2026-09-17 | O.32.12 | Unused TRUE-trial activation (nudge_day=4): 3-click path + white-glove, one email max, cap ≤5. Sibling cron `/api/os/trial-activation`. Warm CTA stays 90/91/92 — no touch 93. | Live 2026-09-16: Grey Box org 11, 0 campaigns, D14+D18+181 already sent, warm CTA→trial 0/17, pool exhausted. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -915,6 +916,19 @@ Production cron (pre-#317 merge, still true of `touch2Eligible` on that branch):
 **LinkedIn:** PS-SOCIAL-LOCKOUT-01 stays (founder skipped unlock). Escalate with a clickable `<a href>` Safari preview. Do not auto-publish.
 
 Do not declare L5.8. Do not demote L5 / drill_3.
+
+### O.32.12 Unused TRUE-trial activation — Grey Box never launched (2026-09-17)
+
+Owner: PhishSimAi must become paid revenue, spam-safe. Live 2026-09-16: TRUE trials = 1 (Grey Box Consulting, org 11, `dcharit@gmail.com`, ~7 days left), **0** `campaigns` rows, `campaign_results` sent=0. Warm CTA→TRUE trial 0/17 in 14d. Warm pool exhausted (15/16 already received 90+91+92). Do **not** add touch 93. Do **not** reopen 90–92 for exhausted leads.
+
+Vera already documents `no_campaign_14d`: "Send the 3-click first-campaign path; offer to run the first one for them." Billing nudges (D14/D18/D25/D30 + crisis 181) had already fired. Missing beat: **activation**.
+
+- `runTrialActivationNudges` (`server/os/trialActivation.ts`): live TRUE free trial, 0 campaigns, age ≥ 3 days from `planActivatedAt`/`createdAt`, `isNonCustomerOrg` excluded. One email max (`nudge_day=4`). Cap ≤ 5/run. Janet `sendTrialActivation` — not `sendWarmTrialCtas`.
+- Wired from `runTrialNudges` (09:00 + conversion ticks) and sibling cron `/api/os/trial-activation` (09:15, Bearer `CRON_SECRET`). Idempotent claim so both cannot double-send.
+- Copy: 3-click Targets → template → Launch, plus white-glove "reply and I'll run the first one."
+- `WARM_CTA_TOUCHES` stays `[90, 91, 92]`. No new cold copy. No LinkedIn publish. No daily cap raise.
+
+Do not declare L5.8. Do not claim revenue is fixed until Grey Box has a campaign or a paid conversion.
 
 ### Evidence (do not invent rates)
 

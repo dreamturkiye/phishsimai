@@ -24,7 +24,7 @@ export const TRIAL_ACQUISITION_CHANNELS = [
   {
     id: 'trial_org_nudges',
     status: 'live' as const,
-    how: 'runTrialNudges D14/D25/D30 to TRUE trial orgs only (canary/test excluded).',
+    how: 'runTrialNudges D14/D25/D30 plus one-shot unused-trial activation (3-click + white-glove) to TRUE trial orgs only (canary/test excluded). Not a warm-CTA 90–92 blast.',
   },
   {
     id: 'msp_hub_harvest',
