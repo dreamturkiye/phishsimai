@@ -52,7 +52,7 @@ Bounce breaker did not pause T1. Autonomy/ramp is not the measured blocker.
 6. HQ + watchdog field `touch1LastAt`. Alert if T1 silent **>36h** while GEO-eligible never-touched **>100**, OR sanitized eligible **= 0** while that reservoir **>100**.
 7. Harvest must not call sanitized=0 “expected” when the unsanitized GEO reservoir is >100. After a 1200-listing parser desert (`domainsQueued=0`, `noDomain=processed`), **wrap the harvest cursor to 0**.
 8. Finder skip only **promotable** held addresses (`isPromotableHeldAddress`). Catchall/role do **not** skip. Re-open `lead_research_queue` rows retired as `duplicate` when the domain only holds DISQUALIFIED addresses. Finder budget counts `qev_valid` as well as `mev_valid`.
-9. `shouldPauseTouch1` returns **false** when the sanitized untouched pool is starved (`t1Starved`). Drain tick and `runFullSequence` share `loadTouch1HealthForPause`. `whyT1SentZero` names `pause_new_touch1` only when sanitized eligible > 0.
+9. `shouldPauseTouch1` returns **false** when the sanitized untouched pool is starved (`t1Starved`) **or** when sanitized eligible is a small quality refill (1–150). Drain tick and `runFullSequence` share `loadTouch1HealthForPause`. `whyT1SentZero` names `pause_new_touch1` only when sanitized eligible > 0. See `SPEC-t1-quality-refill-no-pause.md`.
 
 Keep Dex / geo / CAN-SPAM / hourly drip / `DAILY_SEND_LIMIT` ramp caps. No warm touch 93. No LinkedIn autopost.
 

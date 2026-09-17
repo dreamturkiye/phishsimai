@@ -4,8 +4,10 @@ import {
   CRISIS_FOLLOWUP_HOURLY_SLICE,
   DRAINABLE_HEALTHY_MAX,
   PAUSE_T1_WHEN_DRAINABLE_AT,
+  T1_QUALITY_REFILL_MAX,
   drainPlanDays,
   followUpHourlySlice,
+  isSmallQualityT1Refill,
   isStaleSilentLead,
   postCutoffBatchHeadroom,
   secondTouchCopyKind,
@@ -50,6 +52,22 @@ describe('sequence backlog routing (no invented copy)', () => {
     expect(shouldPauseTouch1(1120, true, { t1Starved: true })).toBe(false)
     expect(shouldPauseTouch1(1120, true, { t1Starved: false })).toBe(true)
     expect(shouldPauseTouch1(PAUSE_T1_WHEN_DRAINABLE_AT, true, { t1Starved: true })).toBe(false)
+  })
+
+  it('does NOT pause T1 for a small quality refill (≤150) during crisis drain (live after #320)', () => {
+    // ~40 qev_valid sendable + drainableOverdue≈1100 + operatingCrisis still zeroed dailyAllowance.
+    expect(T1_QUALITY_REFILL_MAX).toBe(150)
+    expect(isSmallQualityT1Refill(40)).toBe(true)
+    expect(isSmallQualityT1Refill(150)).toBe(true)
+    expect(isSmallQualityT1Refill(0)).toBe(false)
+    expect(isSmallQualityT1Refill(151)).toBe(false)
+    expect(shouldPauseTouch1(1100, true, { t1Starved: false, sanitizedEligible: 40 })).toBe(false)
+    expect(shouldPauseTouch1(1100, true, { t1Starved: false, sanitizedEligible: 1 })).toBe(false)
+    expect(shouldPauseTouch1(1100, true, { t1Starved: false, sanitizedEligible: 150 })).toBe(false)
+    expect(shouldPauseTouch1(1100, true, { t1Starved: false, sanitizedEligible: 151 })).toBe(true)
+    expect(shouldPauseTouch1(1100, true, { t1Starved: false, sanitizedEligible: 400 })).toBe(true)
+    // Mass scale without an eligible count still pauses (legacy callers).
+    expect(shouldPauseTouch1(1100, true, { t1Starved: false })).toBe(true)
   })
 
   it('unlocks remaining approved T2 during operating crisis without waiting for the Aug-3 hold flag', () => {
@@ -145,6 +163,10 @@ describe('drain is wired onto live send paths', () => {
     expect(seq).toMatch(/touch1_sent_at >= \$\{TOUCH2_COPY_ERA_CUTOFF\}/)
     expect(seq).toContain('loadTouch1HealthForPause')
     expect(seq).toContain('t1Starved')
+    expect(seq).toContain('sanitizedEligible: t1Health?.sanitizedEligible ?? 0')
+    expect(seq).toMatch(/return \{ t1Starved: t1\.sanitizedEligible <= 0, sanitizedEligible: t1\.sanitizedEligible \}/)
+    expect(seq).not.toMatch(/WARM_CTA_TOUCHES = \[[^\]]*93/)
+    expect(seq).toMatch(/export const DAILY_SEND_LIMIT = 20/)
     expect(hb).toContain('runSequenceDrainTick')
     expect(hb).toContain('sequenceEngineCheck')
     expect(hb).toContain('includeTouch2: true')

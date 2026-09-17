@@ -28,6 +28,12 @@ export const SEQUENCE_STALL_DAYS = 5
 export const STALE_SILENT_DAYS = 45
 export const DRAINABLE_HEALTHY_MAX = 10
 export const PAUSE_T1_WHEN_DRAINABLE_AT = 50
+/**
+ * Small mailbox-verified T1 refill (qev_valid/mev_valid), not mass TOF scale.
+ * Live 2026-09-17 after #320: ~40 sendable, drainableOverdue≈1100, operatingCrisis
+ * still paused T1 because t1Starved only skipped pause at eligible=0.
+ */
+export const T1_QUALITY_REFILL_MAX = 150
 /** Crisis T3/T4 hourly slice — Dex daily cap still binds. Was 3/hour, which cannot drain 1565. */
 export const CRISIS_FOLLOWUP_HOURLY_SLICE = 15
 export const FOLLOWUP_DAILY_CAP = 50
@@ -105,15 +111,29 @@ export function isStaleSilentLead(opts: {
   return opts.touch1AgeDays >= (opts.staleDays ?? STALE_SILENT_DAYS)
 }
 
+export type Touch1PauseOpts = {
+  t1Starved?: boolean
+  sanitizedEligible?: number
+}
+
+export function isSmallQualityT1Refill(sanitizedEligible: number): boolean {
+  return sanitizedEligible > 0 && sanitizedEligible <= T1_QUALITY_REFILL_MAX
+}
+
 export function shouldPauseTouch1(
   drainableOverdue: number,
   operatingCrisis: boolean,
-  opts?: { t1Starved?: boolean },
+  opts?: Touch1PauseOpts,
 ): boolean {
   // Live 2026-09-17: pauseNewTouch1=true with drainableOverdue=1120 WHILE sanitized T1 pool=0.
   // Pausing new T1 was meant to drain follow-ups when T1 was still sending. With sendable=0 it
   // guarantees the money path stays dead. Never pause T1 when the sanitized untouched pool is empty.
   if (opts?.t1Starved) return false
+  // #320 only skipped pause at t1Starved (eligible=0). After QEV refill, ~40 qev_valid
+  // sendable + crisis drain still zeroed dailyAllowance. A ≤150 quality refill is not mass scale.
+  if (typeof opts?.sanitizedEligible === 'number' && isSmallQualityT1Refill(opts.sanitizedEligible)) {
+    return false
+  }
   return operatingCrisis && drainableOverdue >= PAUSE_T1_WHEN_DRAINABLE_AT
 }
 
