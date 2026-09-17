@@ -19,7 +19,8 @@ export const T1_MARCUS_EMPTY_HOURS = 6
 export const T1_MARCUS_DAY_KEY = 't1_marcus_handoff_day'
 export { SMALL_T1_QUALITY_POOL }
 
-export type T1MarcusBug = 'sanitize_refill' | 'qev_env' | 'pause_logic'
+/** Named bugs the founder asked for — not analysis theater. */
+export type T1MarcusBug = 'PS-T1-STARVE' | 'PS-T1-QEV-EMPTY' | 'PS-T1-PAUSE-LOCK'
 
 export type T1MarcusTicket = {
   queue: boolean
@@ -40,6 +41,8 @@ export type T1Scoreboard = {
   operatingCrisis: boolean
   drainableOverdue: number
   touch1LastAt: string | null
+  starvationAlert: boolean
+  sendableUntouched: number
 }
 
 export function verifierModeOf(keys: MailboxVerifierKeys): T1Scoreboard['verifierMode'] {
@@ -59,31 +62,30 @@ export function daysSinceLastT1(touch1LastAt: Date | string | null, now: Date = 
 function namedTask(bug: T1MarcusBug, detail: string): string {
   const forbid =
     'Do not raise DAILY_SEND_LIMIT. Do not add touch 93. Do not set REFILL_ALLOW_MX_ONLY=1.'
-  if (bug === 'qev_env') {
+  if (bug === 'PS-T1-QEV-EMPTY') {
     return (
-      `T1 STARVE — mailbox verifier empty (QEV/MEV). Named bug: qev_env. ` +
+      `Named bug: PS-T1-QEV-EMPTY — mailbox verifier empty (QEV/MEV). ` +
       `Set QEV_API_KEY in Vercel Production (or a non-empty MYEMAILVERIFIER_API_KEY). ` +
       `Files: server/os/sanitizeRefill.ts, server/os/touch1Health.ts. ${detail} ${forbid}`
     )
   }
-  if (bug === 'pause_logic') {
+  if (bug === 'PS-T1-PAUSE-LOCK') {
     return (
-      `T1 STARVE — pauseNewTouch1 locked a small quality pool. Named bug: pause_logic. ` +
-      `Files: server/os/sequenceBacklog.ts shouldPauseTouch1. Allow T1 drip while sanitizedEligible≤${SMALL_T1_QUALITY_POOL}. ` +
+      `Named bug: PS-T1-PAUSE-LOCK — pauseNewTouch1 locked a small quality pool. ` +
+      `Files: server/os/sequenceBacklog.ts shouldPauseTouch1. Allow T1 drip while 0 < sanitizedEligible≤${SMALL_T1_QUALITY_POOL}. ` +
       `${detail} ${forbid}`
     )
   }
   return (
-    `T1 STARVE — restore sanitize refill. Named bug: sanitize_refill. ` +
-    `Files: server/os/sanitizeRefill.ts, server/os/sequences.ts (T1 requires sanitized_at). ` +
+    `Named bug: PS-T1-STARVE — restore sanitize refill so T1 can send (sanitized_at IS NOT NULL). ` +
+    `Files: server/os/sanitizeRefill.ts, server/os/sequences.ts, server/os/touch1Health.ts. ` +
     `${detail} ${forbid}`
   )
 }
 
 /**
- * When to auto-create a high-priority Marcus architect task.
- * Dual crisis is NOT required — T1 death is a send-path bug even in a paying week —
- * but the live miss was dual crisis + T1 dead, and that shape MUST queue.
+ * Watchdog / sanitize-refill: starvation.alert OR !verifier.any OR sendable untouched=0
+ * (sustained ≥ T1_MARCUS_EMPTY_HOURS) → one named Marcus architect task.
  */
 export function t1MarcusTicket(input: {
   operatingCrisis?: boolean
@@ -94,30 +96,34 @@ export function t1MarcusTicket(input: {
   pauseNewTouch1: boolean
   verifier: MailboxVerifierKeys
   drainableOverdue?: number
+  starvationAlert?: boolean
+  sendableUntouched?: number
 }): T1MarcusTicket {
   const hours =
     input.hoursSinceLastT1 ??
     (input.daysSinceLastT1 != null ? input.daysSinceLastT1 * 24 : null)
   const neverSent = hours == null
   const emptyLongEnough = neverSent || hours >= T1_MARCUS_EMPTY_HOURS
+  const sendable = input.sendableUntouched ?? input.sanitizedEligible
   const reservoir = input.unsanitizedEligible + input.sanitizedEligible
   const detail =
     `daysSinceLastT1=${input.daysSinceLastT1 ?? 'never'} sanitizedEligible=${input.sanitizedEligible} ` +
     `unsanitizedEligible=${input.unsanitizedEligible} pauseNewTouch1=${input.pauseNewTouch1} ` +
-    `verifierMode=${verifierModeOf(input.verifier)} drainableOverdue=${input.drainableOverdue ?? '?'}`
+    `verifierMode=${verifierModeOf(input.verifier)} drainableOverdue=${input.drainableOverdue ?? '?'} ` +
+    `starvationAlert=${!!input.starvationAlert} sendableUntouched=${sendable}`
 
-  if (!input.verifier.any && (input.sanitizedEligible <= 0 || emptyLongEnough)) {
-    return { queue: true, bug: 'qev_env', task: namedTask('qev_env', detail), notes: detail }
+  if (!input.verifier.any) {
+    return { queue: true, bug: 'PS-T1-QEV-EMPTY', task: namedTask('PS-T1-QEV-EMPTY', detail), notes: detail }
   }
 
-  if (input.sanitizedEligible <= 0 && emptyLongEnough && (input.unsanitizedEligible > 100 || reservoir > 100)) {
-    return { queue: true, bug: 'sanitize_refill', task: namedTask('sanitize_refill', detail), notes: detail }
+  const sendableDeadSustained = sendable <= 0 && emptyLongEnough && (input.unsanitizedEligible > 100 || reservoir > 100)
+  if (input.starvationAlert || sendableDeadSustained) {
+    return { queue: true, bug: 'PS-T1-STARVE', task: namedTask('PS-T1-STARVE', detail), notes: detail }
   }
 
-  const smallPool =
-    input.sanitizedEligible > 0 && input.sanitizedEligible <= SMALL_T1_QUALITY_POOL
+  const smallPool = sendable > 0 && sendable <= SMALL_T1_QUALITY_POOL
   if (input.pauseNewTouch1 && smallPool) {
-    return { queue: true, bug: 'pause_logic', task: namedTask('pause_logic', detail), notes: detail }
+    return { queue: true, bug: 'PS-T1-PAUSE-LOCK', task: namedTask('PS-T1-PAUSE-LOCK', detail), notes: detail }
   }
 
   return { queue: false, bug: null, task: '', notes: detail }
@@ -187,6 +193,8 @@ export async function loadT1Scoreboard(sql: any, now: Date = new Date()): Promis
     operatingCrisis,
     drainableOverdue: backlog.drainableOverdue ?? 0,
     touch1LastAt: t1.touch1LastAt,
+    starvationAlert: !!t1.starvation?.alert,
+    sendableUntouched: t1.sanitizedEligible,
   }
 }
 
@@ -197,6 +205,7 @@ export async function applyT1MarcusTicket(
     alreadyQueuedToday: (dayBug: string) => Promise<boolean>
     markQueuedToday: (dayBug: string) => Promise<void>
     day?: string
+    supersedeSpam?: (keepId: string) => Promise<void>
   },
 ): Promise<{ queued: boolean; bug: T1MarcusBug | null; id: string | null }> {
   if (!ticket.queue || !ticket.bug) return { queued: false, bug: ticket.bug, id: null }
@@ -213,6 +222,7 @@ export async function applyT1MarcusTicket(
   })
   if (!id) return { queued: false, bug: ticket.bug, id: null }
   await deps.markQueuedToday(dayBug)
+  if (deps.supersedeSpam) await deps.supersedeSpam(id)
   return { queued: true, bug: ticket.bug, id }
 }
 
@@ -235,6 +245,8 @@ export async function maybeQueueT1Marcus(opts: {
     pauseNewTouch1: board.pauseNewTouch1,
     verifier: board.verifier,
     drainableOverdue: board.drainableOverdue,
+    starvationAlert: board.starvationAlert,
+    sendableUntouched: board.sendableUntouched,
   })
   const diagnosis = diagnoseFromT1Scoreboard(board).line
   const queueTask =
@@ -262,6 +274,39 @@ export async function maybeQueueT1Marcus(opts: {
         ON CONFLICT (company_id, type, key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
       `.catch(() => {})
     },
+    supersedeSpam: async (keepId) => {
+      await supersedeLeadEligibilitySpam(sql, keepId)
+    },
   })
   return { ...result, diagnosis }
+}
+
+export function isLeadEligibilitySpam(task: string): boolean {
+  return /lead eligibility checker/i.test(String(task || ''))
+}
+
+/** One-shot: cancel the "Fix Lead Eligibility Checker" clone storm when the real T1 bug is queued. */
+export async function supersedeLeadEligibilitySpam(sql: any, keepId?: string): Promise<number> {
+  const open = (await sql`
+    SELECT id, task FROM os_architect_tasks
+    WHERE status IN ('queued','pending','approved','running')
+    LIMIT 200
+  `.catch(() => [])) as Array<{ id: string; task: string }>
+  const ids = open
+    .filter((r) => isLeadEligibilitySpam(r.task) && String(r.id) !== String(keepId || ''))
+    .map((r) => String(r.id))
+  if (!ids.length) return 0
+  let n = 0
+  for (const id of ids) {
+    const out = (await sql`
+      UPDATE os_architect_tasks
+      SET status='cancelled',
+          notes=COALESCE(notes,'') || ' | superseded by PS-T1-STARVE',
+          updated_at=NOW()
+      WHERE id=${id} AND status IN ('queued','pending','approved','running')
+      RETURNING id
+    `.catch(() => [])) as Array<{ id: string }>
+    n += out.length
+  }
+  return n
 }

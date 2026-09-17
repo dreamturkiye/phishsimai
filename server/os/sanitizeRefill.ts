@@ -428,6 +428,10 @@ export async function cronSanitizeRefill(req: any, res: any) {
     if (emptyPool) {
       await sendTelegram(emptyPool).catch(() => {})
     }
+    if (r.verifierAlert || sendableAfter === 0) {
+      const { maybeQueueT1Marcus } = await import('./t1MarcusHandoff')
+      await maybeQueueT1Marcus().catch(() => {})
+    }
     await sendTelegram(
       `🔁 <b>PhishSim pool refill</b> (${COMPANY_ID})\n` +
         `mode ${r.verifyMode} · mev ${r.verifier.mev ? 'set' : 'empty'} · qev ${r.verifier.qev ? 'set' : 'empty'}\n` +

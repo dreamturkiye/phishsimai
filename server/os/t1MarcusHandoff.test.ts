@@ -20,30 +20,31 @@ const liveSep17 = {
 }
 
 describe('t1MarcusTicket — dual crisis + T1 dead must queue a NAMED bug', () => {
-  it('queues qev_env when dual crisis, T1 dead 5d, sanitized=0, verifier empty (live 2026-09-17)', () => {
+  it('queues PS-T1-QEV-EMPTY when dual crisis, T1 dead 5d, sanitized=0, verifier empty (live 2026-09-17)', () => {
     const t = t1MarcusTicket(liveSep17)
     expect(t.queue).toBe(true)
-    expect(t.bug).toBe('qev_env')
-    expect(t.task).toMatch(/Named bug: qev_env/)
+    expect(t.bug).toBe('PS-T1-QEV-EMPTY')
+    expect(t.task).toMatch(/Named bug: PS-T1-QEV-EMPTY/)
     expect(t.task).toMatch(/QEV_API_KEY/)
     expect(t.task).toMatch(/Do not raise DAILY_SEND_LIMIT/)
     expect(t.task).toMatch(/Do not add touch 93/)
     expect(t.task).toMatch(/Do not set REFILL_ALLOW_MX_ONLY=1/)
   })
 
-  it('queues sanitize_refill when verifier is present but sanitized pool is empty for N hours', () => {
+  it('queues PS-T1-STARVE when starvation.alert or sendable untouched=0 for N hours', () => {
     const t = t1MarcusTicket({
       ...liveSep17,
       verifier: { mev: true, qev: true, any: true },
       pauseNewTouch1: false,
+      starvationAlert: true,
     })
     expect(t.queue).toBe(true)
-    expect(t.bug).toBe('sanitize_refill')
-    expect(t.task).toMatch(/sanitize_refill/)
+    expect(t.bug).toBe('PS-T1-STARVE')
+    expect(t.task).toMatch(/PS-T1-STARVE/)
     expect(T1_MARCUS_EMPTY_HOURS).toBe(6)
   })
 
-  it('queues pause_logic when pause locks a small quality pool (e.g. 40)', () => {
+  it('queues PS-T1-PAUSE-LOCK when pause locks a small quality pool (e.g. 40)', () => {
     const t = t1MarcusTicket({
       operatingCrisis: true,
       daysSinceLastT1: 0.2,
@@ -52,10 +53,11 @@ describe('t1MarcusTicket — dual crisis + T1 dead must queue a NAMED bug', () =
       pauseNewTouch1: true,
       verifier: { mev: true, qev: true, any: true },
       drainableOverdue: 1120,
+      sendableUntouched: 40,
     })
     expect(t.queue).toBe(true)
-    expect(t.bug).toBe('pause_logic')
-    expect(t.task).toMatch(/pause_logic/)
+    expect(t.bug).toBe('PS-T1-PAUSE-LOCK')
+    expect(t.task).toMatch(/PS-T1-PAUSE-LOCK/)
     expect(t.task).toMatch(String(SMALL_T1_QUALITY_POOL))
   })
 
@@ -88,10 +90,10 @@ describe('applyT1MarcusTicket actually queues (not Telegram theater)', () => {
       day: '2026-09-17',
     })
     expect(first.queued).toBe(true)
-    expect(first.bug).toBe('qev_env')
+    expect(first.bug).toBe('PS-T1-QEV-EMPTY')
     expect(first.id).toBe('arch-1')
     expect(queued).toHaveLength(1)
-    expect(queued[0]).toMatch(/qev_env/)
+    expect(queued[0]).toMatch(/PS-T1-QEV-EMPTY/)
 
     const second = await applyT1MarcusTicket(ticket, {
       queueTask: async ({ task }) => {
@@ -131,6 +133,7 @@ describe('diagnoseRevenueFailure names the T1/sanitize bottleneck', () => {
     expect(d.line).toMatch(/missing QEV/)
     expect(d.line).toMatch(/warm CTA→TRUE=0/)
     expect(d.nextActions.join(' ')).toMatch(/queue_marcus/)
+    expect(d.nextActions.join(' ')).not.toMatch(/convert_warm/)
   })
 
   it('diagnoseFromT1Scoreboard carries the same bottleneck', () => {
@@ -165,15 +168,17 @@ describe('Nova/Dex can queue_marcus send-path bugs during dual crisis', () => {
     })).toBe('breaker_tripped_cold_send')
   })
 
-  it('crisis pack Nova/Dex descriptions order queue_marcus without waiting for a human', () => {
+  it('crisis pack includes Marcus + Nova/Dex queue_marcus without waiting for a human', () => {
     const pack = operatingCrisisTasks({ liveProductTrials: 1, crmTrials: 0, payingCustomers: 0 })
     const nova = pack.find((t) => t.agentId === 'nova')
     const dex = pack.find((t) => t.agentId === 'dex')
+    const marcus = pack.find((t) => t.agentId === 'marcus')
     expect(nova?.description).toMatch(/queue_marcus/)
     expect(nova?.description).toMatch(/do not wait for a human/i)
     expect(dex?.description).toMatch(/queue_marcus/)
-    expect(dex?.description).toMatch(/do not wait for a human/i)
-    expect(dex?.description).toMatch(/sanitize/)
+    expect(dex?.description).toMatch(/PS-T1-STARVE/)
+    expect(marcus?.title).toMatch(/PS-T1-STARVE/)
+    expect(marcus?.description).toMatch(/QEV empty/)
   })
 })
 
@@ -181,7 +186,10 @@ describe('handoff is wired (watchdog + conversion, not Telegram-only)', () => {
   it('watchdog and conversion engine call maybeQueueT1Marcus', () => {
     expect(readFileSync('server/os/watchdog.ts', 'utf8')).toContain('maybeQueueT1Marcus')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueT1Marcus')
+    expect(readFileSync('server/os/sanitizeRefill.ts', 'utf8')).toContain('maybeQueueT1Marcus')
     expect(readFileSync('server/os/founderBrief.ts', 'utf8')).toContain('diagnoseFromT1Scoreboard')
     expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('queue_marcus')
+    expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('escalateCategoryFor')
+    expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).not.toMatch(/VALUES \(\$\{companyId\}, 'founder_decision'/)
   })
 })

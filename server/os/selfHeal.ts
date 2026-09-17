@@ -28,6 +28,31 @@ export async function isAlertOpen(key: string, companyId = COMPANY_ID): Promise<
 
 const ALERT_NOTIFY_COOLDOWN_MS = 4 * 60 * 60 * 1000
 
+export function normalizeArchitectTaskKey(task: string): string {
+  return String(task || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .slice(0, 160)
+}
+
+/** Open-queue clone of the same work (Marcus "Fix Lead Eligibility Checker" every 20min). */
+export function findDuplicateArchitectTask(
+  open: Array<{ id: string; task: string; source?: string | null }>,
+  incoming: { task: string; source?: string },
+): string | null {
+  const key = normalizeArchitectTaskKey(incoming.task)
+  if (!key) return null
+  const src = String(incoming.source || '')
+  const spam = /lead eligibility checker/i.test(incoming.task)
+  for (const row of open) {
+    if (spam && /lead eligibility checker/i.test(row.task)) return String(row.id)
+    if (normalizeArchitectTaskKey(row.task) !== key) continue
+    if (!src || !row.source || String(row.source) === src) return String(row.id)
+  }
+  return null
+}
+
 async function getLastAlertNotifyMs(key: string, companyId: string): Promise<number> {
   const sql = getSql()
   await ensureMemoryTable()
@@ -210,6 +235,21 @@ export async function queueJanetArchitectTask(opts: {
         void dispatchMarcusWake(COMPANY_ID, { taskId: dupeId, product: 'phishsim' })
         return dupeId
       }
+    }
+
+    // Same normalized title+source within 24h (open rows). New bug_reports UUIDs used to
+    // bypass exact-task dedup so Marcus re-queued "Fix Lead Eligibility Checker" every ~20min.
+    const recent = (await sql`
+      SELECT id, task, source FROM os_architect_tasks
+      WHERE status IN ('queued','pending','approved','running')
+        AND created_at > NOW() - INTERVAL '24 hours'
+      ORDER BY created_at ASC
+      LIMIT 200
+    `.catch(() => [])) as Array<{ id: string; task: string; source?: string }>
+    const normHit = findDuplicateArchitectTask(recent, { task: opts.task, source: opts.source || 'janet' })
+    if (normHit) {
+      void dispatchMarcusWake(COMPANY_ID, { taskId: normHit, product: 'phishsim' })
+      return normHit
     }
 
     const id = randomUUID()

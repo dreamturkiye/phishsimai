@@ -183,13 +183,13 @@ export function diagnoseRevenueFailure(input: {
           bottlenecks.push(
             `T1 sanitize bottleneck: sanitized=0 unsanitized=${t1.unsanitizedEligible ?? '?'} — refill is not promoting`,
           )
-          nextActions.unshift('ACTION: queue_marcus: named bug sanitize_refill / qev_env — restore T1 send path')
+          nextActions.unshift('ACTION: queue_marcus: named bug PS-T1-STARVE — restore sanitize refill / check QEV')
         }
       }
       if (t1.pauseNewTouch1) {
         bottlenecks.push('pauseNewTouch1=true')
         if (pauseWrong) {
-          nextActions.unshift('ACTION: queue_marcus: named bug pause_logic — drip T1 on small quality pool')
+          nextActions.unshift('ACTION: queue_marcus: named bug PS-T1-PAUSE-LOCK — drip T1 on small quality pool')
         }
       }
       const v = t1.verifier
@@ -201,12 +201,22 @@ export function diagnoseRevenueFailure(input: {
         ].filter(Boolean).join(', ')
         bottlenecks.push(`verifierMode=${mode}${missing ? ` (${missing})` : ''}`)
         if (!v.any) {
-          nextActions.unshift('ACTION: queue_marcus: named bug qev_env — QEV_API_KEY empty on Vercel')
+          nextActions.unshift('ACTION: queue_marcus: named bug PS-T1-QEV-EMPTY — QEV_API_KEY empty on Vercel')
         }
       }
       const wct = t1.warmCtaToTrue
       if (wct && wct.trueTrials === 0) {
         bottlenecks.push(`warm CTA→TRUE=0 (${wct.trueTrials}/${wct.ctaSent})`)
+      }
+    }
+    const t1Dead =
+      sanitizedDead || verifierEmpty || (t1.sanitizedEligible != null && t1.sanitizedEligible <= 0)
+    if (t1Dead) {
+      for (let i = nextActions.length - 1; i >= 0; i--) {
+        if (/convert_warm/i.test(nextActions[i])) nextActions.splice(i, 1)
+      }
+      if (!nextActions.some((a) => /queue_marcus|PS-T1-/i.test(a))) {
+        nextActions.unshift('ACTION: queue_marcus: named bug PS-T1-STARVE — refill sanitize / check QEV')
       }
     }
   }
@@ -216,6 +226,15 @@ export function diagnoseRevenueFailure(input: {
   }
   if (!nextActions.length && crisis) {
     nextActions.push('convert_warm hottest', 'nurture Grey Box to paid', 'MSP harvest')
+  }
+  const t1Now = input.t1
+  if (
+    t1Now &&
+    ((t1Now.sanitizedEligible != null && t1Now.sanitizedEligible <= 0) || (t1Now.verifier && !t1Now.verifier.any))
+  ) {
+    for (let i = nextActions.length - 1; i >= 0; i--) {
+      if (/convert_warm/i.test(nextActions[i])) nextActions.splice(i, 1)
+    }
   }
   const line = crisis || bottlenecks.length
     ? `REVENUE FAILURE: ${bottlenecks.join('; ') || '$0 MRR / TRUE-trial drought'}. Never declare healthy. Next: ${nextActions.slice(0, 3).join(' · ')}.`
@@ -228,7 +247,7 @@ export function diagnoseRevenueFailure(input: {
  * forbidden TOF theater, so Nova/Dex could not queue_marcus the actual starve.
  */
 export function isSendPathFixTitle(title: string, description = ''): boolean {
-  return /\b(sanitiz(e|ed|ation)|qev_env|qev_api|qev|myemailverifier|mailbox verifier|pauseNewTouch1|pause new touch-?1|pause_logic|sanitize_refill|t1 (starve|starved|silent|death|pool)|touch-?1 (starve|pool|sanitiz|refill))\b/i
+  return /\b(sanitiz(e|ed|ation)|qev_env|qev_api|qev|myemailverifier|mailbox verifier|pauseNewTouch1|pause new touch-?1|pause_logic|sanitize_refill|ps-t1-starve|ps-t1-qev|ps-t1-pause|t1 (starve|starved|silent|death|pool)|touch-?1 (starve|pool|sanitiz|refill))\b/i
     .test(`${title} ${description}`)
 }
 
@@ -262,7 +281,7 @@ export function droughtIdleAction(agentId: string): string {
     scout: 'Drive trial starts from measured MSP segment',
     finn: 'Publish paying vs free-trial integers from Stripe and plan',
     dex: 'Keep sending healthy so trial CTAs land. ACTION: queue_marcus immediately for sanitize refill / QEV empty / pause locking T1 — do not wait for a human',
-    marcus: 'Queue Marcus only for a named signup/trial-start/upgrade bug',
+    marcus: 'Named bug PS-T1-STARVE / QEV empty / pause locks quality pool: restore sanitize refill so TRUE trials can start. Do not write analysis theater.',
   }
   return map[agentId] || 'convert_warm: hottest'
 }
@@ -400,7 +419,7 @@ Never invent an action to look busy. Acknowledgements are not execution. Mason a
 
 const CONVERSION_DEFAULTS: Record<WorkerAgentId, string> = {
   marcus:
-    'Only if a named signup/trial-path product bug exists: diagnose it, propose a bounded change, and wait for approval. Do not open speculative refactors.',
+    'Only if a named signup/trial-path/send-path bug exists (PS-T1-STARVE, QEV empty, pause locking a quality T1 pool): diagnose it, propose a bounded change, and queue it. Do not open speculative refactors or "Fix Lead Eligibility Checker" clones.',
   mason:
     'Take the 20 hottest external MSPs (replied, then engaged, then opened) and drive each one to a 30-day no-card trial start today. Name each lead and the action. Do not write another sequence analysis.',
   aria:
@@ -458,7 +477,7 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
       title: 'Make the 30-day trial start take under 60 seconds',
       description:
         `SPRINT: ${TRIAL_SPRINT_TARGET} verified free trials now. Inspect the live signup and first-campaign path. Name where eligible visitors fail to become a trial org, with a denominator. ` +
-        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with that named send-path bug (sanitize_refill / qev_env / pause_logic) immediately. Do not wait for a human. Do not escalate a send-path bug.`,
+        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately. Do not wait for a human. Do not escalate a send-path bug.`,
       priority: 'high',
     },
     {
@@ -480,7 +499,17 @@ export function zeroTrialCrisisTasks(): CrisisTask[] {
       title: 'Keep sending healthy so trial CTAs land',
       description:
         `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE trials. Report breaker, authentication, and suppression only. ` +
-        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with the named send-path bug (sanitize_refill / qev_env / pause_logic) immediately — do not wait for a human, do not escalate. Do not classify replies or send around Dex.`,
+        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately — do not wait for a human, do not escalate. Do not classify replies or send around Dex.`,
+      priority: 'high',
+    },
+    {
+      agentId: 'marcus',
+      title: 'PS-T1-STARVE — restore sanitize refill / QEV so T1 can send',
+      description:
+        `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE trials blocked at cold T1. Named bug: PS-T1-STARVE / QEV empty / pause locks quality pool. ` +
+        `Files: server/os/sanitizeRefill.ts, server/os/touch1Health.ts, server/os/sequenceBacklog.ts shouldPauseTouch1. ` +
+        `Queue the verified architect task if watchdog has not. Cancel "Fix Lead Eligibility Checker" clones. ` +
+        `Do not raise DAILY_SEND_LIMIT. Do not add touch 93. Do not set REFILL_ALLOW_MX_ONLY=1. Do not write analysis theater.`,
       priority: 'high',
     },
   ]

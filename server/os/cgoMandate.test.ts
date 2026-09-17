@@ -122,7 +122,7 @@ describe('Janet CGO mandate', () => {
     const mason = both.find((t) => t.agentId === 'mason')
     expect(mason?.title).toMatch(/20 hottest/)
     expect(mason?.title).not.toMatch(/warm trial CTAs/i)
-    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'vera', 'finn']))
+    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'vera', 'finn', 'marcus']))
   })
 
   it('issues only the paying pack once TRUE trials are at 20', () => {
@@ -134,7 +134,7 @@ describe('Janet CGO mandate', () => {
 
   it('forces Mason, Aria, Nova, Scout, and Dex conversion work when trials are zero', () => {
     const owners = zeroTrialCrisisTasks().map((t) => t.agentId)
-    expect(owners).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex']))
+    expect(owners).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'marcus']))
     expect(zeroTrialCrisisTasks().every((t) => /trial/i.test(`${t.title} ${t.description}`))).toBe(true)
     for (const task of zeroTrialCrisisTasks()) {
       expect(isConversionBoundTitle(task.title, task.description)).toBe(true)

@@ -186,9 +186,11 @@ const TOOLS: Tool[] = [
       if (!title) return 'create_decision needs a "title".'
       try {
         const sql = getSql()
+        const { escalateCategoryFor } = await import('./escalateCategory')
+        const category = escalateCategoryFor(title, `${detail} ${recommendation}`)
         const rows: any[] = await sql`
           INSERT INTO escalations (product_id, category, payload, status)
-          VALUES (${companyId}, 'founder_decision', ${JSON.stringify({ title, detail, recommendation })}::jsonb, 'pending')
+          VALUES (${companyId}, ${category}, ${JSON.stringify({ title, detail, recommendation })}::jsonb, 'pending')
           RETURNING id`
         return `Decision recorded (id ${rows[0]?.id || '?'}) - pending your sign-off in HQ.`
       } catch (e: any) {
