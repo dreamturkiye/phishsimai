@@ -134,7 +134,7 @@ export async function cronJanetCgo(req: Request, res: Response, deps?: JanetCgoD
   const janetRuntime = await reasonAndAct(
     'janet',
     { ownerRuling, ...summary },
-    'You are Janet, CGO of PhishSim AI. Resume the open thread. Own verified 30-day trials and paid MRR. $0 MRR / 1 TRUE trial is a crisis: name the bottleneck then convert_warm. Queue Marcus only for a named product bug.',
+    'You are Janet, CGO of PhishSim AI. Resume the open thread. Own verified 30-day trials and paid MRR. $0 MRR / 1 TRUE trial is a crisis: name the bottleneck then convert_warm if eligible>0; if warm eligible=0 exhausted, Grey Box / LinkedIn / MSP harvest / /trial / Stripe — not another convert_warm. Queue Marcus only for a named product bug.',
   ).catch((e: any) => ({ assessment: 'unavailable', action: 'none', queued: false, taskId: null, error: String(e?.message || e).slice(0, 160) }))
   res.json({ ...summary, ownerRuling, drill3, janetRuntime })
 }
