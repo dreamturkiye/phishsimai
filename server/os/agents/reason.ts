@@ -4,7 +4,7 @@ import { rememberFact } from '../memory'
 import { queueJanetArchitectTask } from '../selfHeal'
 import { ensureMarcusProposalBugId } from '../marcusProposal'
 import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from '../agentRuntime'
-import { droughtIdleAction, isIdleNone, isOperatingCrisis } from '../cgoMandate'
+import { droughtIdleAction, isIdleNone, isOperatingCrisis, type WarmPoolFacts } from '../cgoMandate'
 import { measureTrueOrgCounts } from '../trueTrials'
 
 const COMPANY = 'phishsimai'
@@ -49,10 +49,11 @@ export function resolveRuntimeAction(
   agentId: string,
   action: string,
   operatingCrisis: boolean,
+  warm?: WarmPoolFacts | null,
 ): { action: string; rewritten: boolean } {
   const a = String(action || '').trim() || 'none'
   if (operatingCrisis && isIdleNone(a)) {
-    return { action: droughtIdleAction(agentId), rewritten: true }
+    return { action: droughtIdleAction(agentId, { warm }), rewritten: true }
   }
   return { action: a, rewritten: false }
 }
@@ -126,7 +127,14 @@ export async function reasonAndAct(
 
       const assessment = String(parsed.assessment || 'no assessment produced').slice(0, 500)
         const operatingCrisis = await loadOperatingCrisis(sql)
-        const resolved = resolveRuntimeAction(agentId, String(parsed.action || 'none').slice(0, 300), operatingCrisis)
+        let warm: WarmPoolFacts | null = null
+        try {
+          const { warmCtaPoolCensus } = await import('../sequences')
+          warm = await warmCtaPoolCensus(sql)
+        } catch {
+          warm = null
+        }
+        const resolved = resolveRuntimeAction(agentId, String(parsed.action || 'none').slice(0, 300), operatingCrisis, warm)
         const action = resolved.action
         const kind = classifySelfModification(action)
         const wantsTask = kind !== 'hard_stop' && !!parsed.queueTask && String(parsed.taskTitle || '').trim().length > 3
