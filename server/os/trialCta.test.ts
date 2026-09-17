@@ -87,3 +87,12 @@ describe('trial-start paths', () => {
     expect(constSrc).toContain('marketing_site')
   })
 })
+
+describe('static sitemap fallback', () => {
+  it('lists /trial and /knowbe4-alternative for crawlers', () => {
+    const sitemap = readFileSync('client/public/sitemap.xml', 'utf8')
+    expect(sitemap).toContain('<loc>https://phishsimai.com/trial</loc>')
+    expect(sitemap).toContain('<loc>https://phishsimai.com/knowbe4-alternative</loc>')
+    expect(sitemap).toContain('<loc>https://phishsimai.com</loc>')
+  })
+})
