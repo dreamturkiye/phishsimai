@@ -50,40 +50,33 @@ export function wantsPricingFirstMarketing(feedback: string): boolean {
   return mentionsSeatsBand && (asksToDrop || /seat/.test(c))
 }
 
-export function defaultMarketingSpec(topic: string, hook: string, founderFeedback = ''): SarahMarketingImageSpec {
+export function defaultMarketingSpec(topic: string, hook: string, _founderFeedback = ''): SarahMarketingImageSpec {
   const topicHeadline =
     hook.length > 15 && hook.length < 72 && !hook.includes('---')
       ? hook.replace(/\.$/, '')
       : topic.slice(0, 60).replace(/\.$/, '')
 
   const isSoc = /soc\s*2/i.test(`${topic} ${hook}`)
-  const pricingFirst = wantsPricingFirstMarketing(founderFeedback)
   return {
     headline: isSoc ? 'SOC 2 Evidence. One-Click Export.' : `${topicHeadline}.`,
-    subheadline: pricingFirst
-      ? PRICING_FIRST_SUBHEADLINE
-      : isSoc
-        ? 'Automate your audit trail without spreadsheets.'
-        : SEATS_FRAMING_SUBHEADLINE,
+    // Always pricing-first. The reference PNG has baked-in "Built for MSPs who
+    // manage 50–500 seats." — overlay must cover that line on every render.
+    subheadline: PRICING_FIRST_SUBHEADLINE,
     leftPanel: 'phishing email mockup',
     rightPanel: 'compliance dashboard',
-    features: ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
+    features: ['60¢ per user', '$299/mo for 500', '30-day no-card trial', 'Live in 10 min'],
   }
 }
 
-/** Image spec for revise/produce-final. Pricing-first wins when founder drops 50–500 seats framing. */
+/** Image spec for revise/produce-final — overlay always covers baked-in seats copy. */
 export function marketingImageFromFeedback(feedback: string): Partial<SarahMarketingImageSpec> {
-  if (wantsPricingFirstMarketing(feedback)) {
-    return {
-      headline: '60¢/user. $299/mo for 500.',
-      subheadline: PRICING_FIRST_SUBHEADLINE,
-      features: ['60¢ per user', '$299/mo for 500', '30-day no-card trial', 'Live in 10 min'],
-    }
-  }
+  const pricing = wantsPricingFirstMarketing(feedback) || /seat|pric|position|fram|50\s*[–-]\s*500/i.test(feedback)
   return {
-    headline: 'SOC 2 Evidence. One-Click Export.',
-    subheadline: 'Automate your audit trail without spreadsheets.',
-    features: ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
+    headline: pricing ? '60¢/user. $299/mo for 500.' : 'SOC 2 Evidence. One-Click Export.',
+    subheadline: PRICING_FIRST_SUBHEADLINE,
+    features: pricing
+      ? ['60¢ per user', '$299/mo for 500', '30-day no-card trial', 'Live in 10 min']
+      : ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
   }
 }
 
@@ -169,9 +162,8 @@ export async function createSarahLinkedInHeroImage(input: {
     features: input.marketingImage?.features?.length
       ? input.marketingImage.features
       : defaultMarketingSpec(topic, input.hook, input.founderFeedback).features,
-  }
-  if (wantsPricingFirstMarketing(input.founderFeedback || '')) {
-    spec.subheadline = PRICING_FIRST_SUBHEADLINE
+    // Overlay always covers the reference PNG's baked-in "50–500 seats" line.
+    subheadline: PRICING_FIRST_SUBHEADLINE,
   }
 
   const layout = {

@@ -7,6 +7,7 @@ import { join } from 'path'
 import sharp from 'sharp'
 import type { SarahMarketingImageSpec } from './sarahLinkedInImage'
 import { svgText, svgTextBlock } from './svgTextPaths'
+import { REFERENCE_PUBLIC_URL } from './linkedinHeroFallback'
 
 export { REFERENCE_PUBLIC_URL, linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 
@@ -15,11 +16,15 @@ const REF_CANDIDATES = [
   join(process.cwd(), 'server/os/social/assets/sarah-linkedin-reference-v2.png'),
 ]
 
-function resolveReferencePath(): string {
+async function loadReferencePng(): Promise<Buffer> {
   for (const p of REF_CANDIDATES) {
-    if (existsSync(p)) return p
+    if (existsSync(p)) return readFileSync(p)
   }
-  throw new Error('Sarah LinkedIn reference PNG missing')
+  // Prod overlay: the public PNG still has baked-in "50–500 seats". Fetch it and
+  // composite a pricing-first band so that line is covered.
+  const res = await fetch(REFERENCE_PUBLIC_URL, { signal: AbortSignal.timeout(15_000) })
+  if (!res.ok) throw new Error(`Sarah LinkedIn reference PNG missing (${res.status})`)
+  return Buffer.from(await res.arrayBuffer())
 }
 
 function wrap(text: string, maxLen: number): string[] {
@@ -78,7 +83,7 @@ function renderTextOverlaySvg(spec: SarahMarketingImageSpec, width: number, heig
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <defs>
     <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0a0a0f" stop-opacity="0.92"/>
+      <stop offset="0%" stop-color="#0a0a0f" stop-opacity="1"/>
       <stop offset="12%" stop-color="#0a0a0f" stop-opacity="1"/>
       <stop offset="100%" stop-color="#0a0a0f" stop-opacity="1"/>
     </linearGradient>
@@ -91,12 +96,12 @@ function renderTextOverlaySvg(spec: SarahMarketingImageSpec, width: number, heig
   return Buffer.from(svg, 'utf-8')
 }
 
-/** 1200×800 PNG — reference laptop render + SOC2 (or topic) headline band. */
+/** 1200×800 PNG — reference laptop render + pricing-first headline band covering baked-in seats copy. */
 export async function renderSarahReferenceStylePng(spec: SarahMarketingImageSpec): Promise<Buffer> {
-  const refBuf = readFileSync(resolveReferencePath())
+  const refBuf = await loadReferencePng()
   const W = 1200
   const H = 800
-  const overlayH = 300
+  const overlayH = 360
 
   const base = await sharp(refBuf).resize(W, H, { fit: 'cover', position: 'top' }).png().toBuffer()
   const overlaySvg = renderTextOverlaySvg(spec, W, overlayH)

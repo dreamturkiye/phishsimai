@@ -296,6 +296,8 @@ If feedback drops 50–500 seats framing or asks for pricing-first, rewrite copy
     if (parsed.hashtags.length) hashtags = parsed.hashtags
   }
 
+  // Hero always regenerates (seats/pricing/positioning, not only tone|copy|cta).
+  // Overlay covers the reference PNG's baked-in "50–500 seats" subheadline.
   const marketingImage: Partial<SarahMarketingImageSpec> = marketingImageFromFeedback(feedback)
 
   const heroImage = await createSarahLinkedInHeroImage({

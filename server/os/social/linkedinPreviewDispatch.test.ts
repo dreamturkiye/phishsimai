@@ -8,7 +8,12 @@ import {
 } from './linkedinPreviewDispatch'
 import { PUBLIC_SOCIAL_POSTING_ENABLED } from './publicPostingLockout'
 import { shouldReviseLinkedInCopy } from './sarahLinkedIn'
-import { wantsPricingFirstMarketing, PRICING_FIRST_SUBHEADLINE, marketingImageFromFeedback } from './sarahLinkedInImage'
+import {
+  wantsPricingFirstMarketing,
+  PRICING_FIRST_SUBHEADLINE,
+  SEATS_FRAMING_SUBHEADLINE,
+  defaultMarketingSpec,
+} from './sarahLinkedInImage'
 
 vi.mock('./sarahLinkedIn', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./sarahLinkedIn')>()
@@ -213,6 +218,11 @@ describe('cron + HQ both mount the dispatcher; lockout stays on', () => {
     expect(routes).toMatch(/export async function hqSarahSocial[\s\S]*handleLinkedInPreview/)
     expect(review).toContain('await reviseSarahLinkedInDraft(token)')
     expect(review).not.toMatch(/void \(async \(\) => \{[\s\S]*reviseSarahLinkedInDraft/)
+    expect(review).not.toMatch(/\/api\/os\/sarah-social\?/)
+    expect(review).not.toMatch(/\/api\/os\/hq\/social/)
+    const refStyle = readFileSync('server/os/social/sarahLinkedInReferenceStyle.ts', 'utf8')
+    expect(refStyle).toContain('loadReferencePng')
+    expect(refStyle).toContain('REFERENCE_PUBLIC_URL')
   })
 
   it('does not enable public LinkedIn auto-publish', () => {
@@ -224,14 +234,30 @@ describe('founder feedback revises copy AND hero when dropping 50–500 seats', 
   it('shouldReviseLinkedInCopy is true for pricing/positioning, not only tone|copy|cta', () => {
     expect(shouldReviseLinkedInCopy('drop the 50–500 seats framing; showcase best industry per-seat pricing')).toBe(true)
     expect(shouldReviseLinkedInCopy('pricing-first')).toBe(true)
+    expect(shouldReviseLinkedInCopy('positioning is wrong for MSPs')).toBe(true)
+    expect(shouldReviseLinkedInCopy('drop the seats line')).toBe(true)
     expect(shouldReviseLinkedInCopy('soften the CTA')).toBe(true)
     expect(shouldReviseLinkedInCopy('make the laptop bigger')).toBe(false)
   })
 
+  it('revise always regenerates the hero — copy regex does not gate the image', () => {
+    const src = readFileSync('server/os/social/sarahLinkedIn.ts', 'utf8')
+    const start = src.indexOf('export async function reviseSarahLinkedInDraft')
+    const end = src.indexOf('export async function queueSarahLinkedInDraft')
+    const fn = src.slice(start, end)
+    expect(fn).toContain('createSarahLinkedInHeroImage')
+    expect(fn).toContain('marketingImageFromFeedback')
+    const copyIf = fn.indexOf('if (reviseCopy)')
+    const heroCall = fn.indexOf('await createSarahLinkedInHeroImage')
+    expect(copyIf).toBeGreaterThan(-1)
+    expect(heroCall).toBeGreaterThan(copyIf)
+    const copyBlockEnd = fn.indexOf('const marketingImage', copyIf)
+    expect(heroCall).toBeGreaterThan(copyBlockEnd)
+  })
+
   it('marketing default is pricing-first, not 50–500 seats', () => {
     expect(wantsPricingFirstMarketing('remove Built for MSPs who manage 50–500 seats; showcase per-seat pricing')).toBe(true)
-    expect(marketingImageFromFeedback('drop 50-500 seats framing').subheadline).toBe(PRICING_FIRST_SUBHEADLINE)
-    expect(PRICING_FIRST_SUBHEADLINE).not.toMatch(/50–500 seats/)
-    expect(PRICING_FIRST_SUBHEADLINE).toMatch(/60¢/)
+    expect(defaultMarketingSpec('MSP trial', 'Start the trial').subheadline).toBe(PRICING_FIRST_SUBHEADLINE)
+    expect(defaultMarketingSpec('MSP trial', 'Start the trial').subheadline).not.toBe(SEATS_FRAMING_SUBHEADLINE)
   })
 })

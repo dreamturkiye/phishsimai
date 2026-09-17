@@ -238,6 +238,9 @@ export async function submitSocialReview(
   }
 
   if (decision === 'changes_requested' && comment) {
+    // Auto-revise is IN-PROCESS (reviseSarahLinkedInDraft). It does not HTTP-call
+    // /api/os/sarah-social. External CRON_SECRET callers of that URL are handled by
+    // dispatchSarahSocialRoute on cronSarahSocial (option A — no HQ_SECRET required).
     try {
       const { reviseSarahLinkedInDraft } = await import('./sarahLinkedIn')
       const revised = await reviseSarahLinkedInDraft(token)

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   defaultMarketingSpec,
   wantsPricingFirstMarketing,
@@ -40,19 +41,35 @@ describe('pricing-first marketing default', () => {
     expect(wantsPricingFirstMarketing('Match first LinkedIn post quality')).toBe(false)
   })
 
-  it('defaultMarketingSpec uses seats copy unless feedback asks to drop it', () => {
-    expect(defaultMarketingSpec('MSP trial', 'Start the trial').subheadline).toBe(SEATS_FRAMING_SUBHEADLINE)
-    expect(defaultMarketingSpec('MSP trial', 'Start the trial', 'drop the 50–500 seats framing').subheadline).toBe(
-      PRICING_FIRST_SUBHEADLINE,
-    )
+  it('defaultMarketingSpec is always pricing-first — never the baked-in 50–500 seats line', () => {
+    const spec = defaultMarketingSpec('MSP trial', 'Start the trial')
+    expect(spec.subheadline).toBe(PRICING_FIRST_SUBHEADLINE)
+    expect(spec.subheadline).not.toBe(SEATS_FRAMING_SUBHEADLINE)
+    expect(spec.subheadline).not.toMatch(/50–500 seats/)
+    expect(defaultMarketingSpec('SOC 2 evidence', 'SOC 2', '').subheadline).toBe(PRICING_FIRST_SUBHEADLINE)
     expect(PRICING_FIRST_SUBHEADLINE).toMatch(/60¢/)
     expect(PRICING_FIRST_SUBHEADLINE).toContain('$299/mo for 500')
   })
 
-  it('revise/produce marketingImageFromFeedback switches to pricing-first', () => {
-    expect(marketingImageFromFeedback('looks fine').subheadline).toBe('Automate your audit trail without spreadsheets.')
+  it('createSarahLinkedInHeroImage forces pricing-first subheadline over any seats copy', () => {
+    const src = readFileSync('server/os/social/sarahLinkedInImage.ts', 'utf8')
+    const fn = src.slice(src.indexOf('export async function createSarahLinkedInHeroImage'))
+    expect(fn).toMatch(/subheadline: PRICING_FIRST_SUBHEADLINE/)
+    expect(fn).toContain('...input.marketingImage')
+    expect(fn.indexOf('subheadline: PRICING_FIRST_SUBHEADLINE')).toBeGreaterThan(fn.indexOf('...input.marketingImage'))
+  })
+
+  it('revise/produce marketingImageFromFeedback always overlays pricing-first (covers baked-in seats)', () => {
+    expect(marketingImageFromFeedback('looks fine').subheadline).toBe(PRICING_FIRST_SUBHEADLINE)
     expect(marketingImageFromFeedback('drop 50-500 seats framing').subheadline).toBe(PRICING_FIRST_SUBHEADLINE)
     expect(marketingImageFromFeedback('drop 50-500 seats framing').headline).toContain('60¢')
+    expect(marketingImageFromFeedback('looks fine').subheadline).not.toBe(SEATS_FRAMING_SUBHEADLINE)
+    expect(marketingImageFromFeedback('wrong positioning — drop seats')).toEqual(
+      expect.objectContaining({
+        headline: '60¢/user. $299/mo for 500.',
+        subheadline: PRICING_FIRST_SUBHEADLINE,
+      }),
+    )
   })
 })
 
