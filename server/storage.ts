@@ -5,7 +5,14 @@
 
 import { put, del } from "@vercel/blob";
 
-const TOKEN = process.env.BLOB_READ_WRITE_TOKEN ?? "";
+function blobToken(): string {
+  return (process.env.BLOB_READ_WRITE_TOKEN ?? "").trim();
+}
+
+/** Live env check — do not snapshot the token at module load (serverless + tests). */
+export function blobReadWriteTokenConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !!(env.BLOB_READ_WRITE_TOKEN || "").trim();
+}
 
 function appendHashSuffix(relKey: string): string {
   const hash = Math.random().toString(36).slice(2, 10);
@@ -23,7 +30,8 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
-  if (!TOKEN) {
+  const token = blobToken();
+  if (!token) {
     console.warn("[Storage] BLOB_READ_WRITE_TOKEN not set — skipping upload");
     return { key: relKey, url: "" };
   }
@@ -33,7 +41,7 @@ export async function storagePut(
   const blob = await put(key, body as Parameters<typeof put>[1], {
     access: "public",
     contentType,
-    token: TOKEN,
+    token,
   });
   return { key, url: blob.url };
 }
@@ -58,9 +66,10 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
  * Delete a blob by URL.
  */
 export async function storageDelete(url: string): Promise<void> {
-  if (!TOKEN) return;
+  const token = blobToken();
+  if (!token) return;
   try {
-    await del(url, { token: TOKEN });
+    await del(url, { token });
   } catch (err) {
     console.warn("[Storage] Failed to delete blob:", err);
   }

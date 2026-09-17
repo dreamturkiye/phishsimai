@@ -2,6 +2,7 @@ import { getSql } from '../conn'
 import { llmComplete } from '../llmChat'
 import { sendTelegram } from '../telegram'
 import { rememberFact } from '../memory'
+import { linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 import {
   fetchHotThreads,
   getRedditSession,
@@ -38,6 +39,7 @@ export async function ensureSocialTables() {
     company_id TEXT NOT NULL DEFAULT 'phishsimai',
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`.catch(() => {})
+  await sql`ALTER TABLE os_social_queue ADD COLUMN IF NOT EXISTS image_url TEXT`.catch(() => {})
 }
 
 async function countPostedToday(platform: SocialPlatform, action: SocialAction): Promise<number> {
@@ -60,15 +62,19 @@ export async function queueSocialItem(item: {
   title?: string
   body: string
   scheduled_at?: Date
+  image_url?: string | null
 }) {
   await ensureSocialTables()
   const sql = getSql()
+  const platform = item.platform || 'reddit'
+  const imageUrl = platform === 'linkedin' ? linkedInHeroUrlOrReference(item.image_url) : (item.image_url || null)
   const [row] = await sql`
-    INSERT INTO os_social_queue (platform, action, subreddit, target_url, thing_id, title, body, scheduled_at)
+    INSERT INTO os_social_queue (platform, action, subreddit, target_url, thing_id, title, body, scheduled_at, image_url)
     VALUES (
-      ${item.platform || 'reddit'}, ${item.action}, ${item.subreddit || null},
+      ${platform}, ${item.action}, ${item.subreddit || null},
       ${item.target_url || null}, ${item.thing_id || null}, ${item.title || null},
-      ${item.body}, ${item.scheduled_at?.toISOString() || new Date().toISOString()}
+      ${item.body}, ${item.scheduled_at?.toISOString() || new Date().toISOString()},
+      ${imageUrl}
     )
     RETURNING id, platform, action, subreddit, status, created_at
   `
