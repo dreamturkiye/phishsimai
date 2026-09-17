@@ -8,7 +8,7 @@ import sharp from 'sharp'
 import type { SarahMarketingImageSpec } from './sarahLinkedInImage'
 import { svgText, svgTextBlock } from './svgTextPaths'
 
-export const REFERENCE_PUBLIC_URL = 'https://phishsimai.com/brand/sarah-linkedin-reference-v2.png'
+export { REFERENCE_PUBLIC_URL, linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 
 const REF_CANDIDATES = [
   join(process.cwd(), 'client/public/brand/sarah-linkedin-reference-v2.png'),

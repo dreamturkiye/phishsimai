@@ -2,11 +2,12 @@ import { llmComplete } from '../llmChat'
 import { ensureSocialTables, queueSocialItem } from './sarahSocial'
 import { getSql } from '../conn'
 import { savePreviewForReview, previewPublicUrl, getPreviewByToken } from './socialPreviewPage'
-import { createSarahLinkedInHeroImage, type SarahMarketingImageSpec } from './sarahLinkedInImage'
+import { createSarahLinkedInHeroImage, type SarahMarketingImageSpec, marketingImageFromFeedback } from './sarahLinkedInImage'
 import { renderLinkedInFeedPost } from './linkedinFeedPreview'
 import { sendTelegram } from '../telegram'
 import { rememberFact } from '../memory'
 import { parseSarahDraftResponse, sanitizeStoredPostBody } from './parseSarahDraft'
+import { linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 
 export type LinkedInPreview = {
   id?: string
@@ -112,7 +113,7 @@ features: Feature1, Feature2, Feature3, Feature4`,
     body,
     hashtags,
     blocker,
-    imageUrl: heroImage.url,
+    imageUrl: linkedInHeroUrlOrReference(heroImage.url),
   }
 
   const saved = await savePreviewForReview({
@@ -120,7 +121,7 @@ features: Feature1, Feature2, Feature3, Feature4`,
     body,
     hashtags,
     topic: topicLine,
-    imageUrl: heroImage.url,
+    imageUrl: linkedInHeroUrlOrReference(heroImage.url),
   })
 
   const fullPreview = { ...preview, id: saved.id, previewToken: saved.previewToken, previewUrl: saved.previewUrl }
@@ -165,7 +166,7 @@ export async function getNextSarahLinkedInPreview(): Promise<LinkedInPreview> {
       body: sanitizeStoredPostBody(String(queued.body || ''), String(queued.title || '')),
       hashtags,
       blocker: null,
-      imageUrl: (queued as any).image_url,
+      imageUrl: linkedInHeroUrlOrReference((queued as any).image_url),
     }
     return { ...preview, previewHtml: renderLinkedInFeedPost(preview) }
   }
@@ -192,11 +193,7 @@ export async function produceSarahLinkedInForApproval(sourceToken: string): Prom
     'Match first LinkedIn post quality exactly — professional 3D MacBook reference template. No stock photos. No wireframe mockups.',
   ].filter(Boolean).join('\n')
 
-  const marketingImage: Partial<SarahMarketingImageSpec> = {
-    headline: 'SOC 2 Evidence. One-Click Export.',
-    subheadline: 'Automate your audit trail without spreadsheets.',
-    features: ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
-  }
+  const marketingImage: Partial<SarahMarketingImageSpec> = marketingImageFromFeedback(feedback)
 
   const heroImage = await createSarahLinkedInHeroImage({
     marketingImage,
@@ -216,7 +213,7 @@ export async function produceSarahLinkedInForApproval(sourceToken: string): Prom
     body,
     hashtags,
     topic: 'SOC 2 evidence for MSPs — final image',
-    imageUrl: heroImage.url,
+    imageUrl: linkedInHeroUrlOrReference(heroImage.url),
   })
 
   const fullPreview: LinkedInPreview = {
@@ -226,7 +223,7 @@ export async function produceSarahLinkedInForApproval(sourceToken: string): Prom
     body,
     hashtags,
     blocker: null,
-    imageUrl: heroImage.url,
+    imageUrl: linkedInHeroUrlOrReference(heroImage.url),
     id: saved.id,
     previewToken: saved.previewToken,
     previewUrl: saved.previewUrl,
@@ -237,7 +234,7 @@ export async function produceSarahLinkedInForApproval(sourceToken: string): Prom
       hook,
       body,
       hashtags,
-      imageUrl: heroImage.url,
+      imageUrl: linkedInHeroUrlOrReference(heroImage.url),
     }),
   }
 
@@ -290,11 +287,7 @@ export async function reviseSarahLinkedInDraft(sourceToken: string): Promise<Lin
     if (parsed.hashtags.length) hashtags = parsed.hashtags
   }
 
-  const marketingImage: Partial<SarahMarketingImageSpec> = {
-    headline: 'SOC 2 Evidence. One-Click Export.',
-    subheadline: 'Automate your audit trail without spreadsheets.',
-    features: ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
-  }
+  const marketingImage: Partial<SarahMarketingImageSpec> = marketingImageFromFeedback(feedback)
 
   const heroImage = await createSarahLinkedInHeroImage({
     marketingImage,
@@ -314,7 +307,7 @@ export async function reviseSarahLinkedInDraft(sourceToken: string): Promise<Lin
     body: revisedBody,
     hashtags,
     topic: `Revision of ${sourceToken.slice(0, 8)}`,
-    imageUrl: heroImage.url,
+    imageUrl: linkedInHeroUrlOrReference(heroImage.url),
   })
 
   const fullPreview: LinkedInPreview = {
@@ -324,7 +317,7 @@ export async function reviseSarahLinkedInDraft(sourceToken: string): Promise<Lin
     body: revisedBody,
     hashtags,
     blocker: null,
-    imageUrl: heroImage.url,
+    imageUrl: linkedInHeroUrlOrReference(heroImage.url),
     id: saved.id,
     previewToken: saved.previewToken,
     previewUrl: saved.previewUrl,
@@ -335,7 +328,7 @@ export async function reviseSarahLinkedInDraft(sourceToken: string): Promise<Lin
       hook: revisedHook,
       body: revisedBody,
       hashtags,
-      imageUrl: heroImage.url,
+      imageUrl: linkedInHeroUrlOrReference(heroImage.url),
     }),
   }
 
@@ -365,6 +358,7 @@ export async function queueSarahLinkedInDraft(topic?: string): Promise<LinkedInP
     title: draft.hook.slice(0, 280),
     body: draft.body,
     scheduled_at: new Date(Date.now() + 3600000),
+    image_url: linkedInHeroUrlOrReference(draft.imageUrl),
   })
 
   return {

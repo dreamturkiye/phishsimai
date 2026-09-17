@@ -1,7 +1,8 @@
-import { storagePut } from '../../storage'
+import { storagePut, blobReadWriteTokenConfigured } from '../../storage'
 import { generateReplicateImageUrl } from './replicateImage'
 import { renderSarahMarketingSvgPng } from './sarahLinkedInRaster'
 import { renderSarahReferenceStylePng, REFERENCE_PUBLIC_URL } from './sarahLinkedInReferenceStyle'
+import { linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 import { layoutFromFounderFeedback, DEFAULT_CARD_LAYOUT } from './marketingCardLayout'
 
 export type SarahMarketingImageSpec = {
@@ -16,8 +17,6 @@ export type SarahPostImage = {
   url: string
   source: 'replicate' | 'gemini' | 'reference' | 'svg' | 'generated'
 }
-
-const BRAND_BASE = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'https://phishsimai.com'
 
 /** Photorealistic marketing prompt — must match Sarah's first LinkedIn post. */
 export function buildMarketingImagePrompt(spec: SarahMarketingImageSpec, topic: string): string {
@@ -36,28 +35,75 @@ export function buildMarketingImagePrompt(spec: SarahMarketingImageSpec, topic: 
   ].join(' ')
 }
 
-export function defaultMarketingSpec(topic: string, hook: string): SarahMarketingImageSpec {
+export const SEATS_FRAMING_SUBHEADLINE = 'Built for MSPs who manage 50–500 seats.'
+export const PRICING_FIRST_SUBHEADLINE = '60¢/user. $299/mo for 500. 30-day no-card trial.'
+
+/** Founder asked to drop the 50–500 seats framing → lead with frozen price. */
+export function wantsPricingFirstMarketing(feedback: string): boolean {
+  const c = String(feedback || '').toLowerCase()
+  if (!c.trim()) return false
+  if (/pricing[-\s]?first|lead with price/.test(c)) return true
+  if (/seats framing/.test(c)) return true
+  const mentionsSeatsBand = /50\s*[–-]\s*500/.test(c)
+  const asksToDrop = /drop|remove|don'?t|do not|stop|no more|instead of|replace/.test(c)
+  return mentionsSeatsBand && (asksToDrop || /seat/.test(c))
+}
+
+export function defaultMarketingSpec(topic: string, hook: string, founderFeedback = ''): SarahMarketingImageSpec {
   const topicHeadline =
     hook.length > 15 && hook.length < 72 && !hook.includes('---')
       ? hook.replace(/\.$/, '')
       : topic.slice(0, 60).replace(/\.$/, '')
 
   const isSoc = /soc\s*2/i.test(`${topic} ${hook}`)
+  const pricingFirst = wantsPricingFirstMarketing(founderFeedback)
   return {
     headline: isSoc ? 'SOC 2 Evidence. One-Click Export.' : `${topicHeadline}.`,
-    subheadline: isSoc
-      ? 'Automate your audit trail without spreadsheets.'
-      : 'Built for MSPs who manage 50–500 seats.',
+    subheadline: pricingFirst
+      ? PRICING_FIRST_SUBHEADLINE
+      : isSoc
+        ? 'Automate your audit trail without spreadsheets.'
+        : SEATS_FRAMING_SUBHEADLINE,
     leftPanel: 'phishing email mockup',
     rightPanel: 'compliance dashboard',
     features: ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
   }
 }
 
+/** Image spec for revise/produce-final. Pricing-first wins when founder drops 50–500 seats framing. */
+export function marketingImageFromFeedback(feedback: string): Partial<SarahMarketingImageSpec> {
+  if (wantsPricingFirstMarketing(feedback)) {
+    return {
+      headline: '60¢/user. $299/mo for 500.',
+      subheadline: PRICING_FIRST_SUBHEADLINE,
+      features: ['60¢ per user', '$299/mo for 500', '30-day no-card trial', 'Live in 10 min'],
+    }
+  }
+  return {
+    headline: 'SOC 2 Evidence. One-Click Export.',
+    subheadline: 'Automate your audit trail without spreadsheets.',
+    features: ['Automated Audit Trails', 'One-Click Export', 'Prove Compliance', 'MSP Ready'],
+  }
+}
+
+function nonEmptyHeroUrl(url?: string | null): string | null {
+  const v = String(url || '').trim()
+  return v || null
+}
+
+function dataPngUrl(buf: Buffer): string {
+  return `data:image/png;base64,${buf.toString('base64')}`
+}
+
 async function persistImage(data: Buffer, contentType: string, ext: string): Promise<string> {
   const key = `social/linkedin/${Date.now()}.${ext}`
   const { url } = await storagePut(key, data, contentType)
-  return url
+  return nonEmptyHeroUrl(url) || ''
+}
+
+async function persistOrInline(buf: Buffer, contentType: string, ext: string): Promise<string> {
+  const stored = await persistImage(buf, contentType, ext)
+  return nonEmptyHeroUrl(stored) || dataPngUrl(buf)
 }
 
 async function fetchAndPersist(remoteUrl: string): Promise<string> {
@@ -67,7 +113,7 @@ async function fetchAndPersist(remoteUrl: string): Promise<string> {
   const contentType = res.headers.get('content-type') || 'image/webp'
   const ext = contentType.includes('png') ? 'png' : contentType.includes('jpeg') ? 'jpg' : 'webp'
   const stored = await persistImage(buf, contentType, ext)
-  return stored || remoteUrl
+  return nonEmptyHeroUrl(stored) || nonEmptyHeroUrl(remoteUrl) || dataPngUrl(buf)
 }
 
 async function generateWithGemini(prompt: string): Promise<Buffer | null> {
@@ -117,11 +163,14 @@ export async function createSarahLinkedInHeroImage(input: {
 }): Promise<SarahPostImage> {
   const topic = input.topic || 'MSP compliance'
   const spec: SarahMarketingImageSpec = {
-    ...defaultMarketingSpec(topic, input.hook),
+    ...defaultMarketingSpec(topic, input.hook, input.founderFeedback),
     ...input.marketingImage,
     features: input.marketingImage?.features?.length
       ? input.marketingImage.features
-      : defaultMarketingSpec(topic, input.hook).features,
+      : defaultMarketingSpec(topic, input.hook, input.founderFeedback).features,
+  }
+  if (wantsPricingFirstMarketing(input.founderFeedback || '')) {
+    spec.subheadline = PRICING_FIRST_SUBHEADLINE
   }
 
   const layout = {
@@ -132,11 +181,16 @@ export async function createSarahLinkedInHeroImage(input: {
   const prompt = buildMarketingImagePrompt(spec, topic)
   const errors: string[] = []
 
+  if (!blobReadWriteTokenConfigured()) {
+    console.warn('[SarahLinkedInImage] BLOB_READ_WRITE_TOKEN missing — hero persist will skip; using data URL or public reference')
+  }
+
   if (process.env.REPLICATE_API_TOKEN) {
     try {
       const remoteUrl = await generateReplicateImageUrl(prompt, { aspectRatio: '3:2' })
-      const url = await fetchAndPersist(remoteUrl)
-      return { url, source: 'replicate' }
+      const url = nonEmptyHeroUrl(await fetchAndPersist(remoteUrl))
+      if (url) return { url, source: 'replicate' }
+      errors.push('replicate: persist returned empty url')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.warn('[SarahLinkedInImage] Replicate failed:', msg)
@@ -149,8 +203,7 @@ export async function createSarahLinkedInHeroImage(input: {
   try {
     const geminiBuf = await generateWithGemini(prompt)
     if (geminiBuf) {
-      const stored = await persistImage(geminiBuf, 'image/png', 'png')
-      const url = stored || `data:image/png;base64,${geminiBuf.toString('base64')}`
+      const url = await persistOrInline(geminiBuf, 'image/png', 'png')
       return { url, source: 'gemini' }
     }
     errors.push('gemini: no image in response')
@@ -162,8 +215,7 @@ export async function createSarahLinkedInHeroImage(input: {
 
   try {
     const png = await renderSarahReferenceStylePng(spec)
-    const stored = await persistImage(png, 'image/png', 'png')
-    const url = stored || `data:image/png;base64,${png.toString('base64')}`
+    const url = await persistOrInline(png, 'image/png', 'png')
     return { url, source: 'reference' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -173,8 +225,7 @@ export async function createSarahLinkedInHeroImage(input: {
 
   try {
     const png = await renderSarahMarketingSvgPng(spec, topic, layout)
-    const stored = await persistImage(png, 'image/png', 'png')
-    const url = stored || `data:image/png;base64,${png.toString('base64')}`
+    const url = await persistOrInline(png, 'image/png', 'png')
     return { url, source: 'svg' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -182,5 +233,7 @@ export async function createSarahLinkedInHeroImage(input: {
     errors.push(`svg: ${msg}`)
   }
 
-  throw new Error(`Could not generate marketing image — ${errors.join(' | ')}`)
+  const fallback = linkedInHeroUrlOrReference(null)
+  console.warn(`[SarahLinkedInImage] All generators failed (${errors.join(' | ')}); falling back to ${fallback}`)
+  return { url: fallback, source: 'reference' }
 }

@@ -43,6 +43,7 @@ import { runJanetReport } from './janetReport'
 import { getAllAgentHealth, reportAgentHealth } from './agentHealth_v2'
 import { buildPipelineView, type RawPipelineLead } from './pipelineView'
 import { runSarahSocialCron, listSocialQueue, queueSocialItem } from './social/sarahSocial'
+import { handleLinkedInPreview } from './social/linkedinPreviewDispatch'
 import { buildAnalyticsView, ingestAnalyticsEvent } from './siteAnalytics'
 import { verifyRedditLogin } from './social/redditClient'
 
@@ -343,6 +344,9 @@ export async function cronDiscover(req: Request, res: Response) {
 export async function cronSarahSocial(req: Request, res: Response) {
   if (!okCronOrHq(req, res)) return
   try {
+    // Production review auto-revise uses CRON_SECRET against this route with
+    // action=linkedin-preview&mode=revise. Bare cron (no action) stays Reddit + LinkedIn monitor.
+    if (await handleLinkedInPreview(req, res)) return
     const reddit = await runSarahSocialCron()
     // PS-SARAH-LINKEDIN-01: LinkedIn monitor (safe from day 1) + publish approved posts. Publish is
     // hard-gated behind the Aug-5 start + approval + content-safety; before Aug-5 it no-ops (drafts-only).
@@ -395,35 +399,8 @@ export async function hqSarahSocial(req: Request, res: Response) {
       return res.json({ ok: true, ...(await runSarahSocialCron()) })
     }
     if (action === 'linkedin-preview') {
-      const { getNextSarahLinkedInPreview, generateSarahLinkedInDraft, queueSarahLinkedInDraft } = await import('./social/sarahLinkedIn')
-      const mode = (req.query.mode as string) || 'next'
-      if (mode === 'draft') {
-        const topic = (req.query.topic as string) || undefined
-        return res.json({ ok: true, preview: await generateSarahLinkedInDraft(topic) })
-      }
-      if (mode === 'revise') {
-        const token = (req.query.token as string) || ''
-        if (!token) return res.status(400).json({ error: 'token required' })
-        const { reviseSarahLinkedInDraft } = await import('./social/sarahLinkedIn')
-        return res.json({ ok: true, preview: await reviseSarahLinkedInDraft(token) })
-      }
-      if (mode === 'produce-final') {
-        const token = (req.query.token as string) || ''
-        if (!token) return res.status(400).json({ error: 'token required' })
-        const { produceSarahLinkedInForApproval } = await import('./social/sarahLinkedIn')
-        return res.json({ ok: true, preview: await produceSarahLinkedInForApproval(token) })
-      }
-      if (mode === 'publish') {
-        const token = (req.query.token as string) || ''
-        if (!token) return res.status(400).json({ error: 'token required' })
-        const { publishSarahLinkedInPost } = await import('./social/publishSarahLinkedIn')
-        return res.json({ ok: true, result: await publishSarahLinkedInPost(token) })
-      }
-      if (mode === 'queue' && req.method === 'post') {
-        const topic = req.body?.topic
-        return res.json({ ok: true, preview: await queueSarahLinkedInDraft(topic) })
-      }
-      return res.json({ ok: true, preview: await getNextSarahLinkedInPreview() })
+      await handleLinkedInPreview(req, res)
+      return
     }
     if (action === 'queue' && req.method === 'post') {
       const { action: socialAction, subreddit, body, title, target_url, thing_id } = req.body || {}
@@ -451,12 +428,13 @@ export async function socialHeroImage(req: Request, res: Response) {
     const raw = (req.params as { token?: string }).token || ''
     const token = raw.replace(/\.png$/i, '')
     const { getPreviewByToken } = await import('./social/socialPreviewPage')
+    const { linkedInHeroUrlOrReference } = await import('./social/linkedinHeroFallback')
     const item = await getPreviewByToken(token)
-    if (!item?.image_url) {
+    if (!item) {
       res.status(404).send('Not found')
       return
     }
-    const url = item.image_url
+    const url = linkedInHeroUrlOrReference(item.image_url)
     if (url.startsWith('data:image/')) {
       const b64 = url.split(',', 2)[1]
       if (!b64) {

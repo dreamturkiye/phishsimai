@@ -10,6 +10,7 @@ import { sanitizeStoredPostBody } from './parseSarahDraft'
 import { renderLinkedInFeedPost } from './linkedinFeedPreview'
 import type { LinkedInPreview } from './sarahLinkedIn'
 import { issueTask } from '../../lib/kaan_os_v4'
+import { REFERENCE_PUBLIC_URL, linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 
 export type ReviewDecision = 'approved' | 'changes_requested' | 'rejected'
 
@@ -45,6 +46,12 @@ export async function ensureSocialPreviewColumns() {
   await sql`ALTER TABLE os_social_queue ADD COLUMN IF NOT EXISTS image_url TEXT`.catch(() => {})
   await sql`ALTER TABLE os_social_queue ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`.catch(() => {})
   await sql`ALTER TABLE os_social_queue ADD COLUMN IF NOT EXISTS hashtags TEXT`.catch(() => {})
+  // One-shot backfill: live 2026-09-17 drafts had NULL image_url → endless "Hero image generating…".
+  await sql`
+    UPDATE os_social_queue
+    SET image_url=${REFERENCE_PUBLIC_URL}
+    WHERE platform='linkedin' AND (image_url IS NULL OR btrim(image_url) = '')
+  `.catch(() => {})
 }
 
 export function previewPublicUrl(token: string): string {
@@ -93,7 +100,12 @@ export async function getPreviewByToken(token: string): Promise<SocialPreviewRec
     SELECT id, preview_token, platform, title, body, image_url, hashtags, review_status, founder_comment, status, scheduled_at, created_at, result_url
     FROM os_social_queue WHERE preview_token=${token} LIMIT 1
   `.catch(() => [] as SocialPreviewRecord[])
-  return (row as SocialPreviewRecord) || null
+  if (!row) return null
+  const rec = row as SocialPreviewRecord
+  if (rec.platform === 'linkedin') {
+    rec.image_url = linkedInHeroUrlOrReference(rec.image_url)
+  }
+  return rec
 }
 
 export async function savePreviewForReview(input: {
@@ -107,6 +119,8 @@ export async function savePreviewForReview(input: {
   await ensureSocialPreviewColumns()
   const sql = getSql()
   const token = randomUUID().replace(/-/g, '').slice(0, 24)
+  const platform = input.platform || 'linkedin'
+  const imageUrl = platform === 'linkedin' ? linkedInHeroUrlOrReference(input.imageUrl) : (input.imageUrl || null)
 
   const previewBase: Omit<LinkedInPreview, 'previewHtml'> = {
     id: undefined,
@@ -116,15 +130,15 @@ export async function savePreviewForReview(input: {
     body: input.body,
     hashtags: input.hashtags || ['MSP', 'Compliance', 'Phishing'],
     blocker: null,
-    imageUrl: input.imageUrl || null,
+    imageUrl,
   }
 
   const [row] = await sql`
     INSERT INTO os_social_queue (
       platform, action, title, body, status, review_status, preview_token, image_url, hashtags, scheduled_at, created_by
     ) VALUES (
-      ${input.platform || 'linkedin'}, 'post', ${input.title.slice(0, 280)}, ${input.body},
-      'draft', 'pending_review', ${token}, ${input.imageUrl || null},
+      ${platform}, 'post', ${input.title.slice(0, 280)}, ${input.body},
+      'draft', 'pending_review', ${token}, ${imageUrl},
       ${JSON.stringify(input.hashtags || ['MSP', 'Compliance', 'Phishing'])},
       ${new Date(Date.now() + 86400000).toISOString()}, 'janet'
     )
@@ -136,7 +150,7 @@ export async function savePreviewForReview(input: {
     ...previewBase,
     id: row.id,
     status: 'draft',
-    previewHtml: renderLinkedInFeedPost({ ...previewBase, imageUrl: input.imageUrl || null }),
+    previewHtml: renderLinkedInFeedPost({ ...previewBase, imageUrl }),
     scheduledAt: new Date(Date.now() + 86400000).toISOString(),
   }
 
@@ -155,7 +169,7 @@ export async function savePreviewForReview(input: {
     kind: 'new',
   })).catch(() => {})
 
-  return { id: row.id, previewToken: token, previewUrl, preview: { ...preview, previewHtml: renderLinkedInFeedPost({ ...previewBase, imageUrl: input.imageUrl || null }) } }
+  return { id: row.id, previewToken: token, previewUrl, preview: { ...preview, previewHtml: renderLinkedInFeedPost({ ...previewBase, imageUrl }) } }
 }
 
 export async function submitSocialReview(
@@ -275,7 +289,7 @@ export function renderSocialPreviewPage(item: SocialPreviewRecord, token: string
     body: sanitizeStoredPostBody(item.body, item.title),
     hashtags,
     scheduledAt: item.scheduled_at,
-    imageUrl: item.image_url,
+    imageUrl: linkedInHeroUrlOrReference(item.image_url),
   })
 
   const statusBadge = item.review_status === 'approved'

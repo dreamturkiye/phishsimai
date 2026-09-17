@@ -14,6 +14,7 @@ import { rememberFact } from './memory'
 import { TRIAL_CTA_URL } from './sequences'
 import { PUBLIC_SOCIAL_POSTING_ENABLED } from './social/publicPostingLockout'
 import { previewPublicUrl, savePreviewForReview, linkedInPreviewTelegramHtml } from './social/socialPreviewPage'
+import { REFERENCE_PUBLIC_URL } from './social/linkedinHeroFallback'
 
 export const TRIAL_ACQUISITION_CHANNELS = [
   {
@@ -223,6 +224,7 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
     body: TRIAL_LINKEDIN_DRAFT_BODY,
     hashtags: ['MSP', 'PhishingSimulation', 'Compliance'],
     topic: 'frozen 60¢ / $299/500 trial CTA',
+    imageUrl: REFERENCE_PUBLIC_URL,
   })
   await sql`
     INSERT INTO janet_memory (company_id, type, key, value, confidence, source)

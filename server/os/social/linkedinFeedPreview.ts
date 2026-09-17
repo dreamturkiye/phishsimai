@@ -3,6 +3,7 @@
  */
 import type { LinkedInPreview } from './sarahLinkedIn'
 import { sanitizeStoredPostBody } from './parseSarahDraft'
+import { linkedInHeroUrlOrReference } from './linkedinHeroFallback'
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -21,9 +22,8 @@ export function renderLinkedInFeedPost(preview: Omit<LinkedInPreview, 'previewHt
   const cleanBody = sanitizeStoredPostBody(preview.body, preview.hook)
   const bodyHtml = formatPostText(cleanBody, preview.hashtags || [])
   const avatar = preview.author.avatarInitials
-  const imageBlock = preview.imageUrl
-    ? `<div class="li-image"><img src="${escapeHtml(preview.imageUrl)}" alt="" loading="eager"/></div>`
-    : `<div class="li-image li-image-missing"><span>Hero image generating…</span></div>`
+  const imageUrl = linkedInHeroUrlOrReference(preview.imageUrl)
+  const imageBlock = `<div class="li-image"><img src="${escapeHtml(imageUrl)}" alt="" loading="eager"/></div>`
 
   return `<article class="li-post" aria-label="LinkedIn post preview">
   <header class="li-header">
@@ -58,7 +58,6 @@ export function renderLinkedInFeedPost(preview: Omit<LinkedInPreview, 'previewHt
 .li-body a{color:#0a66c2;text-decoration:none}
 .li-image{width:100%;background:#000;line-height:0}
 .li-image img{width:100%;height:auto;display:block;object-fit:cover}
-.li-image-missing{aspect-ratio:1/1;background:#111;color:#666;display:flex;align-items:center;justify-content:center;font-size:13px;min-height:280px}
 .li-stats{display:flex;justify-content:space-between;padding:8px 12px 0;font-size:12px;color:rgba(0,0,0,.6);align-items:center}
 .li-react-icons{display:inline-flex;gap:2px}
 .li-actions{display:flex;justify-content:space-around;padding:4px 8px 4px;border-top:1px solid rgba(0,0,0,.08);margin-top:8px}
