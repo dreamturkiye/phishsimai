@@ -105,7 +105,15 @@ export function isStaleSilentLead(opts: {
   return opts.touch1AgeDays >= (opts.staleDays ?? STALE_SILENT_DAYS)
 }
 
-export function shouldPauseTouch1(drainableOverdue: number, operatingCrisis: boolean): boolean {
+export function shouldPauseTouch1(
+  drainableOverdue: number,
+  operatingCrisis: boolean,
+  opts?: { t1Starved?: boolean },
+): boolean {
+  // Live 2026-09-17: pauseNewTouch1=true with drainableOverdue=1120 WHILE sanitized T1 pool=0.
+  // Pausing new T1 was meant to drain follow-ups when T1 was still sending. With sendable=0 it
+  // guarantees the money path stays dead. Never pause T1 when the sanitized untouched pool is empty.
+  if (opts?.t1Starved) return false
   return operatingCrisis && drainableOverdue >= PAUSE_T1_WHEN_DRAINABLE_AT
 }
 

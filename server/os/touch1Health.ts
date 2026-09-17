@@ -33,11 +33,22 @@ export function verifierEmptyAlertMessage(keys: MailboxVerifierKeys = mailboxVer
   )
 }
 
+/** Live 2026-09-17: sendable sanitized untouched hit 0; T1 sent 0 while T2/T3 stayed green. */
+export function sendablePoolEmptyAlertMessage(sendableUntouched: number): string | null {
+  if (sendableUntouched > 0) return null
+  return (
+    '🚨 PhishSim sendable sanitized untouched = 0 — T1 cannot send (sanitized_at IS NOT NULL required). ' +
+    'Refill promoted 0 mailbox-verified personal inboxes. Check QEV_API_KEY fallback + /api/os/sanitize-refill. ' +
+    'Do not set REFILL_ALLOW_MX_ONLY=1.'
+  )
+}
+
 export type T1StarveInput = {
   sanitizedEligible: number
   unsanitizedEligible: number
   tripped?: boolean
   autonomyDenied?: boolean
+  pauseNewTouch1?: boolean
 }
 
 /**
@@ -47,6 +58,9 @@ export type T1StarveInput = {
 export function whyT1SentZero(input: T1StarveInput): { sent: 0; reason: string } {
   if (input.tripped) return { sent: 0, reason: 'bounce_breaker_tripped' }
   if (input.autonomyDenied) return { sent: 0, reason: 'autonomy_denied' }
+  if (input.pauseNewTouch1 && input.sanitizedEligible > 0) {
+    return { sent: 0, reason: 'pause_new_touch1' }
+  }
   if (input.sanitizedEligible <= 0 && input.unsanitizedEligible > 0) {
     return {
       sent: 0,

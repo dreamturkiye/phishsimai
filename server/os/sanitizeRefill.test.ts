@@ -5,6 +5,7 @@ import {
   sendablePoolTarget,
   shouldUseMapsMxBridge,
   isMapsSourced,
+  isPromotableHeldAddress,
   refillSendablePool,
   SANITIZE_BUFFER_DAYS,
 } from './sanitizeRefill'
@@ -57,7 +58,10 @@ beforeEach(() => {
   stashEnv()
   vi.mocked(verifyViaService).mockReset()
 })
-afterEach(restoreEnv)
+afterEach(() => {
+  restoreEnv()
+  vi.unstubAllGlobals()
+})
 
 describe('QEV vs empty MEV (Sep 12 death shape)', () => {
   it('empty MEV + no QEV is not a mailbox verifier', () => {
@@ -70,6 +74,8 @@ describe('QEV vs empty MEV (Sep 12 death shape)', () => {
     expect(src).toContain('verifyViaService')
     expect(src).toContain('QEV_API_KEY')
     expect(src).toContain('maps_mx_bridge')
+    expect(src).toContain('mev_qev')
+    expect(src).toContain('sendablePoolEmptyAlertMessage')
     expect(src).not.toMatch(/REFILL_ALLOW_MX_ONLY === '1'[\s\S]{0,80}hasVerifier/)
   })
 
@@ -101,6 +107,16 @@ describe('sendable buffer', () => {
   it('keeps a 3-day buffer above the daily cap', () => {
     expect(SANITIZE_BUFFER_DAYS).toBe(3)
     expect(sendablePoolTarget(50)).toBe(150)
+  })
+})
+
+describe('finder skip predicate matches refill promotability', () => {
+  it('does not treat DISQUALIFIED catchall/role as a held sendable address', () => {
+    expect(isPromotableHeldAddress('pat@msp.example', 'catchall')).toBe(false)
+    expect(isPromotableHeldAddress('ceo@msp.example', 'role_account')).toBe(false)
+    expect(isPromotableHeldAddress('info@msp.example', null)).toBe(false)
+    expect(isPromotableHeldAddress('pat@msp.example', 'mev_valid')).toBe(true)
+    expect(isPromotableHeldAddress('pat@msp.example', null)).toBe(true)
   })
 })
 
@@ -196,6 +212,62 @@ describe('refillSendablePool fail-closed vs QEV', () => {
     expect(r.verifyMode).toBe('maps_mx_bridge')
     expect(r.promoted).toBe(0)
     expect(r.skippedOrgInbox).toBe(1)
+  })
+
+  it('MEV unknown falls through to QEV and promotes (live 2026-09-17 0/50 MEV)', async () => {
+    process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
+    process.env.QEV_API_KEY = 'qk_test'
+    vi.stubGlobal('fetch', async (url: string | URL) => {
+      const u = String(url)
+      if (u.includes('myemailverifier.com')) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ Status: 'unknown' }) }
+      }
+      throw new Error('unexpected fetch ' + u)
+    })
+    vi.mocked(verifyViaService).mockResolvedValue({
+      status: 'valid',
+      catchAll: false,
+      isRole: false,
+      reason: 'valid',
+      reached: true,
+      remainingCredits: 900,
+    })
+    const sql = fakeSql([
+      { match: /ALTER TABLE/, rows: [] },
+      { match: /sanitized_at IS NOT NULL AND touch1_sent_at IS NULL/, rows: [{ n: 0 }] },
+      {
+        match: /refill_checked_at IS NULL/,
+        rows: [{ id: 'lead-5', email: 'pat@msp.example', source: 'google_maps' }],
+      },
+    ])
+    const r = await refillSendablePool(sql, new Date('2026-09-17T07:00:00Z'))
+    expect(r.verifyMode).toBe('mev_qev')
+    expect(r.promoted).toBe(1)
+    expect(vi.mocked(verifyViaService)).toHaveBeenCalled()
+  })
+
+  it('MEV valid does not spend a QEV credit', async () => {
+    process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
+    process.env.QEV_API_KEY = 'qk_test'
+    vi.stubGlobal('fetch', async (url: string | URL) => {
+      const u = String(url)
+      if (u.includes('myemailverifier.com')) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ Status: 'valid', catch_all: 0 }) }
+      }
+      throw new Error('unexpected fetch ' + u)
+    })
+    const sql = fakeSql([
+      { match: /ALTER TABLE/, rows: [] },
+      { match: /sanitized_at IS NOT NULL AND touch1_sent_at IS NULL/, rows: [{ n: 0 }] },
+      {
+        match: /refill_checked_at IS NULL/,
+        rows: [{ id: 'lead-6', email: 'pat@msp.example', source: 'google_maps' }],
+      },
+    ])
+    const r = await refillSendablePool(sql, new Date('2026-09-17T07:00:00Z'))
+    expect(r.verifyMode).toBe('mev_qev')
+    expect(r.promoted).toBe(1)
+    expect(vi.mocked(verifyViaService)).not.toHaveBeenCalled()
   })
 })
 

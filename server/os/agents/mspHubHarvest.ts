@@ -55,6 +55,32 @@ export function harvestShouldStop(opts: {
   return false
 }
 
+export function harvestNextCursor(opts: {
+  cursorFrom: number
+  processed: number
+  total: number
+  domainsQueued: number
+  alreadyQueued?: number
+  noDomain?: number
+  emptyScanCap?: number
+}): { cursorTo: number; wrapped: boolean } {
+  const total = Math.max(0, Number(opts.total) || 0)
+  if (total <= 0) return { cursorTo: 0, wrapped: false }
+  const emptyCap = opts.emptyScanCap ?? HARVEST_EMPTY_SCAN_CAP
+  const advanced = opts.cursorFrom + opts.processed
+  const parserDesert =
+    opts.domainsQueued === 0 &&
+    opts.processed >= emptyCap &&
+    (opts.noDomain ?? 0) >= opts.processed &&
+    (opts.alreadyQueued ?? 0) === 0
+  // Live 2026-09-17: walked 1200 listings, domainsQueued=0. A parser desert must wrap to 0 so
+  // the next run retries the sitemap head (new listings land there) instead of walking another
+  // 1200-wide dead region. Already-queued windows keep advancing and wrap at the sitemap end.
+  if (parserDesert) return { cursorTo: 0, wrapped: true }
+  if (advanced >= total) return { cursorTo: 0, wrapped: true }
+  return { cursorTo: advanced, wrapped: false }
+}
+
 function jsonLdItems(html: string): any[] {
   const blocks = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1])
   const items: any[] = []
@@ -183,6 +209,7 @@ export interface HarvestResult {
   domainsQueued: number
   noDomain: number
   alreadyQueued: number
+  wrapped?: boolean
 }
 
 // Harvest until we QUEUE perRun domains (or hit scan/time budget). A 50-listing noDomain
@@ -248,9 +275,20 @@ export async function harvestMspHub(sqlOverride?: any, perRun = PER_RUN_DEFAULT)
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(scanCap, HARVEST_EMPTY_SCAN_CAP)) || 1 }, () => worker()))
 
-  const cursorTo = cursorFrom + processed
+  const cursorToInfo = harvestNextCursor({
+    cursorFrom, processed, total, domainsQueued, alreadyQueued, noDomain,
+    emptyScanCap: HARVEST_EMPTY_SCAN_CAP,
+  })
+  const cursorTo = cursorToInfo.cursorTo
   await sql`UPDATE msp_hub_harvest_state SET cursor = ${cursorTo}, total = ${total}, updated_at = now() WHERE id = 1`.catch(() => {})
-  const result = { total, cursorFrom, cursorTo, processed, listingsScanned: processed, domainsQueued, noDomain, alreadyQueued }
+  const result = { total, cursorFrom, cursorTo, processed, listingsScanned: processed, domainsQueued, noDomain, alreadyQueued, wrapped: cursorToInfo.wrapped }
+  if (domainsQueued === 0 && processed >= HARVEST_EMPTY_SCAN_CAP) {
+    await sendTelegram(
+      `⚠️ <b>PhishSim harvest empty</b> — walked ${processed} listings, domainsQueued=0 ` +
+        `(noDomain=${noDomain}, alreadyQueued=${alreadyQueued}, cursor ${cursorFrom}→${cursorTo}` +
+        `${cursorToInfo.wrapped ? ', wrapped' : ''}). Researcher must refill personal mailboxes; parser desert wraps to sitemap head.`,
+    ).catch(() => {})
+  }
   await reportAgentRun('discover', processed > 0, { agent: 'msp_harvest', ...result }).catch(() => {})
   return result
 }
@@ -393,7 +431,7 @@ export async function cronOutreachFunnel(req: any, res: any) {
     // promotion itself (sanitized_at), and split out anything promoted WITHOUT a real mailbox
     // verdict so an MX-only promotion can never masquerade as verified.
     const promoted24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitized_at > now() - interval '24 hours'`)
-    const valid24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitize_reason = 'mev_valid' AND sanitized_at > now() - interval '24 hours'`)
+    const valid24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitize_reason IN ('mev_valid','qev_valid') AND sanitized_at > now() - interval '24 hours'`)
     const unverified24 = promoted24 - valid24
     const sendableNow = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE sanitized_at IS NOT NULL AND touch1_sent_at IS NULL AND country IN ('US','GB','AU') AND bounced = false AND unsubscribed = false AND pipeline_stage NOT IN ('dead','customer')`)
     const sent24 = await n(sql`SELECT count(*) AS n FROM ps_outreach_leads WHERE touch1_sent_at > now() - interval '24 hours'`)

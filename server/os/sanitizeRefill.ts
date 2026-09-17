@@ -7,9 +7,11 @@
 // (6,127/6,127 populated). AMF's *finder* is for domain-only leads (that path lives in the
 // researcher, over lead_research_queue). Running AMF here re-found emails we already had — pure
 // wasted spend. This module now VERIFIES the existing address and NEVER calls AMF:
-//   • QEV when QEV_API_KEY is set (canonical — verifierClient.ts; local .env.local has this key);
+//   • QEV when QEV_API_KEY is set (canonical mailbox fallback — verifierClient.ts);
 //   • MyEmailVerifier when MYEMAILVERIFIER_API_KEY is a NON-EMPTY value — empty string (Vercel
-//     name-exists-value-empty, measured 2026-09-17) is unset and must not fail-close the pool;
+//     name-exists-value-empty, measured 2026-09-17) is unset. Live fire: MEV checked 23, promoted 0.
+//     When both keys are set, MEV runs first; QEV is the fallback on empty/fail/unknown (mode mev_qev);
+
 //   • else a free MX check (domain-level) — which CANNOT detect catch-all, so it is OFF unless the
 //     operator opts in with REFILL_ALLOW_MX_ONLY=1 (accepting that ~82% of this list is catch-all
 //     and MX alone will pass them, risking bounces). SMTP RCPT is not usable — Vercel blocks port 25.
@@ -26,6 +28,7 @@ import { verifyViaService, type VerifierVerdict } from './verifierClient'
 import {
   mailboxVerifierKeys,
   verifierEmptyAlertMessage,
+  sendablePoolEmptyAlertMessage,
   GEO_ALLOWLIST,
 } from './touch1Health'
 
@@ -80,6 +83,23 @@ export const DISQUALIFIED_LABELS = [
   'edu_gov_domain', 'domain_cap', 'deprioritized_generic', 'initials_greeting', 'generic_greeting',
 ]
 
+/** Previously checked but never decided — QEV fallback must re-open these (live: 1244 null + 120 unknown). */
+export const INCONCLUSIVE_LABELS = [
+  'unverified_unknown', 'unverified_timeout', 'unverified_blank',
+]
+
+/**
+ * True when holding this address is a reason to skip a paid finder.
+ * Org inboxes and DISQUALIFIED labels (catchall / role_account / …) are NOT skippable —
+ * live 2026-09-17: remaining TOF was role/catchall while mev_valid was already T1'd.
+ */
+export function isPromotableHeldAddress(email: string, sanitizeReason?: string | null): boolean {
+  if (!email || isOrgInbox(email)) return false
+  const label = String(sanitizeReason || '').trim()
+  if (label && (DISQUALIFIED_LABELS as readonly string[]).includes(label)) return false
+  return true
+}
+
 // Generic ORG inboxes with no individual owner. Deliberately NOT the same list as abTest.ts's
 // ROLE_LOCALPARTS: that one answers "can I greet this local part by name?" (so ceo/owner/it are
 // role-ish there), while this one answers "is there a human decision-maker behind this address?"
@@ -111,7 +131,71 @@ export function isOrgInbox(email: string): boolean {
   return ORG_INBOX_LOCALPARTS.has(local) || ORG_INBOX_LOCALPARTS.has(base)
 }
 
-export type RefillVerifyMode = 'qev' | 'mev' | 'mx_opt_in' | 'maps_mx_bridge' | 'none'
+export type RefillVerifyMode = 'qev' | 'mev' | 'mev_qev' | 'mx_opt_in' | 'maps_mx_bridge' | 'none'
+export type VerifyVia = 'qev' | 'mev' | 'mx' | 'none'
+export type VerifyHit = { verdict: Verdict; via: VerifyVia }
+
+function mapMevBody(d: { Status?: string; catch_all?: number | string }): Verdict {
+  const status = String(d.Status || '').toLowerCase()
+  const isCatchAll = ['1', 'true'].includes(String(d.catch_all).toLowerCase()) || status.includes('catch')
+  if (isCatchAll) return 'catchall'
+  if (status === 'valid') return 'valid'
+  if (status === 'invalid') return 'invalid'
+  return 'unknown'
+}
+
+/**
+ * Mailbox verify: MEV first when keyed; QEV (`verifyViaService`) as fallback when MEV is
+ * empty, HTTP-fails, throws, or returns unknown. Live 2026-09-17: MEV checked 23, promoted 0.
+ */
+export async function verifyEmailDetailed(
+  email: string,
+  opts: { allowMx: boolean; qev: boolean; mev: boolean } = {
+    allowMx: false,
+    qev: mailboxVerifierKeys().qev,
+    mev: mailboxVerifierKeys().mev,
+  },
+): Promise<VerifyHit> {
+  const domain = domainOf(email)
+  if (!domain) return { verdict: 'invalid', via: 'none' }
+
+  if (opts.mev) {
+    const key = process.env.MYEMAILVERIFIER_API_KEY?.trim()
+    if (key) {
+      try {
+        const res = await fetch(
+          `https://api.myemailverifier.com/api/validate_single.php?apikey=${encodeURIComponent(key)}&email=${encodeURIComponent(email)}`,
+          { cache: 'no-store', signal: AbortSignal.timeout(20000) },
+        )
+        if (res.ok) {
+          const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string }
+          const verdict = mapMevBody(d)
+          if (verdict === 'valid' || verdict === 'catchall' || verdict === 'invalid') {
+            return { verdict, via: 'mev' }
+          }
+          // unknown → QEV fallback when keyed
+        } else {
+          console.error(`[refill/mev] ${domain} status=${res.status} — vendor failure, falling back to QEV`)
+        }
+      } catch (e: any) {
+        console.error(`[refill/mev] ${domain} threw: ${String(e?.message || e).slice(0, 120)} — falling back to QEV`)
+      }
+    }
+  }
+
+  if (opts.qev) {
+    try {
+      const verdict = mapQevToRefillVerdict(await verifyViaService(email))
+      return { verdict, via: 'qev' }
+    } catch (e: any) {
+      console.error(`[refill/qev] ${domain} threw: ${String(e?.message || e).slice(0, 120)}`)
+      return { verdict: 'unknown', via: 'qev' }
+    }
+  }
+
+  if (opts.allowMx) return { verdict: (await hasMx(domain)) ? 'mx_ok' : 'no_mx', via: 'mx' }
+  return { verdict: 'unknown', via: 'none' }
+}
 
 export async function verifyEmail(
   email: string,
@@ -121,41 +205,7 @@ export async function verifyEmail(
     mev: mailboxVerifierKeys().mev,
   },
 ): Promise<Verdict> {
-  const domain = domainOf(email)
-  if (!domain) return 'invalid'
-  if (opts.qev) {
-    try {
-      return mapQevToRefillVerdict(await verifyViaService(email))
-    } catch (e: any) {
-      console.error(`[refill/qev] ${domain} threw: ${String(e?.message || e).slice(0, 120)}`)
-      return 'unknown'
-    }
-  }
-  if (opts.mev) {
-    const key = process.env.MYEMAILVERIFIER_API_KEY?.trim()
-    if (!key) return 'unknown'
-    try {
-      const res = await fetch(
-        `https://api.myemailverifier.com/api/validate_single.php?apikey=${encodeURIComponent(key)}&email=${encodeURIComponent(email)}`,
-        { cache: 'no-store', signal: AbortSignal.timeout(20000) },
-      )
-      if (res.ok) {
-        const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string }
-        const status = String(d.Status || '').toLowerCase()
-        const isCatchAll = ['1', 'true'].includes(String(d.catch_all).toLowerCase()) || status.includes('catch')
-        if (isCatchAll) return 'catchall'
-        if (status === 'valid') return 'valid'
-        if (status === 'invalid') return 'invalid'
-        return 'unknown'
-      }
-      console.error(`[refill/mev] ${domain} status=${res.status} — vendor failure, not a verdict`)
-    } catch (e: any) {
-      console.error(`[refill/mev] ${domain} threw: ${String(e?.message || e).slice(0, 120)}`)
-    }
-    return 'unknown'
-  }
-  if (opts.allowMx) return (await hasMx(domain)) ? 'mx_ok' : 'no_mx'
-  return 'unknown'
+  return (await verifyEmailDetailed(email, opts)).verdict
 }
 
 function rejectReason(verdict: Verdict): string | null {
@@ -206,15 +256,17 @@ export async function refillSendablePool(
     allowMxOnly,
     sendableBefore,
   })
-  const verifyMode: RefillVerifyMode = keys.qev
-    ? 'qev'
-    : keys.mev
-      ? 'mev'
-      : allowMxOnly
-        ? 'mx_opt_in'
-        : mapsBridge
-          ? 'maps_mx_bridge'
-          : 'none'
+  const verifyMode: RefillVerifyMode = keys.mev && keys.qev
+    ? 'mev_qev'
+    : keys.qev
+      ? 'qev'
+      : keys.mev
+        ? 'mev'
+        : allowMxOnly
+          ? 'mx_opt_in'
+          : mapsBridge
+            ? 'maps_mx_bridge'
+            : 'none'
   const base = {
     cap,
     target,
@@ -242,6 +294,7 @@ export async function refillSendablePool(
   }
 
   const mapsOnly = verifyMode === 'maps_mx_bridge'
+  const qevFallback = keys.qev
   const candidates = (mapsOnly
     ? await sql`SELECT id, email, source FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
@@ -251,14 +304,26 @@ export async function refillSendablePool(
        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
      ORDER BY created_at DESC LIMIT ${maxLookups}`
     : await sql`SELECT id, email, source FROM ps_outreach_leads
-     WHERE sanitized_at IS NULL AND refill_checked_at IS NULL AND touch1_sent_at IS NULL
+     WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
        AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
        AND pipeline_stage NOT IN ('dead','customer')
        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
-     ORDER BY created_at DESC LIMIT ${maxLookups}`) as Array<{ id: string; email: string; source?: string }>
+       AND (
+         refill_checked_at IS NULL
+         OR (
+           ${qevFallback}
+           AND (sanitize_reason IS NULL OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS}))
+         )
+       )
+     ORDER BY CASE WHEN refill_checked_at IS NULL THEN 0 ELSE 1 END, created_at DESC
+     LIMIT ${maxLookups}`) as Array<{ id: string; email: string; source?: string }>
 
   const allowMx = verifyMode === 'mx_opt_in' || verifyMode === 'maps_mx_bridge'
-  const verifyOpts = { allowMx, qev: verifyMode === 'qev', mev: verifyMode === 'mev' }
+  const verifyOpts = {
+    allowMx,
+    qev: verifyMode === 'qev' || verifyMode === 'mev_qev',
+    mev: verifyMode === 'mev' || verifyMode === 'mev_qev',
+  }
 
   const started = Date.now()
   let idx = 0
@@ -268,8 +333,8 @@ export async function refillSendablePool(
   let timedOut = false
   const promotedLeads: RefillResult['promotedLeads'] = []
 
-  function promoteReason(verdict: Verdict): string {
-    if (verdict === 'valid') return verifyMode === 'qev' ? 'qev_valid' : 'mev_valid'
+  function promoteReason(verdict: Verdict, via: VerifyVia): string {
+    if (verdict === 'valid') return via === 'qev' ? 'qev_valid' : 'mev_valid'
     if (verifyMode === 'maps_mx_bridge') return 'mx_maps_personal_bridge'
     return 'mx_only_unverified'
   }
@@ -292,12 +357,13 @@ export async function refillSendablePool(
         continue
       }
       checked++
-      const verdict = await verifyEmail(lead.email, verifyOpts)
+      const hit = await verifyEmailDetailed(lead.email, verifyOpts)
+      const verdict = hit.verdict
       const promote = verdict === 'valid' || (verdict === 'mx_ok' && allowMx)
       if (promote && promoted < needed) {
         try {
           await sql`UPDATE ps_outreach_leads
-             SET sanitized_at = now(), sanitize_reason = ${promoteReason(verdict)}, refill_checked_at = now()
+             SET sanitized_at = now(), sanitize_reason = ${promoteReason(verdict, hit.via)}, refill_checked_at = now()
              WHERE id = ${lead.id} AND sanitized_at IS NULL`
           promoted++
           promotedLeads.push({ id: String(lead.id), email: lead.email, verdict })
@@ -323,6 +389,7 @@ export async function refillSendablePool(
   const mode =
     verifyMode === 'qev' ? 'QEV'
       : verifyMode === 'mev' ? 'MyEmailVerifier'
+        : verifyMode === 'mev_qev' ? 'MyEmailVerifier then QEV fallback'
         : verifyMode === 'maps_mx_bridge' ? 'maps personal MX bridge (not REFILL_ALLOW_MX_ONLY)'
           : 'MX-only opt-in (catch-all NOT filtered)'
   const reason =
@@ -356,10 +423,15 @@ export async function cronSanitizeRefill(req: any, res: any) {
     if (r.verifierAlert) {
       await sendTelegram(verifierEmptyAlertMessage(r.verifier)).catch(() => {})
     }
+    const sendableAfter = r.sendableBefore + r.promoted
+    const emptyPool = sendablePoolEmptyAlertMessage(sendableAfter)
+    if (emptyPool) {
+      await sendTelegram(emptyPool).catch(() => {})
+    }
     await sendTelegram(
       `🔁 <b>PhishSim pool refill</b> (${COMPANY_ID})\n` +
         `mode ${r.verifyMode} · mev ${r.verifier.mev ? 'set' : 'empty'} · qev ${r.verifier.qev ? 'set' : 'empty'}\n` +
-        `cap ${r.cap} · target ${r.target} · sendable ${r.sendableBefore}→${r.sendableBefore + r.promoted} · promoted ${r.promoted}/${r.needed} (verified ${r.checked}, org-inbox skipped ${r.skippedOrgInbox})\n` +
+        `cap ${r.cap} · target ${r.target} · sendable ${r.sendableBefore}→${sendableAfter} · promoted ${r.promoted}/${r.needed} (verified ${r.checked}, org-inbox skipped ${r.skippedOrgInbox})\n` +
         `${r.reason}`,
     ).catch(() => {})
     return res.json({ ok: true, ...r })

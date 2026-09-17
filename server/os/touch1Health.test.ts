@@ -5,6 +5,7 @@ import {
   whyT1SentZero,
   touch1Starvation,
   verifierEmptyAlertMessage,
+  sendablePoolEmptyAlertMessage,
   T1_SILENCE_MS,
   ELIGIBLE_ALERT_FLOOR,
 } from './touch1Health'
@@ -33,6 +34,11 @@ describe('mailboxVerifierKeys — empty Vercel MEV is unset', () => {
     expect(msg).toMatch(/QEV_API_KEY/)
     expect(msg).toMatch(/Do not set REFILL_ALLOW_MX_ONLY=1/)
   })
+
+  it('pages when sendable sanitized untouched hits 0 (live 2026-09-17 money path)', () => {
+    expect(sendablePoolEmptyAlertMessage(0)).toMatch(/sendable sanitized untouched = 0/)
+    expect(sendablePoolEmptyAlertMessage(12)).toBeNull()
+  })
 })
 
 describe('whyT1SentZero — Sep 12 sanitized-pool starve', () => {
@@ -50,6 +56,15 @@ describe('whyT1SentZero — Sep 12 sanitized-pool starve', () => {
     expect(whyT1SentZero({ sanitizedEligible: 12, unsanitizedEligible: 100, autonomyDenied: true }).reason).toBe(
       'autonomy_denied',
     )
+  })
+
+  it('names pause_new_touch1 only when the sanitized pool still has leads to send', () => {
+    expect(
+      whyT1SentZero({ sanitizedEligible: 12, unsanitizedEligible: 100, pauseNewTouch1: true }).reason,
+    ).toBe('pause_new_touch1')
+    expect(
+      whyT1SentZero({ sanitizedEligible: 0, unsanitizedEligible: 6435, pauseNewTouch1: true }).reason,
+    ).toMatch(/pool_starved_sanitized/)
   })
 })
 
@@ -97,5 +112,6 @@ describe('runFullSequence T1 SQL still requires sanitized_at (the starve gate)',
     expect(seq).toMatch(/sanitized_at IS NOT NULL/)
     expect(seq).toMatch(/t1StarveReason/)
     expect(seq).toMatch(/touch1LastAt/)
+    expect(seq).toContain('loadTouch1HealthForPause')
   })
 })
