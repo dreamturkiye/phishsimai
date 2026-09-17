@@ -1,0 +1,187 @@
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { diagnoseRevenueFailure, assignmentSkipReason, operatingCrisisTasks, isSendPathFixTitle } from './cgoMandate'
+import {
+  t1MarcusTicket,
+  applyT1MarcusTicket,
+  T1_MARCUS_EMPTY_HOURS,
+  diagnoseFromT1Scoreboard,
+} from './t1MarcusHandoff'
+import { SMALL_T1_QUALITY_POOL } from './sequenceBacklog'
+
+const liveSep17 = {
+  operatingCrisis: true,
+  daysSinceLastT1: 5,
+  sanitizedEligible: 0,
+  unsanitizedEligible: 6435,
+  pauseNewTouch1: true,
+  verifier: { mev: false, qev: false, any: false },
+  drainableOverdue: 1120,
+}
+
+describe('t1MarcusTicket — dual crisis + T1 dead must queue a NAMED bug', () => {
+  it('queues qev_env when dual crisis, T1 dead 5d, sanitized=0, verifier empty (live 2026-09-17)', () => {
+    const t = t1MarcusTicket(liveSep17)
+    expect(t.queue).toBe(true)
+    expect(t.bug).toBe('qev_env')
+    expect(t.task).toMatch(/Named bug: qev_env/)
+    expect(t.task).toMatch(/QEV_API_KEY/)
+    expect(t.task).toMatch(/Do not raise DAILY_SEND_LIMIT/)
+    expect(t.task).toMatch(/Do not add touch 93/)
+    expect(t.task).toMatch(/Do not set REFILL_ALLOW_MX_ONLY=1/)
+  })
+
+  it('queues sanitize_refill when verifier is present but sanitized pool is empty for N hours', () => {
+    const t = t1MarcusTicket({
+      ...liveSep17,
+      verifier: { mev: true, qev: true, any: true },
+      pauseNewTouch1: false,
+    })
+    expect(t.queue).toBe(true)
+    expect(t.bug).toBe('sanitize_refill')
+    expect(t.task).toMatch(/sanitize_refill/)
+    expect(T1_MARCUS_EMPTY_HOURS).toBe(6)
+  })
+
+  it('queues pause_logic when pause locks a small quality pool (e.g. 40)', () => {
+    const t = t1MarcusTicket({
+      operatingCrisis: true,
+      daysSinceLastT1: 0.2,
+      sanitizedEligible: 40,
+      unsanitizedEligible: 6000,
+      pauseNewTouch1: true,
+      verifier: { mev: true, qev: true, any: true },
+      drainableOverdue: 1120,
+    })
+    expect(t.queue).toBe(true)
+    expect(t.bug).toBe('pause_logic')
+    expect(t.task).toMatch(/pause_logic/)
+    expect(t.task).toMatch(String(SMALL_T1_QUALITY_POOL))
+  })
+
+  it('does not queue a healthy T1 with a large sanitized pool', () => {
+    const t = t1MarcusTicket({
+      operatingCrisis: true,
+      daysSinceLastT1: 0.1,
+      sanitizedEligible: 400,
+      unsanitizedEligible: 6000,
+      pauseNewTouch1: false,
+      verifier: { mev: true, qev: true, any: true },
+      drainableOverdue: 10,
+    })
+    expect(t.queue).toBe(false)
+    expect(t.bug).toBeNull()
+  })
+})
+
+describe('applyT1MarcusTicket actually queues (not Telegram theater)', () => {
+  it('dual crisis + T1 dead → Marcus task queued once', async () => {
+    const queued: string[] = []
+    const ticket = t1MarcusTicket(liveSep17)
+    const first = await applyT1MarcusTicket(ticket, {
+      queueTask: async ({ task }) => {
+        queued.push(task)
+        return 'arch-1'
+      },
+      alreadyQueuedToday: async () => false,
+      markQueuedToday: async () => {},
+      day: '2026-09-17',
+    })
+    expect(first.queued).toBe(true)
+    expect(first.bug).toBe('qev_env')
+    expect(first.id).toBe('arch-1')
+    expect(queued).toHaveLength(1)
+    expect(queued[0]).toMatch(/qev_env/)
+
+    const second = await applyT1MarcusTicket(ticket, {
+      queueTask: async ({ task }) => {
+        queued.push(task)
+        return 'arch-2'
+      },
+      alreadyQueuedToday: async () => true,
+      markQueuedToday: async () => {},
+      day: '2026-09-17',
+    })
+    expect(second.queued).toBe(false)
+    expect(queued).toHaveLength(1)
+  })
+})
+
+describe('diagnoseRevenueFailure names the T1/sanitize bottleneck', () => {
+  it('Sep-17 live shape includes daysSinceLastT1, sanitizedEligible, pause, verifier, warm CTA→TRUE=0', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1,
+      paying: 0,
+      t1: {
+        daysSinceLastT1: 5,
+        sanitizedEligible: 0,
+        unsanitizedEligible: 6435,
+        pauseNewTouch1: true,
+        verifier: { mev: false, qev: false, any: false },
+        warmCtaToTrue: { ctaSent: 17, trueTrials: 0 },
+      },
+    })
+    expect(d.crisis).toBe(true)
+    expect(d.line).toMatch(/REVENUE FAILURE/)
+    expect(d.line).toMatch(/daysSinceLastT1=5/)
+    expect(d.line).toMatch(/sanitizedEligible=0/)
+    expect(d.line).toMatch(/T1 sanitize bottleneck/)
+    expect(d.line).toMatch(/pauseNewTouch1=true/)
+    expect(d.line).toMatch(/verifierMode=empty/)
+    expect(d.line).toMatch(/missing QEV/)
+    expect(d.line).toMatch(/warm CTA→TRUE=0/)
+    expect(d.nextActions.join(' ')).toMatch(/queue_marcus/)
+  })
+
+  it('diagnoseFromT1Scoreboard carries the same bottleneck', () => {
+    const d = diagnoseFromT1Scoreboard({
+      daysSinceLastT1: 5,
+      sanitizedEligible: 0,
+      unsanitizedEligible: 6435,
+      pauseNewTouch1: true,
+      verifier: { mev: false, qev: false, any: false },
+      warmCtaToTrue: { ctaSent: 17, trueTrials: 0 },
+      trueTrials: 1,
+      paying: 0,
+    })
+    expect(d.line).toMatch(/T1 sanitize bottleneck/)
+    expect(d.line).toMatch(/queue_marcus/)
+  })
+})
+
+describe('Nova/Dex can queue_marcus send-path bugs during dual crisis', () => {
+  it('does not skip a T1 sanitize / QEV ticket as TOF or analysis', () => {
+    expect(isSendPathFixTitle('Fix T1 sanitize refill QEV env')).toBe(true)
+    expect(assignmentSkipReason({
+      title: 'Fix T1 sanitize refill / QEV empty',
+      description: 'sanitizedEligible=0 pauseNewTouch1 locks quality pool',
+      operatingCrisis: true,
+      breakerTripped: true,
+    })).toBeNull()
+    expect(assignmentSkipReason({
+      title: 'Mason cold outreach 500 MSP',
+      operatingCrisis: true,
+      breakerTripped: true,
+    })).toBe('breaker_tripped_cold_send')
+  })
+
+  it('crisis pack Nova/Dex descriptions order queue_marcus without waiting for a human', () => {
+    const pack = operatingCrisisTasks({ liveProductTrials: 1, crmTrials: 0, payingCustomers: 0 })
+    const nova = pack.find((t) => t.agentId === 'nova')
+    const dex = pack.find((t) => t.agentId === 'dex')
+    expect(nova?.description).toMatch(/queue_marcus/)
+    expect(nova?.description).toMatch(/do not wait for a human/i)
+    expect(dex?.description).toMatch(/queue_marcus/)
+    expect(dex?.description).toMatch(/do not wait for a human/i)
+    expect(dex?.description).toMatch(/sanitize/)
+  })
+})
+
+describe('handoff is wired (watchdog + conversion, not Telegram-only)', () => {
+  it('watchdog and conversion engine call maybeQueueT1Marcus', () => {
+    expect(readFileSync('server/os/watchdog.ts', 'utf8')).toContain('maybeQueueT1Marcus')
+    expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('maybeQueueT1Marcus')
+    expect(readFileSync('server/os/founderBrief.ts', 'utf8')).toContain('diagnoseFromT1Scoreboard')
+    expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('queue_marcus')
+  })
+})

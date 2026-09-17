@@ -193,6 +193,20 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     paying: null,
     warm: pool,
   })
+  try {
+    const { maybeQueueT1Marcus, diagnoseFromT1Scoreboard, loadT1Scoreboard } = await import('./t1MarcusHandoff')
+    const board = await loadT1Scoreboard((await import('./conn')).getSql()).catch(() => null)
+    if (board) {
+      const named = diagnoseFromT1Scoreboard({ ...board, warm: pool })
+      diagnosis.line = named.line
+      diagnosis.bottlenecks = named.bottlenecks
+      diagnosis.nextActions = named.nextActions
+      diagnosis.crisis = named.crisis
+    }
+    await maybeQueueT1Marcus().catch(() => {})
+  } catch {
+    // T1 handoff is additive; warm diagnosis must still persist.
+  }
   await rememberFact({
     company_id: COMPANY_ID,
     type: 'operating',

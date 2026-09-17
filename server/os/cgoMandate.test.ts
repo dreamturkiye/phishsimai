@@ -175,6 +175,7 @@ describe('Janet CGO mandate', () => {
     expect(breakerAwareAssignRule(true, false)).toMatch(/conversion-bound/)
     expect(breakerAwareAssignRule(true, true)).toMatch(/TRIPPED/)
     expect(breakerAwareAssignRule(true, true)).not.toMatch(/500-cold/)
+    expect(breakerAwareAssignRule(true, false)).toMatch(/queue_marcus/)
     expect(assignmentSkipReason({
       title: 'Mason cold outreach 500 MSP',
       operatingCrisis: true,
@@ -230,6 +231,8 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('server/os/posture.ts', 'utf8')).toMatch(/healed missing running drill row/)
     expect(readFileSync('server/os/sequences.ts', 'utf8')).toContain('warmCtaPoolCensus')
     expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('diagnoseRevenueFailure')
+    expect(readFileSync('server/os/watchdog.ts', 'utf8')).toContain('maybeQueueT1Marcus')
+    expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('isSendPathFixTitle')
     expect(os).toContain('convert_warm')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('advanceLinkedInAcquisition')
     expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('CONVERSION_AGENTS.has')

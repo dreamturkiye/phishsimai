@@ -353,7 +353,19 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
               excluded: liveCounts.excludedLiveTrials,
               warm: pool,
             })
-            funnel.revenueBlocker = d.crisis ? d.line : null
+            try {
+              const { loadT1Scoreboard, diagnoseFromT1Scoreboard } = await import('./t1MarcusHandoff')
+              const board = await loadT1Scoreboard(sql)
+              const named = diagnoseFromT1Scoreboard({
+                ...board,
+                trueTrials: liveProductTrials,
+                paying: liveCounts.truePaying,
+                warm: pool,
+              })
+              funnel.revenueBlocker = named.crisis ? named.line : null
+            } catch {
+              funnel.revenueBlocker = d.crisis ? d.line : null
+            }
           }
           if (backlog) funnel.sequenceDrainable = backlog.drainableOverdue
           if (rate) funnel.warmCtaToTrial = formatWarmCtaTrialRate(rate)

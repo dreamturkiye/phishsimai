@@ -594,12 +594,19 @@ export async function hqData(req: Request, res: Response) {
 
     const { loadTouch1Health } = await import('./touch1Health')
     const touch1Health = await loadTouch1Health(sql).catch(() => null)
+    const t1Scoreboard = await import('./t1MarcusHandoff')
+      .then((m) => m.loadT1Scoreboard(sql))
+      .catch(() => null)
 
     res.json({
       ok: true,
       ts: new Date().toISOString(),
-      touch1LastAt: touch1Health?.touch1LastAt ?? null,
+      touch1LastAt: touch1Health?.touch1LastAt ?? t1Scoreboard?.touch1LastAt ?? null,
       touch1Health,
+      t1Scoreboard,
+      daysSinceLastT1: t1Scoreboard?.daysSinceLastT1 ?? null,
+      pauseNewTouch1: t1Scoreboard?.pauseNewTouch1 ?? null,
+      verifierMode: t1Scoreboard?.verifierMode ?? null,
       pipeline: {
         touched: Number(pipeline.touched),
         replied: Number(pipeline.replied),
