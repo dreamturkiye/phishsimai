@@ -400,6 +400,7 @@ export async function touch2Eligible(sql: any, limit: number, opts?: { includePo
      FROM ps_outreach_leads l
      WHERE l.touch1_sent_at IS NOT NULL
        AND l.touch2_sent_at IS NULL
+       AND l.touch3_sent_at IS NULL
        AND l.replied = false
        AND l.bounced = false
        AND l.unsubscribed = false
@@ -549,7 +550,10 @@ export async function runTouch2Batch(sqlOverride?: any, opts?: { maxSends?: numb
       }
       const ts = now.toISOString()
       if (t3) {
-        // Stamp T3 too so the T3 loop does not re-send this same value-reframe.
+        // This path claimed outbox touch=2 (Dex T2 budget) and sent approved T3 copy.
+        // Dual-stamp T3 so the T3 loop does not re-send this same value-reframe. T2 stamp stays
+        // because this IS a second-touch send — sentTodayCounts counts it via outbox touch=2.
+        // Skip-T2 drain/sequence T3 must NOT dual-stamp (no T2 outbox) — that starved T1.
         const c3 = await claimSequenceSend(sql, String(lead.id), 3, String(lead.email))
         if (c3.claimed) {
           await completeSequenceSend(sql, String(lead.id), 3, c3.claimToken!, String(result.id))
@@ -947,11 +951,14 @@ export async function runFullSequence() {
         }
         const ts = now.toISOString()
         if (def.touch === 2) await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts} WHERE id=${lead.id}`
-        else if (def.touch === 3 && !lead.touch2_sent_at) {
-          // Skip-T2 path: this T3 copy IS the second email — stamp T2 so heartbeat T1-no-T2 falls
-          // and sequence-touch2 does not send the same copy again.
-          await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts}, touch3_sent_at=${ts} WHERE id=${lead.id}`
-        } else if (def.touch === 3) await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
+        else if (def.touch === 3) {
+          // Skip-T2 / crisis-as-second-touch: this T3 copy IS the second email, but it is a T3
+          // outbox send. Stamp T3 only — dual-stamping touch2_sent_at inflated secondSentToday
+          // (live 2026-09-17: ~114 T3 rows counted as T2, combined 149/100, T1 starved).
+          // T2 exclusion is touch3_sent_at IS NOT NULL in touch2Eligible(); heartbeat T1-no-T2
+          // ignores T3-already-sent in countSequenceBacklog.
+          await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
+        }
         else if (def.touch === 4) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
         else if (def.final) await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts}, pipeline_stage='dead', stage_updated_at=${ts} WHERE id=${lead.id}`
         totalSent++
@@ -976,6 +983,9 @@ export async function runFullSequence() {
         sanitizedEligible: t1Health.sanitizedEligible,
         unsanitizedEligible: t1Health.unsanitizedEligible,
         pauseNewTouch1,
+        newSentToday: throttleCounts.newSentToday,
+        secondSentToday: throttleCounts.secondSentToday,
+        newTouchAllowance: newTouchAllowance(throttleCounts),
       })
     : null
   return {
@@ -1150,10 +1160,10 @@ export async function runSequenceDrainTick(opts: {
           await completeSequenceSend(sql, String(lead.id), def.touch, sendClaim.claimToken!, String(result.id))
         }
         const ts = now.toISOString()
-        if (def.touch === 3 && !lead.touch2_sent_at) {
-          await sql`UPDATE ps_outreach_leads SET touch2_sent_at=${ts}, touch3_sent_at=${ts} WHERE id=${lead.id}`
-        } else if (def.touch === 3) await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
-        else await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
+        if (def.touch === 3) {
+          // T3-only stamp. Dual-stamping T2 here made drain T3 consume Dex T2/combined caps.
+          await sql`UPDATE ps_outreach_leads SET touch3_sent_at=${ts} WHERE id=${lead.id}`
+        } else await sql`UPDATE ps_outreach_leads SET touch4_sent_at=${ts} WHERE id=${lead.id}`
         out.sent++
         if (def.touch === 3) out.t3++
         else out.t4++
