@@ -998,6 +998,19 @@ export async function getCompanyContext(sql: any): Promise<string> {
           COALESCE(a.admin_email = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false)
           OR COALESCE(a.admin_email LIKE '%canary%', false)
           OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsimai.com', false)
+          OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsim-e2e.test', false)
+          OR COALESCE(split_part(a.admin_email, '@', 2) LIKE '%.phishsim-e2e.test', false)
+          OR EXISTS (
+            SELECT 1
+            FROM org_members m_e2e
+            JOIN users u_e2e ON u_e2e.id = m_e2e."userId"
+            WHERE m_e2e."orgId" = o.id
+              AND u_e2e.email IS NOT NULL
+              AND (
+                lower(split_part(u_e2e.email, '@', 2)) = 'phishsim-e2e.test'
+                OR lower(split_part(u_e2e.email, '@', 2)) LIKE '%.phishsim-e2e.test'
+              )
+          )
           OR lower(o.name) = ANY(${NON_CUSTOMER_ORG_NAMES})
           OR o.name ILIKE '%canary%'
           OR o.name ILIKE '%walkthrough%'

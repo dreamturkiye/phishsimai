@@ -10,9 +10,10 @@
  * inflated the sprint and the zero-trial crisis pack never fired.
  *
  * A TRUE trial is a live product entitlement (plan=free, planExpiresAt > now) that is
- * not a canary, walkthrough, named test tenant, internal org, or our own admin email.
- * Pattern-matching is limited to canary/walkthrough — never a slug rule like
- * "contains phishsim", which would drop a real customer called "PhishSim Partners".
+ * not a canary, walkthrough, named test tenant, internal org, our own admin email,
+ * or a leftover /trial E2E tenant (@phishsim-e2e.test). Pattern-matching is limited
+ * to canary/walkthrough — never a slug rule like "contains phishsim", which would
+ * drop a real customer called "PhishSim Partners".
  */
 export const INTERNAL_ORG_IDS: readonly number[] = [6, 7, 8]
 
@@ -20,6 +21,39 @@ export const NON_LEAD_ORG_ADMIN_EMAILS: readonly string[] = [
   'kaanari@mac.com',
   'asadbek.munasar@forliion.com',
 ]
+
+/** Reserved domain for /trial path E2E. Subdomains count; org-name "phishsim" does not. */
+export const E2E_TEST_EMAIL_DOMAIN = 'phishsim-e2e.test'
+
+/** True for user@phishsim-e2e.test and user@runner.phishsim-e2e.test. */
+export function isE2eTestEmail(email?: string | null): boolean {
+  const raw = String(email || '').trim().toLowerCase()
+  const at = raw.lastIndexOf('@')
+  if (at < 1) return false
+  const domain = raw.slice(at + 1)
+  return domain === E2E_TEST_EMAIL_DOMAIN || domain.endsWith(`.${E2E_TEST_EMAIL_DOMAIN}`)
+}
+
+function e2eTestEmailDomainSql(emailExpr: string): string {
+  return `(
+    COALESCE(lower(split_part(${emailExpr}, '@', 2)) = '${E2E_TEST_EMAIL_DOMAIN}', false)
+    OR COALESCE(lower(split_part(${emailExpr}, '@', 2)) LIKE '%.${E2E_TEST_EMAIL_DOMAIN}', false)
+  )`
+}
+
+function e2eTestMemberExistsSql(orgAlias: string): string {
+  return `EXISTS (
+    SELECT 1
+    FROM org_members m_e2e
+    JOIN users u_e2e ON u_e2e.id = m_e2e."userId"
+    WHERE m_e2e."orgId" = ${orgAlias}.id
+      AND u_e2e.email IS NOT NULL
+      AND (
+        lower(split_part(u_e2e.email, '@', 2)) = '${E2E_TEST_EMAIL_DOMAIN}'
+        OR lower(split_part(u_e2e.email, '@', 2)) LIKE '%.${E2E_TEST_EMAIL_DOMAIN}'
+      )
+  )`
+}
 
 /** Exact org names (lowercased) that are never customer trials. */
 export const NON_CUSTOMER_ORG_NAMES: readonly string[] = [
@@ -35,6 +69,7 @@ export const NON_CUSTOMER_ORG_NAMES: readonly string[] = [
 export const TRUE_TRIAL_EXCLUSION_RULES = [
   'admin email in NON_LEAD_ORG_ADMIN_EMAILS (founder / known test accounts)',
   'admin email contains "canary" or is @phishsimai.com',
+  'admin or member email domain is phishsim-e2e.test or *.phishsim-e2e.test (leftover /trial E2E; count exclusion only)',
   'org id in INTERNAL_ORG_IDS (6/7/8)',
   'org name exact (lower): test, adeo, phishsim internal, ai worker, sending, trial walkthrough co, signup canary\'s organization',
   'org name matches /canary/i or /walkthrough/i (Signup Canary variants, Trial Walkthrough Co)',
@@ -50,6 +85,7 @@ export function isNonCustomerOrg(input: {
   if (input.orgId != null && INTERNAL_ORG_IDS.includes(Number(input.orgId))) return true
   if (email && NON_LEAD_ORG_ADMIN_EMAILS.includes(email)) return true
   if (email.includes('canary') || email.endsWith('@phishsimai.com')) return true
+  if (isE2eTestEmail(email)) return true
   if (name && NON_CUSTOMER_ORG_NAMES.includes(name)) return true
   if (/canary|walkthrough/i.test(String(input.name || ''))) return true
   return false
@@ -71,6 +107,8 @@ export function trueTrialExcludedSql(orgAlias = 'o', adminEmailExpr = 'admin_ema
     OR COALESCE(lower(${adminEmailExpr}) = ANY(ARRAY[${emails}]::text[]), false)
     OR COALESCE(lower(${adminEmailExpr}) LIKE '%canary%', false)
     OR COALESCE(lower(split_part(${adminEmailExpr}, '@', 2)) = 'phishsimai.com', false)
+    OR ${e2eTestEmailDomainSql(adminEmailExpr)}
+    OR ${e2eTestMemberExistsSql(orgAlias)}
   )`
 }
 
@@ -101,6 +139,19 @@ export async function measureTrueOrgCounts(sql: any): Promise<TrueOrgCounts> {
           COALESCE(a.admin_email = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false)
           OR COALESCE(a.admin_email LIKE '%canary%', false)
           OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsimai.com', false)
+          OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsim-e2e.test', false)
+          OR COALESCE(split_part(a.admin_email, '@', 2) LIKE '%.phishsim-e2e.test', false)
+          OR EXISTS (
+            SELECT 1
+            FROM org_members m_e2e
+            JOIN users u_e2e ON u_e2e.id = m_e2e."userId"
+            WHERE m_e2e."orgId" = o.id
+              AND u_e2e.email IS NOT NULL
+              AND (
+                lower(split_part(u_e2e.email, '@', 2)) = 'phishsim-e2e.test'
+                OR lower(split_part(u_e2e.email, '@', 2)) LIKE '%.phishsim-e2e.test'
+              )
+          )
           OR lower(o.name) = ANY(${NON_CUSTOMER_ORG_NAMES})
           OR o.name ILIKE '%canary%'
           OR o.name ILIKE '%walkthrough%'
@@ -146,6 +197,19 @@ export async function countTrueOrgCreates(sql: any, windowDays: number): Promise
         COALESCE(a.admin_email = ANY(${NON_LEAD_ORG_ADMIN_EMAILS}), false)
         OR COALESCE(a.admin_email LIKE '%canary%', false)
         OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsimai.com', false)
+        OR COALESCE(split_part(a.admin_email, '@', 2) = 'phishsim-e2e.test', false)
+        OR COALESCE(split_part(a.admin_email, '@', 2) LIKE '%.phishsim-e2e.test', false)
+        OR EXISTS (
+          SELECT 1
+          FROM org_members m_e2e
+          JOIN users u_e2e ON u_e2e.id = m_e2e."userId"
+          WHERE m_e2e."orgId" = o.id
+            AND u_e2e.email IS NOT NULL
+            AND (
+              lower(split_part(u_e2e.email, '@', 2)) = 'phishsim-e2e.test'
+              OR lower(split_part(u_e2e.email, '@', 2)) LIKE '%.phishsim-e2e.test'
+            )
+        )
         OR lower(o.name) = ANY(${NON_CUSTOMER_ORG_NAMES})
         OR o.name ILIKE '%canary%'
         OR o.name ILIKE '%walkthrough%'
