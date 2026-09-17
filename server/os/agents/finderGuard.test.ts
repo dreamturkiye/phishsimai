@@ -18,10 +18,11 @@
 //  skip vs proceed is therefore unambiguous and offline.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { findEmailForDomainOnly } from './leadResearcher'
 
 /** Minimal tagged-template stand-in for the neon `sql` client. */
-function stubSql(rows: Array<{ email: string }> | Error) {
+function stubSql(rows: Array<{ email: string; sanitize_reason?: string | null }> | Error) {
   const calls: number[] = []
   const fn: any = async () => {
     calls.push(1)
@@ -82,6 +83,36 @@ describe('findEmailForDomainOnly — proceeds when a find is genuinely worth pay
       expect(await findEmailForDomainOnly(stubSql([{ email: e }]), 'x.com', 'X', 'icypeas')).toBe('vendor_error')
     }
   })
+
+  it('PROCEEDS when the held personal is DISQUALIFIED catchall/role (live remaining TOF)', async () => {
+    expect(
+      await findEmailForDomainOnly(
+        stubSql([{ email: 'pat@msp.example', sanitize_reason: 'catchall' }]),
+        'msp.example',
+        'MSP',
+        'icypeas',
+      ),
+    ).toBe('vendor_error')
+    expect(
+      await findEmailForDomainOnly(
+        stubSql([{ email: 'ceo@msp.example', sanitize_reason: 'role_account' }]),
+        'msp.example',
+        'MSP',
+        'icypeas',
+      ),
+    ).toBe('vendor_error')
+  })
+
+  it('still skips unlabeled personal and mev_valid — refill/QEV owns those', async () => {
+    expect(
+      await findEmailForDomainOnly(
+        stubSql([{ email: 'pat@msp.example', sanitize_reason: 'mev_valid' }]),
+        'msp.example',
+        'MSP',
+        'icypeas',
+      ),
+    ).toBe('already_have_sendable')
+  })
 })
 
 describe('findEmailForDomainOnly — failure behaviour', () => {
@@ -94,5 +125,12 @@ describe('findEmailForDomainOnly — failure behaviour', () => {
 
   it('does not crash on an empty or malformed domain', async () => {
     expect(await findEmailForDomainOnly(stubSql([]), '', null, 'icypeas')).toBe('vendor_error')
+  })
+
+  it('finder budget counts qev_valid as a promoted pass', () => {
+    const src = readFileSync('server/os/agents/leadResearcher.ts', 'utf8')
+    expect(src).toMatch(/sanitize_reason IN \('mev_valid','qev_valid'\)/)
+    expect(src).toContain('reopenDuplicateQueueWhereOnlyDisqualified')
+    expect(src).toContain('isPromotableHeldAddress')
   })
 })

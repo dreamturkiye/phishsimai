@@ -44,6 +44,14 @@ describe('sequence backlog routing (no invented copy)', () => {
     expect(shouldPauseTouch1(1565, false)).toBe(false)
   })
 
+  it('does NOT pause new T1 when the sanitized untouched pool is starved (live 2026-09-17)', () => {
+    // pauseNewTouch1=true with drainableOverdue=1120 AND sendable=0 froze the money path.
+    // The pause exists to drain follow-ups when T1 is still feeding; with T1 starved it is a lock.
+    expect(shouldPauseTouch1(1120, true, { t1Starved: true })).toBe(false)
+    expect(shouldPauseTouch1(1120, true, { t1Starved: false })).toBe(true)
+    expect(shouldPauseTouch1(PAUSE_T1_WHEN_DRAINABLE_AT, true, { t1Starved: true })).toBe(false)
+  })
+
   it('unlocks remaining approved T2 during operating crisis without waiting for the Aug-3 hold flag', () => {
     expect(shouldCrisisUnlockTouch2(true, false)).toBe(true)
     expect(shouldCrisisUnlockTouch2(false, true)).toBe(true)
@@ -135,6 +143,8 @@ describe('drain is wired onto live send paths', () => {
     expect(seq).toContain('shouldCrisisUnlockTouch2')
     expect(seq).toContain('TOUCH2_COPY_ERA_CUTOFF')
     expect(seq).toMatch(/touch1_sent_at >= \$\{TOUCH2_COPY_ERA_CUTOFF\}/)
+    expect(seq).toContain('loadTouch1HealthForPause')
+    expect(seq).toContain('t1Starved')
     expect(hb).toContain('runSequenceDrainTick')
     expect(hb).toContain('sequenceEngineCheck')
     expect(hb).toContain('includeTouch2: true')

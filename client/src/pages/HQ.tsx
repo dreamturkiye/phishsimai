@@ -196,10 +196,17 @@ export default function HQPage() {
       <div style={s.main}>
 
         {tab === 'overview' && <>
+          {data?.touch1Health?.starvation?.alert && (
+            <div style={{ ...s.card, borderColor: '#991b1b', background: '#2d0f0f', marginBottom: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#f87171', marginBottom: 6 }}>T1 starvation</div>
+              <div style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.5 }}>{data.touch1Health.starvation.message}</div>
+            </div>
+          )}
           <div style={s.grid}>
             {[
               ['MRR', '$' + mrr.toLocaleString(), mrr > 0 ? '#4ade80' : '#e8e8f0', 'Next: $1K MRR'],
               ['Touched', p.touched || 0, '#e8e8f0', (p.bounceRate || '0') + '% bounce'],
+              ['Last T1', data?.touch1LastAt ? new Date(data.touch1LastAt).toISOString().slice(0, 16).replace('T', ' ') + 'Z' : 'never', data?.touch1Health?.starvation?.alert ? '#f87171' : '#e8e8f0', data?.touch1Health ? `sanitized ${data.touch1Health.sanitizedEligible} · unsanitized ${data.touch1Health.unsanitizedEligible}` : 'T1 health'],
               ['Reply rate', (p.replyRate || '0') + '%', Number(p.replyRate) >= 2 ? '#4ade80' : '#f5a623', 'Target: 2%'],
               ['Prospects', p.prospects || 0, '#e8e8f0', 'T2 eligible soon'],
               ['Engaged', p.engaged || 0, Number(p.engaged) > 0 ? '#f5a623' : '#e8e8f0', 'Hot leads'],

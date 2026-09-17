@@ -645,6 +645,18 @@ const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 // null. If this needs pausing again, set this back to true -- in CODE, not an env var. The
 // July-12 lesson on the other product was an env flag everyone believed was set and never was.
 
+/** Drain tick + sequence JSON share this so pauseNewTouch1 cannot freeze T1 while the sanitized pool is 0. */
+async function loadTouch1HealthForPause(sql: any): Promise<{ t1Starved: boolean }> {
+  try {
+    const { loadTouch1Health } = await import('./touch1Health')
+    const t1 = await loadTouch1Health(sql)
+    return { t1Starved: t1.sanitizedEligible <= 0 }
+  } catch {
+    // Fail toward T1 — a health-read failure must not freeze the money path behind pauseNewTouch1.
+    return { t1Starved: true }
+  }
+}
+
 export async function runFullSequence() {
   const sql = getSql()
   await ensureSequenceOutbox(sql)
@@ -685,7 +697,10 @@ export async function runFullSequence() {
   const now = new Date()
   const operatingCrisis = await readOperatingCrisis(sql).catch(() => true)
   const backlog = await countSequenceBacklog(sql).catch(() => null)
-  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis)
+  const { loadTouch1Health, whyT1SentZero } = await import('./touch1Health')
+  const t1Health = await loadTouch1Health(sql, now).catch(() => null)
+  const t1Starved = !t1Health || t1Health.sanitizedEligible <= 0
+  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis, { t1Starved })
   if (operatingCrisis) {
     await runTouch2Batch(sql).catch(() => {})
   }
@@ -720,12 +735,25 @@ export async function runFullSequence() {
     // PS-DEX-GATE-01: `AND NOT EXISTS (suppression)` added here. Touch-1 filtered on `unsubscribed`
     // alone and never consulted ps_outreach_suppression — a provider-suppressed lead whose flag was
     // unset (Rex found 8 on 2026-08-03) was fully eligible for a first touch.
-    const t1Leads = await sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
+    const t1Select = () => sql`SELECT id,name,company,email,industry FROM ps_outreach_leads l
       WHERE country = ANY(${GEO}) AND touch1_sent_at IS NULL AND bounced=false AND l.unsubscribed=false
       AND sanitized_at IS NOT NULL
       AND pipeline_stage NOT IN ('dead','customer')
       AND NOT EXISTS (SELECT 1 FROM ps_outreach_suppression s WHERE lower(s.email) = lower(l.email))
       ORDER BY created_at ASC LIMIT ${cap - totalSent}`
+    let t1Leads = await t1Select()
+    // PS-T1-STARVE-01: sanitized pool hit 0 on 2026-09-12 while 6435 unsanitized remained because
+    // refill fail-closed on empty MEV and never called QEV. If this hour's T1 query is empty,
+    // top up in-process (short budget) then re-query so the hourly slice is not a silent zero.
+    if ((!t1Leads || t1Leads.length === 0) && cap > 0) {
+      try {
+        const { refillSendablePool } = await import('./sanitizeRefill')
+        await refillSendablePool(sql, now, { timeBudgetMs: 45_000, maxLookups: 80 })
+        t1Leads = await t1Select()
+      } catch (e: any) {
+        console.error('[sequence] in-process refill failed:', String(e?.message || e).slice(0, 160))
+      }
+    }
 
     for (const lead of t1Leads) {
       if (totalSent >= cap) break
@@ -937,13 +965,26 @@ export async function runFullSequence() {
   }
   await reportAgentRun('aria', totalSent >= 0, { sent: totalSent }, undefined, 'phishsimai').catch(() => {})
   await reportAgentHealth('aria', true, 0, undefined, 'phishsimai').catch(() => {})
+  const t1Sent = results.filter((r: any) => r.touch === 1).length
+  const t1Starve = t1Health
+    ? whyT1SentZero({
+        sanitizedEligible: t1Health.sanitizedEligible,
+        unsanitizedEligible: t1Health.unsanitizedEligible,
+        pauseNewTouch1,
+      })
+    : null
   return {
     sent: totalSent,
     results,
     bounceRate: health.rate,
     pauseNewTouch1,
+    t1Starved,
     drainableOverdue: backlog?.drainableOverdue ?? null,
     followUpSent,
+    touch1LastAt: t1Health?.touch1LastAt ?? null,
+    sanitizedEligible: t1Health?.sanitizedEligible ?? null,
+    unsanitizedEligible: t1Health?.unsanitizedEligible ?? null,
+    t1StarveReason: t1Sent === 0 ? t1Starve?.reason : null,
   }
 }
 
@@ -1014,7 +1055,8 @@ export async function runSequenceDrainTick(opts: {
 
   const operatingCrisis = await readOperatingCrisis(sql).catch(() => true)
   out.backlog = await countSequenceBacklog(sql).catch(() => emptyBacklog)
-  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis)
+  const drainT1 = await loadTouch1HealthForPause(sql)
+  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis, drainT1)
 
   if (includeTouch2) {
     const t2 = await runTouch2Batch(sql, { maxSends: opts.touch2MaxSends }).catch((e: any) => ({ sent: 0, reason: String(e?.message || e).slice(0, 120) }))
@@ -1118,7 +1160,7 @@ export async function runSequenceDrainTick(opts: {
   }
 
   out.backlog = await countSequenceBacklog(sql).catch(() => out.backlog)
-  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis)
+  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis, drainT1)
   return out
 }
 

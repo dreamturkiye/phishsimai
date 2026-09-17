@@ -12,6 +12,7 @@
 //      silence — the exact "no news = fine" failure this guards against.
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { CRON_OUTPUT } from './truthReport'
 
 const byCron = (needle: string) => CRON_OUTPUT.find(c => c.cron.includes(needle))
@@ -33,6 +34,12 @@ describe('truth-report cron liveness registry', () => {
     expect(funnel!.table).toBe('credit_readings')
     expect(funnel!.col).toBe('read_at')
     expect(funnel!.schedule).toBe('30 8 * * *')
+  })
+
+  it('watches T1 itself in the truth report so T2/T3 cannot hide a T1 starve', () => {
+    const src = readFileSync('server/os/truthReport.ts', 'utf8')
+    expect(src).toMatch(/T1 LAST/)
+    expect(src).toMatch(/max\(touch1_sent_at\)/)
   })
 
   it('every registry entry names a table and a non-empty output column', () => {

@@ -2,7 +2,7 @@ import { getSql } from '../conn'
 // PS-ICY-GUARD-01: the finder guard reuses the refill's OWN promotability predicate. Sharing the
 // function (rather than restating the rule) is deliberate — if the two ever disagree about what
 // counts as a usable address, the guard starts skipping domains the refill would never send to.
-import { isOrgInbox } from '../sanitizeRefill'
+import { DISQUALIFIED_LABELS, isPromotableHeldAddress } from '../sanitizeRefill'
 // PS-FINDER-LEDGER-01: every paid finder call is written down, so "where did 299 credits go"
 // is a query rather than a reconstruction from row counts.
 import { recordProviderCall } from '../providerUsage'
@@ -42,7 +42,7 @@ export async function computeFinderBudget(
   try {
     const r = (await sql`SELECT
       count(*) FILTER (WHERE refill_checked_at IS NOT NULL)::int AS checked,
-      count(*) FILTER (WHERE refill_checked_at IS NOT NULL AND sanitize_reason='mev_valid')::int AS promoted
+      count(*) FILTER (WHERE refill_checked_at IS NOT NULL AND sanitize_reason IN ('mev_valid','qev_valid'))::int AS promoted
       FROM ps_outreach_leads WHERE refill_checked_at > now() - interval '7 days'`)[0]
     sampleChecked = Number(r?.checked ?? 0)
     if (sampleChecked >= MIN_SAMPLE && Number(r?.promoted) > 0) passRate = Number(r.promoted) / sampleChecked
@@ -135,13 +135,45 @@ async function sendableAddressesAtDomain(sql: ReturnType<typeof getSql>, domain:
   const d = String(domain).trim().toLowerCase()
   if (!d) return []
   const rows = (await sql`
-    SELECT email FROM ps_outreach_leads
+    SELECT email, sanitize_reason FROM ps_outreach_leads
     WHERE split_part(lower(email), '@', 2) = ${d}
       AND bounced = false AND unsubscribed = false
-      AND pipeline_stage NOT IN ('dead')`) as Array<{ email: string }>
-  // isOrgInbox is the SAME predicate the refill uses to decide promotability. Sharing it is the
-  // point: if the refill would never send to it, holding it is not a reason to skip the finder.
-  return rows.map(r => String(r.email)).filter(e => !isOrgInbox(e))
+      AND pipeline_stage NOT IN ('dead')`) as Array<{ email: string; sanitize_reason?: string | null }>
+  // Promotable (not org inbox, not DISQUALIFIED catchall/role). Sharing isPromotableHeldAddress
+  // with the refill: a catchall personal must NOT skip the finder — live remaining TOF is that.
+  return rows.map(r => String(r.email)).filter((e, i) => isPromotableHeldAddress(e, rows[i]?.sanitize_reason))
+}
+
+/**
+ * Re-open queue rows retired as 'duplicate' solely because we held a catchall/role address.
+ * Live 2026-09-17: finder skipped those domains; mev_valid stock was already T1'd; sendable=0.
+ */
+export async function reopenDuplicateQueueWhereOnlyDisqualified(sql: ReturnType<typeof getSql>): Promise<number> {
+  try {
+    const rows = (await sql`
+      UPDATE lead_research_queue q
+      SET status = 'pending', attempts = 0, updated_at = NOW()
+      WHERE q.company_id = ${COMPANY_ID}
+        AND q.status = 'duplicate'
+        AND EXISTS (
+          SELECT 1 FROM ps_outreach_leads l
+          WHERE split_part(lower(l.email), '@', 2) = lower(q.domain)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM ps_outreach_leads l
+          WHERE split_part(lower(l.email), '@', 2) = lower(q.domain)
+            AND l.bounced = false AND l.unsubscribed = false
+            AND l.pipeline_stage NOT IN ('dead')
+            AND (l.sanitize_reason IS NULL OR l.sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
+        )
+      RETURNING q.id`) as Array<{ id: string }>
+    const n = rows.length
+    if (n > 0) console.log(`[researcher] reopened ${n} duplicate queue rows that only hold DISQUALIFIED (catchall/role) addresses`)
+    return n
+  } catch (e: any) {
+    console.error(`[researcher] reopen duplicates failed: ${String(e?.message || e).slice(0, 120)}`)
+    return 0
+  }
 }
 
 /**
@@ -521,13 +553,8 @@ export async function runLeadResearcher(batchSize = 6) {
   let budgetExhausted = false
 
   try {
-    // PS-RESEARCHER-SPLIT-01: discovery REMOVED from the researcher. Outscraper ate 181 of 199s
-    // (measured, 03:00 run) — the wrong thing in the wrong place: discovery already runs on its
-    // OWN cron (/api/os/discover, every 6h → cronDiscover → runLeadDiscover, which INSERTs into
-    // lead_research_queue). The researcher's job is ENRICHMENT; it now spends its full budget on
-    // it and drains 5-10x faster. Discovery is NOT orphaned — the discover cron keeps the pool
-    // filled independently. stats.discovered stays 0 here by design (this function no longer discovers).
     console.log(`[researcher] t=${el()}s enrichment start (discovery runs separately on /api/os/discover)`)
+    await reopenDuplicateQueueWhereOnlyDisqualified(sql)
 
     // PS-FINDER-THROTTLE-02: DEMAND-AWARE budget. We send min(cap, available) = 50→100/day, and
     // only ~63% of finds survive MEV verify, so the finds NEEDED to keep the send fed are

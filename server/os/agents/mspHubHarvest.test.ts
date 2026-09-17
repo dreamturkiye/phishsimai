@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import {
   harvestScanCap,
   harvestShouldStop,
+  harvestNextCursor,
   hostFromListing,
   parseMspHubProfileHtml,
   HARVEST_EMPTY_SCAN_CAP,
@@ -62,10 +63,30 @@ describe('msp hub harvest — extract real domains after directory-url change', 
     })).toBe(true)
   })
 
+  it('wraps to sitemap head after a 1200-listing parser desert (live domainsQueued=0)', () => {
+    const desert = harvestNextCursor({
+      cursorFrom: 4800, processed: HARVEST_EMPTY_SCAN_CAP, total: 12_500,
+      domainsQueued: 0, noDomain: HARVEST_EMPTY_SCAN_CAP, alreadyQueued: 0,
+    })
+    expect(desert).toEqual({ cursorTo: 0, wrapped: true })
+    const alreadyQueuedWindow = harvestNextCursor({
+      cursorFrom: 4800, processed: HARVEST_EMPTY_SCAN_CAP, total: 12_500,
+      domainsQueued: 0, noDomain: 0, alreadyQueued: HARVEST_EMPTY_SCAN_CAP,
+    })
+    expect(alreadyQueuedWindow.wrapped).toBe(false)
+    expect(alreadyQueuedWindow.cursorTo).toBe(4800 + HARVEST_EMPTY_SCAN_CAP)
+    const endOfList = harvestNextCursor({
+      cursorFrom: 12_000, processed: 600, total: 12_500,
+      domainsQueued: 2, noDomain: 10, alreadyQueued: 0,
+    })
+    expect(endOfList).toEqual({ cursorTo: 0, wrapped: true })
+  })
+
   it('harvest path uses favicon + empty-scan continue', () => {
     const src = readFileSync('server/os/agents/mspHubHarvest.ts', 'utf8')
     expect(src).toContain('s2/favicons')
     expect(src).toContain('HARVEST_EMPTY_SCAN_CAP')
     expect(src).toContain('parseMspHubProfileHtml')
+    expect(src).toContain('harvestNextCursor')
   })
 })

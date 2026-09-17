@@ -96,6 +96,27 @@ export async function runWatchdog() {
   }
 
   try {
+    const { loadTouch1Health } = await import('./touch1Health')
+    const t1 = await loadTouch1Health(sql)
+    result.actions_taken.push(
+      `T1 last ${t1.touch1LastAt ?? 'never'} · sanitized ${t1.sanitizedEligible} · unsanitized ${t1.unsanitizedEligible}` +
+        (t1.verifier.any ? '' : ' · mailbox verifier EMPTY'),
+    )
+    if (t1.starvation.alert && t1.starvation.message) {
+      result.issues_found++
+      await sendTelegram(t1.starvation.message)
+      result.actions_taken.push(`T1 starvation alert: ${t1.starvation.code}`)
+    }
+    if (!t1.verifier.any) {
+      result.issues_found++
+      const { verifierEmptyAlertMessage } = await import('./touch1Health')
+      await sendTelegram(verifierEmptyAlertMessage(t1.verifier))
+    }
+  } catch (e: any) {
+    result.actions_taken.push('T1 health check error: ' + e.message?.slice(0, 100))
+  }
+
+  try {
     await ensureResearcherRunning('phishsimai', result.actions_taken)
 
     const recovery = await runOpsRecoveryTick('phishsimai')
