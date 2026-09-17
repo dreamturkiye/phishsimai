@@ -68,3 +68,24 @@ describe('register actually starts the 30-day trial', () => {
     expect(routers).toMatch(/createOrganization[\s\S]{0,400}markLeadTrial/)
   })
 })
+
+describe('/trial offer strip + prerender SEO', () => {
+  it('shows the live LinkedIn offer under the H1', () => {
+    const trial = readFileSync('client/src/pages/TrialStart.tsx', 'utf8')
+    expect(trial).toMatch(/<h1[\s\S]*Start your 30-day free trial[\s\S]*60¢\/user · \$299\/mo for 500 · 30-day, no card · live in 10 min\./)
+    expect(trial).toContain('seoForPath("/trial")')
+  })
+
+  it('prerenders /trial with seoForPath and serves that HTML on Vercel', () => {
+    const prerender = readFileSync('client/src/prerender.tsx', 'utf8')
+    expect(prerender).toMatch(/["']\/trial["']\s*:\s*TrialStart/)
+    expect(prerender).toContain('headTags(seoForPath(route))')
+    const seo = readFileSync('client/src/lib/seoMeta.ts', 'utf8')
+    expect(seo).toMatch(/pathname === "\/trial"[\s\S]*title: "Start your 30-day free trial — PhishSim AI"/)
+    const vercel = readFileSync('vercel.json', 'utf8')
+    expect(vercel).toMatch(/"source": "\/trial"[\s\S]*?"destination": "\/trial\/index.html"/)
+    const sitemap = readFileSync('scripts/gen-sitemap.mjs', 'utf8')
+    expect(sitemap).toContain('PRERENDER_ROUTES')
+    expect(sitemap).toContain('dist/public/sitemap.xml')
+  })
+})

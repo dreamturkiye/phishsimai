@@ -58,6 +58,10 @@
       "destination": "/pricing/index.html"
     },
     {
+      "source": "/trial",
+      "destination": "/trial/index.html"
+    },
+    {
       "source": "/privacy",
       "destination": "/privacy/index.html"
     },
