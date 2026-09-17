@@ -1648,7 +1648,7 @@ export async function issueTask(
  * under Janet's supervision. Two safe surfaces only — none touches prod, real recipients, or money
  * directly. queue_marcus routes a code/infra change into the VERIFIED architect pipeline (autonomy
  * gate + circuit breaker + CI verify + deploy); escalate puts anything sensitive in front of a
- * human as a founder_decision (the no-drift guarantee). Every action is logged to agent_actions.
+ * human as an escalation (CHECK-legal category — never founder_decision). Every action is logged to agent_actions.
  */
 /**
  * PS-AGENT-DISPATCH-01: why a dispatch must be refused, or null when it is safe to queue.
@@ -1730,11 +1730,25 @@ async function executeAgentAction(sql: any, task: AgentTask, resultText: string,
         : `queue_marcus blocked by the autonomy gate / circuit breaker and parked — not executed`
     } else {
       const [title, detail] = arg.split('|').map((x) => x.trim())
-      const rows = (await sql`INSERT INTO escalations (product_id, category, payload, status)
-        VALUES (${companyId}, 'founder_decision',
-          ${JSON.stringify({ title: title || arg, detail: detail || '', from: agentId })}::jsonb, 'pending')
-        RETURNING id`) as any[]
-      outcome = `escalated a decision to Janet/founder (id ${rows[0]?.id || '?'}, pending sign-off)`
+      const { escalateCategoryFor, escalateShouldQueueMarcus } = await import('../os/escalateCategory')
+      const category = escalateCategoryFor(title || arg, detail || '')
+      // Prod CHECK has no founder_decision. Send-path/ops → queue_marcus (marcus_dispatch).
+      if (escalateShouldQueueMarcus(category)) {
+        const id = await queueJanetArchitectTask({
+          task: (title || arg).slice(0, 2000),
+          source: `agent:${agentId}`,
+          notes: `escalate→queue_marcus (${category}): ${String(detail || '').slice(0, 400)}`,
+        })
+        outcome = id
+          ? `send-path escalate routed to Marcus (id ${id}, category=${category})`
+          : `queue_marcus blocked by the autonomy gate / circuit breaker and parked — not executed`
+      } else {
+        const rows = (await sql`INSERT INTO escalations (product_id, category, payload, status)
+          VALUES (${companyId}, ${category},
+            ${JSON.stringify({ title: title || arg, detail: detail || '', from: agentId })}::jsonb, 'pending')
+          RETURNING id`) as any[]
+        outcome = `escalated a decision to Janet/founder (id ${rows[0]?.id || '?'}, category=${category}, pending sign-off)`
+      }
     }
   } catch (e: any) {
     outcome = `action failed: ${String(e?.message || e).slice(0, 120)}`

@@ -112,6 +112,15 @@ export async function runWatchdog() {
       const { verifierEmptyAlertMessage } = await import('./touch1Health')
       await sendTelegram(verifierEmptyAlertMessage(t1.verifier))
     }
+    // Telegram is human-only. Dual crisis + T1 dead must also queue Marcus (named bug).
+    const { maybeQueueT1Marcus } = await import('./t1MarcusHandoff')
+    const marcus = await maybeQueueT1Marcus({ sql }).catch(() => null)
+    if (marcus?.queued) {
+      result.issues_found++
+      result.actions_taken.push(`T1 Marcus queued: ${marcus.bug} id=${marcus.id}`)
+    } else if (marcus?.bug) {
+      result.actions_taken.push(`T1 Marcus ticket ${marcus.bug} not newly queued (deduped or autonomy parked)`)
+    }
   } catch (e: any) {
     result.actions_taken.push('T1 health check error: ' + e.message?.slice(0, 100))
   }

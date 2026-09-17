@@ -28,6 +28,44 @@ export async function isAlertOpen(key: string, companyId = COMPANY_ID): Promise<
 
 const ALERT_NOTIFY_COOLDOWN_MS = 4 * 60 * 60 * 1000
 
+async function keepArchitectTask(sql: any, keepId: string, task: string): Promise<string> {
+  if (/PS-T1-(STARVE|QEV-EMPTY|PAUSE-LOCK)/i.test(task)) {
+    try {
+      const { supersedeLeadEligibilitySpam } = await import('./t1MarcusHandoff')
+      await supersedeLeadEligibilitySpam(sql, keepId)
+    } catch {
+      // Additive — a failed cancel must not drop the real T1 ticket.
+    }
+  }
+  void dispatchMarcusWake(COMPANY_ID, { taskId: keepId, product: 'phishsim' })
+  return keepId
+}
+
+export function normalizeArchitectTaskKey(task: string): string {
+  return String(task || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .slice(0, 160)
+}
+
+/** Open-queue clone of the same work (Marcus "Fix Lead Eligibility Checker" every 20min). */
+export function findDuplicateArchitectTask(
+  open: Array<{ id: string; task: string; source?: string | null }>,
+  incoming: { task: string; source?: string },
+): string | null {
+  const key = normalizeArchitectTaskKey(incoming.task)
+  if (!key) return null
+  const src = String(incoming.source || '')
+  const spam = /lead eligibility checker/i.test(incoming.task)
+  for (const row of open) {
+    if (spam && /lead eligibility checker/i.test(row.task)) return String(row.id)
+    if (normalizeArchitectTaskKey(row.task) !== key) continue
+    if (!src || !row.source || String(row.source) === src) return String(row.id)
+  }
+  return null
+}
+
 async function getLastAlertNotifyMs(key: string, companyId: string): Promise<number> {
   const sql = getSql()
   await ensureMemoryTable()
@@ -189,9 +227,7 @@ export async function queueJanetArchitectTask(opts: {
         ORDER BY created_at ASC LIMIT 1
       `
       if ((existing as any[])[0]?.id) {
-        const existingId = (existing as any[])[0].id as string
-        void dispatchMarcusWake(COMPANY_ID, { taskId: existingId, product: 'phishsim' })
-        return existingId
+        return keepArchitectTask(sql, (existing as any[])[0].id as string, opts.task)
       }
     } else {
       // PS-DEDUP-01 (QA 2026-09-06): the closure-loop bug. Without a bugId this path skipped
@@ -206,10 +242,22 @@ export async function queueJanetArchitectTask(opts: {
         ORDER BY created_at ASC LIMIT 1
       `
       if ((dupe as any[])[0]?.id) {
-        const dupeId = (dupe as any[])[0].id as string
-        void dispatchMarcusWake(COMPANY_ID, { taskId: dupeId, product: 'phishsim' })
-        return dupeId
+        return keepArchitectTask(sql, (dupe as any[])[0].id as string, opts.task)
       }
+    }
+
+    // Same normalized title+source within 24h (open rows). New bug_reports UUIDs used to
+    // bypass exact-task dedup so Marcus re-queued "Fix Lead Eligibility Checker" every ~20min.
+    const recent = (await sql`
+      SELECT id, task, source FROM os_architect_tasks
+      WHERE status IN ('queued','pending','approved','running')
+        AND created_at > NOW() - INTERVAL '24 hours'
+      ORDER BY created_at ASC
+      LIMIT 200
+    `.catch(() => [])) as Array<{ id: string; task: string; source?: string }>
+    const normHit = findDuplicateArchitectTask(recent, { task: opts.task, source: opts.source || 'janet' })
+    if (normHit) {
+      return keepArchitectTask(sql, normHit, opts.task)
     }
 
     const id = randomUUID()
@@ -236,8 +284,7 @@ export async function queueJanetArchitectTask(opts: {
     if (!agentSourced) {
       await raiseEscalation('marcus_dispatch', { task: opts.task.slice(0, 200), taskId: id, source: opts.source || 'janet', bugId: opts.bugId ?? null })
     }
-    void dispatchMarcusWake(COMPANY_ID, { taskId: id, product: 'phishsim' })
-    return id
+    return keepArchitectTask(sql, id, opts.task)
   } catch (e: any) {
     await sendTelegram(`ARCHITECT QUEUE FAILED: ${String(e.message).slice(0, 200)}`)
     return null

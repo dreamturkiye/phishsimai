@@ -23,7 +23,7 @@ export function conversionLesson(
   nudges?: { sent: number; scanned?: number },
   draft?: { queued: boolean; reason: string; escalated?: boolean },
   pool?: WarmPoolCensus,
-  extra?: { greyBox?: GreyBoxPaidNudgeResult; warmRate?: WarmCtaTrialRate },
+  extra?: { greyBox?: GreyBoxPaidNudgeResult; warmRate?: WarmCtaTrialRate; t1Starved?: boolean },
 ): { success: boolean; lesson: string } {
   if (r.tripped) {
     return {
@@ -68,6 +68,16 @@ export function conversionLesson(
     }
   }
   const p = pool || r.pool
+  if (extra?.t1Starved && (!p || p.eligible === 0)) {
+    return {
+      success: false,
+      lesson:
+        'T1 starved / sanitizedEligible=0. Do not convert_warm an empty pool. ' +
+        'ACTION: queue_marcus named bug PS-T1-STARVE — refill sanitize / check QEV. ' +
+        'Do not raise DAILY_SEND_LIMIT or set REFILL_ALLOW_MX_ONLY=1.' +
+        draftNote + greyNote + rateNote,
+    }
+  }
   if (p && (p.replied > 0 || p.engaged > 0)) {
     return {
       success: false,
@@ -175,7 +185,17 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     warmCtaTrialRate = undefined
   }
   const pool = raw.pool || EMPTY_WARM_POOL
-  const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft, pool, { greyBox, warmRate: warmCtaTrialRate })
+  let t1Starved = false
+  try {
+    const { loadT1Scoreboard } = await import('./t1MarcusHandoff')
+    const board = await loadT1Scoreboard((await import('./conn')).getSql())
+    t1Starved = board.sanitizedEligible <= 0 || board.starvationAlert || !board.verifier.any
+  } catch {
+    t1Starved = false
+  }
+  const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft, pool, {
+    greyBox, warmRate: warmCtaTrialRate, t1Starved,
+  })
   const executed = raw.sent > 0 || trialNudges.sent > 0 || !!greyBox?.sent
   const queued = conversionQueued({
     sent: raw.sent,
@@ -193,6 +213,20 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
     paying: null,
     warm: pool,
   })
+  try {
+    const { maybeQueueT1Marcus, diagnoseFromT1Scoreboard, loadT1Scoreboard } = await import('./t1MarcusHandoff')
+    const board = await loadT1Scoreboard((await import('./conn')).getSql()).catch(() => null)
+    if (board) {
+      const named = diagnoseFromT1Scoreboard({ ...board, warm: pool })
+      diagnosis.line = named.line
+      diagnosis.bottlenecks = named.bottlenecks
+      diagnosis.nextActions = named.nextActions
+      diagnosis.crisis = named.crisis
+    }
+    await maybeQueueT1Marcus().catch(() => {})
+  } catch {
+    // T1 handoff is additive; warm diagnosis must still persist.
+  }
   await rememberFact({
     company_id: COMPANY_ID,
     type: 'operating',

@@ -76,6 +76,7 @@ describe('QEV vs empty MEV (Sep 12 death shape)', () => {
     expect(src).toContain('maps_mx_bridge')
     expect(src).toContain('mev_qev')
     expect(src).toContain('sendablePoolEmptyAlertMessage')
+    expect(src).toContain('maybeQueueT1Marcus')
     expect(src).not.toMatch(/REFILL_ALLOW_MX_ONLY === '1'[\s\S]{0,80}hasVerifier/)
   })
 

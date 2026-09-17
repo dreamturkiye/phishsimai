@@ -76,6 +76,32 @@ describe('Janet CGO mandate', () => {
     expect(d.nextActions.join(' ')).toMatch(/convert_warm|Grey Box|91\/92|follow-up/)
   })
 
+  it('eligible=0 + T1 starved → queue Marcus / refill / QEV, not another convert_warm', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1,
+      paying: 0,
+      warm: {
+        replied: 15, engaged: 14, sendable: 14, eligible: 0,
+        cooldown: 0, exhausted: 0, suppressed: 0, autoReplyPending: 14,
+      },
+      t1: {
+        daysSinceLastT1: 5,
+        sanitizedEligible: 0,
+        unsanitizedEligible: 6435,
+        pauseNewTouch1: true,
+        verifier: { mev: false, qev: false, any: false },
+        warmCtaToTrue: { ctaSent: 17, trueTrials: 0 },
+      },
+    })
+    const next = d.nextActions.join(' ')
+    expect(next).toMatch(/queue_marcus/)
+    expect(next).toMatch(/PS-T1-/)
+    expect(next).toMatch(/QEV|sanitize/)
+    expect(next).not.toMatch(/convert_warm/)
+    expect(d.line).not.toMatch(/Fire convert_warm/)
+    expect(d.line).toMatch(/queue_marcus/)
+  })
+
   it('names parked touch-90 cooldown as the next crisis follow-up, not wait 4 days', () => {
     const d = diagnoseRevenueFailure({
       trueTrials: 1, paying: 0,
@@ -122,7 +148,7 @@ describe('Janet CGO mandate', () => {
     const mason = both.find((t) => t.agentId === 'mason')
     expect(mason?.title).toMatch(/20 hottest/)
     expect(mason?.title).not.toMatch(/warm trial CTAs/i)
-    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'vera', 'finn']))
+    expect(both.map((t) => t.agentId)).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'vera', 'finn', 'marcus']))
   })
 
   it('issues only the paying pack once TRUE trials are at 20', () => {
@@ -134,7 +160,7 @@ describe('Janet CGO mandate', () => {
 
   it('forces Mason, Aria, Nova, Scout, and Dex conversion work when trials are zero', () => {
     const owners = zeroTrialCrisisTasks().map((t) => t.agentId)
-    expect(owners).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex']))
+    expect(owners).toEqual(expect.arrayContaining(['mason', 'aria', 'nova', 'rex', 'scout', 'dex', 'marcus']))
     expect(zeroTrialCrisisTasks().every((t) => /trial/i.test(`${t.title} ${t.description}`))).toBe(true)
     for (const task of zeroTrialCrisisTasks()) {
       expect(isConversionBoundTitle(task.title, task.description)).toBe(true)
@@ -175,6 +201,7 @@ describe('Janet CGO mandate', () => {
     expect(breakerAwareAssignRule(true, false)).toMatch(/conversion-bound/)
     expect(breakerAwareAssignRule(true, true)).toMatch(/TRIPPED/)
     expect(breakerAwareAssignRule(true, true)).not.toMatch(/500-cold/)
+    expect(breakerAwareAssignRule(true, false)).toMatch(/queue_marcus/)
     expect(assignmentSkipReason({
       title: 'Mason cold outreach 500 MSP',
       operatingCrisis: true,
@@ -230,6 +257,8 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('server/os/posture.ts', 'utf8')).toMatch(/healed missing running drill row/)
     expect(readFileSync('server/os/sequences.ts', 'utf8')).toContain('warmCtaPoolCensus')
     expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('diagnoseRevenueFailure')
+    expect(readFileSync('server/os/watchdog.ts', 'utf8')).toContain('maybeQueueT1Marcus')
+    expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('isSendPathFixTitle')
     expect(os).toContain('convert_warm')
     expect(readFileSync('server/os/conversionEngine.ts', 'utf8')).toContain('advanceLinkedInAcquisition')
     expect(readFileSync('server/lib/kaan_os_v4.ts', 'utf8')).toContain('CONVERSION_AGENTS.has')
