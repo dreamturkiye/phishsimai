@@ -491,7 +491,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-17 | O.32.16 | Week-challenge free acquisition: OOO ≠ founder_1to1; `/knowbe4-alternative` → `/trial`; crisis social override auto-publishes LinkedIn ≤1/day + Reddit (no link-drop) when credentials exist. Kill `SOCIAL_CRISIS_PUBLISH=0`. No touch 93. | Owner: handle all free multi-channel acquisition without founder draft gates. Target ≥5 TRUE trials by 2026-09-25. |
 | 2026-09-18 | O.32.17 | Coded self-learn: `invalidateOpenThread` + `resolveRuntimeAction` rewrite convert_warm hammer; Dex `combined_daily_cap` / `new_touch_daily_cap` ≠ PS-T1-STARVE (no Marcus, no founder page); OOO never reopens / never marks inbound engaged. Lessons persist the rewritten next action. | Draft #328 left convert_warm in working memory; #331 fixed T3 dual-stamp counts but silence still queued starve / paged founder. Owner: no babysitting. |
 | 2026-09-18 | O.32.18 | Crisis `pauseNewTouch1` skips when T2 day-cap is exhausted and leftover combined/T1 rem > 0. Small-refill band stays ≤150; crisis+overdue still pauses while T2 has headroom. Caps 50/50/100. | Live: sanitizedEligible=151, drainable≈775, T2=50/50, combined rem≈14, `/api/os/sequence` pause=true sent=0. Historical-outbox Dex count was a false diagnosis (`t2_outbox_today=50`). |
-| 2026-09-18 | O.32.19 | Organic/SEO trial conversion: `/signup` `/register` rewrite to prerendered `/trial`; KnowBe4 CTA is crawlable `<a href="/trial">`; blog chrome + posts CTA to `/trial` (not homepage/`/pricing`/`/signup`); `/trial` required fields first. No touch 93. No Dex raise. | Live 2026-09-18: TRUE=1 / $0. `/signup` was empty SPA shell. Allowlist blog linked `/signup`. KnowBe4 CTA was JS `onClick`. |
+| 2026-09-18 | O.32.19 | Organic/SEO trial conversion: `/signup` `/register` rewrite to prerendered `/trial`; KnowBe4 CTA is crawlable `<a href="/trial">`; blog chrome + posts CTA to `/trial` (not homepage/`/pricing`/`/signup`); `/trial` required fields first. Meta + FAQ JSON-LD + internal links for KnowBe4 alternative / phishing training. No touch 93. No Dex raise. | Live 2026-09-18: TRUE=1 / $0. `/signup` was empty SPA shell. Allowlist blog linked `/signup`. KnowBe4 CTA was JS `onClick`. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -1028,6 +1028,7 @@ Owner (binding): week challenge ≥5 TRUE trials by 2026-09-25. Homepage CTAs al
 - **KnowBe4 comparison CTA is `<a href="/trial?utm_campaign=knowbe4_alternative">`.** Header Start free trial too.
 - **Blog chrome** (header + end-of-article) is a crawlable `/trial` anchor on every post. Markdown CTAs that pointed at `/signup`, `/pricing`, or the homepage now point at `/trial` with `utm_source=blog`.
 - **`/trial` form:** work email + password first; optional name/company behind a disclosure. Same register payload. No card, no captcha, no magic-link.
+- **SEO-first conversion (owner pivot):** homepage / KnowBe4 / blog titles name "KnowBe4 alternative" and "phishing training". KnowBe4 landing gets FAQ + FAQPage JSON-LD + related guide links. Homepage nav and every blog post internally link `/knowbe4-alternative` and `/blog`. No new keyword routes (separate SEO agent).
 
 No invented testimonials. No Dex cap raise. No touch 93.
 

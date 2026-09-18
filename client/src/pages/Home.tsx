@@ -143,6 +143,8 @@ export default function Home() {
             <a href="#compliance" className="hover:text-foreground transition-colors">Compliance</a>
             <a href="#msp" className="hover:text-foreground transition-colors">MSP / Partners</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
+            <a href="/knowbe4-alternative" className="hover:text-foreground transition-colors">KnowBe4 alternative</a>
+            <a href="/blog" className="hover:text-foreground transition-colors">Phishing training</a>
             <a href="/trial" className="hover:text-foreground transition-colors">Free Trial</a>
             <a href="/msp" className="hover:text-foreground transition-colors">Partner Portal</a>
           </nav>
@@ -168,6 +170,8 @@ export default function Home() {
               { label: "Compliance", href: "#compliance" },
               { label: "MSP / Partners", href: "#msp" },
               { label: "Pricing", href: "#pricing" },
+              { label: "KnowBe4 alternative", href: "/knowbe4-alternative" },
+              { label: "Phishing training", href: "/blog" },
               { label: "Free Trial", href: "/trial" },
               { label: "Partner Portal", href: "/msp" },
             ].map(({ label, href }) => (
@@ -708,6 +712,8 @@ export default function Home() {
                   { label: "Features", href: "#features" },
                   { label: "Pricing", href: "#pricing" },
                   { label: "Free Trial", href: "/trial" },
+                  { label: "KnowBe4 alternative", href: "/knowbe4-alternative" },
+                  { label: "Phishing training", href: "/blog" },
                   { label: "Compliance Center", href: "#compliance" },
                   { label: "Training Modules", href: "#features" },
                   { label: "Template Library", href: "#features" },

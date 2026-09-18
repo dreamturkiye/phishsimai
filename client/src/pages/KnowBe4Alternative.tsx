@@ -1,6 +1,6 @@
 import { Seo } from "@/components/Seo";
 import { SeoTrialHeader } from "@/components/SeoTrialChrome";
-import { seoForPath } from "@/lib/seoMeta";
+import { KNOWBE4_FAQ, seoForPath } from "@/lib/seoMeta";
 import { getTrialUrl } from "@/const";
 import { Check, ArrowRight } from "lucide-react";
 
@@ -78,6 +78,44 @@ export default function KnowBe4Alternative() {
           Start 30-day free trial <ArrowRight className="w-4 h-4" />
         </a>
         <p className="mt-3 text-xs text-muted-foreground">Full access. No card. 60¢/user · $299/500 seats.</p>
+
+        <section className="mt-14">
+          <h2 className="text-xl font-bold mb-4">KnowBe4 alternative FAQ</h2>
+          <dl className="space-y-4">
+            {KNOWBE4_FAQ.map((f) => (
+              <div key={f.q}>
+                <dt className="font-semibold">{f.q}</dt>
+                <dd className="text-sm text-muted-foreground mt-1 leading-relaxed">{f.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <nav className="mt-14" aria-label="Related phishing training guides">
+          <h2 className="text-xl font-bold mb-3">Related phishing training guides</h2>
+          <ul className="space-y-2 text-sm">
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/knowbe4-alternative-small-teams-msps">
+                Honest KnowBe4 alternative comparison for small teams and MSPs
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/hipaa-phishing-simulation-healthcare-msp-2026">
+                Phishing training for HIPAA compliance
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/cyber-insurance-phishing-simulation-requirement-2026">
+                Does cyber insurance require phishing simulations?
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/allowlist-phishing-simulation-microsoft-365">
+                Allowlist phishing simulations in Microsoft 365
+              </a>
+            </li>
+          </ul>
+        </nav>
       </main>
     </div>
   );

@@ -31,6 +31,11 @@ No invented click→signup rates. The leak is structural: high-intent SEO pages 
 2. **KnowBe4 comparison CTA is a crawlable `<a href="/trial?utm…">`**, not `onClick`. Header also gets Start free trial.
 3. **Every blog surface has a crawlable Start-trial control** (shared chrome: header + end-of-article). Markdown CTAs that pointed at `/signup`, `/pricing`, or the homepage now point at `/trial` with `utm_source=blog`.
 4. **`/trial` form: required fields first.** Work email + password, then optional name/company behind a disclosure. Same register payload. No captcha, no card, no magic-link (hard stop #5).
+5. **SEO-first conversion (owner pivot 2026-09-18).** Do not open a second content PR — a separate SEO agent owns new keyword landings. This change only:
+   - Meta: homepage title includes "Phishing Training"; `/knowbe4-alternative` title is "KnowBe4 Alternative for MSPs (2026) — Free Trial"; `/blog` title is "Phishing Training Guides".
+   - Landing: KnowBe4 page FAQ (same copy as FAQPage JSON-LD) + related guide links.
+   - Internal links: homepage nav/footer → `/knowbe4-alternative` and `/blog`; every blog post → KnowBe4 landing + sibling posts; KnowBe4 blog post → `/knowbe4-alternative`.
+   - No new routes. Competitor names stay off the pricing table (PS-PRICE-05).
 
 ## Rails that must not move
 

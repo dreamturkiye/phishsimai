@@ -25,8 +25,8 @@ export function seoForPath(pathname: string): RouteMeta {
   }
   if (pathname === "/blog" || pathname === "/blog/") {
     return {
-      title: "PhishSim AI Blog - Phishing Simulation & MSP Security Guides",
-      description: "Guides on phishing simulation, security awareness training, cyber insurance requirements, and MSP security, from the PhishSim AI team.",
+      title: "Phishing Training Guides for MSPs — PhishSim AI Blog",
+      description: "Phishing training and simulation guides for MSPs: KnowBe4 alternatives, HIPAA, cyber insurance, Microsoft 365 allowlisting. 30-day free trial.",
       path: "/blog",
     };
   }
@@ -60,14 +60,14 @@ export function seoForPath(pathname: string): RouteMeta {
   }
   if (pathname === "/knowbe4-alternative" || pathname === "/knowbe4" || pathname.startsWith("/knowbe4-alternative")) {
     return {
-      title: "KnowBe4 Alternative for MSPs — PhishSim AI",
-      description: "Honest KnowBe4 alternative for MSPs and small teams: 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card. Live in 10 minutes.",
+      title: "KnowBe4 Alternative for MSPs (2026) — Free Trial | PhishSim AI",
+      description: "KnowBe4 alternative for MSPs and small teams: phishing training + simulations, 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card. Live in 10 minutes.",
       path: "/knowbe4-alternative",
     };
   }
   return {
-    title: "PhishSim AI — AI Phishing Simulation & Security Awareness for MSPs",
-    description: "Run AI-generated phishing simulations, training, and compliance reporting for your clients in minutes. Built for MSPs and IT teams — no security engineer required. 30-day free trial.",
+    title: "Phishing Training & Simulation for MSPs — PhishSim AI",
+    description: "Phishing training and AI simulations for MSPs. KnowBe4 alternative for small teams: 60¢/user, $299/500, 30-day free trial, no card. Live in 10 minutes.",
     path: "/",
   };
 }
@@ -94,14 +94,52 @@ export function headTags(m: RouteMeta, ogImage: string = OG): string {
 
 // PS-SEO-03: JSON-LD for a route — baked into the prerendered <head> so it's in the raw HTML (not
 // JS-only). Blog posts get BlogPosting; the cyber-insurance post also gets FAQPage from its Q&As.
+export const KNOWBE4_FAQ: Array<{ q: string; a: string }> = [
+  {
+    q: "Is PhishSim AI a KnowBe4 alternative?",
+    a: "For MSPs and small teams that need simulations, phishing training, and reportable logs without a procurement cycle, yes. KnowBe4 remains a defensible choice for large enterprise security orgs that need its depth and have the budget.",
+  },
+  {
+    q: "How does PhishSim AI pricing compare to KnowBe4?",
+    a: "PhishSim AI Growth is $299/mo for 500 users (60¢ each) with a 30-day free trial and no credit card. KnowBe4 is typically sold as enterprise SKUs with per-seat minimums and a demo-gated eval.",
+  },
+  {
+    q: "How fast can we start phishing training?",
+    a: "About 10 minutes, self-serve: sign up, import a list, launch the first simulation. No onboarding call or sales gate.",
+  },
+];
+
 export function jsonLdFor(pathname: string): string {
+  const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
+  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png` } };
+
+  if (pathname === "/knowbe4-alternative" || pathname === "/knowbe4") {
+    return [
+      script({
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        name: "KnowBe4 Alternative for MSPs (2026) — Free Trial | PhishSim AI",
+        description: "Honest KnowBe4 alternative for MSPs and small teams: 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card.",
+        url: `${SITE}/knowbe4-alternative`,
+        publisher,
+      }),
+      script({
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: KNOWBE4_FAQ.map((f) => ({
+          "@type": "Question",
+          name: f.q,
+          acceptedAnswer: { "@type": "Answer", text: f.a },
+        })),
+      }),
+    ].join("\n    ");
+  }
+
   const slug = blogSlug(pathname);
   if (!slug) return "";
   const post = getPost(slug);
   if (!post) return "";
   const url = `${SITE}/blog/${slug}`;
-  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png` } };
-  const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
   const tags = [
     script({
       "@context": "https://schema.org",
