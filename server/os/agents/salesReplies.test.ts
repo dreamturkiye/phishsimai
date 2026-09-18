@@ -196,7 +196,8 @@ describe('ASYMMETRIC SAFETY — ambiguity drafts, it never suppresses', () => {
 
   it('crisis reopen clears false auto_reply and {rows}-shaped neon results, not bounces', async () => {
     expect(shouldReopenAutoReply('Thanks, I will return next week after our board meeting', { crisis: true })).toBe(true)
-    expect(shouldReopenAutoReply('I am out of the office until Monday', { crisis: true })).toBe(true)
+    expect(shouldReopenAutoReply('I am out of the office until Monday', { crisis: true })).toBe(false)
+    expect(shouldReopenAutoReply('OOO until next week', { crisis: true })).toBe(false)
     expect(shouldReopenAutoReply('Delivery has failed for this recipient', { crisis: true })).toBe(false)
     expect(isHardDeadReply('mailer-daemon: undeliverable')).toBe(true)
     expect(sqlResultRows({ rows: [{ id: 1 }] })).toEqual([{ id: 1 }])

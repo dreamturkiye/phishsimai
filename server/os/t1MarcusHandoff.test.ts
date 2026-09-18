@@ -74,6 +74,32 @@ describe('t1MarcusTicket — dual crisis + T1 dead must queue a NAMED bug', () =
     expect(t.queue).toBe(false)
     expect(t.bug).toBeNull()
   })
+
+  it('does not queue PS-T1-STARVE when T1 sent 0 is Dex combined/new-touch cap', () => {
+    const combined = t1MarcusTicket({
+      operatingCrisis: true,
+      daysSinceLastT1: 2,
+      sanitizedEligible: 150,
+      unsanitizedEligible: 6000,
+      pauseNewTouch1: false,
+      verifier: { mev: true, qev: true, any: true },
+      starvationAlert: true,
+      t1StarveReason: 'combined_daily_cap',
+    })
+    expect(combined.queue).toBe(false)
+    expect(combined.bug).toBeNull()
+    const t1Cap = t1MarcusTicket({
+      operatingCrisis: true,
+      daysSinceLastT1: 2,
+      sanitizedEligible: 150,
+      unsanitizedEligible: 6000,
+      pauseNewTouch1: false,
+      verifier: { mev: true, qev: true, any: true },
+      starvationAlert: true,
+      t1StarveReason: 'new_touch_daily_cap',
+    })
+    expect(t1Cap.queue).toBe(false)
+  })
 })
 
 describe('applyT1MarcusTicket actually queues (not Telegram theater)', () => {

@@ -164,6 +164,30 @@ describe('Janet CGO mandate', () => {
     expect(emptyWarmPoolNextActions().join(' ')).not.toMatch(/convert_warm/)
   })
 
+  it('names Dex combined_daily_cap as a throttle, not PS-T1-STARVE', () => {
+    const d = diagnoseRevenueFailure({
+      trueTrials: 1,
+      paying: 0,
+      t1: {
+        daysSinceLastT1: 2,
+        sanitizedEligible: 150,
+        unsanitizedEligible: 6000,
+        pauseNewTouch1: false,
+        verifier: { mev: true, qev: true, any: true },
+        t1StarveReason: 'combined_daily_cap',
+      },
+    })
+    expect(d.line).toMatch(/combined_daily_cap/)
+    expect(d.line).toMatch(/wait UTC/)
+    expect(d.nextActions.join(' ')).not.toMatch(/queue_marcus/)
+    expect(d.nextActions.join(' ')).not.toMatch(/PS-T1-STARVE/)
+    expect(isT1Starved({
+      sanitizedEligible: 150,
+      t1StarveReason: 'combined_daily_cap',
+      verifier: { mev: true, qev: true, any: true },
+    })).toBe(false)
+  })
+
   it('does not treat canary-inflated 92 as the operating number — 92 TRUE would be paid-only', () => {
     const inflatedWouldHaveBeen = { liveProductTrials: 92, crmTrials: 0, payingCustomers: 0 }
     expect(isTrialCrisis(inflatedWouldHaveBeen)).toBe(false)
@@ -368,7 +392,11 @@ describe('coded enforcers are wired', () => {
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('7.10.2')
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('breakerAwareAssignRule')
     expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('O.32.14')
+    expect(readFileSync('docs/KAAN_AI_OS_7.10_Architecture.md', 'utf8')).toContain('O.32.17')
     expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('isWarmPoolExhausted')
+    expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toContain('invalidateOpenThread')
+    expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('isWarmPoolExhausted')
+    expect(readFileSync('server/os/agents/reason.ts', 'utf8')).toContain('persistRuntimeLesson')
     expect(os).toContain('HONEST_BLOCKER_SCORE_FLOOR')
     expect(os).not.toMatch(/runner only acts on >4h-idle/)
     expect(os).not.toMatch(/identify and begin the single highest-impact improvement/)

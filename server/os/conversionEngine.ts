@@ -3,6 +3,7 @@ import { persistOutcomeTrace } from './outcomeTrace'
 import { COMPANY_ID } from './version'
 import { sendWarmTrialCtas, type WarmCtaResult, type WarmPoolCensus, EMPTY_WARM_POOL } from './sequences'
 import { diagnoseRevenueFailure, isWarmPoolExhausted } from './cgoMandate'
+import { isDexDailyThrottle } from './touch1Health'
 import { formatWarmCtaTrialRate, type WarmCtaTrialRate } from './warmCloseMetrics'
 import { linkedInFunnelLine, type LinkedInAcquisitionResult } from './trialAcquisitionChannels'
 import type { GreyBoxPaidNudgeResult } from './trialNudges'
@@ -25,7 +26,7 @@ export function conversionLesson(
   nudges?: { sent: number; scanned?: number },
   draft?: { queued: boolean; reason: string; escalated?: boolean },
   pool?: WarmPoolCensus,
-  extra?: { greyBox?: GreyBoxPaidNudgeResult; warmRate?: WarmCtaTrialRate; t1Starved?: boolean; founder1to1?: FounderOneToOneResult },
+  extra?: { greyBox?: GreyBoxPaidNudgeResult; warmRate?: WarmCtaTrialRate; t1Starved?: boolean; founder1to1?: FounderOneToOneResult; t1StarveReason?: string | null },
 ): { success: boolean; lesson: string } {
   if (r.tripped) {
     return {
@@ -83,6 +84,16 @@ export function conversionLesson(
     }
   }
   const p = pool || r.pool
+  if (isDexDailyThrottle(extra?.t1StarveReason) && (!p || p.eligible === 0)) {
+    return {
+      success: false,
+      lesson:
+        `T1 sent 0 is Dex ${extra?.t1StarveReason} — wait UTC midnight. ` +
+        'Do not queue PS-T1-STARVE. Do not raise Dex caps. Do not convert_warm if the 90/91/92 pool is exhausted. ' +
+        'Grey Box / LinkedIn ≤1/day / /trial.' +
+        draftNote + greyNote + rateNote + oneToOneNote,
+    }
+  }
   if (extra?.t1Starved && (!p || p.eligible === 0)) {
     return {
       success: false,
@@ -219,15 +230,17 @@ export async function runCgoConversionShift(opts: { emails?: string[]; cap?: num
   }
   const pool = raw.pool || EMPTY_WARM_POOL
   let t1Starved = false
+  let t1StarveReason: string | null = null
   try {
     const { loadT1Scoreboard } = await import('./t1MarcusHandoff')
     const board = await loadT1Scoreboard((await import('./conn')).getSql())
-    t1Starved = board.sanitizedEligible <= 0 || board.starvationAlert || !board.verifier.any
+    t1StarveReason = board.t1StarveReason ?? null
+    t1Starved = !isDexDailyThrottle(t1StarveReason) && (board.sanitizedEligible <= 0 || board.starvationAlert || !board.verifier.any)
   } catch {
     t1Starved = false
   }
   const { success, lesson } = conversionLesson(raw, trialNudges, linkedinDraft, pool, {
-    greyBox, warmRate: warmCtaTrialRate, t1Starved, founder1to1: founderOneToOne,
+    greyBox, warmRate: warmCtaTrialRate, t1Starved, founder1to1: founderOneToOne, t1StarveReason,
   })
   const executed = raw.sent > 0 || trialNudges.sent > 0 || !!greyBox?.sent || founderOneToOne.queued > 0
   const queued = conversionQueued({

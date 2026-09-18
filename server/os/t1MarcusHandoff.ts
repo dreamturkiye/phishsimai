@@ -11,7 +11,7 @@
  * REFILL_ALLOW_MX_ONLY.
  */
 import { COMPANY_ID } from './version'
-import { mailboxVerifierKeys, type MailboxVerifierKeys } from './touch1Health'
+import { mailboxVerifierKeys, isDexDailyThrottle, type MailboxVerifierKeys } from './touch1Health'
 import { diagnoseRevenueFailure, isOperatingCrisis, type RevenueDiagnosis } from './cgoMandate'
 import { T1_QUALITY_REFILL_MAX, isSmallQualityT1Refill } from './sequenceBacklog'
 
@@ -43,6 +43,10 @@ export type T1Scoreboard = {
   touch1LastAt: string | null
   starvationAlert: boolean
   sendableUntouched: number
+  t1StarveReason?: string | null
+  newSentToday?: number
+  secondSentToday?: number
+  newTouchAllowance?: number
 }
 
 export function verifierModeOf(keys: MailboxVerifierKeys): T1Scoreboard['verifierMode'] {
@@ -98,6 +102,7 @@ export function t1MarcusTicket(input: {
   drainableOverdue?: number
   starvationAlert?: boolean
   sendableUntouched?: number
+  t1StarveReason?: string | null
 }): T1MarcusTicket {
   const hours =
     input.hoursSinceLastT1 ??
@@ -110,10 +115,16 @@ export function t1MarcusTicket(input: {
     `daysSinceLastT1=${input.daysSinceLastT1 ?? 'never'} sanitizedEligible=${input.sanitizedEligible} ` +
     `unsanitizedEligible=${input.unsanitizedEligible} pauseNewTouch1=${input.pauseNewTouch1} ` +
     `verifierMode=${verifierModeOf(input.verifier)} drainableOverdue=${input.drainableOverdue ?? '?'} ` +
-    `starvationAlert=${!!input.starvationAlert} sendableUntouched=${sendable}`
+    `starvationAlert=${!!input.starvationAlert} sendableUntouched=${sendable} t1StarveReason=${input.t1StarveReason ?? 'n/a'}`
 
   if (!input.verifier.any) {
     return { queue: true, bug: 'PS-T1-QEV-EMPTY', task: namedTask('PS-T1-QEV-EMPTY', detail), notes: detail }
+  }
+
+  // Live 2026-09-17: dual-stamped T3 exhausted combined and T1 sat healthy. That is a
+  // throttle, not sanitize starve — do not open PS-T1-STARVE or page the founder.
+  if (isDexDailyThrottle(input.t1StarveReason)) {
+    return { queue: false, bug: null, task: '', notes: detail }
   }
 
   const sendableDeadSustained = sendable <= 0 && emptyLongEnough && (input.unsanitizedEligible > 100 || reservoir > 100)
@@ -132,7 +143,7 @@ export function t1MarcusTicket(input: {
 export function diagnoseFromT1Scoreboard(
   board: Pick<
     T1Scoreboard,
-    'daysSinceLastT1' | 'sanitizedEligible' | 'unsanitizedEligible' | 'pauseNewTouch1' | 'verifier' | 'warmCtaToTrue'
+    'daysSinceLastT1' | 'sanitizedEligible' | 'unsanitizedEligible' | 'pauseNewTouch1' | 'verifier' | 'warmCtaToTrue' | 't1StarveReason'
   > & { trueTrials?: number | null; paying?: number | null; warm?: Parameters<typeof diagnoseRevenueFailure>[0]['warm'] },
 ): RevenueDiagnosis {
   return diagnoseRevenueFailure({
@@ -146,6 +157,7 @@ export function diagnoseFromT1Scoreboard(
       pauseNewTouch1: board.pauseNewTouch1,
       verifier: board.verifier,
       warmCtaToTrue: board.warmCtaToTrue,
+      t1StarveReason: board.t1StarveReason,
     },
   })
 }
@@ -195,6 +207,10 @@ export async function loadT1Scoreboard(sql: any, now: Date = new Date()): Promis
     touch1LastAt: t1.touch1LastAt,
     starvationAlert: !!t1.starvation?.alert,
     sendableUntouched: t1.sanitizedEligible,
+    t1StarveReason: t1.t1StarveReason ?? null,
+    newSentToday: t1.newSentToday,
+    secondSentToday: t1.secondSentToday,
+    newTouchAllowance: t1.newTouchAllowance,
   }
 }
 
@@ -249,6 +265,7 @@ export async function maybeQueueT1Marcus(opts: {
     drainableOverdue: board.drainableOverdue,
     starvationAlert: board.starvationAlert,
     sendableUntouched: board.sendableUntouched,
+    t1StarveReason: board.t1StarveReason,
   })
   const diagnosis = diagnoseFromT1Scoreboard(board).line
   const queueTask =

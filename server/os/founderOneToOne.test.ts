@@ -66,6 +66,7 @@ describe('founder 1:1 queue — exhausted warm, NOT email', () => {
     const src = readFileSync('server/os/founderOneToOne.ts', 'utf8')
     expect(src).toContain('isOooOrAutoReplyInbound')
     expect(src).toContain("classification = 'auto_reply'")
+    expect(src).toContain('dismissOooFounderOneToOne')
   })
 
   it('conversion shift and HQ surface the queue', () => {

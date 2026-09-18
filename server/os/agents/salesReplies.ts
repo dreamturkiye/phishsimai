@@ -54,7 +54,12 @@ export const SUPPRESS_MIN_CONFIDENCE = 0.8
 
 const UNSUB_RE = /\b(unsubscribe|remove me|take me off|opt.?out|stop email(ing)?|do not (email|contact)|don'?t email me( again)?)\b/i
 const HOSTILE_RE = /\b(fuck|piss off|spam(ming|mer)?|reported? (you|this) (as|for) spam|harass|scam|lawsuit|legal action|cease and desist|GDPR complaint)\b/i
-const AUTO_RE = /\b(out of (the )?office|automatic reply|auto[- ]?reply|autoresponder|away from (my|the) desk|on (annual |parental |maternity |paternity )?vacation|on (annual|parental|maternity|paternity) leave|delivery (status notification|has failed)|undeliverable|mailer.?daemon|no longer (with|at) (the )?(company|firm|us)|has left the (company|organisation|organization))\b/i
+export const AUTO_RE = /\b(out[- ]of[- ](the[- ])?office|OOO|automatic reply|auto[- ]?reply|autoresponder|away from (my|the) desk|I(?:'m| am) (?:currently )?(?:away|out of (?:the )?office)|on (?:annual |parental |maternity |paternity )?vacation|on (?:annual|parental|maternity|paternity) leave|delivery (?:status notification|has failed)|undeliverable|mailer.?daemon|no longer (?:with|at) (?:the )?(?:company|firm|us)|has left the (?:company|organisation|organization))\b/i
+
+/** Strict OOO / bounce / left-company — not warm interest. */
+export function isAutoReplyText(text: string): boolean {
+  return AUTO_RE.test(String(text || ''))
+}
 const INTEREST_RE = /\b(interested|tell me more|send (me )?(more|info|details|pricing)|how (much|does it work)|book|demo|call|trial|sign( )?up|pricing|what.{0,12}cost|sounds good|keen|let'?s (talk|chat))\b/i
 const OBJECTION_RE = /\b(too expensive|no budget|already (have|use|using)|we use|not (a )?(good )?fit|not (right )?now|maybe (later|next)|already (with|working with)|happy with|contract|renewal)\b/i
 
@@ -131,14 +136,17 @@ export function sqlResultRows(result: unknown): any[] {
   return []
 }
 
-/** Reopen pending auto_reply unless it is a real bounce/unsub/hostile (or a strict OOO outside crisis). */
+/** Reopen pending auto_reply unless it is a real bounce/unsub/hostile or a strict OOO. */
 export function shouldReopenAutoReply(snippet: string, opts: { crisis?: boolean; confidence?: number } = {}): boolean {
   if (isHardDeadReply(snippet)) return false
   const strict = classifyByRules('', snippet)
   if (strict?.cls === 'hostile' || strict?.cls === 'unsubscribe') return false
+  // Strict OOO stays parked even in standing crisis — reopening it is how
+  // founder_1to1 / convert_warm filled with out-of-office auto-replies (2026-09-17).
+  if (strict?.cls === 'auto_reply' || isAutoReplyText(snippet)) return false
   if (opts.crisis) return true
   if (typeof opts.confidence === 'number' && opts.confidence < 0.85) return true
-  return strict?.cls !== 'auto_reply'
+  return true
 }
 
 /** What we do with a classification. Suppression is gated on confidence; interest converts. */

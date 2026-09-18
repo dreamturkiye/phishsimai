@@ -95,7 +95,8 @@ async function draftWithJanet(prompt: string): Promise<string> {
         content: `You are Janet, CGO for PhishSimAI. Write as Sarah Mitchell (Head of Compliance Partnerships) on Reddit.
 Voice: helpful MSP/compliance peer, not salesy. 90% value, 10% soft mention of phishing simulation only if natural.
 No links in comments under 200 karma account. 2-4 short paragraphs max for posts, 2-6 sentences for comments.
-Never claim to be the founder. Disclose affiliation if mentioning PhishSimAI.`,
+Never claim to be the founder. Disclose affiliation if mentioning PhishSimAI.
+LinkedIn crisis publish is ≤1/day (quality, no dup). Do not draft email convert_warm copy. OOO inbound is not a warm close.`,
       },
       { role: 'user', content: prompt },
     ],

@@ -1,11 +1,30 @@
 import { autonomyFloorFor, resolveReadableLevel, LEVEL_ORDER } from './autonomyGate'
 
+/** Send-path / T1 starve / sanitize empty — Marcus owns this, not a founder gate. */
+export const CRISIS_AUTO_MARCUS = 'crisis_auto_marcus'
+
+/** Dex combined / new-touch daily cap — wait UTC reset, do not page. */
+export const DEX_DAILY_THROTTLE = 'dex_daily_throttle'
+
+export function isCrisisAutoMarcusEscalation(row: { category: string; payload?: any }): boolean {
+  if (row.category !== 'marcus_dispatch') return false
+  const blob = JSON.stringify(row.payload || '')
+  if (isDexThrottleEscalation(row)) return false
+  return /PS-T1-(STARVE|QEV-EMPTY|PAUSE-LOCK)|sanitiz|qev_api|qev empty|mailbox verifier|pauseNewTouch1|touch-?1 starve|t1 starve/i.test(blob)
+}
+
+export function isDexThrottleEscalation(row: { category: string; payload?: any }): boolean {
+  const blob = JSON.stringify(row.payload || '')
+  return /combined_daily_cap|new_touch_daily_cap|dex daily (cap|throttle)/i.test(blob)
+}
+
 export function ageDays(createdAt: string, nowMs = Date.now()): number {
   return Math.max(0, Math.floor((nowMs - new Date(createdAt).getTime()) / 86_400_000))
 }
 
 /** Not a founder legal/spend decision — paging daily does not unblock it. */
 export function isOperatorOwnedEscalation(row: { category: string; payload?: any; created_at?: string }): boolean {
+  if (isCrisisAutoMarcusEscalation(row) || isDexThrottleEscalation(row)) return true
   const payload = row.payload || {}
   const blob = `${payload.last_error || ''} ${payload.janetReasoning || ''} ${payload.trip_reason || ''}`
   if (/PRE-FLIGHT REFUSED:.*protected path/i.test(blob)) return true
@@ -107,5 +126,6 @@ export function isAlreadyAtL5FloorAutonomyNoise(row: AutonomyNagContext): boolea
 export function shouldPageFounderForEscalation(row: AutonomyNagContext): boolean {
   if (row.status && (TERMINAL_ESCALATION_STATUSES as readonly string[]).includes(row.status)) return false
   if (isAlreadyAtL5FloorAutonomyNoise(row)) return false
+  if (isCrisisAutoMarcusEscalation(row) || isDexThrottleEscalation(row)) return false
   return true
 }

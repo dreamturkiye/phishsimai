@@ -4,7 +4,15 @@ import { rememberFact } from '../memory'
 import { queueJanetArchitectTask } from '../selfHeal'
 import { ensureMarcusProposalBugId } from '../marcusProposal'
 import { classifySelfModification, loadAgentRuntime, persistAgentRuntime } from '../agentRuntime'
-import { droughtIdleAction, isIdleNone, isOperatingCrisis, type WarmPoolFacts } from '../cgoMandate'
+import {
+  droughtIdleAction,
+  invalidateOpenThread,
+  isIdleNone,
+  isOperatingCrisis,
+  isWarmPoolExhausted,
+  type WarmPoolFacts,
+} from '../cgoMandate'
+import { isDexDailyThrottle } from '../touch1Health'
 import { measureTrueOrgCounts } from '../trueTrials'
 
 const COMPANY = 'phishsimai'
@@ -50,12 +58,43 @@ export function resolveRuntimeAction(
   action: string,
   operatingCrisis: boolean,
   warm?: WarmPoolFacts | null,
+  t1StarveReason?: string | null,
 ): { action: string; rewritten: boolean } {
   const a = String(action || '').trim() || 'none'
+  const exhausted = isWarmPoolExhausted(warm)
+  const convertWarmHammer = /convert_warm/i.test(a)
+  // Live miss: LLM kept saying convert_warm: hottest after 90/91/92 were spent.
+  // Idle rewrite alone left that hammer in working memory every tick.
+  if (operatingCrisis && exhausted && (isIdleNone(a) || convertWarmHammer)) {
+    return { action: droughtIdleAction(agentId, { warm }), rewritten: true }
+  }
+  const invalidated = invalidateOpenThread(agentId, a, { warm, t1StarveReason })
+  if (invalidated.invalidated) {
+    return { action: invalidated.action, rewritten: true }
+  }
   if (operatingCrisis && isIdleNone(a)) {
     return { action: droughtIdleAction(agentId, { warm }), rewritten: true }
   }
   return { action: a, rewritten: false }
+}
+
+/** Lesson stored on the open thread — must name the next owner, not "convert_warm sent=0". */
+export function persistRuntimeLesson(opts: {
+  rewritten: boolean
+  action: string
+  conversion?: { sent: number; reason?: string; eligible?: number } | undefined
+  warm?: WarmPoolFacts | null
+  assessment: string
+}): string {
+  if (opts.rewritten) return `open thread rewritten to ${opts.action}`
+  if (isDexDailyThrottle(opts.conversion?.reason)) {
+    return `Dex ${opts.conversion!.reason} — wait UTC reset, do not queue PS-T1-STARVE, do not raise caps`
+  }
+  if (isWarmPoolExhausted(opts.warm) && (opts.conversion?.sent ?? 0) === 0) {
+    return 'Do not convert_warm — warm eligible=0 exhausted 90/91/92. Grey Box / LinkedIn ≤1/day / /trial.'
+  }
+  if (opts.conversion) return `convert_warm sent=${opts.conversion.sent}`
+  return opts.assessment
 }
 
 async function loadOperatingCrisis(sql: any): Promise<boolean> {
@@ -87,8 +126,42 @@ export async function reasonAndAct(
           if ((prior as any[])[0]?.value) priorNote = String((prior as any[])[0].value).slice(0, 600)
     } catch {}
 
+        let warm: WarmPoolFacts | null = null
+        try {
+          const { warmCtaPoolCensus } = await import('../sequences')
+          warm = await warmCtaPoolCensus(sql)
+        } catch {
+          warm = null
+        }
+        let t1StarveReason: string | null = null
+        try {
+          const { loadT1Scoreboard } = await import('../t1MarcusHandoff')
+          t1StarveReason = (await loadT1Scoreboard(sql)).t1StarveReason ?? null
+        } catch {
+          t1StarveReason = null
+        }
+        const openThread = invalidateOpenThread(
+          agentId,
+          runtime?.working.nextAction || 'none',
+          { warm, t1StarveReason },
+        )
+        if (openThread.invalidated) {
+          await persistAgentRuntime(sql, COMPANY, agentId, {
+            currentGoal: runtime?.working.currentGoal || `${agentId} daily mandate`,
+            nextAction: openThread.action,
+            lastAssessment: openThread.lesson,
+            success: true,
+            lesson: openThread.lesson,
+          }).catch(() => {})
+        }
+
   const reportJson = JSON.stringify(report, null, 0).slice(0, 4000)
-  const runtimeBlock = runtime?.contextBlock ? `\n\n${runtime.contextBlock}` : ''
+  const runtimeBlock = runtime?.contextBlock
+    ? `\n\n${runtime.contextBlock}` +
+      (openThread.invalidated
+        ? `\n\nOPEN THREAD INVALIDATED (measured data): ${openThread.lesson}\nResume: ${openThread.action}`
+        : '')
+    : ''
 
   let diagnosisNote = ''
   try {
@@ -127,14 +200,13 @@ export async function reasonAndAct(
 
       const assessment = String(parsed.assessment || 'no assessment produced').slice(0, 500)
         const operatingCrisis = await loadOperatingCrisis(sql)
-        let warm: WarmPoolFacts | null = null
-        try {
-          const { warmCtaPoolCensus } = await import('../sequences')
-          warm = await warmCtaPoolCensus(sql)
-        } catch {
-          warm = null
-        }
-        const resolved = resolveRuntimeAction(agentId, String(parsed.action || 'none').slice(0, 300), operatingCrisis, warm)
+        const resolved = resolveRuntimeAction(
+          agentId,
+          String(parsed.action || 'none').slice(0, 300),
+          operatingCrisis,
+          warm,
+          t1StarveReason,
+        )
         const action = resolved.action
         const kind = classifySelfModification(action)
         const wantsTask = kind !== 'hard_stop' && !!parsed.queueTask && String(parsed.taskTitle || '').trim().length > 3
@@ -197,11 +269,13 @@ export async function reasonAndAct(
               nextAction: action,
               lastAssessment: assessment,
               success: (action !== 'none' && kind !== 'hard_stop') || converted || executed || queuedWork || resolved.rewritten || !!taskId,
-              lesson: conversion
-                ? `convert_warm sent=${conversion.sent}`
-                : resolved.rewritten
-                  ? `idle rewritten to ${action}`
-                  : assessment,
+              lesson: persistRuntimeLesson({
+                rewritten: resolved.rewritten,
+                action,
+                conversion,
+                warm,
+                assessment,
+              }),
       }).catch(() => {})
 
       return { assessment, action, queued: queuedWork, executed, taskId, converted, conversion, provider: result.provider }

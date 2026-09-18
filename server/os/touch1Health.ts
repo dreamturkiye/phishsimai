@@ -92,6 +92,14 @@ export function whyT1SentZero(input: T1StarveInput): { sent: 0; reason: string }
   return { sent: 0, reason: 't1_eligible_but_not_sent' }
 }
 
+/** Dex daily caps are a throttle, not a sanitize/QEV starve. Do not queue Marcus or page the founder. */
+export const DEX_DAILY_THROTTLE_REASONS = ['combined_daily_cap', 'new_touch_daily_cap'] as const
+
+export function isDexDailyThrottle(reason?: string | null): boolean {
+  const r = String(reason || '')
+  return (DEX_DAILY_THROTTLE_REASONS as readonly string[]).includes(r)
+}
+
 export type Touch1Starvation = {
   silent: boolean
   alert: boolean
@@ -105,12 +113,18 @@ export function touch1Starvation(input: {
   sanitizedEligible: number
   unsanitizedEligible: number
   now?: Date
+  /** Combined / new-touch daily cap — healthy pool waiting for UTC reset is not starve. */
+  dexThrottle?: boolean
 }): Touch1Starvation {
   const now = input.now ?? new Date()
   const last = input.touch1LastAt ? new Date(input.touch1LastAt).getTime() : NaN
   const silentHours = Number.isFinite(last) ? (now.getTime() - last) / 3_600_000 : null
   const silent = !Number.isFinite(last) || now.getTime() - last > T1_SILENCE_MS
   const reservoir = input.unsanitizedEligible + input.sanitizedEligible
+
+  if (input.dexThrottle && input.sanitizedEligible > 0) {
+    return { silent, alert: false, code: 'dex_daily_throttle', message: null, silentHours }
+  }
 
   if (input.sanitizedEligible <= 0 && input.unsanitizedEligible > ELIGIBLE_ALERT_FLOOR) {
     return {
@@ -147,6 +161,10 @@ export type Touch1HealthSnapshot = {
   unsanitizedEligible: number
   verifier: MailboxVerifierKeys
   starvation: Touch1Starvation
+  t1StarveReason?: string | null
+  newSentToday?: number
+  secondSentToday?: number
+  newTouchAllowance?: number
 }
 
 /** Shared HQ / watchdog census. */
@@ -170,11 +188,42 @@ export async function loadTouch1Health(sql: any, now: Date = new Date()): Promis
   const sanitizedEligible = Number(sanitizedRows[0]?.n ?? 0)
   const unsanitizedEligible = Number(unsanitizedRows[0]?.n ?? 0)
   const verifier = mailboxVerifierKeys()
+  let t1StarveReason: string | null = null
+  let newSentToday = 0
+  let secondSentToday = 0
+  let allowance = 0
+  try {
+    const { sentTodayCounts, newTouchAllowance } = await import('./outreachThrottle')
+    const counts = await sentTodayCounts(sql)
+    newSentToday = counts.newSentToday
+    secondSentToday = counts.secondSentToday
+    allowance = newTouchAllowance(counts)
+    t1StarveReason = whyT1SentZero({
+      sanitizedEligible,
+      unsanitizedEligible,
+      newSentToday,
+      secondSentToday,
+      newTouchAllowance: allowance,
+    }).reason
+  } catch {
+    t1StarveReason = null
+  }
   const starvation = touch1Starvation({
     touch1LastAt,
     sanitizedEligible,
     unsanitizedEligible,
     now,
+    dexThrottle: isDexDailyThrottle(t1StarveReason),
   })
-  return { touch1LastAt, sanitizedEligible, unsanitizedEligible, verifier, starvation }
+  return {
+    touch1LastAt,
+    sanitizedEligible,
+    unsanitizedEligible,
+    verifier,
+    starvation,
+    t1StarveReason,
+    newSentToday,
+    secondSentToday,
+    newTouchAllowance: allowance,
+  }
 }
