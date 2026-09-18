@@ -22,6 +22,26 @@
       ],
       "destination": "https://phishsimai.com/:path*",
       "permanent": true
+    },
+    {
+      "source": "/knowbe4-vs-phishsimai",
+      "destination": "/knowbe4-alternative",
+      "permanent": true
+    },
+    {
+      "source": "/vs/knowbe4",
+      "destination": "/knowbe4-alternative",
+      "permanent": true
+    },
+    {
+      "source": "/compare/knowbe4",
+      "destination": "/knowbe4-alternative",
+      "permanent": true
+    },
+    {
+      "source": "/phishing-awareness-training",
+      "destination": "/msp-phishing-training",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -80,6 +100,18 @@
     {
       "source": "/blog/:slug",
       "destination": "/blog/:slug/index.html"
+    },
+    {
+      "source": "/pricing-comparison",
+      "destination": "/pricing-comparison/index.html"
+    },
+    {
+      "source": "/msp-phishing-training",
+      "destination": "/msp-phishing-training/index.html"
+    },
+    {
+      "source": "/blog",
+      "destination": "/blog/index.html"
     },
     {
       "source": "/((?!api).*)",
