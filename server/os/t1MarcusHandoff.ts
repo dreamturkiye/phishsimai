@@ -183,6 +183,8 @@ export async function loadT1Scoreboard(sql: any, now: Date = new Date()): Promis
   const pauseNewTouch1 = shouldPauseTouch1(backlog.drainableOverdue ?? 0, operatingCrisis, {
     t1Starved: t1.sanitizedEligible <= 0,
     sanitizedEligible: t1.sanitizedEligible,
+    newSentToday: t1.newSentToday,
+    secondSentToday: t1.secondSentToday,
   })
   let warmCtaToTrue: T1Scoreboard['warmCtaToTrue'] = null
   try {

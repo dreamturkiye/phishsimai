@@ -19,8 +19,15 @@
  * double price-pitch) via runTouch2Batch (outbox touch=2 + dual-stamp; Dex T2/50 binds)
  * or drain/sequence T3 (stamp touch3_sent_at ONLY — never dual-stamp T2, which starved
  * T1 combined headroom on 2026-09-17). T4 after T3+6d. Suppress silent stale.
- * Pause new T1 while the overdue drainable pool is large. No invented cold copy.
+ * Pause new T1 while overdue is large AND T2 still has Dex headroom. When T2/50
+ * is spent, leftover combined can only go to T1 — do not pause then. No invented cold copy.
  */
+
+import {
+  COMBINED_DAILY_CAP,
+  NEW_TOUCH_DAILY_CAP,
+  SECOND_TOUCH_DAILY_CAP,
+} from './outreachThrottle'
 
 /** Instant PS-COPY-PRICE-01 (price-led touch-1) reached production. Canonical copy lives in sequences.ts. */
 export const TOUCH2_COPY_ERA_CUTOFF = '2026-08-03T01:36:00Z'
@@ -115,10 +122,28 @@ export function isStaleSilentLead(opts: {
 export type Touch1PauseOpts = {
   t1Starved?: boolean
   sanitizedEligible?: number
+  /** UTC-day Dex counts. Omit → legacy pause (crisis + overdue). */
+  newSentToday?: number
+  secondSentToday?: number
 }
 
 export function isSmallQualityT1Refill(sanitizedEligible: number): boolean {
   return sanitizedEligible > 0 && sanitizedEligible <= T1_QUALITY_REFILL_MAX
+}
+
+/**
+ * T2 day-cap spent and leftover combined/T1 rem > 0. Pause would zero dailyAllowance
+ * for no drain benefit — remaining Dex budget can only be used by new T1.
+ * Live 2026-09-18: sanitizedEligible=151, T2=50/50, combined rem≈14, pause starved TOF.
+ */
+export function t1CanUseLeftoverDexHeadroom(opts?: Touch1PauseOpts): boolean {
+  if (opts == null || opts.secondSentToday == null) return false
+  const neu = Math.max(0, Number(opts.newSentToday) || 0)
+  const second = Math.max(0, Number(opts.secondSentToday) || 0)
+  const secondRem = SECOND_TOUCH_DAILY_CAP - second
+  const newRem = NEW_TOUCH_DAILY_CAP - neu
+  const combinedRem = COMBINED_DAILY_CAP - (neu + second)
+  return secondRem <= 0 && newRem > 0 && combinedRem > 0
 }
 
 export function shouldPauseTouch1(
@@ -135,6 +160,10 @@ export function shouldPauseTouch1(
   if (typeof opts?.sanitizedEligible === 'number' && isSmallQualityT1Refill(opts.sanitizedEligible)) {
     return false
   }
+  // Live 2026-09-18: 151 is ONE above T1_QUALITY_REFILL_MAX, so the small-refill skip
+  // missed. Crisis+overdue then paused T1 while T2 was already at 50/50 — leftover
+  // combined (~14) can only go to T1. Keep crisis pause when T2 still has headroom.
+  if (t1CanUseLeftoverDexHeadroom(opts)) return false
   return operatingCrisis && drainableOverdue >= PAUSE_T1_WHEN_DRAINABLE_AT
 }
 
