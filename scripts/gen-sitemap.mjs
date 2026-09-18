@@ -13,7 +13,7 @@ const { PRERENDER_ROUTES } = await import(pathToFileURL(ssrEntry).href);
 
 const SITE = "https://phishsimai.com";
 const today = new Date().toISOString().slice(0, 10);
-const priority = (r) => (r === "/" ? "1.0" : r === "/trial" ? "0.9" : r.startsWith("/blog/") ? "0.8" : "0.6");
+const priority = (r) => (r === "/" ? "1.0" : r === "/trial" ? "0.9" : ["/knowbe4-alternative","/pricing-comparison","/msp-phishing-training"].includes(r) || r.startsWith("/blog/") ? "0.8" : "0.6");
 const changefreq = (r) => (r === "/" ? "weekly" : "monthly");
 
 const body = PRERENDER_ROUTES
