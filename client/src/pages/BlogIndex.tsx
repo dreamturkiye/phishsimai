@@ -1,30 +1,25 @@
 import { Seo } from "@/components/Seo";
+import { SeoTrialHeader } from "@/components/SeoTrialChrome";
+import { seoForPath } from "@/lib/seoMeta";
 import { BLOG_POSTS } from "@/content/blog";
-import { Shield } from "lucide-react";
 
 // PS-SEO-04: blog index hub. Prerendered (registered in prerender.tsx ROUTES and auto-added to the
 // sitemap), it gives crawlers and readers a single entry point and strengthens internal linking to
 // every post.
 export default function BlogIndex() {
+  const seo = seoForPath("/blog");
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Seo
-        title="PhishSim AI Blog - Phishing Simulation & MSP Security Guides"
-        description="Practical guides on phishing simulation, security awareness training, cyber insurance requirements, and MSP security - from the PhishSim AI team."
-        path="/blog"
+        title={seo.title}
+        description={seo.description}
+        path={seo.path}
       />
-      <header className="border-b border-border/50">
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2 font-semibold">
-            <Shield className="w-5 h-5 text-primary" /> PhishSim AI
-          </a>
-          <a href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">Pricing</a>
-        </div>
-      </header>
+      <SeoTrialHeader campaign="blog_index" />
       <main className="max-w-3xl mx-auto px-6 py-12">
-        <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">Blog</h1>
+        <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">Phishing training & simulation guides</h1>
         <p className="text-muted-foreground mb-10">
-          Phishing simulation, security awareness, and compliance - practical guides for MSPs and IT teams.
+          Phishing training, KnowBe4 alternatives, and compliance — practical guides for MSPs and IT teams.
         </p>
         <div className="space-y-6">
           {BLOG_POSTS.map((p) => (

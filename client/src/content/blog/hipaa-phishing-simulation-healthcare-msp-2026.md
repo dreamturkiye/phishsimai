@@ -44,7 +44,7 @@ Running this for one company is straightforward. Running it across a book of hea
 
 A phishing simulation built for MSPs handles the multi-tenant reality: separate environments per client, per-client reporting you can hand to each one, and a single pane of glass for you. That's the difference between a compliance line item and a service you can actually bill for.
 
-[PhishSim AI](https://phishsimai.com) is built for exactly this — MSP-first, multi-tenant, with the per-client evidence pack that satisfies auditors, insurers, and your clients' compliance teams.
+[PhishSim AI](/trial?utm_source=blog&utm_medium=web&utm_campaign=hipaa-phishing-simulation-healthcare-msp-2026) is built for exactly this — MSP-first, multi-tenant, with the per-client evidence pack that satisfies auditors, insurers, and your clients' compliance teams. [Start a free 30-day trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=hipaa-phishing-simulation-healthcare-msp-2026)
 
 ## Frequently asked questions
 

@@ -1,9 +1,10 @@
 import { Seo } from "@/components/Seo";
-import { seoForPath } from "@/lib/seoMeta";
-import { Button } from "@/components/ui/button";
-import { Shield, Check, ArrowRight } from "lucide-react";
+import { SeoTrialHeader } from "@/components/SeoTrialChrome";
+import { KNOWBE4_FAQ, seoForPath } from "@/lib/seoMeta";
+import { getTrialUrl } from "@/const";
+import { Check, ArrowRight } from "lucide-react";
 
-const TRIAL = "/trial?utm_source=seo&utm_medium=web&utm_campaign=knowbe4_alternative";
+const TRIAL = getTrialUrl({ campaign: "knowbe4_alternative" });
 
 const ROWS: Array<{ label: string; us: string; them: string }> = [
   { label: "Best fit", us: "MSPs and small teams", them: "Enterprise security orgs" },
@@ -23,14 +24,7 @@ export default function KnowBe4Alternative() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Seo title={seo.title} description={seo.description} path={seo.path} />
-      <header className="border-b border-border/50">
-        <div className="max-w-3xl mx-auto px-6 h-14 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-2 font-semibold">
-            <Shield className="w-5 h-5 text-primary" /> PhishSim AI
-          </a>
-          <a href="/pricing" className="text-sm text-muted-foreground hover:text-foreground">Pricing</a>
-        </div>
-      </header>
+      <SeoTrialHeader campaign="knowbe4_alternative" />
       <main className="max-w-3xl mx-auto px-6 py-12">
         <p className="text-xs font-semibold uppercase tracking-wide text-violet-400 mb-3">KnowBe4 alternative</p>
         <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-3">
@@ -77,10 +71,51 @@ export default function KnowBe4Alternative() {
           ))}
         </ul>
 
-        <Button className="h-11 bg-violet-600 hover:bg-violet-500" onClick={() => { window.location.href = TRIAL; }}>
-          Start 30-day free trial <ArrowRight className="w-4 h-4 ml-2" />
-        </Button>
+        <a
+          href={TRIAL}
+          className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-md bg-violet-600 hover:bg-violet-500 text-primary-foreground text-sm font-medium"
+        >
+          Start 30-day free trial <ArrowRight className="w-4 h-4" />
+        </a>
         <p className="mt-3 text-xs text-muted-foreground">Full access. No card. 60¢/user · $299/500 seats.</p>
+
+        <section className="mt-14">
+          <h2 className="text-xl font-bold mb-4">KnowBe4 alternative FAQ</h2>
+          <dl className="space-y-4">
+            {KNOWBE4_FAQ.map((f) => (
+              <div key={f.q}>
+                <dt className="font-semibold">{f.q}</dt>
+                <dd className="text-sm text-muted-foreground mt-1 leading-relaxed">{f.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <nav className="mt-14" aria-label="Related phishing training guides">
+          <h2 className="text-xl font-bold mb-3">Related phishing training guides</h2>
+          <ul className="space-y-2 text-sm">
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/knowbe4-alternative-small-teams-msps">
+                Honest KnowBe4 alternative comparison for small teams and MSPs
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/hipaa-phishing-simulation-healthcare-msp-2026">
+                Phishing training for HIPAA compliance
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/cyber-insurance-phishing-simulation-requirement-2026">
+                Does cyber insurance require phishing simulations?
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/blog/allowlist-phishing-simulation-microsoft-365">
+                Allowlist phishing simulations in Microsoft 365
+              </a>
+            </li>
+          </ul>
+        </nav>
       </main>
     </div>
   );

@@ -128,28 +128,6 @@ export default function TrialStart() {
 
         <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-border/60 bg-card/40 p-6">
           <div className="space-y-1.5">
-            <Label htmlFor="company">Company (optional)</Label>
-            <Input
-              id="company"
-              type="text"
-              placeholder="Your MSP / company"
-              value={company}
-              onChange={e => setCompany(e.target.value)}
-              autoComplete="organization"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="name">Your name (optional)</Label>
-            <Input
-              id="name"
-              type="text"
-              placeholder="First name"
-              value={name}
-              onChange={e => setName(e.target.value)}
-              autoComplete="name"
-            />
-          </div>
-          <div className="space-y-1.5">
             <Label htmlFor="email">Work email</Label>
             <Input
               id="email"
@@ -174,6 +152,35 @@ export default function TrialStart() {
               autoComplete="new-password"
             />
           </div>
+          <details className="rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+            <summary className="cursor-pointer text-sm text-muted-foreground">
+              Add name & company (optional)
+            </summary>
+            <div className="mt-3 space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="name">Your name (optional)</Label>
+                <Input
+                  id="name"
+                  type="text"
+                  placeholder="First name"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  autoComplete="name"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="company">Company (optional)</Label>
+                <Input
+                  id="company"
+                  type="text"
+                  placeholder="Your MSP / company"
+                  value={company}
+                  onChange={e => setCompany(e.target.value)}
+                  autoComplete="organization"
+                />
+              </div>
+            </div>
+          </details>
           {error && (
             <p className="text-sm text-red-500">{error}</p>
           )}

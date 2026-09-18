@@ -41,6 +41,6 @@ We're not claiming to out-feature KnowBe4 — we're claiming that most small tea
 
 Pick KnowBe4 if you're an enterprise that needs its depth. Pick a lean alternative if you're a small team or MSP that needs the core loop — simulate, train, report — without the contract and the console. Try both if you're unsure; the difference in fit is usually obvious within a week.
 
-*Related: before your first campaign, make sure tests reach the inbox — see [how to allowlist phishing simulations in Microsoft 365](/blog/allowlist-phishing-simulation-microsoft-365).*
+*Related: the [KnowBe4 alternative landing](/knowbe4-alternative) has the live offer and trial form. Before your first campaign, make sure tests reach the inbox — see [how to allowlist phishing simulations in Microsoft 365](/blog/allowlist-phishing-simulation-microsoft-365).*
 
 > **Want the core loop without the enterprise contract?** PhishSim AI: 60¢/user, $299/mo for 500 seats, 30-day trial, no credit card. [Start a free trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=knowbe4_alternative)

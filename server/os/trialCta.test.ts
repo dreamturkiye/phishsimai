@@ -82,9 +82,75 @@ describe('trial-start paths', () => {
     const signupAnchors = home.match(/getSignupUrl\(\)/g) ?? []
     expect(signupAnchors.length).toBeGreaterThanOrEqual(7)
     const constSrc = readFileSync('client/src/const.ts', 'utf8')
+    expect(constSrc).toContain('export const getTrialUrl')
     expect(constSrc).toContain('return `/trial?${params.toString()}`')
     expect(constSrc).toContain('utm_source')
     expect(constSrc).toContain('marketing_site')
+  })
+
+  it('KnowBe4 comparison CTA is a crawlable /trial anchor, not onClick', () => {
+    const page = readFileSync('client/src/pages/KnowBe4Alternative.tsx', 'utf8')
+    expect(page).toContain('href={TRIAL}')
+    expect(page).not.toMatch(/onClick=\{[^}]*TRIAL/)
+    expect(page).toContain('SeoTrialHeader')
+    expect(page).toContain('campaign: "knowbe4_alternative"')
+  })
+
+  it('blog chrome and posts land on /trial, never /signup or homepage-only CTAs', () => {
+    const post = readFileSync('client/src/pages/BlogPost.tsx', 'utf8')
+    expect(post).toContain('SeoTrialHeader')
+    expect(post).toContain('SeoTrialFooter')
+    const allowlist = readFileSync('client/src/content/blog/allowlist-phishing-simulation-microsoft-365.md', 'utf8')
+    expect(allowlist).toContain('/trial?utm_source=blog')
+    expect(allowlist).not.toContain('](/signup)')
+    expect(allowlist).not.toContain('](/pricing)')
+    for (const slug of [
+      'proofpoint-alternative-msp-2026',
+      'phishing-click-rate-benchmarks-2026',
+      'hipaa-phishing-simulation-healthcare-msp-2026',
+      'cyber-insurance-phishing-simulation-requirement-2026',
+    ]) {
+      const md = readFileSync(`client/src/content/blog/${slug}.md`, 'utf8')
+      expect(md).toContain(`/trial?utm_source=blog&utm_medium=web&utm_campaign=${slug}`)
+      expect(md).not.toContain('](/signup)')
+      expect(md).not.toMatch(/\]\(https:\/\/phishsimai\.com\/?\)/)
+    }
+  })
+
+  it('/signup and /register rewrite to prerendered /trial HTML (not empty app.html)', () => {
+    const vercel = readFileSync('vercel.json', 'utf8')
+    expect(vercel).toContain('"source": "/signup"')
+    expect(vercel).toContain('"source": "/register"')
+    expect(vercel).toMatch(/"source": "\/signup"[\s\S]*"destination": "\/trial\/index\.html"/)
+    expect(vercel).toMatch(/"source": "\/register"[\s\S]*"destination": "\/trial\/index\.html"/)
+    const page = readFileSync('client/src/pages/TrialStart.tsx', 'utf8')
+    expect(page.indexOf('htmlFor="email"')).toBeLessThan(page.indexOf('htmlFor="company"'))
+    expect(page).toContain('Add name & company (optional)')
+  })
+
+  it('KnowBe4 + phishing-training meta, FAQ JSON-LD, and internal links are crawlable', () => {
+    const seo = readFileSync('client/src/lib/seoMeta.ts', 'utf8')
+    expect(seo).toContain('KnowBe4 Alternative for MSPs (2026)')
+    expect(seo).toContain('Phishing Training & Simulation for MSPs')
+    expect(seo).toContain('Phishing Training Guides for MSPs')
+    expect(seo).toContain('pathname === "/knowbe4-alternative"')
+    expect(seo).toContain('"@type": "FAQPage"')
+    expect(seo).toContain('KNOWBE4_FAQ')
+    const kb4 = readFileSync('client/src/pages/KnowBe4Alternative.tsx', 'utf8')
+    expect(kb4).toContain('KnowBe4 alternative FAQ')
+    expect(kb4).toContain('/blog/knowbe4-alternative-small-teams-msps')
+    expect(kb4).toContain('/blog/hipaa-phishing-simulation-healthcare-msp-2026')
+    const home = readFileSync('client/src/pages/Home.tsx', 'utf8')
+    expect(home).toContain('href="/knowbe4-alternative"')
+    expect(home).toContain('href="/blog"')
+    expect(home).toContain('Phishing training')
+    const blog = readFileSync('client/src/pages/BlogIndex.tsx', 'utf8')
+    expect(blog).toContain('Phishing training & simulation guides')
+    const post = readFileSync('client/src/pages/BlogPost.tsx', 'utf8')
+    expect(post).toContain('/knowbe4-alternative')
+    expect(post).toContain('Related phishing training guides')
+    const kb4Post = readFileSync('client/src/content/blog/knowbe4-alternative-small-teams-msps.md', 'utf8')
+    expect(kb4Post).toContain('](/knowbe4-alternative)')
   })
 })
 
