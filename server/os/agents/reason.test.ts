@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { wantsWarmConversion, shouldFireConversionShift, CONVERSION_AGENTS, resolveRuntimeAction } from './reason'
+import { wantsWarmConversion, shouldFireConversionShift, CONVERSION_AGENTS, resolveRuntimeAction, persistRuntimeLesson } from './reason'
+import { invalidateOpenThread } from '../cgoMandate'
 
 describe('wantsWarmConversion', () => {
   it('lets Janet, Mason, Aria, Nova, and Vera fire a Dex-gated trial CTA / nudge', () => {
@@ -70,5 +71,43 @@ describe('resolveRuntimeAction — refuse idle none during operating crisis', ()
     const aria = resolveRuntimeAction('aria', '', true, warm)
     expect(aria.action).toMatch(/LinkedIn/)
     expect(aria.action).toMatch(/Do not convert_warm/)
+  })
+
+  it('rewrites convert_warm hammer when the warm pool is exhausted (not just idle none)', () => {
+    const warm = {
+      replied: 15, engaged: 14, sendable: 14, eligible: 0,
+      cooldown: 0, exhausted: 12, suppressed: 2, autoReplyPending: 0,
+    }
+    const mason = resolveRuntimeAction('mason', 'convert_warm: hottest', true, warm)
+    expect(mason.rewritten).toBe(true)
+    expect(mason.action).not.toMatch(/convert_warm:\s*hottest/)
+    expect(mason.action).toMatch(/Do not convert_warm/)
+    expect(mason.action).toMatch(/Grey Box|MSP harvest/)
+    const open = invalidateOpenThread('aria', 'ACTION: convert_warm: hottest', { warm })
+    expect(open.invalidated).toBe(true)
+    expect(open.action).toMatch(/Do not convert_warm/)
+    expect(persistRuntimeLesson({
+      rewritten: true,
+      action: mason.action,
+      conversion: { sent: 0, eligible: 0 },
+      warm,
+      assessment: 'keep converting',
+    })).toMatch(/rewritten/)
+  })
+
+  it('invalidates a PS-T1-STARVE open thread when Dex combined cap is the binder', () => {
+    const open = invalidateOpenThread('dex', 'ACTION: queue_marcus: named bug PS-T1-STARVE', {
+      t1StarveReason: 'combined_daily_cap',
+    })
+    expect(open.invalidated).toBe(true)
+    expect(open.action).toMatch(/UTC midnight/)
+    expect(open.action).toMatch(/Do not queue PS-T1-STARVE/)
+    expect(open.action).not.toMatch(/ACTION:\s*queue_marcus/)
+    expect(persistRuntimeLesson({
+      rewritten: false,
+      action: 'wait',
+      conversion: { sent: 0, reason: 'combined_daily_cap' },
+      assessment: 'T1 silent',
+    })).toMatch(/wait UTC reset/)
   })
 })

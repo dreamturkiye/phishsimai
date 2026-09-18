@@ -71,6 +71,21 @@ describe('conversionLesson is honest', () => {
     expect(l.lesson).not.toMatch(/fire convert_warm/)
   })
 
+  it('names Dex combined cap as a throttle, not PS-T1-STARVE', () => {
+    const l = conversionLesson(
+      { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] },
+      undefined,
+      undefined,
+      { replied: 15, engaged: 14, sendable: 14, suppressed: 0, cooldown: 0, exhausted: 12, eligible: 0, autoReplyPending: 0 },
+      { t1Starved: false, t1StarveReason: 'combined_daily_cap' },
+    )
+    expect(l.success).toBe(false)
+    expect(l.lesson).toMatch(/combined_daily_cap/)
+    expect(l.lesson).toMatch(/wait UTC/)
+    expect(l.lesson).toMatch(/Do not queue PS-T1-STARVE/)
+    expect(l.lesson).toMatch(/Do not raise Dex caps/)
+  })
+
   it('eligible=0 exhausted + T1 healthy → LinkedIn / Grey Box, not fire convert_warm', () => {
     const l = conversionLesson(
       { sent: 0, skipped: 0, blocked: 0, tripped: false, results: [] },

@@ -1,4 +1,5 @@
 import type { AgentId, WorkerAgentId } from '@kaan/os-core'
+import { isDexDailyThrottle } from './touch1Health'
 
 export type TrialFacts = {
   liveProductTrials: number
@@ -104,6 +105,8 @@ export type T1DiagnosisFacts = {
   pauseNewTouch1?: boolean | null
   verifier?: { mev: boolean; qev: boolean; any: boolean } | null
   warmCtaToTrue?: { ctaSent: number; trueTrials: number } | null
+  /** whyT1SentZero reason — combined_daily_cap is a throttle, not starve. */
+  t1StarveReason?: string | null
 }
 
 export type CrisisTaskOpts = {
@@ -118,9 +121,39 @@ export function isWarmPoolExhausted(w?: WarmPoolFacts | null): boolean {
 /** T1 unknown is not starved — that starve path is named only from measured facts. */
 export function isT1Starved(t1?: T1DiagnosisFacts | null): boolean {
   if (!t1) return false
+  if (isDexDailyThrottle(t1.t1StarveReason)) return false
   const sanitizedDead = t1.sanitizedEligible != null && t1.sanitizedEligible <= 0
   const verifierEmpty = !!t1.verifier && !t1.verifier.any
   return sanitizedDead || verifierEmpty
+}
+
+/**
+ * Coded self-learn: the open thread / LLM action must change next behavior.
+ * Prompt-only lessons are theater if convert_warm / PS-T1-STARVE stay in working memory.
+ */
+export function invalidateOpenThread(
+  agentId: string,
+  nextAction: string,
+  facts: { warm?: WarmPoolFacts | null; t1StarveReason?: string | null },
+): { action: string; invalidated: boolean; lesson: string } {
+  const a = String(nextAction || '').trim() || 'none'
+  if (isWarmPoolExhausted(facts.warm) && /convert_warm/i.test(a)) {
+    return {
+      action: droughtIdleAction(agentId, { warm: facts.warm }),
+      invalidated: true,
+      lesson:
+        'Do not convert_warm — warm eligible=0 exhausted 90/91/92. Resume Grey Box / LinkedIn ≤1/day / MSP harvest / /trial. Not touch 93.',
+    }
+  }
+  if (isDexDailyThrottle(facts.t1StarveReason) && /PS-T1-STARVE|queue_marcus.*T1|sanitize refill/i.test(a)) {
+    return {
+      action:
+        'Dex combined/new-touch daily cap is the binder. Wait for UTC midnight reset. Do not queue PS-T1-STARVE. Do not raise Dex caps. Work Grey Box / LinkedIn ≤1/day / /trial.',
+      invalidated: true,
+      lesson: `T1 sent 0 is ${facts.t1StarveReason}, not sanitize starve. Do not page the founder. Do not raise Dex caps.`,
+    }
+  }
+  return { action: a, invalidated: false, lesson: '' }
 }
 
 /** Next owners when warm eligible=0 and T1 is not the named bug. Never convert_warm. */
@@ -195,13 +228,23 @@ export function diagnoseRevenueFailure(input: {
   }
   const t1 = input.t1
   if (t1) {
+    if (isDexDailyThrottle(t1.t1StarveReason)) {
+      bottlenecks.push(
+        `T1 sent 0 is Dex ${t1.t1StarveReason} (sanitizedEligible=${t1.sanitizedEligible ?? '?'}) — wait UTC midnight. Do not queue PS-T1-STARVE. Do not raise caps.`,
+      )
+      nextActions.unshift(
+        'Wait for UTC Dex combined/new-touch reset. Do not convert_warm if warm exhausted. Grey Box / LinkedIn ≤1/day / /trial. Do not page the founder.',
+      )
+    }
     const days = t1.daysSinceLastT1
     const silent = days == null || days >= 1.5
     const sanitizedDead = t1.sanitizedEligible != null && t1.sanitizedEligible <= 0
     const pauseWrong = !!t1.pauseNewTouch1 && (t1.sanitizedEligible ?? 0) <= 150
     const verifierEmpty = !!t1.verifier && !t1.verifier.any
     const warmZero = !!t1.warmCtaToTrue && t1.warmCtaToTrue.trueTrials === 0
-    const nameT1 = crisis || silent || sanitizedDead || pauseWrong || verifierEmpty || warmZero
+    const nameT1 =
+      !isDexDailyThrottle(t1.t1StarveReason) &&
+      (crisis || silent || sanitizedDead || pauseWrong || verifierEmpty || warmZero)
     if (nameT1) {
       bottlenecks.push(`daysSinceLastT1=${days == null ? 'never' : Number(days).toFixed(1)}`)
       if (t1.sanitizedEligible != null) {
@@ -319,9 +362,9 @@ export function droughtIdleAction(agentId: string, opts?: CrisisTaskOpts): strin
       rex: 'Publish TRUE-trial vs paying integers (canary excluded)',
       scout: 'Drive trial starts from measured MSP harvest segment',
       finn: 'Publish paying vs free-trial integers from Stripe and plan',
-      dex: 'Keep sending healthy so trial CTAs land. ACTION: queue_marcus immediately for sanitize refill / QEV empty / pause locking T1 — do not wait for a human',
+      dex: 'Keep sending healthy so trial CTAs land. ACTION: queue_marcus immediately for sanitize refill / QEV empty / pause locking T1 — do not wait for a human. If T1 sent 0 is combined_daily_cap / new_touch_daily_cap, wait UTC reset — do not queue PS-T1-STARVE, do not raise Dex caps.',
       marcus:
-        'Named bug PS-T1-STARVE / QEV empty / pause locks quality pool: restore sanitize refill so TRUE trials can start. Do not write analysis theater.',
+        'Named bug PS-T1-STARVE / QEV empty / pause locks quality pool: restore sanitize refill so TRUE trials can start. Combined/new-touch daily cap is a throttle, not a starve — do not open a ticket. Do not write analysis theater.',
     }
     return exhausted[agentId] || 'Nurture Grey Box trial org to paid + LinkedIn founder-review. Do not convert_warm an exhausted pool.'
   }
@@ -334,8 +377,8 @@ export function droughtIdleAction(agentId: string, opts?: CrisisTaskOpts): strin
     rex: 'Publish TRUE-trial vs paying integers (canary excluded)',
     scout: 'Drive trial starts from measured MSP segment',
     finn: 'Publish paying vs free-trial integers from Stripe and plan',
-    dex: 'Keep sending healthy so trial CTAs land. ACTION: queue_marcus immediately for sanitize refill / QEV empty / pause locking T1 — do not wait for a human',
-    marcus: 'Named bug PS-T1-STARVE / QEV empty / pause locks quality pool: restore sanitize refill so TRUE trials can start. Do not write analysis theater.',
+    dex: 'Keep sending healthy so trial CTAs land. ACTION: queue_marcus immediately for sanitize refill / QEV empty / pause locking T1 — do not wait for a human. If T1 sent 0 is combined_daily_cap / new_touch_daily_cap, wait UTC reset — do not queue PS-T1-STARVE, do not raise Dex caps.',
+    marcus: 'Named bug PS-T1-STARVE / QEV empty / pause locks quality pool: restore sanitize refill so TRUE trials can start. Combined/new-touch daily cap is a throttle, not a starve — do not open a ticket. Do not write analysis theater.',
   }
   return map[agentId] || 'convert_warm: hottest'
 }
@@ -434,7 +477,7 @@ export function janetCgoMandate(): string {
     'Be persistent and aggressive: same-day follow-up on every warm lead and every true trial org. An employee who reported "nothing completed" failed. Queue Marcus when a code path blocks a trial start or a paid conversion.',
     '$0 MRR and TRUE trials < 20 is a PERMANENT operating crisis, not a yellow flag. Diagnose the bottleneck every cycle (TOF empty vs replied/engaged not getting CTAs vs auto_reply trap vs Grey Box not upgrading vs Dex). Then execute. Never declare health. Analysis theater is a miss.',
     'Convert Grey Box Consulting (the only TRUE trial) to paid via the existing upgrade/checkout path. Do not wait for day-25 if they have ~10 days left.',
-    'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened) when eligible>0. If warm eligible=0 and 90/91/92 are exhausted, do NOT assign convert_warm — prefer Grey Box activation/nurture, LinkedIn founder-review, MSP harvest, T1/sanitize health, /trial funnel (Nova), Stripe truth (Finn/Rex). Keep Dex rails. Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
+    'Be shrewd: work the shortest path. Convert the warmest leads first (replied > engaged > opened) when eligible>0. If warm eligible=0 and 90/91/92 are exhausted, do NOT assign convert_warm — prefer Grey Box activation/nurture, LinkedIn auto-publish ≤1/day, MSP harvest, T1/sanitize health, /trial funnel (Nova), Stripe truth (Finn/Rex). Combined/new-touch daily cap is a throttle (wait UTC midnight), not PS-T1-STARVE. Keep Dex rails. Cut any task that does not produce a trial this week. Do not wait for perfect copy, more research, or another dashboard.',
     'Hold Mason, Aria, and Nova to a daily conversion number. An employee who only reported failed. Follow up the same day. "I delegated" is not a result.',
     'Fill the funnel AND convert every existing reply into the 30-day no-card trial. Multi-channel (LinkedIn founder-review with preview + escalate) executes every crisis tick — not optional, not "already queued today" as a dead end.',
     'You still cannot fake numbers, change price, skip Dex send-safety, or bypass Marcus approval. Shrewd means sequencing and follow-through, not breaking gates.',
@@ -541,7 +584,7 @@ export function zeroTrialCrisisTasks(opts?: CrisisTaskOpts): CrisisTask[] {
         (exhausted
           ? `Warm eligible=0 exhausted 90/91/92 — do NOT convert_warm. `
           : '') +
-        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately. Do not wait for a human. Do not escalate a send-path bug.`,
+        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately. Do not wait for a human. Do not escalate a send-path bug. If T1 sent 0 is combined_daily_cap / new_touch_daily_cap, wait UTC reset — that is not starve.`,
       priority: 'high',
     },
     {
@@ -564,7 +607,7 @@ export function zeroTrialCrisisTasks(opts?: CrisisTaskOpts): CrisisTask[] {
       title: 'Keep sending healthy so trial CTAs land',
       description:
         `SPRINT: ${TRIAL_SPRINT_TARGET} TRUE trials. Report breaker, authentication, and suppression only. ` +
-        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately — do not wait for a human, do not escalate. Do not classify replies or send around Dex.`,
+        `If T1 is starved, sanitizedEligible=0, pauseNewTouch1 locks a quality pool, or QEV/MEV is empty: ACTION: queue_marcus with named bug PS-T1-STARVE / PS-T1-QEV-EMPTY / PS-T1-PAUSE-LOCK immediately — do not wait for a human, do not escalate. If T1 sent 0 is combined_daily_cap / new_touch_daily_cap, wait UTC reset — do not queue PS-T1-STARVE, do not raise Dex caps. Do not classify replies or send around Dex.`,
       priority: 'high',
     },
     {

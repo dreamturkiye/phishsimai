@@ -139,6 +139,18 @@ describe('touch1Starvation alerts', () => {
     })
     expect(s.alert).toBe(false)
   })
+
+  it('does not alert T1 silent when Dex combined/new-touch cap is the binder', () => {
+    const s = touch1Starvation({
+      touch1LastAt: new Date(now.getTime() - T1_SILENCE_MS - 60_000).toISOString(),
+      sanitizedEligible: 150,
+      unsanitizedEligible: 6000,
+      now,
+      dexThrottle: true,
+    })
+    expect(s.alert).toBe(false)
+    expect(s.code).toBe('dex_daily_throttle')
+  })
 })
 
 describe('runFullSequence T1 SQL still requires sanitized_at (the starve gate)', () => {

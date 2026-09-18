@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
   ALREADY_AT_L5_FLOOR,
+  CRISIS_AUTO_MARCUS,
+  DEX_DAILY_THROTTLE,
   isAlreadyAtL5FloorAutonomyNoise,
+  isCrisisAutoMarcusEscalation,
+  isDexThrottleEscalation,
   shouldPageFounderForEscalation,
   isOperatorOwnedEscalation,
 } from './escalationTriagePolicy'
@@ -112,6 +116,28 @@ describe('already-at-L5 autonomy_change is founder noise, not a nag', () => {
       category: 'breaker_trip',
       payload: { last_error: 'PRE-FLIGHT REFUSED: task names protected path(s) server/os/routes.ts' },
     })).toBe(true)
+  })
+
+  it('T1 starve / sanitize marcus_dispatch auto-resolves without paging the founder', () => {
+    const row = {
+      category: 'marcus_dispatch',
+      payload: { task: 'Named bug: PS-T1-STARVE — restore sanitize refill' },
+    }
+    expect(isCrisisAutoMarcusEscalation(row)).toBe(true)
+    expect(shouldPageFounderForEscalation(row)).toBe(false)
+    expect(isOperatorOwnedEscalation(row)).toBe(true)
+    expect(CRISIS_AUTO_MARCUS).toBe('crisis_auto_marcus')
+  })
+
+  it('Dex combined-cap tickets are a throttle, not a founder page or starve ticket', () => {
+    const row = {
+      category: 'marcus_dispatch',
+      payload: { task: 'T1 sent 0 combined_daily_cap — raise the cap?' },
+    }
+    expect(isDexThrottleEscalation(row)).toBe(true)
+    expect(isCrisisAutoMarcusEscalation(row)).toBe(false)
+    expect(shouldPageFounderForEscalation(row)).toBe(false)
+    expect(DEX_DAILY_THROTTLE).toBe('dex_daily_throttle')
   })
 
   it('other products are not silenced by the PhishSim L5 floor', () => {

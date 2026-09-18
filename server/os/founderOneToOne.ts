@@ -165,7 +165,10 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
   const sql = sqlOverride ?? getSql()
   const out: FounderOneToOneResult = { queued: 0, escalated: false, skipped: 0, reason: '', drafts: [] }
 
-  const pending = await listFounderOneToOneQueue(sql).catch(() => [])
+  const pendingAll = await listFounderOneToOneQueue(sql).catch(() => [])
+  const dismissedOoo = await dismissOooFounderOneToOne(sql, pendingAll)
+  out.skipped += dismissedOoo
+  const pending = pendingAll.filter((p) => !isOooOrAutoReplyInbound(p.snippet))
   const oldestHours = pending[0]?.createdAt
     ? Math.max(0, Math.round((Date.now() - new Date(pending[0].createdAt).getTime()) / 3_600_000))
     : null
@@ -213,7 +216,9 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
       ? `escalated ${pending.length} pending founder 1:1 (oldest ${oldestHours}h)`
       : pending.length
         ? `${pending.length} founder 1:1 already pending review`
-        : 'no exhausted warm leads without a 1:1 draft'
+        : dismissedOoo
+          ? `dismissed ${dismissedOoo} OOO founder 1:1 draft(s); no warm exhausted leads`
+          : 'no exhausted warm leads without a 1:1 draft'
     return out
   }
 
@@ -252,6 +257,25 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
     out.reason = out.reason || 'insert missed (table/columns?)'
   }
   return out
+}
+
+async function dismissOooFounderOneToOne(
+  sql: any,
+  pending: Array<{ id: string; snippet: string }>,
+): Promise<number> {
+  const ooo = pending.filter((p) => isOooOrAutoReplyInbound(p.snippet))
+  let n = 0
+  for (const row of ooo) {
+    const updated = sqlRows(await sql`
+      UPDATE outreach_reply_drafts
+      SET classification = 'auto_reply', action_taken = 'no_action',
+          draft_body = COALESCE(draft_body,'') || E'\n\n[auto] OOO / auto-reply — not founder_1to1 warm interest'
+      WHERE id = ${row.id}::uuid AND classification = ${FOUNDER_1TO1_CLASS} AND status = 'pending_review'
+      RETURNING id
+    `.catch(() => []))
+    if (updated[0]?.id) n++
+  }
+  return n
 }
 
 async function shouldEscalate(sql: any): Promise<boolean> {
