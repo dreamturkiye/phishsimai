@@ -151,7 +151,7 @@ function breadcrumbLd(path: string, name: string) {
 }
 
 // PS-SEO-03 / PS-SEO-05: JSON-LD baked into prerendered <head>.
-// Marketing routes get Organization + SoftwareApplication (no aggregateRating — we have no reviews).
+// Marketing routes get Organization + SoftwareApplication (no review/star schema — we have no reviews).
 // Landings + home FAQ get FAQPage. Blog posts keep BlogPosting.
 export function jsonLdFor(pathname: string): string {
   const tags: string[] = [script(organizationLd()), script(softwareLd())];

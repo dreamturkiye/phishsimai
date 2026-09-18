@@ -131,14 +131,14 @@ export const SEO_LANDINGS: SeoLanding[] = [
         h2: "What “KnowBe4 vs” actually decides",
         paragraphs: [
           "Most “KnowBe4 vs [tool]” pages pretend the buyer is choosing a feature checklist. The real fork is organizational: do you have a security team, a procurement cycle, and a need for an enormous content library — or do you need a simulation out the door, training for clickers, and a log you can hand to an auditor or a client?",
-          "PhishSim AI is not trying to be a clone. If you need KnowBe4’s depth and you have the budget, pick KnowBe4. If you are comparing because the quote, the seat minimum, or the onboarding feels like a jet for a cross-town trip, keep reading.",
+          "PhishSim AI is not trying to be a clone. If you need KnowBe4's depth and you have the budget, pick KnowBe4. If you are comparing because the quote, the seat minimum, or the onboarding feels like a jet for a cross-town trip, keep reading.",
         ],
       },
       {
         h2: "Where KnowBe4 is the right product",
         paragraphs: [
           "KnowBe4’s strength is the enterprise surface: a very large template library, extensive training courseware, and mature integrations for a dedicated security org. A Fortune-scale workforce with a SAT owner and an annual training calendar is the customer that product was built for.",
-          "We will not invent a win-rate, a “customers saved $X,” or a fake KnowBe4 invoice. Those claims are how comparison pages lose trust. The honest statement is narrower: KnowBe4 is a capable platform that is often oversized for MSPs and lean IT teams.",
+          "We will not invent a win-rate, a fabricated savings figure, or a fake KnowBe4 invoice. Those claims are how comparison pages lose trust. The honest statement is narrower: KnowBe4 is a capable platform that is often oversized for MSPs and lean IT teams.",
         ],
       },
       {
@@ -210,7 +210,7 @@ export const SEO_LANDINGS: SeoLanding[] = [
       {
         h2: "What we will not do on a pricing page",
         paragraphs: [
-          "We will not publish a fake “KnowBe4 costs $X per user” figure scraped from a 2022 blog. Their packaging changes, partners discount, and seat minimums move. A fabricated comparison is how you lose the second Google click — and it is the same honesty rule we use on our own homepage (no invented customers, no invented savings).",
+          "We will not publish a fake per-user KnowBe4 invoice scraped from a 2022 blog. Their packaging changes, partners discount, and seat minimums move. A fabricated comparison is how you lose the second Google click — and it is the same honesty rule we use on our own homepage (no invented customers, no invented savings).",
           "The searchable fact is the deal shape: KnowBe4 is sold as security awareness training for enterprises. Pricing is a conversation. PhishSim AI’s phishing simulation software is sold with a public list and a no-card trial.",
         ],
       },

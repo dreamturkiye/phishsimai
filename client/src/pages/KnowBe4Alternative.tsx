@@ -83,7 +83,7 @@ export default function KnowBe4Alternative() {
           <p className="text-muted-foreground leading-relaxed mb-3">
             We are not claiming to out-feature KnowBe4. We are claiming a better fit for MSPs and
             teams that run the simulate → train → report loop themselves. No invented customer
-            counts, no fake “save 70%” math, no invented KnowBe4 list price.
+            counts, no fabricated discount math, no invented KnowBe4 list price.
           </p>
           <ul className="space-y-2 text-sm text-muted-foreground">
             {[
