@@ -89,7 +89,7 @@ export function seoForPath(pathname: string): RouteMeta {
 /** The full <head> SEO block for a route — injected verbatim by the prerender script. */
 export function headTags(m: RouteMeta, ogImage: string = OG): string {
   const url = `${SITE}${m.path === "/" ? "" : m.path}`;
-  const esc = (s: string) => s.replace(/&/g, "&").replace(/"/g, """).replace(/</g, "<");
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   return [
     `<title>${esc(m.title)}</title>`,
     `<meta name="description" content="${esc(m.description)}" />`,
@@ -114,7 +114,7 @@ export function jsonLdFor(pathname: string): string {
   const post = getPost(slug);
   if (!post) return "";
   const url = `${SITE}/blog/${slug}`;
-  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png" } };
+  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png` } };
   const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
   const tags = [
     script({
