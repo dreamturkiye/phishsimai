@@ -30,6 +30,20 @@ export function seoForPath(pathname: string): RouteMeta {
       path: "/blog",
     };
   }
+  if (pathname === "/pricing-comparison" || pathname.startsWith("/pricing-comparison")) {
+    return {
+      title: "PhishSim AI vs KnowBe4 Pricing — MSP Phishing Training Costs",
+      description: "Transparent MSP pricing vs quote-based KnowBe4-style seats: Growth $299/mo for 500 users (60¢), Pro $749 for 2,500. 30-day free trial, no credit card.",
+      path: "/pricing-comparison",
+    };
+  }
+  if (pathname === "/msp-phishing-training" || pathname.startsWith("/msp-phishing-training") || pathname === "/phishing-awareness-training") {
+    return {
+      title: "MSP Phishing Training & Awareness — PhishSim AI",
+      description: "Phishing simulation and security awareness training built for MSPs: multi-tenant, white-label, compliance packs, PSA ticketing. From $149/mo. 30-day free trial.",
+      path: "/msp-phishing-training",
+    };
+  }
   if (pathname.startsWith("/pricing")) {
     return {
       title: "PhishSim AI Pricing — MSP Phishing Simulation from $149/mo",
@@ -60,8 +74,8 @@ export function seoForPath(pathname: string): RouteMeta {
   }
   if (pathname === "/knowbe4-alternative" || pathname === "/knowbe4" || pathname.startsWith("/knowbe4-alternative")) {
     return {
-      title: "KnowBe4 Alternative for MSPs — PhishSim AI",
-      description: "Honest KnowBe4 alternative for MSPs and small teams: 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card. Live in 10 minutes.",
+      title: "KnowBe4 Alternative for MSPs — PhishSim AI vs KnowBe4",
+      description: "Honest KnowBe4 alternative for MSPs and mid-market teams: multi-tenant, 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card. Live in 10 minutes.",
       path: "/knowbe4-alternative",
     };
   }
@@ -75,7 +89,7 @@ export function seoForPath(pathname: string): RouteMeta {
 /** The full <head> SEO block for a route — injected verbatim by the prerender script. */
 export function headTags(m: RouteMeta, ogImage: string = OG): string {
   const url = `${SITE}${m.path === "/" ? "" : m.path}`;
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const esc = (s: string) => s.replace(/&/g, "&").replace(/"/g, """).replace(/</g, "<");
   return [
     `<title>${esc(m.title)}</title>`,
     `<meta name="description" content="${esc(m.description)}" />`,
@@ -100,7 +114,7 @@ export function jsonLdFor(pathname: string): string {
   const post = getPost(slug);
   if (!post) return "";
   const url = `${SITE}/blog/${slug}`;
-  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png` } };
+  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png" } };
   const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
   const tags = [
     script({
