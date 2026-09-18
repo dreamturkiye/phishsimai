@@ -70,6 +70,30 @@
       "destination": "/knowbe4-alternative/index.html"
     },
     {
+      "source": "/knowbe4-vs",
+      "destination": "/knowbe4-vs/index.html"
+    },
+    {
+      "source": "/knowbe4-pricing",
+      "destination": "/knowbe4-pricing/index.html"
+    },
+    {
+      "source": "/knowbe4-for-msps",
+      "destination": "/knowbe4-for-msps/index.html"
+    },
+    {
+      "source": "/phishing-simulation-software",
+      "destination": "/phishing-simulation-software/index.html"
+    },
+    {
+      "source": "/security-awareness-training",
+      "destination": "/security-awareness-training/index.html"
+    },
+    {
+      "source": "/phishing-training-for-msps",
+      "destination": "/phishing-training-for-msps/index.html"
+    },
+    {
       "source": "/privacy",
       "destination": "/privacy/index.html"
     },

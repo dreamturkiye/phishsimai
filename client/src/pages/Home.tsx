@@ -144,6 +144,7 @@ export default function Home() {
             <a href="#msp" className="hover:text-foreground transition-colors">MSP / Partners</a>
             <a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a>
             <a href="/trial" className="hover:text-foreground transition-colors">Free Trial</a>
+            <a href="/blog" className="hover:text-foreground transition-colors">Blog</a>
             <a href="/msp" className="hover:text-foreground transition-colors">Partner Portal</a>
           </nav>
           <div className="flex items-center gap-3">
@@ -169,6 +170,7 @@ export default function Home() {
               { label: "MSP / Partners", href: "#msp" },
               { label: "Pricing", href: "#pricing" },
               { label: "Free Trial", href: "/trial" },
+              { label: "Blog", href: "/blog" },
               { label: "Partner Portal", href: "/msp" },
             ].map(({ label, href }) => (
               <a key={label} href={href} className="text-sm text-muted-foreground hover:text-foreground transition-colors py-3 border-b border-border/40 last:border-0"
@@ -708,10 +710,10 @@ export default function Home() {
                   { label: "Features", href: "#features" },
                   { label: "Pricing", href: "#pricing" },
                   { label: "Free Trial", href: "/trial" },
-                  { label: "Compliance Center", href: "#compliance" },
-                  { label: "Training Modules", href: "#features" },
-                  { label: "Template Library", href: "#features" },
-                  { label: "Analytics", href: "#features" },
+                  { label: "Blog", href: "/blog" },
+                  { label: "Phishing simulation software", href: "/phishing-simulation-software" },
+                  { label: "Security awareness training", href: "/security-awareness-training" },
+                  { label: "Phishing training for MSPs", href: "/phishing-training-for-msps" },
                 ].map(({ label, href }) => (
                   <li key={label}><a href={href} className="hover:text-foreground transition-colors">{label}</a></li>
                 ))}
@@ -730,10 +732,10 @@ export default function Home() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 {[
                   { label: "KnowBe4 alternative", href: "/knowbe4-alternative" },
+                  { label: "KnowBe4 vs PhishSim", href: "/knowbe4-vs" },
+                  { label: "KnowBe4 pricing", href: "/knowbe4-pricing" },
+                  { label: "KnowBe4 for MSPs", href: "/knowbe4-for-msps" },
                   { label: "MSP Partner Portal", href: "/msp" },
-                  { label: "About Us", href: "mailto:info@phishsimai.com" },
-                  { label: "Contact Sales", href: "mailto:sales@phishsimai.com" },
-                  { label: "Support", href: "mailto:support@phishsimai.com" },
                   { label: "Privacy Policy", href: "/privacy" },
                   { label: "Terms of Service", href: "/terms" },
                 ].map(({ label, href }) => (

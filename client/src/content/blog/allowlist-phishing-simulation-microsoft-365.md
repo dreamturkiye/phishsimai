@@ -39,6 +39,6 @@ Allowlist *only* your simulation sender's domain and IPs. Don't broaden the rule
 
 Once Advanced Delivery is set, your simulations reach the inbox, your click and report rates reflect real behavior, and the training data you show an auditor or insurer is genuine.
 
-*Related: choosing a tool? See our [honest KnowBe4 alternative comparison for small teams and MSPs](/blog/knowbe4-alternative-small-teams-msps).*
+*Related: choosing a tool? See our [KnowBe4 alternative](/knowbe4-alternative) and [phishing simulation software](/phishing-simulation-software) guides, or the [long-form comparison](/blog/knowbe4-alternative-small-teams-msps).*
 
-> **Running simulations that keep landing in spam?** PhishSim AI gives you the exact domain and IPs to allowlist during setup, so your first campaign reaches the inbox. [Start a free trial →](/signup)
+> **Running simulations that keep landing in spam?** PhishSim AI gives you the exact domain and IPs to allowlist during setup, so your first campaign reaches the inbox. [Start a free trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=allowlist)

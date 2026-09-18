@@ -41,4 +41,4 @@ The organizations that treat this as a year-round program, not a renewal-week sc
 
 You don't need an enterprise platform to clear it. You need simulations that actually run, completion tracking, and exportable logs with timestamps. That's the whole ask — and it's exactly what a lightweight simulation tool provides without the enterprise contract.
 
-> **Renewal coming up?** PhishSim AI runs the simulations, tracks completion, and exports the timestamped logs your underwriter wants — start building trend data today. [See plans →](/pricing)
+> **Renewal coming up?** PhishSim AI runs the simulations, tracks completion, and exports the timestamped logs your underwriter wants — start building trend data today. [Start a free trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=cyber_insurance) · [See plans →](/pricing) · [Security awareness training](/security-awareness-training)

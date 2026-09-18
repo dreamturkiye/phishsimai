@@ -13,8 +13,11 @@ const { PRERENDER_ROUTES } = await import(pathToFileURL(ssrEntry).href);
 
 const SITE = "https://phishsimai.com";
 const today = new Date().toISOString().slice(0, 10);
-const priority = (r) => (r === "/" ? "1.0" : r === "/trial" ? "0.9" : r.startsWith("/blog/") ? "0.8" : "0.6");
-const changefreq = (r) => (r === "/" ? "weekly" : "monthly");
+const cluster = (r) =>
+  r.startsWith("/knowbe4") || r.includes("phishing") || r.includes("security-awareness");
+const priority = (r) =>
+  r === "/" ? "1.0" : r === "/trial" ? "0.9" : r.startsWith("/blog/") || cluster(r) ? "0.8" : r === "/blog" || r === "/pricing" ? "0.7" : "0.6";
+const changefreq = (r) => (r === "/" || r === "/trial" || r === "/blog" ? "weekly" : "monthly");
 
 const body = PRERENDER_ROUTES
   .map((r) =>

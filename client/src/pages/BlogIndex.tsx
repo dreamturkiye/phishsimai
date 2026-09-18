@@ -23,8 +23,17 @@ export default function BlogIndex() {
       </header>
       <main className="max-w-3xl mx-auto px-6 py-12">
         <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">Blog</h1>
-        <p className="text-muted-foreground mb-10">
+        <p className="text-muted-foreground mb-6">
           Phishing simulation, security awareness, and compliance - practical guides for MSPs and IT teams.
+        </p>
+        <p className="text-sm text-muted-foreground mb-10">
+          <a href="/trial?utm_source=seo&utm_medium=web&utm_campaign=blog_index" className="text-violet-400 hover:underline">Start a 30-day free trial</a>
+          {" · "}
+          <a href="/knowbe4-alternative" className="hover:underline">KnowBe4 alternative</a>
+          {" · "}
+          <a href="/phishing-simulation-software" className="hover:underline">Phishing simulation software</a>
+          {" · "}
+          <a href="/phishing-training-for-msps" className="hover:underline">Phishing training for MSPs</a>
         </p>
         <div className="space-y-6">
           {BLOG_POSTS.map((p) => (
