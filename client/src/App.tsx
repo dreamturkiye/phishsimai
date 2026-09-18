@@ -25,6 +25,8 @@ import TermsOfService from "./pages/TermsOfService";
 import Login from "./pages/Login";
 import TrialStart from "./pages/TrialStart";
 import KnowBe4Alternative from "./pages/KnowBe4Alternative";
+import PricingComparison from "./pages/PricingComparison";
+import MspPhishingTraining from "./pages/MspPhishingTraining";
 import HQ from "./pages/HQ";
 import HealTest from "./pages/HealTest";
 import { GlobalErrorHandler } from "./components/GlobalErrorHandler";
@@ -48,6 +50,9 @@ function Router() {
       <Route path="/trial" component={TrialStart} />
       <Route path="/knowbe4-alternative" component={KnowBe4Alternative} />
       <Route path="/knowbe4" component={KnowBe4Alternative} />
+      <Route path="/pricing-comparison" component={PricingComparison} />
+      <Route path="/msp-phishing-training" component={MspPhishingTraining} />
+      <Route path="/phishing-awareness-training" component={MspPhishingTraining} />
       <Route path="/pricing" component={Home} />
       <Route path="/invite/:token" component={AcceptInvite} />
       <Route path="/compliance" component={ComplianceCenter} />
