@@ -15,11 +15,18 @@ import {
   shouldCrisisUnlockTouch2,
   shouldPauseTouch1,
   shouldSkipTouch2ForPriceEra,
+  t1CanUseLeftoverDexHeadroom,
   TOUCH2_POST_ERA_BATCH1_LIMIT,
   TOUCH2_POST_ERA_EPOCH,
   TOUCH2_POST_ERA_SCALE_KEY,
 } from './sequenceBacklog'
 import { TOUCH2_COPY_ERA_CUTOFF } from './sequenceBacklog'
+import {
+  COMBINED_DAILY_CAP,
+  NEW_TOUCH_DAILY_CAP,
+  SECOND_TOUCH_DAILY_CAP,
+  newTouchAllowance,
+} from './outreachThrottle'
 
 describe('sequence backlog routing (no invented copy)', () => {
   it('skips the T2 price pitch for price-era T1 (second email uses approved T3 copy)', () => {
@@ -68,6 +75,50 @@ describe('sequence backlog routing (no invented copy)', () => {
     expect(shouldPauseTouch1(1100, true, { t1Starved: false, sanitizedEligible: 400 })).toBe(true)
     // Mass scale without an eligible count still pauses (legacy callers).
     expect(shouldPauseTouch1(1100, true, { t1Starved: false })).toBe(true)
+  })
+
+  it('does NOT pause T1 when T2 day-cap is exhausted and leftover combined can only go to T1 (live 2026-09-18)', () => {
+    // Live: sanitizedEligible=151 (one over small-refill), drainable≈775, crisis,
+    // T2=50/50 rem0, T1=36/50 rem14, combined 86/100 rem14. Pause zeroed dailyAllowance.
+    expect(NEW_TOUCH_DAILY_CAP).toBe(50)
+    expect(SECOND_TOUCH_DAILY_CAP).toBe(50)
+    expect(COMBINED_DAILY_CAP).toBe(100)
+    const live = {
+      t1Starved: false,
+      sanitizedEligible: 151,
+      newSentToday: 36,
+      secondSentToday: SECOND_TOUCH_DAILY_CAP,
+    }
+    expect(t1CanUseLeftoverDexHeadroom(live)).toBe(true)
+    expect(shouldPauseTouch1(775, true, live)).toBe(false)
+    expect(newTouchAllowance({ newSentToday: 36, secondSentToday: 50 })).toBeGreaterThan(0)
+    expect(newTouchAllowance({ newSentToday: 36, secondSentToday: 50 })).toBe(14)
+  })
+
+  it('still pauses T1 when T2 has Dex headroom so overdue drain prefers follow-ups', () => {
+    const draining = {
+      t1Starved: false,
+      sanitizedEligible: 151,
+      newSentToday: 36,
+      secondSentToday: 20,
+    }
+    expect(t1CanUseLeftoverDexHeadroom(draining)).toBe(false)
+    expect(shouldPauseTouch1(775, true, draining)).toBe(true)
+    expect(shouldPauseTouch1(1100, true, {
+      t1Starved: false,
+      sanitizedEligible: 400,
+      newSentToday: 10,
+      secondSentToday: 5,
+    })).toBe(true)
+  })
+
+  it('does not unpause when T2 is full but T1/combined rem is also 0', () => {
+    expect(shouldPauseTouch1(775, true, {
+      t1Starved: false,
+      sanitizedEligible: 151,
+      newSentToday: 50,
+      secondSentToday: 50,
+    })).toBe(true)
   })
 
   it('unlocks remaining approved T2 during operating crisis without waiting for the Aug-3 hold flag', () => {
@@ -164,7 +215,14 @@ describe('drain is wired onto live send paths', () => {
     expect(seq).toContain('loadTouch1HealthForPause')
     expect(seq).toContain('t1Starved')
     expect(seq).toContain('sanitizedEligible: t1Health?.sanitizedEligible ?? 0')
-    expect(seq).toMatch(/return \{ t1Starved: t1\.sanitizedEligible <= 0, sanitizedEligible: t1\.sanitizedEligible \}/)
+    expect(seq).toContain('secondSentToday: throttleCounts.secondSentToday')
+    expect(seq).toContain('newSentToday: throttleCounts.newSentToday')
+    const pauseAt = seq.indexOf('shouldPauseTouch1(backlog')
+    const countsAt = seq.lastIndexOf('const throttleCounts = await sentTodayCounts(sql)', pauseAt)
+    expect(pauseAt).toBeGreaterThan(-1)
+    expect(countsAt).toBeGreaterThan(-1)
+    expect(countsAt).toBeLessThan(pauseAt)
+    expect(seq).toMatch(/secondSentToday: t1\.secondSentToday/)
     expect(seq).not.toMatch(/WARM_CTA_TOUCHES = \[[^\]]*93/)
     expect(seq).toMatch(/export const DAILY_SEND_LIMIT = 20/)
     expect(hb).toContain('runSequenceDrainTick')

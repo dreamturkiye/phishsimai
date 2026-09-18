@@ -652,11 +652,21 @@ const GEO: string[] = [...SEND_ALLOWED_COUNTRIES]
 // July-12 lesson on the other product was an env flag everyone believed was set and never was.
 
 /** Drain tick + sequence JSON share this so pauseNewTouch1 cannot freeze T1 while starved or a small quality refill. */
-async function loadTouch1HealthForPause(sql: any): Promise<{ t1Starved: boolean; sanitizedEligible: number }> {
+async function loadTouch1HealthForPause(sql: any): Promise<{
+  t1Starved: boolean
+  sanitizedEligible: number
+  newSentToday?: number
+  secondSentToday?: number
+}> {
   try {
     const { loadTouch1Health } = await import('./touch1Health')
     const t1 = await loadTouch1Health(sql)
-    return { t1Starved: t1.sanitizedEligible <= 0, sanitizedEligible: t1.sanitizedEligible }
+    return {
+      t1Starved: t1.sanitizedEligible <= 0,
+      sanitizedEligible: t1.sanitizedEligible,
+      newSentToday: t1.newSentToday,
+      secondSentToday: t1.secondSentToday,
+    }
   } catch {
     // Fail toward T1 — a health-read failure must not freeze the money path behind pauseNewTouch1.
     return { t1Starved: true, sanitizedEligible: 0 }
@@ -706,18 +716,22 @@ export async function runFullSequence() {
   const { loadTouch1Health, whyT1SentZero } = await import('./touch1Health')
   const t1Health = await loadTouch1Health(sql, now).catch(() => null)
   const t1Starved = !t1Health || t1Health.sanitizedEligible <= 0
-  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis, {
-    t1Starved,
-    sanitizedEligible: t1Health?.sanitizedEligible ?? 0,
-  })
   if (operatingCrisis) {
     await runTouch2Batch(sql).catch(() => {})
   }
   // PS-OUTREACH-THROTTLE-01: touch-1 obeys the SAME combined 100/day ceiling as touch-2, so new +
   // second-touch can never exceed 100 on the domain in a day. Its own type cap stays 50 (the ramp).
   // Dual crisis + large overdue follow-up pool: pause NEW T1 this hour so Dex budget drains
-  // stuck sequences first (2/136 7d reply rate — do not scale bad TOF).
+  // stuck sequences first (2/136 7d reply rate — do not scale bad TOF) — BUT only while T2 still
+  // has headroom. Live 2026-09-18: T2=50/50, combined rem≈14, sanitizedEligible=151 (one over
+  // the small-refill band) → pause zeroed T1 for no drain benefit. Count AFTER this tick's T2.
   const throttleCounts = await sentTodayCounts(sql)
+  const pauseNewTouch1 = shouldPauseTouch1(backlog?.drainableOverdue ?? 0, operatingCrisis, {
+    t1Starved,
+    sanitizedEligible: t1Health?.sanitizedEligible ?? 0,
+    newSentToday: throttleCounts.newSentToday,
+    secondSentToday: throttleCounts.secondSentToday,
+  })
   const dailyAllowance = pauseNewTouch1
     ? 0
     : Math.min(dailySendCap(now), newTouchAllowance(throttleCounts)) // PS-RAMP-01 warm-up ∧ combined cap
@@ -1175,7 +1189,14 @@ export async function runSequenceDrainTick(opts: {
   }
 
   out.backlog = await countSequenceBacklog(sql).catch(() => out.backlog)
-  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis, drainT1)
+  const drainCounts = await sentTodayCounts(sql).catch(() => null)
+  out.pauseNewTouch1 = shouldPauseTouch1(out.backlog.drainableOverdue, operatingCrisis, {
+    ...drainT1,
+    ...(drainCounts ? {
+      newSentToday: drainCounts.newSentToday,
+      secondSentToday: drainCounts.secondSentToday,
+    } : {}),
+  })
   return out
 }
 
