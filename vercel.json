@@ -62,6 +62,14 @@
       "destination": "/trial/index.html"
     },
     {
+      "source": "/signup",
+      "destination": "/trial/index.html"
+    },
+    {
+      "source": "/register",
+      "destination": "/trial/index.html"
+    },
+    {
       "source": "/knowbe4-alternative",
       "destination": "/knowbe4-alternative/index.html"
     },

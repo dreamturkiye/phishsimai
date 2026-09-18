@@ -9,11 +9,26 @@ export const getLoginUrl = (returnPath?: string) => {
   return base;
 };
 
-export const getSignupUrl = (returnPath?: string) => {
+/** Canonical public trial URL with UTM. Organic/SEO pages must use this, not /signup or /pricing. */
+export const getTrialUrl = (opts?: {
+  source?: string;
+  medium?: string;
+  campaign?: string;
+  returnPath?: string;
+}) => {
   const params = new URLSearchParams();
-  params.set("utm_source", "marketing_site");
-  params.set("utm_medium", "web");
-  params.set("utm_campaign", "homepage");
-  if (returnPath) params.set("redirect", returnPath);
+  params.set("utm_source", opts?.source || "seo");
+  params.set("utm_medium", opts?.medium || "web");
+  params.set("utm_campaign", opts?.campaign || "organic");
+  if (opts?.returnPath) params.set("redirect", opts.returnPath);
   return `/trial?${params.toString()}`;
+};
+
+export const getSignupUrl = (returnPath?: string) => {
+  return getTrialUrl({
+    source: "marketing_site",
+    medium: "web",
+    campaign: "homepage",
+    returnPath,
+  });
 };

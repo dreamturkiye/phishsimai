@@ -41,7 +41,7 @@ Three ways teams accidentally lie to themselves with this metric:
 
 Don't chase a specific number. Set a baseline with a realistic first simulation, run monthly, pair every click with targeted training, and watch two lines: click rate trending down and report rate trending up. That's the program working — and it's exactly the evidence auditors and cyber insurers now expect to see documented.
 
-[PhishSim AI](https://phishsimai.com) tracks both click and report rates per user over time, with the dated logs that turn your benchmark into a defensible record for compliance and insurance renewals.
+[PhishSim AI](/trial?utm_source=blog&utm_medium=web&utm_campaign=phishing-click-rate-benchmarks-2026) tracks both click and report rates per user over time, with the dated logs that turn your benchmark into a defensible record for compliance and insurance renewals. [Start a free 30-day trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=phishing-click-rate-benchmarks-2026)
 
 ## Frequently asked questions
 
