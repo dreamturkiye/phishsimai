@@ -3,7 +3,7 @@
 **phishsimai.com | June 30, 2026 | Dream Türkiye**
 
 > **Canonical reference:** ScrollFuel master doc at `/Users/kaan/ugc-agency/KAAN_AI_OS_V4.5.md`  
-> **Architect specs:** `docs/architect/SPEC-self-heal-v4.5.1.md`  
+> **Architect specs:** `docs/architect/SPEC-self-heal-v4.5.1.md`, `docs/architect/SPEC-watchdog-stall-self-heal.md`  
 > **Implementer:** Local Ollama `codegeex4:9b` — Founder/Architect verifies only, does not code.
 
 ---
@@ -21,6 +21,7 @@
 | **4.5.6** | **Jul 2026** | **Sarah LinkedIn** — WYSIWYG preview, reference-template hero images, PostForMe publish |
 | **4.5.8** | **Sep 17 2026** | **T1 sanitize restore** — QEV wired into `sanitizeRefill`; empty MEV no longer silently starves T1. See `docs/architect/SPEC-t1-sanitize-restore.md` |
 | **4.5.9** | **Sep 17 2026** | **T1 quality-refill no-pause** — crisis drain does not zero T1 when sanitized eligible is 1–150. See `docs/architect/SPEC-t1-quality-refill-no-pause.md` |
+| **4.5.10** | **Sep 19 2026** | **Watchdog stall self-heal** — send-stuck / research-stuck auto-invokes sequence + researcher (or marks reclaim). Founder Telegram only on 2nd+ consecutive heal failure. No Dex raise. No blast. No touch 93. See `docs/architect/SPEC-watchdog-stall-self-heal.md` |
 
 ---
 
@@ -175,7 +176,8 @@ Saved in: `.cursor/rules/founder-architect-workflow.mdc`, `janet_memory.founder_
 | Janet HQ chat LLM | `janet_hq_chat` | 🚨 SYSTEM ISSUE | ✅ RESOLVED |
 | Agent watchdog heal | `agent_{id}` | 🚨 HEAL FAILED + Marcus task | ✅ HEALED |
 | Cron QA smoke | `qa_smoke` | 🚨 QA failed | ✅ RESOLVED |
-| Heartbeat / watchdog | outreach metrics | 🚨 WATCHDOG | ✅ RESOLVED |
+| Heartbeat / watchdog | outreach metrics | 🚨 WATCHDOG (bounce / T1 starve only) | ✅ RESOLVED |
+| Watchdog lead stall | `watchdog_stall_heal` | auto sequence + researcher / reclaim; 🚨 page only on 2nd+ consecutive heal fail | Stall heal OK (no page) |
 
 Implementation: `server/os/selfHeal.ts` — `openSystemAlert` / `resolveSystemAlert` (port from ScrollFuel)
 

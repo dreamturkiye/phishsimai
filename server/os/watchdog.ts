@@ -62,14 +62,13 @@ export async function runWatchdog() {
       AND ((status = 'researching' AND last_attempt_at < NOW() - INTERVAL '2 days')
            OR (status = 'pending' AND attempts >= 3))`
       .catch(() => [{ n: 0 }]))[0].n)
-    const stalledN = sendStuck + researchStuck
-    if (stalledN > 20) {
-      result.issues_found++
-      await sendTelegram(`PHISHSIMAI WATCHDOG: ${stalledN} leads genuinely stalled >2d — send-stuck ${sendStuck} (→ /api/os/sequence), research-stuck ${researchStuck} (→ /api/os/researcher). Raw unsanitized reservoir excluded by design.`)
-      result.actions_taken.push(`Stall alert: ${stalledN} (send ${sendStuck}, research ${researchStuck})`)
-    } else {
-      result.actions_taken.push(`Lead stall OK: ${stalledN} genuinely stalled (raw reservoir excluded)`)
-    }
+    // PS-WATCHDOG-STALL-HEAL-01: reclaimable stalls are a drain job. Auto-invoke /
+    // queue sequence + researcher (or mark reclaim). Founder Telegram only after
+    // the 2nd+ consecutive heal failure — never a homework page to hit the crons.
+    const { healLeadStallsFromWatchdog } = await import('./stallReclaim')
+    const stall = await healLeadStallsFromWatchdog({ sendStuck, researchStuck })
+    result.actions_taken.push(...stall.actions)
+    if (stall.paged) result.issues_found++
   } catch (e: any) {
     result.actions_taken.push('Stall check error: ' + e.message?.slice(0, 100))
   }
