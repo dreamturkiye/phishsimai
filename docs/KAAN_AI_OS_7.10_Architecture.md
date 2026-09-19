@@ -492,6 +492,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-18 | O.32.17 | Coded self-learn: `invalidateOpenThread` + `resolveRuntimeAction` rewrite convert_warm hammer; Dex `combined_daily_cap` / `new_touch_daily_cap` ≠ PS-T1-STARVE (no Marcus, no founder page); OOO never reopens / never marks inbound engaged. Lessons persist the rewritten next action. | Draft #328 left convert_warm in working memory; #331 fixed T3 dual-stamp counts but silence still queued starve / paged founder. Owner: no babysitting. |
 | 2026-09-18 | O.32.18 | Crisis `pauseNewTouch1` skips when T2 day-cap is exhausted and leftover combined/T1 rem > 0. Small-refill band stays ≤150; crisis+overdue still pauses while T2 has headroom. Caps 50/50/100. | Live: sanitizedEligible=151, drainable≈775, T2=50/50, combined rem≈14, `/api/os/sequence` pause=true sent=0. Historical-outbox Dex count was a false diagnosis (`t2_outbox_today=50`). |
 | 2026-09-18 | O.32.19 | Organic/SEO trial conversion: `/signup` `/register` rewrite to prerendered `/trial`; KnowBe4 CTA is crawlable `<a href="/trial">`; blog chrome + posts CTA to `/trial` (not homepage/`/pricing`/`/signup`); `/trial` required fields first. Meta + FAQ JSON-LD + internal links for KnowBe4 alternative / phishing training. No touch 93. No Dex raise. | Live 2026-09-18: TRUE=1 / $0. `/signup` was empty SPA shell. Allowlist blog linked `/signup`. KnowBe4 CTA was JS `onClick`. |
+| 2026-09-19 | O.32.20 | KnowBe4 / MSP / seat-tax cluster: six unique prerendered landings + hub; Organization/SoftwareApplication/FAQPage JSON-LD; 301 soft-404 aliases onto the cluster; `/blog` rewrite. Preserves O.32.19 trial CTAs/meta. No touch 93. No Dex raise. | #337 merged; #338/#339 conflicted. Consolidated as #340. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -829,7 +830,7 @@ Inventory `trialAcquisitionChannels.ts`, fired from `runCgoConversionShift`:
 | Magic-link checkout | live | paid HMAC `/checkout` |
 | LinkedIn trial draft | live, auto-publish in crisis | frozen 60¢ / $299/500 + `TRIAL_CTA_URL`; ≤1 post/day; quality + de-dupe. **No founder approval gate.** |
 | Public social publish | **crisis override** | Structural `PUBLIC_SOCIAL_POSTING_ENABLED=false`. Override when credentials exist through 2026-09-25 (or `SOCIAL_CRISIS_PUBLISH=1`). **Kill: `SOCIAL_CRISIS_PUBLISH=0`.** Reddit: allowed subs, no comment link-drop, 3 comments + 1 post/day. |
-| KnowBe4 alternative SEO | live | `/knowbe4-alternative` prerendered → `/trial` |
+| KnowBe4 alternative SEO | live | `/knowbe4-alternative` hub + `/knowbe4-vs` `/knowbe4-pricing` `/knowbe4-for-msps` `/phishing-simulation-software` `/security-awareness-training` `/phishing-training-for-msps` → `/trial` |
 | Magic-link **trial** start | **staged** | hard stop #5 / protected auth — do not build |
 
 Bandit: `computeAdaptiveSplit(..., 'replied')` — not opens. No new cold copy. CAN-SPAM / geo allowlist / five hard stops unchanged.
