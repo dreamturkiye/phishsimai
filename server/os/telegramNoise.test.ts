@@ -72,6 +72,18 @@ describe('founder Telegram is for faults, not SME brainstorms', () => {
     expect(heal).toContain('stall self-heal failed')
   })
 
+  it('outreach funnel does not page send-cron/send-zero homework for reclaimable or Dex throttle', () => {
+    const src = readFileSync('server/os/agents/mspHubHarvest.ts', 'utf8')
+    expect(src).toContain('decideOutreachSendHealth')
+    expect(src).not.toContain('PhishSim SEND FAILED')
+    expect(src).not.toContain('PhishSim SEND BROKEN')
+    expect(src).not.toMatch(/Check \/api\/os\/sequence/)
+    const page = readFileSync('server/os/sendHealthPage.ts', 'utf8')
+    expect(page).toContain('isDexDailyThrottle')
+    expect(page).toContain('combined_daily_cap')
+    expect(page).toContain('self-heal')
+  })
+
   it('MSP admin FORBIDDEN errors carry a human message', () => {
     const src = readFileSync('server/routers.ts', 'utf8')
     expect(src).not.toMatch(/TRPCError\(\{ code: "FORBIDDEN" \}\)/)

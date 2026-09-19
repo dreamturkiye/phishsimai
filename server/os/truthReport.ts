@@ -53,8 +53,8 @@ export const CRON_OUTPUT: { cron: string; schedule: string; table: string; col: 
     col: 'GREATEST(touch1_sent_at, touch2_sent_at, touch3_sent_at, touch4_sent_at)',
   },
   // PS-SEND-HEALTH-02 — who watches the send-health watcher. The 08:30 outreach-funnel is the
-  // FAST send tripwire: it fires "🚨 SEND CRON DID NOT RUN" the same morning a 07:00 send is
-  // missed (via agent_health 'aria'). But nothing watched the WATCHER — if the funnel itself
+  // FAST send tripwire: 08:30 classifies send-cron/send-zero (self-heal stale Aria,
+    // defer fresh, suppress Dex-cap false positives). But nothing watched the WATCHER — if the funnel itself
   // stopped running, its absence read as silence, exactly the failure the founder called out
   // ("no news should mean the monitor died, not that things are fine"). The funnel is the ONLY
   // writer of credit_readings, so a stale read_at here means the send-health check went dark, and
