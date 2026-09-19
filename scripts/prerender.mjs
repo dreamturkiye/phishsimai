@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { assertPrerenderRewrites, stripStaticHead } from "./assert-prerender-rewrites.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "dist", "public");
@@ -20,15 +21,8 @@ console.log("[prerender] app.html <- pristine SPA shell (app-route fallback)");
 
 const { render, PRERENDER_ROUTES } = await import(pathToFileURL(ssrEntry).href);
 
-// Strip every SEO tag from the shell so the injected per-route block is the single source (no dupes).
-function stripStaticHead(html) {
-  return html
-    .replace(/<title>[\s\S]*?<\/title>\s*/i, "")
-    .replace(/<meta name="description"[^>]*>\s*/gi, "")
-    .replace(/<link rel="canonical"[^>]*>\s*/gi, "")
-    .replace(/<meta property="og:[^"]*"[^>]*>\s*/gi, "")
-    .replace(/<meta name="twitter:[^"]*"[^>]*>\s*/gi, "");
-}
+const vercel = JSON.parse(fs.readFileSync(path.join(root, "vercel.json"), "utf8"));
+assertPrerenderRewrites(vercel, PRERENDER_ROUTES);
 
 let written = 0;
 for (const route of PRERENDER_ROUTES) {
