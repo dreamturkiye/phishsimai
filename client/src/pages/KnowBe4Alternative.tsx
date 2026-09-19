@@ -2,25 +2,30 @@ import { Seo } from "@/components/Seo";
 import { SeoTrialHeader } from "@/components/SeoTrialChrome";
 import { KNOWBE4_FAQ, seoForPath } from "@/lib/seoMeta";
 import { getTrialUrl } from "@/const";
+import { Button } from "@/components/ui/button";
+import { CLUSTER_NAV, TRIAL_OFFER } from "@/content/seoLandings";
 import { Check, ArrowRight } from "lucide-react";
 
 const TRIAL = getTrialUrl({ campaign: "knowbe4_alternative" });
 
 const ROWS: Array<{ label: string; us: string; them: string }> = [
-  { label: "Best fit", us: "MSPs and small teams", them: "Enterprise security orgs" },
+  { label: "Best fit", us: "MSPs, IT teams, mid-market books", them: "Enterprise security orgs" },
   { label: "Time to first sim", us: "About 10 minutes, self-serve", them: "Onboarding / sales cycle" },
   { label: "Trial", us: "30 days, no credit card", them: "Usually a demo-gated eval" },
   { label: "Growth price", us: "$299/mo for 500 users (60¢ each)", them: "Enterprise SKUs, per-seat minimums" },
   { label: "MSP tenancy", us: "Multi-client from day one", them: "Built for a single enterprise tenant" },
+  { label: "White-label", us: "Logo, colors, custom domain on Pro+", them: "Partner / higher-tier packaging" },
+  { label: "Compliance evidence", us: "HIPAA, GLBA, CMMC, NY DFS, SOC 2 packs", them: "Broad library + mature reporting suite" },
+  { label: "PSA ticketing", us: "ConnectWise Manage & Halo (real reports only)", them: "Broad enterprise integrations" },
 ];
 
 /**
- * Lightweight public SEO comparison. Competitor names stay off the pricing page
- * (PS-PRICE-05); this dedicated route is the honest KnowBe4-alternative landing
- * and CTAs to /trial with the live frozen offer.
+ * Cluster hub for KnowBe4-alternative intent. Competitor names stay off /pricing
+ * (PS-PRICE-05). Trial CTAs are crawlable <a href> (PS-SEO-05).
  */
 export default function KnowBe4Alternative() {
   const seo = seoForPath("/knowbe4-alternative");
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Seo title={seo.title} description={seo.description} path={seo.path} />
@@ -32,10 +37,17 @@ export default function KnowBe4Alternative() {
         </h1>
         <p className="text-muted-foreground leading-relaxed mb-8">
           KnowBe4 is a capable enterprise platform. If you need its depth and have the budget, it is a
-          defensible choice. If you are an MSP or a small team that needs simulations, training, and
-          reportable logs without a procurement cycle, PhishSim AI is the leaner path: 60¢/user,
-          $299/mo for 500 seats, 30-day trial, no credit card.
+          defensible choice. If you are an MSP, a mid-market IT team, or a small company that needs
+          simulations, training, and reportable logs without a procurement cycle, PhishSim AI is the
+          leaner path: 60¢/user, $299/mo for 500 seats, 30-day trial, no credit card.
         </p>
+
+        <Button asChild className="h-11 bg-violet-600 hover:bg-violet-500 mb-8">
+          <a href={TRIAL}>
+            Start 30-day free trial <ArrowRight className="w-4 h-4 ml-2" />
+          </a>
+        </Button>
+        <p className="mb-8 -mt-5 text-xs text-muted-foreground">{TRIAL_OFFER}</p>
 
         <div className="overflow-x-auto rounded-xl border border-border/60 mb-8">
           <table className="w-full text-sm">
@@ -58,28 +70,39 @@ export default function KnowBe4Alternative() {
           </table>
         </div>
 
-        <ul className="space-y-2 text-sm text-muted-foreground mb-8">
-          {[
-            "No invented customer counts or savings claims",
-            "First campaign is three clicks after you import a list",
-            "We are not claiming to out-feature KnowBe4 — we are claiming a better fit for this tier",
-          ].map((t) => (
-            <li key={t} className="flex items-start gap-2">
-              <Check className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-              {t}
-            </li>
-          ))}
-        </ul>
+        <section className="mb-10">
+          <h2 className="text-xl font-semibold mb-3">The honest split</h2>
+          <p className="text-muted-foreground leading-relaxed mb-3">
+            We are not claiming to out-feature KnowBe4. We are claiming a better fit for MSPs and
+            teams that run the simulate → train → report loop themselves. No invented customer
+            counts, no fabricated discount math, no invented KnowBe4 list price.
+          </p>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            {[
+              "First campaign is three clicks after you import a list",
+              "Public pricing — Growth $299/mo covers 500 users",
+              "Native multi-client tenancy for MSP books, including larger 500–10,000 seat practices",
+            ].map((t) => (
+              <li key={t} className="flex items-start gap-2">
+                <Check className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                {t}
+              </li>
+            ))}
+          </ul>
+        </section>
 
-        <a
-          href={TRIAL}
-          className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-md bg-violet-600 hover:bg-violet-500 text-primary-foreground text-sm font-medium"
-        >
-          Start 30-day free trial <ArrowRight className="w-4 h-4" />
-        </a>
-        <p className="mt-3 text-xs text-muted-foreground">Full access. No card. 60¢/user · $299/500 seats.</p>
+        <section className="mb-10">
+          <h2 className="text-xl font-semibold mb-3">Go deeper on the query you actually typed</h2>
+          <ul className="space-y-2 text-sm">
+            <li><a href="/knowbe4-vs" className="text-violet-400 hover:underline">KnowBe4 vs PhishSim AI</a> — side-by-side fit, tenancy, time-to-value.</li>
+            <li><a href="/knowbe4-pricing" className="text-violet-400 hover:underline">KnowBe4 pricing</a> — why “cheaper than KnowBe4” is a seat-tax structure, not a fake invoice.</li>
+            <li><a href="/knowbe4-for-msps" className="text-violet-400 hover:underline">KnowBe4 for MSPs</a> — multi-tenant books vs a single-enterprise SAT.</li>
+            <li><a href="/phishing-training-for-msps" className="text-violet-400 hover:underline">Phishing training for MSPs</a> — packaging the service for larger client books.</li>
+            <li><a href="/blog/knowbe4-alternative-small-teams-msps" className="text-violet-400 hover:underline">Long-form comparison</a> — the original honest write-up.</li>
+          </ul>
+        </section>
 
-        <section className="mt-14">
+        <section className="mb-10">
           <h2 className="text-xl font-bold mb-4">KnowBe4 alternative FAQ</h2>
           <dl className="space-y-4">
             {KNOWBE4_FAQ.map((f) => (
@@ -90,6 +113,13 @@ export default function KnowBe4Alternative() {
             ))}
           </dl>
         </section>
+
+        <Button asChild className="h-11 bg-violet-600 hover:bg-violet-500">
+          <a href={TRIAL}>
+            Start 30-day free trial <ArrowRight className="w-4 h-4 ml-2" />
+          </a>
+        </Button>
+        <p className="mt-3 text-xs text-muted-foreground">Full access. No card. 60¢/user · $299/500 seats.</p>
 
         <nav className="mt-14" aria-label="Related phishing training guides">
           <h2 className="text-xl font-bold mb-3">Related phishing training guides</h2>
@@ -114,6 +144,15 @@ export default function KnowBe4Alternative() {
                 Allowlist phishing simulations in Microsoft 365
               </a>
             </li>
+          </ul>
+        </nav>
+
+        <nav aria-label="Cluster" className="mt-10 text-sm text-muted-foreground">
+          <p className="font-semibold text-foreground mb-2">More on this topic</p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {CLUSTER_NAV.filter((l) => l.href !== "/knowbe4-alternative").map((l) => (
+              <li key={l.href}><a href={l.href} className="hover:text-foreground underline-offset-2 hover:underline">{l.label}</a></li>
+            ))}
           </ul>
         </nav>
       </main>

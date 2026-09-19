@@ -2,9 +2,11 @@
 // component (hydration) and the build-time prerender (raw HTML) so the two can never drift. The
 // prerender bakes headTags() into the served <head>; helmet re-applies the same values client-side.
 import { getPost } from "@/content/blog";
+import { getLanding, HOME_FAQS, type SeoFaq } from "@/content/seoLandings";
 
 const SITE = "https://phishsimai.com";
 const OG = `${SITE}/brand/phishsim-og-1200x630.png`;
+const LOGO = `${SITE}/brand/phishsim-favicon-512.png`;
 
 export interface RouteMeta {
   title: string;
@@ -65,6 +67,10 @@ export function seoForPath(pathname: string): RouteMeta {
       path: "/knowbe4-alternative",
     };
   }
+  const landing = getLanding(pathname);
+  if (landing) {
+    return { title: landing.title, description: landing.description, path: landing.path };
+  }
   return {
     title: "Phishing Training & Simulation for MSPs — PhishSim AI",
     description: "Phishing training and AI simulations for MSPs. KnowBe4 alternative for small teams: 60¢/user, $299/500, 30-day free trial, no card. Live in 10 minutes.",
@@ -80,16 +86,75 @@ export function headTags(m: RouteMeta, ogImage: string = OG): string {
     `<title>${esc(m.title)}</title>`,
     `<meta name="description" content="${esc(m.description)}" />`,
     `<link rel="canonical" href="${url}" />`,
+    `<meta name="robots" content="index,follow" />`,
     `<meta property="og:title" content="${esc(m.title)}" />`,
     `<meta property="og:description" content="${esc(m.description)}" />`,
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${ogImage}" />`,
     `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="PhishSim AI" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${esc(m.title)}" />`,
     `<meta name="twitter:description" content="${esc(m.description)}" />`,
     `<meta name="twitter:image" content="${ogImage}" />`,
   ].join("\n    ");
+}
+
+const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
+
+function organizationLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "PhishSim AI",
+    url: SITE,
+    logo: { "@type": "ImageObject", url: LOGO },
+    email: "info@phishsimai.com",
+    telephone: "+1-443-594-1184",
+  };
+}
+
+function softwareLd() {
+  return {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "PhishSim AI",
+    applicationCategory: "SecurityApplication",
+    operatingSystem: "Web",
+    url: SITE,
+    description:
+      "AI phishing simulation and security awareness training for MSPs and IT teams. Public pricing from $149/mo.",
+    offers: {
+      "@type": "Offer",
+      price: "149.00",
+      priceCurrency: "USD",
+      url: `${SITE}/pricing`,
+    },
+    publisher: { "@type": "Organization", name: "PhishSim AI", url: SITE },
+  };
+}
+
+function faqLd(faq: SeoFaq[]) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faq.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
+}
+
+function breadcrumbLd(path: string, name: string) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE },
+      { "@type": "ListItem", position: 2, name, item: `${SITE}${path}` },
+    ],
+  };
 }
 
 // PS-SEO-03: JSON-LD for a route — baked into the prerendered <head> so it's in the raw HTML (not
@@ -109,60 +174,57 @@ export const KNOWBE4_FAQ: Array<{ q: string; a: string }> = [
   },
 ];
 
+// PS-SEO-03 / PS-SEO-05: JSON-LD baked into prerendered <head>.
+// Marketing routes get Organization + SoftwareApplication (no review/star schema — we have no reviews).
+// Landings + home FAQ get FAQPage. Blog posts keep BlogPosting.
 export function jsonLdFor(pathname: string): string {
-  const script = (obj: unknown) => `<script type="application/ld+json">${JSON.stringify(obj)}</script>`;
-  const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: `${SITE}/brand/phishsim-favicon-512.png` } };
-
-  if (pathname === "/knowbe4-alternative" || pathname === "/knowbe4") {
-    return [
-      script({
-        "@context": "https://schema.org",
-        "@type": "WebPage",
-        name: "KnowBe4 Alternative for MSPs (2026) — Free Trial | PhishSim AI",
-        description: "Honest KnowBe4 alternative for MSPs and small teams: 60¢/user, $299/mo for 500 seats, 30-day free trial, no credit card.",
-        url: `${SITE}/knowbe4-alternative`,
-        publisher,
-      }),
-      script({
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        mainEntity: KNOWBE4_FAQ.map((f) => ({
-          "@type": "Question",
-          name: f.q,
-          acceptedAnswer: { "@type": "Answer", text: f.a },
-        })),
-      }),
-    ].join("\n    ");
-  }
+  const tags: string[] = [script(organizationLd()), script(softwareLd())];
 
   const slug = blogSlug(pathname);
-  if (!slug) return "";
-  const post = getPost(slug);
-  if (!post) return "";
-  const url = `${SITE}/blog/${slug}`;
-  const tags = [
-    script({
-      "@context": "https://schema.org",
-      "@type": "BlogPosting",
-      headline: post.title,
-      description: post.description,
-      url,
-      mainEntityOfPage: url,
-      datePublished: post.datePublished,
-      dateModified: post.datePublished,
-      image: OG,
-      author: { "@type": "Organization", name: "PhishSim AI" },
-      publisher,
-    }),
-  ];
-  if (post.faq?.length) {
-    tags.push(
-      script({
-        "@context": "https://schema.org",
-        "@type": "FAQPage",
-        mainEntity: post.faq.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
-      }),
-    );
+  if (slug) {
+    const post = getPost(slug);
+    if (post) {
+      const url = `${SITE}/blog/${slug}`;
+      const publisher = { "@type": "Organization", name: "PhishSim AI", logo: { "@type": "ImageObject", url: LOGO } };
+      tags.push(
+        script({
+          "@context": "https://schema.org",
+          "@type": "BlogPosting",
+          headline: post.title,
+          description: post.description,
+          url,
+          mainEntityOfPage: url,
+          datePublished: post.datePublished,
+          dateModified: post.datePublished,
+          image: OG,
+          author: { "@type": "Organization", name: "PhishSim AI" },
+          publisher,
+        }),
+      );
+      if (post.faq?.length) tags.push(script(faqLd(post.faq)));
+      tags.push(script(breadcrumbLd(`/blog/${slug}`, post.title)));
+      return tags.join("\n    ");
+    }
   }
+
+  if (pathname === "/" || pathname.startsWith("/pricing")) {
+    tags.push(script(faqLd(HOME_FAQS)));
+  }
+
+  if (pathname === "/knowbe4-alternative" || pathname === "/knowbe4") {
+    tags.push(script(faqLd(KNOWBE4_FAQ)));
+    tags.push(script(breadcrumbLd("/knowbe4-alternative", "KnowBe4 Alternative for MSPs (2026) — Free Trial | PhishSim AI")));
+  } else {
+    const landing = getLanding(pathname);
+    if (landing) {
+      if (landing.faq?.length) tags.push(script(faqLd(landing.faq)));
+      tags.push(script(breadcrumbLd(landing.path, landing.h1)));
+    } else if (pathname === "/trial" || pathname === "/signup" || pathname === "/register") {
+      tags.push(script(breadcrumbLd("/trial", "Start your 30-day free trial")));
+    } else if (pathname === "/blog" || pathname === "/blog/") {
+      tags.push(script(breadcrumbLd("/blog", "Phishing Training Guides")));
+    }
+  }
+
   return tags.join("\n    ");
 }

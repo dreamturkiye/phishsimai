@@ -36,7 +36,7 @@ The right alternative is defined by the MSP reality, not the feature checklist:
 
 Proofpoint gives you enterprise depth you'll mostly not use as an MSP, at a price and operational weight that fights your margins. An MSP-first tool trades some of that enterprise surface area for the things that actually matter to you: multi-tenancy, fast onboarding, fitting economics, and a client-ready evidence pack.
 
-[PhishSim AI](/trial?utm_source=blog&utm_medium=web&utm_campaign=proofpoint-alternative-msp-2026) is built for the MSP model specifically — multi-tenant from the ground up, priced for small-client books, with the per-client evidence pack that satisfies auditors and insurers. If you're running simulations across clients, that's the fit Proofpoint isn't designed for. [Start a free 30-day trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=proofpoint-alternative-msp-2026)
+[PhishSim AI](/phishing-training-for-msps) is built for the MSP model specifically — multi-tenant from the ground up, priced for small-client books, with the per-client evidence pack that satisfies auditors and insurers. If you're running simulations across clients, that's the fit Proofpoint isn't designed for. Same story if you arrived from a [KnowBe4 for MSPs](/knowbe4-for-msps) search. [Start a free 30-day trial →](/trial?utm_source=blog&utm_medium=web&utm_campaign=proofpoint-alternative-msp-2026)
 
 ## Frequently asked questions
 

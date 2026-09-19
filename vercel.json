@@ -22,6 +22,36 @@
       ],
       "destination": "https://phishsimai.com/:path*",
       "permanent": true
+    },
+    {
+      "source": "/knowbe4-vs-phishsimai",
+      "destination": "/knowbe4-vs",
+      "permanent": true
+    },
+    {
+      "source": "/vs/knowbe4",
+      "destination": "/knowbe4-vs",
+      "permanent": true
+    },
+    {
+      "source": "/compare/knowbe4",
+      "destination": "/knowbe4-alternative",
+      "permanent": true
+    },
+    {
+      "source": "/phishing-awareness-training",
+      "destination": "/security-awareness-training",
+      "permanent": true
+    },
+    {
+      "source": "/pricing-comparison",
+      "destination": "/knowbe4-pricing",
+      "permanent": true
+    },
+    {
+      "source": "/msp-phishing-training",
+      "destination": "/phishing-training-for-msps",
+      "permanent": true
     }
   ],
   "rewrites": [
@@ -78,6 +108,30 @@
       "destination": "/knowbe4-alternative/index.html"
     },
     {
+      "source": "/knowbe4-vs",
+      "destination": "/knowbe4-vs/index.html"
+    },
+    {
+      "source": "/knowbe4-pricing",
+      "destination": "/knowbe4-pricing/index.html"
+    },
+    {
+      "source": "/knowbe4-for-msps",
+      "destination": "/knowbe4-for-msps/index.html"
+    },
+    {
+      "source": "/phishing-simulation-software",
+      "destination": "/phishing-simulation-software/index.html"
+    },
+    {
+      "source": "/security-awareness-training",
+      "destination": "/security-awareness-training/index.html"
+    },
+    {
+      "source": "/phishing-training-for-msps",
+      "destination": "/phishing-training-for-msps/index.html"
+    },
+    {
       "source": "/privacy",
       "destination": "/privacy/index.html"
     },
@@ -88,6 +142,10 @@
     {
       "source": "/blog/:slug",
       "destination": "/blog/:slug/index.html"
+    },
+    {
+      "source": "/blog",
+      "destination": "/blog/index.html"
     },
     {
       "source": "/((?!api).*)",

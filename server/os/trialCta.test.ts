@@ -159,6 +159,8 @@ describe('static sitemap fallback', () => {
     const sitemap = readFileSync('client/public/sitemap.xml', 'utf8')
     expect(sitemap).toContain('<loc>https://phishsimai.com/trial</loc>')
     expect(sitemap).toContain('<loc>https://phishsimai.com/knowbe4-alternative</loc>')
+    expect(sitemap).toContain('<loc>https://phishsimai.com/knowbe4-vs</loc>')
+    expect(sitemap).toContain('<loc>https://phishsimai.com/phishing-training-for-msps</loc>')
     expect(sitemap).toContain('<loc>https://phishsimai.com</loc>')
   })
 })
