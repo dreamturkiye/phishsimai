@@ -11,9 +11,11 @@ import TermsOfService from "./pages/TermsOfService";
 import BlogPost from "./pages/BlogPost";
 import BlogIndex from "./pages/BlogIndex";
 import KnowBe4Alternative from "./pages/KnowBe4Alternative";
+import SeoLanding from "./pages/SeoLanding";
 import TrialStart from "./pages/TrialStart";
 import { seoForPath, headTags, jsonLdFor } from "./lib/seoMeta";
 import { BLOG_POSTS } from "./content/blog";
+import { PRERENDER_LANDING_PATHS } from "./content/seoLandings";
 
 // / and /pricing share the Home component (route-aware meta lives inside it).
 // /trial is the LinkedIn/warm CTA landing page — prerender so raw HTML title/og
@@ -27,6 +29,7 @@ const ROUTES: Record<string, React.ComponentType> = {
   "/knowbe4-alternative": KnowBe4Alternative,
   "/trial": TrialStart,
 };
+for (const path of PRERENDER_LANDING_PATHS) ROUTES[path] = SeoLanding;
 // Every blog post prerenders through BlogPost (it reads its slug from the ssrPath).
 for (const p of BLOG_POSTS) ROUTES[`/blog/${p.slug}`] = BlogPost;
 

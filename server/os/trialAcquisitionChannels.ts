@@ -61,7 +61,7 @@ export const TRIAL_ACQUISITION_CHANNELS = [
   {
     id: 'knowbe4_seo',
     status: 'live' as const,
-    how: 'Public /knowbe4-alternative comparison page CTAs to /trial (60¢/user, $299/500, 30-day no-card).',
+    how: 'SEO cluster: /knowbe4-alternative hub plus /knowbe4-vs /knowbe4-pricing /knowbe4-for-msps /phishing-simulation-software /security-awareness-training /phishing-training-for-msps → /trial (60¢/user, $299/500, 30-day no-card).',
   },
 ] as const
 

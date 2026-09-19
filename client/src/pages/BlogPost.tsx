@@ -41,6 +41,16 @@ export default function BlogPost() {
                 KnowBe4 alternative for MSPs — start a free trial
               </a>
             </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/phishing-simulation-software">
+                Phishing simulation software
+              </a>
+            </li>
+            <li>
+              <a className="text-violet-300 hover:underline" href="/phishing-training-for-msps">
+                Phishing training for MSPs
+              </a>
+            </li>
             {BLOG_POSTS.filter((p) => p.slug !== post.slug).slice(0, 4).map((p) => (
               <li key={p.slug}>
                 <a className="text-violet-300 hover:underline" href={`/blog/${p.slug}`}>{p.title}</a>
@@ -48,6 +58,9 @@ export default function BlogPost() {
             ))}
           </ul>
         </nav>
+        <p className="mt-6 text-sm">
+          <a href="/trial?utm_source=seo&utm_medium=web&utm_campaign=blog_post" className="text-violet-400 hover:underline font-medium">Start free trial →</a>
+        </p>
         <SeoTrialFooter campaign={post.slug} />
       </article>
     </div>
