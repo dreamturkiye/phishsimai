@@ -3,8 +3,9 @@
  *
  * The 08:30 outreach funnel used to Telegram SEND FAILED / SEND BROKEN and tell
  * the founder to hit /api/os/sequence. That is homework for a reclaimable drip
- * or a Dex daily throttle. This module classifies the leftover send-cron /
- * send-zero shapes: self-heal stale Aria, defer fresh Aria, suppress Dex-cap
+ * or a Dex daily throttle (combined_daily_cap / new_touch_daily_cap). This
+ * module classifies leftover send-cron / send-zero shapes: self-heal stale
+ * Aria, defer fresh Aria, suppress Dex-cap
  * false positives. Verifier-empty, real T1 starve, and bounce-breaker stay
  * legitimate pages. No Dex raise, no blast, no touch 93.
  */

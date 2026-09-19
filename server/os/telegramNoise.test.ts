@@ -79,6 +79,7 @@ describe('founder Telegram is for faults, not SME brainstorms', () => {
     expect(src).not.toContain('PhishSim SEND BROKEN')
     expect(src).not.toMatch(/Check \/api\/os\/sequence/)
     const page = readFileSync('server/os/sendHealthPage.ts', 'utf8')
+    expect(page).toContain('isDexDailyThrottle')
     expect(page).toContain('combined_daily_cap')
     expect(page).toContain('self-heal')
   })
