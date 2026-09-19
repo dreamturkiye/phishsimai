@@ -2,8 +2,9 @@
 //  PS-SEND-HEALTH-02 — the send-health monitor must itself be monitored.
 //
 //  Sends are the lifeline (≈1 signup / 20 emails). The layered coverage:
-//    · 08:30 /api/os/outreach-funnel — FAST: "🚨 SEND CRON DID NOT RUN" the same
-//      morning, off agent_health 'aria' (stamped by the 07:00 send cron).
+//    · 08:30 /api/os/outreach-funnel — FAST send-health classifier (self-heal
+//      stale Aria / defer fresh / suppress Dex-cap false positives). Still
+//      stamped off agent_health 'aria' from the hourly sequence cron.
 //    · 06:00 /api/os/sequence in the truth report — BACKSTOP: RED when the newest
 //      send is >26h old, independent of the funnel.
 //    · 06:00 /api/os/outreach-funnel in the truth report — WATCHES THE WATCHER:

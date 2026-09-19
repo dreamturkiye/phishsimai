@@ -494,6 +494,7 @@ Not simultaneous, ever: each subsidiary's cutover is one tag bump + one deploy, 
 | 2026-09-18 | O.32.19 | Organic/SEO trial conversion: `/signup` `/register` rewrite to prerendered `/trial`; KnowBe4 CTA is crawlable `<a href="/trial">`; blog chrome + posts CTA to `/trial` (not homepage/`/pricing`/`/signup`); `/trial` required fields first. Meta + FAQ JSON-LD + internal links for KnowBe4 alternative / phishing training. No touch 93. No Dex raise. | Live 2026-09-18: TRUE=1 / $0. `/signup` was empty SPA shell. Allowlist blog linked `/signup`. KnowBe4 CTA was JS `onClick`. |
 | 2026-09-19 | O.32.20 | KnowBe4 / MSP / seat-tax cluster: six unique prerendered landings + hub; Organization/SoftwareApplication/FAQPage JSON-LD; 301 soft-404 aliases onto the cluster; `/blog` rewrite. Preserves O.32.19 trial CTAs/meta. No touch 93. No Dex raise. | #337 merged; #338/#339 conflicted. Consolidated as #340. |
 | 2026-09-19 | O.32.21 | Watchdog stall self-heal: send-stuck / research-stuck auto-invokes `/api/os/sequence` + `/api/os/researcher` (or marks reclaim). Founder Telegram only on 2nd+ consecutive heal failure. No Dex raise. No blast. No touch 93. | Live page: 112 stalled (send 104, research 8). Homework Telegram is banned. |
+| 2026-09-19 | O.32.22 | Funnel send-cron/send-zero leftover after #342: 08:30 self-heals stale Aria, defers fresh (no second slice), suppresses Dex-cap false-positive Telegram. Verifier-empty / real T1 starve / bounce-breaker / founder 1:1 stay pages. No Dex raise. No blast. No touch 93. | Leftover `SEND FAILED` / `SEND BROKEN` + `Check /api/os/sequence`. |
 ---
 
 ## O. v7.1 amendments — resilience, self-propagation, growth allocation
@@ -1046,6 +1047,18 @@ Owner (binding): founder must not be paged to hit `/api/os/sequence` or `/api/os
 - Caps stay 50/50/100. `DAILY_SEND_LIMIT` stays 20. No touch 93. `aria` stays off `HEALABLE_OPS_AGENTS`.
 
 Spec: `docs/architect/SPEC-watchdog-stall-self-heal.md`.
+
+### O.32.22 Funnel send-cron/send-zero — no Dex-cap homework page (2026-09-19)
+
+Owner (binding): after #342, the 08:30 outreach funnel still paged the founder to hit `/api/os/sequence` on send-cron / send-zero. That is homework for a reclaimable hourly drip or a Dex daily throttle.
+
+- **Self-heal stale Aria.** If last sequence success is >90m or last run failed, invoke `runFullSequence()` once (existing Dex caps).
+- **Defer fresh Aria.** Do not stack a second 08:30 slice on top of the hourly `:00` drip (blast shape).
+- **Dex `combined_daily_cap` / `new_touch_daily_cap` is not SEND BROKEN.** No founder page. Wait UTC reset.
+- **Keep legitimate pages:** mailbox verifier empty, real T1 starve (sanitized=0 / GEO reservoir >100), bounce-breaker, founder 1:1.
+- Caps stay 50/50/100. `DAILY_SEND_LIMIT` stays 20. No touch 93.
+
+Spec: `docs/architect/SPEC-suppress-dex-cap-send-page.md`.
 
 ### Evidence (do not invent rates)
 
