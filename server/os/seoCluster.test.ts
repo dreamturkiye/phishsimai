@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { CLUSTER_NAV, PRERENDER_LANDING_PATHS, SEO_LANDINGS, getLanding, trialHref } from '../../client/src/content/seoLandings'
+import { headTags, seoForPath } from '../../client/src/lib/seoMeta'
+import { assertPrerenderRewrites, stripStaticHead } from '../../scripts/assert-prerender-rewrites.mjs'
 
 const PATHS = [
   '/knowbe4-vs',
@@ -10,6 +12,9 @@ const PATHS = [
   '/security-awareness-training',
   '/phishing-training-for-msps',
 ]
+
+const CLUSTER = ['/knowbe4-alternative', ...PATHS]
+const SPA_TITLE = 'PhishSim AI — Phishing Simulation & Security Awareness Platform'
 
 describe('PS-SEO-05 KnowBe4 / MSP / seat-tax cluster', () => {
   it('registers six unique commercial landings plus the hub', () => {
@@ -42,15 +47,71 @@ describe('PS-SEO-05 KnowBe4 / MSP / seat-tax cluster', () => {
     expect(prerender).toContain('"/knowbe4-alternative": KnowBe4Alternative')
     expect(prerender).toContain('jsonLdFor(route)')
     const app = readFileSync('client/src/App.tsx', 'utf8')
-    const vercel = readFileSync('vercel.json', 'utf8')
+    const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'))
     const sitemap = readFileSync('client/public/sitemap.xml', 'utf8')
-    for (const path of PATHS) {
+    const catchAll = vercel.rewrites.findIndex((r: { destination: string }) => r.destination === '/app.html')
+    expect(catchAll).toBeGreaterThan(0)
+    for (const path of CLUSTER) {
       expect(app).toContain(`path="${path}"`)
-      expect(vercel).toContain(`"source": "${path}"`)
-      expect(vercel).toContain(`"destination": "${path}/index.html"`)
+      const idx = vercel.rewrites.findIndex((r: { source: string }) => r.source === path)
+      expect(idx, `${path} rewrite missing`).toBeGreaterThanOrEqual(0)
+      expect(idx, `${path} rewrite after catch-all`).toBeLessThan(catchAll)
+      expect(vercel.rewrites[idx].destination).toBe(`${path}/index.html`)
       expect(sitemap).toContain(`<loc>https://phishsimai.com${path}</loc>`)
     }
+    assertPrerenderRewrites(vercel, CLUSTER)
+    expect(readFileSync('scripts/prerender.mjs', 'utf8')).toContain('assertPrerenderRewrites')
     expect(readFileSync('scripts/gen-sitemap.mjs', 'utf8')).toContain('cluster(r)')
+  })
+
+  it('each cluster URL gets a unique title/H1/canonical — not the SPA homepage shell', () => {
+    const homeTitle = seoForPath('/').title
+    expect(homeTitle).not.toBe(SPA_TITLE)
+    const shell = readFileSync('client/index.html', 'utf8')
+    expect(shell).toContain(`<title>${SPA_TITLE}</title>`)
+
+    const titles: string[] = []
+    const h1s: string[] = []
+    const canonicals: string[] = []
+    for (const path of CLUSTER) {
+      const meta = seoForPath(path)
+      expect(meta.title, path).not.toBe(SPA_TITLE)
+      expect(meta.title, path).not.toBe(homeTitle)
+      expect(meta.title, path).not.toMatch(/Phishing Simulation & Security Awareness Platform/)
+      expect(meta.path).toBe(path)
+      expect(meta.title).toMatch(/KnowBe4|Phishing|Security Awareness/)
+      const head = headTags(meta)
+      const html = stripStaticHead(shell).replace('</head>', `    ${head}\n  </head>`)
+      expect(html, path).not.toContain(`<title>${SPA_TITLE}</title>`)
+      expect(html).toContain(`<title>${meta.title.replace(/&/g, '&amp;')}</title>`)
+      expect(html).toContain(`<link rel="canonical" href="https://phishsimai.com${path}" />`)
+      titles.push(meta.title)
+      canonicals.push(meta.path)
+      const landing = getLanding(path)
+      expect(landing, path).toBeTruthy()
+      h1s.push(landing!.h1)
+    }
+    expect(new Set(titles).size).toBe(titles.length)
+    expect(new Set(h1s).size).toBe(h1s.length)
+    expect(new Set(canonicals).size).toBe(canonicals.length)
+    expect(readFileSync('client/src/pages/KnowBe4Alternative.tsx', 'utf8')).toContain(getLanding('/knowbe4-alternative')!.h1)
+  })
+
+  it('fails the build if a cluster rewrite is missing or lands after the SPA catch-all', () => {
+    const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'))
+    const stripped = {
+      ...vercel,
+      rewrites: vercel.rewrites.filter((r: { source: string }) => r.source !== '/knowbe4-vs'),
+    }
+    expect(() => assertPrerenderRewrites(stripped, CLUSTER)).toThrow(/knowbe4-vs/)
+    const afterCatchAll = {
+      ...vercel,
+      rewrites: [
+        ...vercel.rewrites.filter((r: { source: string }) => r.source !== '/knowbe4-vs'),
+        { source: '/knowbe4-vs', destination: '/knowbe4-vs/index.html' },
+      ],
+    }
+    expect(() => assertPrerenderRewrites(afterCatchAll, CLUSTER)).toThrow(/knowbe4-vs/)
   })
 
   it('emits Organization + SoftwareApplication JSON-LD and crawlable /trial anchors', () => {
