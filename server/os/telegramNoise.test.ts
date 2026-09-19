@@ -62,6 +62,16 @@ describe('founder Telegram is for faults, not SME brainstorms', () => {
     expect(src).toMatch(/reportAgentHealth\(\s*'janet'/)
   })
 
+  it('watchdog does not page the founder for routine reclaimable stalls', () => {
+    const src = readFileSync('server/os/watchdog.ts', 'utf8')
+    expect(src).toContain('healLeadStallsFromWatchdog')
+    expect(src).not.toContain('leads genuinely stalled >2d')
+    expect(src).not.toContain('→ /api/os/sequence')
+    const heal = readFileSync('server/os/stallReclaim.ts', 'utf8')
+    expect(heal).toContain('STALL_HEAL_PAGE_AFTER = 2')
+    expect(heal).toContain('stall self-heal failed')
+  })
+
   it('MSP admin FORBIDDEN errors carry a human message', () => {
     const src = readFileSync('server/routers.ts', 'utf8')
     expect(src).not.toMatch(/TRPCError\(\{ code: "FORBIDDEN" \}\)/)
