@@ -27,6 +27,18 @@ export const FOUNDER_1TO1_CAP = 5
 export const FOUNDER_1TO1_ESCALATE_HOURS = 2
 export const WARM_EXHAUSTED_TOUCHES = [90, 91, 92] as const
 
+/**
+ * Still-open draft statuses that block another founder_1to1 queue for the same lead.
+ * Live 2026-09-20: dismissed drafts (classification still founder_1to1) permanently
+ * blocked re-queue of exhausted 90/91/92 leads. Closed/archived are the same class
+ * of "already decided, not in the review pile". Only pending_review is open.
+ */
+export const FOUNDER_1TO1_OPEN_STATUSES = ['pending_review'] as const
+
+export function founderOneToOneDraftBlocksRequeue(status: string | null | undefined): boolean {
+  return (FOUNDER_1TO1_OPEN_STATUSES as readonly string[]).includes(String(status || '').trim())
+}
+
 const ESCALATE_MEMORY_KEY = 'founder_1to1_escalate_at'
 
 export type FounderOneToOneLead = {
@@ -202,6 +214,7 @@ export async function queueFounderOneToOneReviews(sqlOverride?: any): Promise<Fo
       AND NOT EXISTS (
         SELECT 1 FROM outreach_reply_drafts d
         WHERE d.lead_id = l.id AND d.classification = ${FOUNDER_1TO1_CLASS}
+          AND d.status IN ('pending_review')
       )
       AND NOT EXISTS (
         SELECT 1 FROM outreach_reply_drafts d
