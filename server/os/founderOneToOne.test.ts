@@ -5,10 +5,13 @@ import {
   FOUNDER_1TO1_CAP,
   FOUNDER_1TO1_CLASS,
   FOUNDER_1TO1_ESCALATE_HOURS,
+  FOUNDER_1TO1_OPEN_STATUSES,
   WARM_EXHAUSTED_TOUCHES,
+  founderOneToOneDraftBlocksRequeue,
   founderOneToOneDraftBody,
   founderOneToOneTelegramHtml,
   isOooOrAutoReplyInbound,
+  queueFounderOneToOneReviews,
 } from './founderOneToOne'
 import { WARM_CTA_TOUCHES } from './sequences'
 import { DAILY_SEND_LIMIT } from './sequences'
@@ -76,5 +79,55 @@ describe('founder 1:1 queue — exhausted warm, NOT email', () => {
     expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('listFounderOneToOneQueue')
     expect(readFileSync('server/os/cgoMandate.ts', 'utf8')).toMatch(/founder 1:1|founder-review 1:1/)
     expect(readFileSync('server/os/trialAcquisitionChannels.ts', 'utf8')).toContain('founder_1to1')
+  })
+
+  it('dismissed / closed / archived founder_1to1 drafts do not block re-queue; pending_review does', () => {
+    expect([...FOUNDER_1TO1_OPEN_STATUSES]).toEqual(['pending_review'])
+    expect(founderOneToOneDraftBlocksRequeue('pending_review')).toBe(true)
+    expect(founderOneToOneDraftBlocksRequeue('dismissed')).toBe(false)
+    expect(founderOneToOneDraftBlocksRequeue('closed')).toBe(false)
+    expect(founderOneToOneDraftBlocksRequeue('archived')).toBe(false)
+    expect(founderOneToOneDraftBlocksRequeue('founder_1to1_archived')).toBe(false)
+
+    const src = readFileSync('server/os/founderOneToOne.ts', 'utf8')
+    const autoReplyIdx = src.indexOf("classification = 'auto_reply'")
+    const eligibility = src.slice(src.indexOf('AND NOT EXISTS'), autoReplyIdx === -1 ? undefined : autoReplyIdx)
+    expect(eligibility).toContain("d.classification = ${FOUNDER_1TO1_CLASS}")
+    expect(eligibility).toContain(`AND d.status IN ('${FOUNDER_1TO1_OPEN_STATUSES.join("', '")}')`)
+    expect(eligibility).not.toMatch(/AND NOT EXISTS \([\s\S]*classification = \$\{FOUNDER_1TO1_CLASS\}\s*\)/)
+  })
+
+  it('re-queues an exhausted warm lead whose prior founder_1to1 draft was dismissed', async () => {
+    const calls: string[] = []
+    const lead = {
+      id: '00000000-0000-4000-8000-0000000000aa',
+      name: 'Pat',
+      company: 'Greybox MSP',
+      email: 'pat@greybox.example',
+      last_reply_snippet: 'send me pricing',
+    }
+    const tagged = (strings: TemplateStringsArray, ..._values: unknown[]) => {
+      const q = strings.join('?')
+      calls.push(q)
+      if (q.includes('INSERT INTO outreach_reply_drafts')) {
+        return Promise.resolve([{ id: 'draft-dismissed-requeue' }])
+      }
+      if (q.includes('FROM ps_outreach_leads l') && q.includes('NOT EXISTS')) {
+        return Promise.resolve([lead])
+      }
+      return Promise.resolve([])
+    }
+
+    const out = await queueFounderOneToOneReviews(tagged as any)
+    expect(out.queued).toBe(1)
+    expect(out.drafts[0]?.leadId).toBe(lead.id)
+    expect(out.reason).toMatch(/queued 1 founder 1:1/)
+
+    const eligibility = calls.find((q) => q.includes('FROM ps_outreach_leads') && q.includes('NOT EXISTS')) || ''
+    expect(eligibility).toMatch(/d\.status IN \('pending_review'\)/)
+    expect(eligibility).toMatch(/touch IN \(90, 91, 92\)/)
+    expect(eligibility).not.toMatch(/\b93\b/)
+    expect(calls.some((q) => /outreach_sequence_outbox/.test(q) && /INSERT/i.test(q))).toBe(false)
+    expect(calls.some((q) => /INSERT INTO outreach_reply_drafts/.test(q))).toBe(true)
   })
 })
