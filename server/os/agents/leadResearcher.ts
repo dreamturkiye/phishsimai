@@ -667,7 +667,7 @@ export async function runLeadResearcher(batchSize = 6) {
         let hunter = primary && primary !== 'vendor_error' ? primary : null
         if (!hunter) hunter = await enrichViaHunter(String(item.domain))
         const orgInboxOnly = !!(hunter?.email && isOrgInbox(hunter.email))
-        if (orgInboxOnly) {
+        if (orgInboxOnly && hunter) {
           // An org inbox is not personal supply. Inserting it and marking enriched is how
           // role-only domains left the finder with nothing a mailbox verifier can promote.
           console.log(`[researcher] t=${el()}s ${item.domain} org inbox ${hunter.email} — not inserted`)
