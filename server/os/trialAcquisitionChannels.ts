@@ -19,7 +19,7 @@ import {
   LINKEDIN_DAILY_POST_CAP,
   crisisPublishBlockReason,
   isDuplicateSocialBody,
-  linkedInBodyIsPublishable,
+  planLinkedInCrisisActions,
 } from './social/crisisSocialPublish'
 
 export const TRIAL_ACQUISITION_CHANNELS = [
@@ -159,9 +159,6 @@ export async function tryCrisisPublishLinkedIn(sqlOverride?: any): Promise<Crisi
   }
   const sql = sqlOverride ?? getSql()
   const postedToday = await countLinkedInPostedToday(sql).catch(() => 0)
-  if (postedToday >= LINKEDIN_DAILY_POST_CAP) {
-    return missedPublish(`linkedin ${LINKEDIN_DAILY_POST_CAP}/day cap already reached`)
-  }
 
   const prior = sqlRows(await sql`
     SELECT body FROM os_social_queue
@@ -173,31 +170,61 @@ export async function tryCrisisPublishLinkedIn(sqlOverride?: any): Promise<Crisi
   const previousBodies = prior.map((r) => String(r.body || ''))
 
   const candidates = sqlRows(await sql`
-    SELECT preview_token, title, body, status FROM os_social_queue
+    SELECT preview_token, title, body, status, review_status, created_at FROM os_social_queue
     WHERE platform='linkedin' AND company_id='phishsimai'
       AND status IN ('draft','queued','pending_review')
-      AND COALESCE(review_status, 'pending_review') NOT IN ('rejected','held_content_safety')
+      AND COALESCE(review_status, 'pending_review') NOT IN ('rejected','held_content_safety','superseded')
       AND preview_token IS NOT NULL
-    ORDER BY created_at DESC
+    ORDER BY CASE WHEN review_status = 'approved' THEN 0 ELSE 1 END, created_at ASC
     LIMIT 8
   `.catch(() => []))
 
-  for (const item of candidates) {
-    const quality = linkedInBodyIsPublishable(String(item.body || ''))
-    if (!quality.ok) continue
-    if (isDuplicateSocialBody(String(item.body || ''), previousBodies)) continue
-    const token = String(item.preview_token || '')
-    if (!token) continue
+  const plan = planLinkedInCrisisActions({
+    candidates,
+    previousBodies,
+    postedToday,
+  })
+  let cleared = 0
+  let publishError = ''
+  for (const action of plan) {
+    if (action.type === 'clear') {
+      const nextStatus = action.reviewStatus === 'held_content_safety' ? 'held_quality' : 'cancelled'
+      await sql`
+        UPDATE os_social_queue
+        SET status=${nextStatus},
+            review_status=${action.reviewStatus},
+            error=${action.error}
+        WHERE preview_token=${action.token}
+          AND company_id='phishsimai'
+          AND platform='linkedin'
+          AND status IN ('draft','queued','pending_review')
+      `.catch(() => {})
+      cleared++
+      continue
+    }
+    if (action.type !== 'publish') continue
     try {
-      const result = await publishSarahLinkedInPost(token)
+      const result = await publishSarahLinkedInPost(action.token, { crisisAutoApprove: true })
       return {
         posted: true,
         reason: `published LinkedIn trial CTA via PostForMe (crisis override, ${LINKEDIN_DAILY_POST_CAP}/day)`,
-        previewUrl: result.linkedInUrl || previewPublicUrl(token),
+        previewUrl: result.linkedInUrl || previewPublicUrl(action.token),
       }
     } catch (e: any) {
-      return missedPublish(String(e?.message || e).slice(0, 180))
+      // Leave the publishable draft in place for the next tick. Do not stack a duplicate.
+      publishError = String(e?.message || e).slice(0, 180)
     }
+  }
+  if (publishError) return missedPublish(publishError)
+  if (postedToday >= LINKEDIN_DAILY_POST_CAP) {
+    return missedPublish(
+      cleared > 0
+        ? `linkedin ${LINKEDIN_DAILY_POST_CAP}/day cap already reached; cleared ${cleared} stuck draft(s)`
+        : `linkedin ${LINKEDIN_DAILY_POST_CAP}/day cap already reached`,
+    )
+  }
+  if (cleared > 0) {
+    return missedPublish(`cleared ${cleared} stuck pending_review draft(s); no publishable non-duplicate remaining`)
   }
   return missedPublish('no quality non-duplicate LinkedIn draft ready')
 }
@@ -219,6 +246,7 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
   const published: CrisisLinkedInPublishAttempt = await tryCrisisPublishLinkedIn(sql).catch((e: any) =>
     missedPublish(String(e?.message || e).slice(0, 160)),
   )
+  funnel = await measureLinkedInFunnel(sql).catch(() => funnel)
   if (published.posted) {
     funnel = await measureLinkedInFunnel(sql).catch(() => funnel)
     return {
@@ -248,6 +276,23 @@ export async function advanceLinkedInAcquisition(sqlOverride?: any): Promise<Lin
       escalated: false,
       posted: false,
       reason: `LinkedIn draft already queued — publish blocked (${published.reason}). Not waiting on founder review.`,
+      funnel,
+    }
+  }
+
+  const recentPosted = sqlRows(await sql`
+    SELECT body FROM os_social_queue
+    WHERE platform='linkedin' AND company_id='phishsimai' AND status='posted'
+      AND posted_at > NOW() - INTERVAL '14 days'
+    ORDER BY posted_at DESC
+    LIMIT 20
+  `.catch(() => []))
+  if (isDuplicateSocialBody(TRIAL_LINKEDIN_DRAFT_BODY, recentPosted.map((r) => String(r.body || '')))) {
+    return {
+      queued: false,
+      escalated: false,
+      posted: false,
+      reason: 'frozen LinkedIn trial CTA duplicates a post from the last 14 days — not queued',
       funnel,
     }
   }

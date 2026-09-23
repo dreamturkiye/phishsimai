@@ -2,10 +2,12 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import {
   mapQevToRefillVerdict,
+  mapMevBody,
   sendablePoolTarget,
   shouldUseMapsMxBridge,
   isMapsSourced,
   isPromotableHeldAddress,
+  refillMaySelectLabel,
   refillSendablePool,
   SANITIZE_BUFFER_DAYS,
 } from './sanitizeRefill'
@@ -28,9 +30,9 @@ import { verifyViaService } from './verifierClient'
 
 function fakeSql(handlers: Array<{ match: RegExp; rows?: any[] }>) {
   const calls: string[] = []
-  const sql: any = async (strings: TemplateStringsArray) => {
+  const sql: any = async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const q = strings.join('?')
-    calls.push(q)
+    calls.push(`${q}\n${JSON.stringify(values)}`)
     const h = handlers.find((x) => x.match.test(q))
     return h?.rows ?? []
   }
@@ -75,6 +77,9 @@ describe('QEV vs empty MEV (Sep 12 death shape)', () => {
     expect(src).toContain('QEV_API_KEY')
     expect(src).toContain('maps_mx_bridge')
     expect(src).toContain('mev_qev')
+    expect(src).toContain('MEV_CATCHALL_REQUEUE')
+    expect(src).toContain('qev_catchall')
+    expect(src).not.toMatch(/\$\{qevFallback\}/)
     expect(src).toContain('sendablePoolEmptyAlertMessage')
     expect(src).toContain('maybeQueueT1Marcus')
     expect(src).not.toMatch(/REFILL_ALLOW_MX_ONLY === '1'[\s\S]{0,80}hasVerifier/)
@@ -247,6 +252,73 @@ describe('refillSendablePool fail-closed vs QEV', () => {
     expect(vi.mocked(verifyViaService)).toHaveBeenCalled()
   })
 
+  it('MEV catch-all defers to QEV and promotes a QEV-valid mailbox (mev_qev starve)', async () => {
+    process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
+    process.env.QEV_API_KEY = 'qk_test'
+    vi.stubGlobal('fetch', async (url: string | URL) => {
+      const u = String(url)
+      if (u.includes('myemailverifier.com')) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ Status: 'Catch-all', catch_all: 'true' }) }
+      }
+      throw new Error('unexpected fetch ' + u)
+    })
+    vi.mocked(verifyViaService).mockResolvedValue({
+      status: 'valid',
+      catchAll: false,
+      isRole: false,
+      reason: 'valid',
+      reached: true,
+      remainingCredits: 800,
+    })
+    const sql = fakeSql([
+      { match: /ALTER TABLE/, rows: [] },
+      { match: /sanitized_at IS NOT NULL AND touch1_sent_at IS NULL/, rows: [{ n: 0 }] },
+      {
+        match: /refill_checked_at IS NULL/,
+        rows: [{ id: 'lead-7', email: 'pat@msp.example', source: 'google_maps' }],
+      },
+    ])
+    const r = await refillSendablePool(sql, new Date('2026-09-23T15:00:00Z'))
+    expect(r.verifyMode).toBe('mev_qev')
+    expect(r.promoted).toBe(1)
+    expect(r.promotedLeads[0]?.verdict).toBe('valid')
+    expect(vi.mocked(verifyViaService)).toHaveBeenCalled()
+    expect(sql.calls.some((q: string) => q.includes('qev_valid'))).toBe(true)
+  })
+
+  it('MEV catch-all + QEV catch-all does not promote and writes qev_catchall', async () => {
+    process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
+    process.env.QEV_API_KEY = 'qk_test'
+    vi.stubGlobal('fetch', async (url: string | URL) => {
+      const u = String(url)
+      if (u.includes('myemailverifier.com')) {
+        return { ok: true, status: 200, text: async () => JSON.stringify({ Status: 'Valid', catch_all: 'true' }) }
+      }
+      throw new Error('unexpected fetch ' + u)
+    })
+    vi.mocked(verifyViaService).mockResolvedValue({
+      status: 'risky',
+      catchAll: true,
+      isRole: false,
+      reason: 'accept_all',
+      reached: true,
+      remainingCredits: 800,
+    })
+    const sql = fakeSql([
+      { match: /ALTER TABLE/, rows: [] },
+      { match: /sanitized_at IS NOT NULL AND touch1_sent_at IS NULL/, rows: [{ n: 0 }] },
+      {
+        match: /refill_checked_at IS NULL/,
+        rows: [{ id: 'lead-8', email: 'sam@msp.example', source: 'ai_discovery' }],
+      },
+    ])
+    const r = await refillSendablePool(sql, new Date('2026-09-23T15:00:00Z'))
+    expect(r.promoted).toBe(0)
+    expect(r.checked).toBe(1)
+    expect(sql.calls.some((q: string) => q.includes('qev_catchall'))).toBe(true)
+    expect(process.env.REFILL_ALLOW_MX_ONLY).toBeUndefined()
+  })
+
   it('MEV valid does not spend a QEV credit', async () => {
     process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
     process.env.QEV_API_KEY = 'qk_test'
@@ -269,6 +341,29 @@ describe('refillSendablePool fail-closed vs QEV', () => {
     expect(r.verifyMode).toBe('mev_qev')
     expect(r.promoted).toBe(1)
     expect(vi.mocked(verifyViaService)).not.toHaveBeenCalled()
+  })
+})
+
+describe('MEV catch-all is not a QEV verdict', () => {
+  it('maps vendor catch_all strings without treating "false" as catch-all', () => {
+    expect(mapMevBody({ Status: 'Valid', catch_all: 'false' })).toBe('valid')
+    expect(mapMevBody({ Status: 'Valid', catch_all: 0 })).toBe('valid')
+    expect(mapMevBody({ Status: 'Valid', catch_all: false })).toBe('valid')
+    expect(mapMevBody({ Status: 'Catch-all', catch_all: 'true' })).toBe('catchall')
+    expect(mapMevBody({ Status: 'Grey-listed', catch_all: 'false' })).toBe('unknown')
+    expect(mapMevBody({ Status: 'Unknown' })).toBe('unknown')
+  })
+
+  it('re-opens MEV catchall for QEV and keeps role / invalid / qev_catchall closed', () => {
+    expect(refillMaySelectLabel(null, true)).toBe(true)
+    expect(refillMaySelectLabel('catchall', true)).toBe(true)
+    expect(refillMaySelectLabel('unverified_catchall', true)).toBe(true)
+    expect(refillMaySelectLabel('catchall', false)).toBe(false)
+    expect(refillMaySelectLabel('qev_catchall', true)).toBe(false)
+    expect(refillMaySelectLabel('qev_invalid', true)).toBe(false)
+    expect(refillMaySelectLabel('role_account', true)).toBe(false)
+    expect(refillMaySelectLabel('mev_invalid', true)).toBe(false)
+    expect(refillMaySelectLabel('unverified_unknown', true)).toBe(true)
   })
 })
 

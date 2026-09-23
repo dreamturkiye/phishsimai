@@ -28,7 +28,10 @@ function buildLinkedInCaption(item: SocialPreviewRecord): string {
 }
 
 /** Approve (if needed) and publish Sarah LinkedIn post via PostForMe. */
-export async function publishSarahLinkedInPost(token: string): Promise<{
+export async function publishSarahLinkedInPost(
+  token: string,
+  opts?: { crisisAutoApprove?: boolean },
+): Promise<{
   postId: string
   linkedInUrl?: string
   caption: string
@@ -51,7 +54,23 @@ export async function publishSarahLinkedInPost(token: string): Promise<{
   }
 
   if (item.review_status !== 'approved') {
-    await submitSocialReview(token, 'approved', 'Founder approved — publish now')
+    if (opts?.crisisAutoApprove) {
+      // Owner rule: crisis auto-publish ≤1/day. Do not pretend the founder clicked approve
+      // and do not send the founder-review telegram — that left drafts in pending_review.
+      const sql = getSql()
+      await sql`
+        UPDATE os_social_queue
+        SET review_status='approved',
+            status='queued',
+            founder_comment='Crisis auto-publish ≤1/day — no founder gate',
+            reviewed_at=NOW()
+        WHERE preview_token=${token}
+          AND COALESCE(review_status, 'pending_review') NOT IN ('rejected','held_content_safety')
+      `
+      item.review_status = 'approved'
+    } else {
+      await submitSocialReview(token, 'approved', 'Founder approved — publish now')
+    }
   }
 
   const caption = buildLinkedInCaption(item)

@@ -79,6 +79,55 @@ export function isDuplicateSocialBody(candidate: string, previous: string[]): bo
   })
 }
 
+export type LinkedInCrisisPlanAction =
+  | { type: 'publish'; token: string }
+  | { type: 'clear'; token: string; reviewStatus: 'superseded' | 'held_content_safety'; error: string }
+  | { type: 'skip'; token: string; reason: string }
+
+/**
+ * One crisis tick: publish at most one quality non-duplicate draft, and clear
+ * pending_review rows that can never publish (offer missing, or a 14-day duplicate).
+ * Live miss 2026-09-23: a draft sat pending_review ~63h because a failed quality
+ * check returned early and advanceLinkedIn treated any pending row as a founder gate.
+ * Approved + unpublishable is held_content_safety (not superseded). Caps stay 1/day.
+ */
+export function planLinkedInCrisisActions(input: {
+  candidates: Array<{ preview_token?: string | null; body?: string | null; review_status?: string | null }>
+  previousBodies: string[]
+  postedToday: number
+  dailyCap?: number
+}): LinkedInCrisisPlanAction[] {
+  const cap = input.dailyCap ?? LINKEDIN_DAILY_POST_CAP
+  const actions: LinkedInCrisisPlanAction[] = []
+  let publishing = false
+  for (const item of input.candidates) {
+    const token = String(item.preview_token || '').trim()
+    if (!token) continue
+    const body = String(item.body || '')
+    const quality = linkedInBodyIsPublishable(body)
+    const dup = isDuplicateSocialBody(body, input.previousBodies)
+    const approved = String(item.review_status || '') === 'approved'
+    if (quality.ok && !dup) {
+      if (input.postedToday >= cap || publishing) {
+        actions.push({ type: 'skip', token, reason: `linkedin ${cap}/day cap` })
+        continue
+      }
+      actions.push({ type: 'publish', token })
+      publishing = true
+      continue
+    }
+    actions.push({
+      type: 'clear',
+      token,
+      reviewStatus: approved && !dup ? 'held_content_safety' : 'superseded',
+      error: dup
+        ? 'duplicate of a LinkedIn post in the last 14 days'
+        : (quality.reason || 'not publishable'),
+    })
+  }
+  return actions
+}
+
 /** Frozen live offer must be present; spammy urgency copy is refused. */
 export function linkedInBodyIsPublishable(body: string): { ok: boolean; reason: string } {
   const t = String(body || '').trim()

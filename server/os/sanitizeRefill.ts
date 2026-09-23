@@ -10,8 +10,9 @@
 //   • QEV when QEV_API_KEY is set (canonical mailbox fallback — verifierClient.ts);
 //   • MyEmailVerifier when MYEMAILVERIFIER_API_KEY is a NON-EMPTY value — empty string (Vercel
 //     name-exists-value-empty, measured 2026-09-17) is unset. Live fire: MEV checked 23, promoted 0.
-//     When both keys are set, MEV runs first; QEV is the fallback on empty/fail/unknown (mode mev_qev);
-
+//     When both keys are set, MEV runs first; QEV is the fallback on empty/fail/unknown
+//     AND on MEV catch-all (mode mev_qev, 2026-09-23). A MEV catch-all is re-queued for QEV;
+//     QEV catch-all is stored as qev_catchall and is not re-opened.
 //   • else a free MX check (domain-level) — which CANNOT detect catch-all, so it is OFF unless the
 //     operator opts in with REFILL_ALLOW_MX_ONLY=1 (accepting that ~82% of this list is catch-all
 //     and MX alone will pass them, risking bounces). SMTP RCPT is not usable — Vercel blocks port 25.
@@ -81,12 +82,31 @@ export function mapQevToRefillVerdict(v: Pick<VerifierVerdict, 'status' | 'catch
 export const DISQUALIFIED_LABELS = [
   'role_account', 'role_strict', 'catchall', 'unverified_catchall', 'no_mx', 'mev_invalid',
   'edu_gov_domain', 'domain_cap', 'deprioritized_generic', 'initials_greeting', 'generic_greeting',
+  // QEV-confirmed terminal labels. Not re-queued (unlike a MEV-only catchall).
+  'qev_catchall', 'qev_invalid',
 ]
 
 /** Previously checked but never decided — QEV fallback must re-open these (live: 1244 null + 120 unknown). */
 export const INCONCLUSIVE_LABELS = [
   'unverified_unknown', 'unverified_timeout', 'unverified_blank',
 ]
+
+/**
+ * MEV catch-all is not a QEV verdict. Live mev_qev (2026-09-23): sanitizedEligible=0 while
+ * ~6124 GEO never-touched remained because MEV labeled catch-all and the candidate query
+ * never spent a QEV credit. Re-open ONLY these labels for a QEV pass. Role / no-MX / invalid
+ * stay disqualified. A QEV catch-all is rewritten to qev_catchall so it cannot loop.
+ */
+export const MEV_CATCHALL_REQUEUE = ['catchall', 'unverified_catchall'] as const
+
+/** Label-only half of the refill candidate predicate (SQL applies refill_checked_at too). */
+export function refillMaySelectLabel(reason: string | null | undefined, qev: boolean): boolean {
+  const label = String(reason ?? '').trim()
+  if (!label) return true
+  if ((MEV_CATCHALL_REQUEUE as readonly string[]).includes(label)) return qev
+  if ((DISQUALIFIED_LABELS as readonly string[]).includes(label)) return false
+  return true
+}
 
 /**
  * True when holding this address is a reason to skip a paid finder.
@@ -135,12 +155,15 @@ export type RefillVerifyMode = 'qev' | 'mev' | 'mev_qev' | 'mx_opt_in' | 'maps_m
 export type VerifyVia = 'qev' | 'mev' | 'mx' | 'none'
 export type VerifyHit = { verdict: Verdict; via: VerifyVia }
 
-function mapMevBody(d: { Status?: string; catch_all?: number | string }): Verdict {
-  const status = String(d.Status || '').toLowerCase()
-  const isCatchAll = ['1', 'true'].includes(String(d.catch_all).toLowerCase()) || status.includes('catch')
+export function mapMevBody(d: { Status?: string; catch_all?: number | string | boolean }): Verdict {
+  const status = String(d.Status || '').toLowerCase().trim()
+  // Vendor sends catch_all as "true"/"false", 1/0, or a boolean. "false" and 0 are not catch-all.
+  const catchRaw = String(d.catch_all ?? '').toLowerCase().trim()
+  const isCatchAll = catchRaw === '1' || catchRaw === 'true' || status.includes('catch')
   if (isCatchAll) return 'catchall'
   if (status === 'valid') return 'valid'
   if (status === 'invalid') return 'invalid'
+  // Unknown, Grey-listed, empty Status — inconclusive. QEV decides when keyed.
   return 'unknown'
 }
 
@@ -168,12 +191,15 @@ export async function verifyEmailDetailed(
           { cache: 'no-store', signal: AbortSignal.timeout(20000) },
         )
         if (res.ok) {
-          const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string }
+          const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string | boolean }
           const verdict = mapMevBody(d)
-          if (verdict === 'valid' || verdict === 'catchall' || verdict === 'invalid') {
+          // MEV valid / invalid are terminal (do not spend QEV). Catch-all and unknown defer to
+          // QEV when keyed — a MEV catch-all is not proof the mailbox is unsafe, and treating it
+          // as final left sanitizedEligible=0 under mev_qev.
+          const deferToQev = opts.qev && (verdict === 'catchall' || verdict === 'unknown')
+          if (!deferToQev && (verdict === 'valid' || verdict === 'catchall' || verdict === 'invalid')) {
             return { verdict, via: 'mev' }
           }
-          // unknown → QEV fallback when keyed
         } else {
           console.error(`[refill/mev] ${domain} status=${res.status} — vendor failure, falling back to QEV`)
         }
@@ -208,9 +234,9 @@ export async function verifyEmail(
   return (await verifyEmailDetailed(email, opts)).verdict
 }
 
-function rejectReason(verdict: Verdict): string | null {
-  if (verdict === 'catchall') return 'catchall'
-  if (verdict === 'invalid') return 'mev_invalid'
+function decisionLabel(verdict: Verdict, via: VerifyVia): string | null {
+  if (verdict === 'catchall') return via === 'qev' ? 'qev_catchall' : 'catchall'
+  if (verdict === 'invalid') return via === 'qev' ? 'qev_invalid' : 'mev_invalid'
   if (verdict === 'no_mx') return 'no_mx'
   return null
 }
@@ -295,6 +321,8 @@ export async function refillSendablePool(
 
   const mapsOnly = verifyMode === 'maps_mx_bridge'
   const qevFallback = keys.qev
+  // Two queries so a JS boolean is never bound into SQL (a bound `true` has thrown as text
+  // under Neon and zeroed the candidate set while verifyMode still read mev_qev).
   const candidates = (mapsOnly
     ? await sql`SELECT id, email, source FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
@@ -303,19 +331,38 @@ export async function refillSendablePool(
        AND lower(COALESCE(source, '')) = ANY(${[...MAPS_SOURCES]})
        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
      ORDER BY created_at DESC LIMIT ${maxLookups}`
-    : await sql`SELECT id, email, source FROM ps_outreach_leads
+    : qevFallback
+      ? await sql`SELECT id, email, source FROM ps_outreach_leads
+     WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
+       AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
+       AND pipeline_stage NOT IN ('dead','customer')
+       AND (
+         sanitize_reason IS NULL
+         OR NOT (sanitize_reason = ANY(${DISQUALIFIED_LABELS}))
+         OR sanitize_reason = ANY(${MEV_CATCHALL_REQUEUE})
+       )
+       AND (
+         refill_checked_at IS NULL
+         OR sanitize_reason IS NULL
+         OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS})
+         OR sanitize_reason = ANY(${MEV_CATCHALL_REQUEUE})
+       )
+     ORDER BY
+       CASE
+         WHEN refill_checked_at IS NULL THEN 0
+         WHEN sanitize_reason IS NULL OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS}) THEN 1
+         ELSE 2
+       END,
+       refill_checked_at ASC NULLS FIRST,
+       created_at DESC
+     LIMIT ${maxLookups}`
+      : await sql`SELECT id, email, source FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
        AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
        AND pipeline_stage NOT IN ('dead','customer')
        AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
-       AND (
-         refill_checked_at IS NULL
-         OR (
-           ${qevFallback}
-           AND (sanitize_reason IS NULL OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS}))
-         )
-       )
-     ORDER BY CASE WHEN refill_checked_at IS NULL THEN 0 ELSE 1 END, created_at DESC
+       AND refill_checked_at IS NULL
+     ORDER BY created_at DESC
      LIMIT ${maxLookups}`) as Array<{ id: string; email: string; source?: string }>
 
   const allowMx = verifyMode === 'mx_opt_in' || verifyMode === 'maps_mx_bridge'
@@ -371,10 +418,24 @@ export async function refillSendablePool(
           await sql`UPDATE ps_outreach_leads SET refill_checked_at = now() WHERE id = ${lead.id}`.catch(() => {})
         }
       } else if (verdict === 'unknown') {
-        // Inconclusive — DON'T mark checked, so a later run re-verifies.
+        // Stamp the check so the next run rotates past a QEV hold / grey-list instead of
+        // re-spending the whole budget on the same newest rows. Keep an existing label
+        // (MEV catchall stays re-queueable). Blank reason becomes inconclusive, not disqualified.
+        await sql`UPDATE ps_outreach_leads
+           SET refill_checked_at = now(),
+               sanitize_reason = CASE
+                 WHEN sanitize_reason IS NULL OR btrim(sanitize_reason) = '' THEN 'unverified_unknown'
+                 ELSE sanitize_reason
+               END
+           WHERE id = ${lead.id} AND sanitized_at IS NULL`.catch(() => {})
       } else {
-        const label = rejectReason(verdict)
-        if (label) {
+        const label = decisionLabel(verdict, hit.via)
+        if (label && hit.via === 'qev') {
+          // Overwrite a MEV catchall with the QEV decision so qev_catchall cannot re-queue.
+          await sql`UPDATE ps_outreach_leads
+             SET refill_checked_at = now(), sanitize_reason = ${label}
+             WHERE id = ${lead.id} AND sanitized_at IS NULL`.catch(() => {})
+        } else if (label) {
           await sql`UPDATE ps_outreach_leads
              SET refill_checked_at = now(), sanitize_reason = COALESCE(sanitize_reason, ${label})
              WHERE id = ${lead.id}`.catch(() => {})

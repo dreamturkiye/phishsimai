@@ -12,11 +12,14 @@ import {
   isDuplicateSocialBody,
   isWeekChallengeWindow,
   linkedInBodyIsPublishable,
+  planLinkedInCrisisActions,
   redditDraftIsPublishable,
   redditSubIsAllowed,
 } from './crisisSocialPublish'
 import { PUBLIC_SOCIAL_POSTING_ENABLED } from './publicPostingLockout'
+import { linkedInContentSafe } from './linkedInPublisher'
 import { WARM_CTA_TOUCHES, DAILY_SEND_LIMIT } from '../sequences'
+import { COMBINED_DAILY_CAP, NEW_TOUCH_DAILY_CAP, SECOND_TOUCH_DAILY_CAP } from '../outreachThrottle'
 import { readFileSync } from 'node:fs'
 
 const LINKEDIN_CREDS = {
@@ -76,6 +79,64 @@ describe('LinkedIn quality + 1/day duplicate rails', () => {
     expect(isDuplicateSocialBody(body, [body])).toBe(true)
     expect(isDuplicateSocialBody(body, ['unrelated previous post about a conference we attended last week in Austin'])).toBe(false)
   })
+
+  it('publishes one pending offer and clears a 63h unpublishable pending_review draft', () => {
+    const junk = 'A long thoughtful post about phishing awareness with no price and no trial URL, padded out so it clears the length bar.'
+    const plan = planLinkedInCrisisActions({
+      postedToday: 0,
+      previousBodies: [],
+      candidates: [
+        { preview_token: 'stuck-63h', body: junk, review_status: 'pending_review' },
+        { preview_token: 'offer', body, review_status: 'pending_review' },
+      ],
+    })
+    expect(plan).toEqual([
+      {
+        type: 'clear',
+        token: 'stuck-63h',
+        reviewStatus: 'superseded',
+        error: 'missing frozen 60¢ / $299 / 30-day no-card trial offer',
+      },
+      { type: 'publish', token: 'offer' },
+    ])
+  })
+
+  it('does not publish a duplicate, and does not publish a second post the same day', () => {
+    const dup = planLinkedInCrisisActions({
+      postedToday: 0,
+      previousBodies: [body],
+      candidates: [{ preview_token: 'dup', body, review_status: 'pending_review' }],
+    })
+    expect(dup).toEqual([
+      {
+        type: 'clear',
+        token: 'dup',
+        reviewStatus: 'superseded',
+        error: 'duplicate of a LinkedIn post in the last 14 days',
+      },
+    ])
+    const capped = planLinkedInCrisisActions({
+      postedToday: 1,
+      previousBodies: [],
+      candidates: [{ preview_token: 'offer', body, review_status: 'approved' }],
+    })
+    expect(capped).toEqual([{ type: 'skip', token: 'offer', reason: 'linkedin 1/day cap' }])
+  })
+
+  it('holds an approved draft that fails the offer check instead of posting it', () => {
+    const junk = 'A long thoughtful post about phishing awareness with no price and no trial URL, padded out so it clears the length bar.'
+    const plan = planLinkedInCrisisActions({
+      postedToday: 0,
+      previousBodies: [],
+      candidates: [{ preview_token: 'approved-junk', body: junk, review_status: 'approved' }],
+    })
+    expect(plan[0]).toMatchObject({ type: 'clear', token: 'approved-junk', reviewStatus: 'held_content_safety' })
+  })
+
+  it('lets the frozen $299 / 60¢ offer pass content safety', () => {
+    expect(linkedInContentSafe(body).safe).toBe(true)
+    expect(linkedInContentSafe(`${body}\nWe guarantee you will never be breached.`).safe).toBe(false)
+  })
 })
 
 describe('Reddit allow-list + no link-drop', () => {
@@ -100,8 +161,14 @@ describe('spam-safe rails stay on', () => {
   it('does not invent touch 93 or raise the daily cold cap', () => {
     expect(WARM_CTA_TOUCHES).toEqual([90, 91, 92])
     expect(DAILY_SEND_LIMIT).toBe(20)
+    expect(NEW_TOUCH_DAILY_CAP).toBe(50)
+    expect(SECOND_TOUCH_DAILY_CAP).toBe(50)
+    expect(COMBINED_DAILY_CAP).toBe(100)
     const acq = readFileSync('server/os/trialAcquisitionChannels.ts', 'utf8')
     expect(acq).toContain('tryCrisisPublishLinkedIn')
+    expect(acq).toContain('planLinkedInCrisisActions')
+    expect(acq).toContain('crisisAutoApprove')
+    expect(readFileSync('server/os/routes.ts', 'utf8')).toContain('tryCrisisPublishLinkedIn')
     expect(acq).not.toMatch(/touch,\s*93/)
     const reddit = readFileSync('server/os/social/sarahSocial.ts', 'utf8')
     expect(reddit).toContain('redditDraftIsPublishable')

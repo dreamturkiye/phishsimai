@@ -62,7 +62,7 @@ function escapeTelegramHtml(s: string): string {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-/** Clickable Safari preview. Publish stays locked (PS-SOCIAL-LOCKOUT-01). */
+/** Clickable Safari preview. Crisis auto-publish is ≤1/day; this link is the preview, not a second post. */
 export function linkedInPreviewTelegramHtml(opts: {
   title: string
   previewUrl: string
@@ -75,21 +75,21 @@ export function linkedInPreviewTelegramHtml(opts: {
   if (opts.kind === 'pending') {
     const h = opts.hours == null ? '' : ` (${opts.hours}h)`
     return (
-      `📋 LINKEDIN TRIAL DRAFT still pending founder review${h}.\n` +
+      `📋 LINKEDIN TRIAL DRAFT still pending auto-publish${h} (≤1/day, no founder gate).\n` +
       `${title}\n` +
-      `Open preview (Safari — lockout stays on until you approve):\n${link}`
+      `Preview:\n${link}`
     )
   }
   if (opts.kind === 'retry') {
     return (
-      `📋 LINKEDIN TRIAL DRAFT re-queued for founder review (lockout stays on).\n` +
+      `📋 LINKEDIN TRIAL DRAFT re-queued for auto-publish (≤1/day).\n` +
       `${title}\n` +
-      `Open preview:\n${link}`
+      `Preview:\n${link}`
     )
   }
   return (
-    `📋 SARAH LINKEDIN PREVIEW ready for Kaan\n${title}\n\n` +
-    `Open in Safari (lockout stays on — this is not a publish):\n${link}`
+    `📋 SARAH LINKEDIN PREVIEW\n${title}\n\n` +
+    `Preview (crisis path auto-publishes ≤1/day when the offer is valid):\n${link}`
   )
 }
 
