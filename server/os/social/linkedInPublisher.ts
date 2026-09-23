@@ -8,6 +8,7 @@ import { llmComplete } from '../llmChat'
 import { rememberFact } from '../memory'
 import { sarahLinkedInPublishBlocker } from './sarahLinkedIn'
 import { assertPublicPostingDisabled } from './publicPostingLockout'
+import { LINKEDIN_DAILY_POST_CAP, linkedInBodyIsPublishable } from './crisisSocialPublish'
 
 const COMPANY = 'phishsimai'
 
@@ -45,13 +46,16 @@ const APPROVED_STATS = [
 export function linkedInContentSafe(text: string): { safe: boolean; reasons: string[] } {
   const reasons: string[] = []
   const t = String(text || '')
+  if (/\b(guarantee|100% secure|never breached|risk-free)\b/i.test(t)) reasons.push('overclaim / absolute guarantee')
+  // Frozen 60¢ / $299 / 30-day offer is an approved price, not an unsourced stat.
+  // $299 used to trip the numeric scan and hold an approved post as held_content_safety.
+  if (linkedInBodyIsPublishable(t).ok) return { safe: reasons.length === 0, reasons }
   // Numeric claims: percentages, "Nx", "$N", "N,NNN" — flag unless the surrounding phrase is approved.
   const numericClaims = t.match(/\b\d{1,3}%|\b\d+x\b|\$\s?\d[\d,]*|\b\d{1,3}(,\d{3})+\b/gi) || []
   for (const claim of numericClaims) {
     const approved = APPROVED_STATS.some((a) => t.toLowerCase().includes(a.toLowerCase()))
     if (!approved) reasons.push(`unsourced numeric claim: "${claim}" — needs a cited source or removal`)
   }
-  if (/\b(guarantee|100% secure|never breached|risk-free)\b/i.test(t)) reasons.push('overclaim / absolute guarantee')
   return { safe: reasons.length === 0, reasons }
 }
 
@@ -98,10 +102,18 @@ export async function publishApprovedLinkedIn(maxPosts = 1): Promise<{ published
   const blocked = sarahLinkedInPublishBlocker()
   if (blocked) return { published: 0, blocked, results: [] }
   const sql = getSql()
+  const postedRows = (await sql`
+    SELECT count(*)::int AS n FROM os_social_queue
+    WHERE platform='linkedin' AND company_id='phishsimai' AND status='posted'
+      AND posted_at > date_trunc('day', NOW() AT TIME ZONE 'UTC')
+  `.catch(() => [{ n: 0 }])) as Array<{ n: number }>
+  if (Number(postedRows[0]?.n || 0) >= LINKEDIN_DAILY_POST_CAP) {
+    return { published: 0, blocked: `linkedin ${LINKEDIN_DAILY_POST_CAP}/day cap already reached`, results: [] }
+  }
   const approved = (await sql`
     SELECT id, title, body, image_url FROM os_social_queue
-    WHERE platform='linkedin' AND status IN ('queued','draft') AND review_status='approved'
-    ORDER BY scheduled_at ASC NULLS LAST LIMIT ${maxPosts}
+    WHERE platform='linkedin' AND status IN ('queued','draft','pending_review') AND review_status='approved'
+    ORDER BY scheduled_at ASC NULLS LAST LIMIT ${Math.min(maxPosts, LINKEDIN_DAILY_POST_CAP)}
   `.catch(() => [])) as any[]
 
   const results: any[] = []

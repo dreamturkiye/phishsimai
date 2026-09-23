@@ -356,7 +356,10 @@ export async function cronSarahSocial(req: Request, res: Response) {
       const { publishApprovedLinkedIn, runLinkedInMonitor } = await import('./social/linkedInPublisher')
       const linkedinMonitor = await runLinkedInMonitor().catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
       const linkedinPublish = await publishApprovedLinkedIn(1).catch((e: any) => ({ error: String(e?.message).slice(0, 120) }))
-      return { reddit, linkedinMonitor, linkedinPublish }
+      // Crisis path: pending_review is not a founder gate. ≤1/day is enforced inside the helper.
+      const { tryCrisisPublishLinkedIn } = await import('./trialAcquisitionChannels')
+      const linkedinCrisis = await tryCrisisPublishLinkedIn().catch((e: any) => ({ posted: false, reason: String(e?.message || e).slice(0, 160) }))
+      return { reddit, linkedinMonitor, linkedinPublish, linkedinCrisis }
     })
   } catch (e: any) {
     res.status(500).json({ error: formatOsError(e) })

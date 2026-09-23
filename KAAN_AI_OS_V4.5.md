@@ -23,6 +23,7 @@
 | **4.5.9** | **Sep 17 2026** | **T1 quality-refill no-pause** — crisis drain does not zero T1 when sanitized eligible is 1–150. See `docs/architect/SPEC-t1-quality-refill-no-pause.md` |
 | **4.5.10** | **Sep 19 2026** | **Watchdog stall self-heal** — send-stuck / research-stuck auto-invokes sequence + researcher (or marks reclaim). Founder Telegram only on 2nd+ consecutive heal failure. No Dex raise. No blast. No touch 93. See `docs/architect/SPEC-watchdog-stall-self-heal.md` |
 | **4.5.11** | **Sep 19 2026** | **Funnel send-cron/send-zero** — 08:30 self-heals stale Aria / defers fresh / suppresses Dex-cap false-positive Telegram. Verifier-empty, real T1 starve, bounce-breaker, founder 1:1 stay pages. See `docs/architect/SPEC-suppress-dex-cap-send-page.md` |
+| **4.5.12** | **Sep 23 2026** | **T1 QEV promote + LinkedIn auto-publish** — mev_qev no longer treats a MEV catch-all as final; QEV-valid personal inboxes promote. Stuck LinkedIn `pending_review` clears or publishes at ≤1/day. Caps 50/50/100. No MX-only. No touch 93. See `docs/architect/SPEC-t1-qev-promote-linkedin.md` |
 
 ---
 
