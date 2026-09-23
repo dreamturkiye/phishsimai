@@ -1,28 +1,18 @@
-# SPEC — PS-TELEGRAM-NOISE-01 (silence reclaimable Telegram flood)
+# SPEC — PS-TELEGRAM-GATE-01 / PS-TELEGRAM-NOISE-01
 
-## Problem
-Founder Telegram flooded by reclaimable / recurring pages:
-- Agent LLM / Ollama `payment-failed` (finn, vera, dex, janet, marcus every standup)
-- Hourly `PHISHSIMAI ARIA SEQUENCE` digests
-- `escalation-notify` */15 delivering per-agent `agent_critical`
-- `founder-brief` + `daily-report` both at 21:00 UTC
-- Routine `PHISHSIMAI TASK` status spam
-- Grey Box paid nudge double-Telegram (specific + batch)
+## Owner decision (2026-09-23)
+Silence **almost all** Telegram status spam.
+Allowlist ONLY: `hard_failure` | `founder_brief`.
 
-## Rules (owner)
-- No homework Telegrams for reclaimable issues
-- Founder only hard failures / money
-- Briefs stay on Telegram but must not flood
-- Caps unchanged; no blast; no touch 93
-
-## Fix
-1. `telegramNoisePolicy.ts` — classify LLM billing, task status, digest/day, daily-report dedupe
-2. `agentHealth_v2` — coalesce billing to one `llm_provider_billing` money alert
-3. `shouldPageFounderForEscalation` — suppress billing `agent_critical`
-4. Sequence digest ≤1 / UTC day
-5. Task Telegram only on failure statuses
-6. Skip daily-report Telegram when founder brief already exists for the UTC day
-7. Grey Box win Telegrams once via trial-nudges batch
+## Choke point
+`sendTelegram` → `gateTelegram(text, kind?)`. Status / wins / digests / task flips / nudges are skipped at the source.
 
 ## Keep
-Bounce breaker, verifier empty, T1 starve, breaker_trip, coalesced LLM billing (money), founder brief once/day, real wins.
+- Hard failures: bounce breaker, T1 starve, verifier empty, breaker_trip, bug-fix-failed, HQ chat down, FOUNDER DECISION PENDING, LLM/provider billing (money)
+- One daily founder brief (`founder_brief` kind)
+
+## Silenced
+ARIA SEQUENCE digests, daily-report, TASK status, trial nudges, Grey Box win lines, standup/morning spam, Janet restart OK, warm CTA digests, sales-reply chatter, employee_stale homework (billing coalesced separately).
+
+## Rails
+Caps unchanged. No blast. No touch 93.
