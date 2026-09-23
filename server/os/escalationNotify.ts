@@ -17,6 +17,7 @@ import { getSql } from './conn'
 import { sendTelegram } from './telegram'
 import { COMPANY_ID } from './version'
 import { shouldPageFounderForEscalation, type AutonomyNagContext } from './escalationTriagePolicy'
+import { isLlmBillingAgentCritical } from './telegramNoisePolicy'
 import { resolveReadableLevel } from './autonomyGate'
 
 // PS-ESCALATION-COVERAGE-01: the founder early-warning writer. escalation-notify (*/15) delivers
@@ -54,6 +55,11 @@ export async function raiseEscalation(
         console.log(`[escalation] skip autonomy_change — already_at_l5_floor`)
         return
       }
+    }
+    // PS-TELEGRAM-NOISE-01: do not insert per-agent billing agent_critical rows (coalesced elsewhere).
+    if (isLlmBillingAgentCritical({ category, payload })) {
+      console.log(`[escalation] skip agent_critical — llm_provider_billing coalesce`)
+      return
     }
     await sql`INSERT INTO escalations (product_id, category, payload)
       VALUES (${productId}, ${category}, ${JSON.stringify(payload)}::jsonb)`

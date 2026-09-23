@@ -1,6 +1,7 @@
 import { Request, Response } from 'express'
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { shouldSendDailyReportTelegram, utcDayKey } from './telegramNoisePolicy'
 
 /**
  * PS-DIGEST-01 — daily signup digest to Telegram. 21:00 UTC.
@@ -84,6 +85,30 @@ export async function cronDailyReport(req: Request, res: Response) {
     // is what made a dead digest look like a healthy one: the try/catch below
     // only fires on a THROWN error, which this path never produces. Check it,
     // or the endpoint reports success for a message nobody received.
+    // PS-TELEGRAM-NOISE-01: founder-brief and daily-report both fire 21:00 UTC.
+    // Prefer the founder brief; skip the signup digest Telegram when the brief already landed.
+    const day = utcDayKey()
+    let founderBriefExists = false
+    try {
+      const brief = await sql`SELECT 1 FROM founder_briefs WHERE brief_date=${day} LIMIT 1`
+      founderBriefExists = (brief as any[]).length > 0
+    } catch { /* table may lag */ }
+    if (!shouldSendDailyReportTelegram({ founderBriefExistsForUtcDay: founderBriefExists })) {
+      res.json({
+        ok: true,
+        today: Number(s.today ?? 0),
+        yesterday: Number(s.yesterday ?? 0),
+        last_7d: Number(s.last_7d ?? 0),
+        total: Number(s.total ?? 0),
+        paid,
+        members,
+        telegram_ok: true,
+        telegram_skipped: true,
+        telegram_skipped_reason: 'founder_brief_already_sent_today',
+      })
+      return
+    }
+
     const tg = await sendTelegram(lines.join('\n'))
 
     const payload = {
