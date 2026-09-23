@@ -1,4 +1,5 @@
 import { autonomyFloorFor, resolveReadableLevel, LEVEL_ORDER } from './autonomyGate'
+import { isLlmBillingAgentCritical } from './telegramNoisePolicy'
 
 /** Send-path / T1 starve / sanitize empty — Marcus owns this, not a founder gate. */
 export const CRISIS_AUTO_MARCUS = 'crisis_auto_marcus'
@@ -127,5 +128,7 @@ export function shouldPageFounderForEscalation(row: AutonomyNagContext): boolean
   if (row.status && (TERMINAL_ESCALATION_STATUSES as readonly string[]).includes(row.status)) return false
   if (isAlreadyAtL5FloorAutonomyNoise(row)) return false
   if (isCrisisAutoMarcusEscalation(row) || isDexThrottleEscalation(row)) return false
+  // Shared Ollama/LLM payment-failed — one money page via llm_provider_billing, not N agent_critical.
+  if (isLlmBillingAgentCritical(row)) return false
   return true
 }

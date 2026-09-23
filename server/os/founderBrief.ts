@@ -423,6 +423,6 @@ export function makeSqlBriefDeps(companyId = 'phishsimai'): BriefDeps {
         ON CONFLICT (brief_date) DO UPDATE SET content_md = EXCLUDED.content_md
       `
     },
-    send: (md: string) => sendTelegram(md),
+    send: (md: string) => sendTelegram(md, undefined, 'founder_brief'),
   }
 }

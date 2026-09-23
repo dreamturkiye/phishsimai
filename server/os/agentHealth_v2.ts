@@ -2,6 +2,11 @@ import { AGENTS, AgentId } from '../lib/kaan_os_v4'
 import { getSql } from './conn'
 import { openSystemAlert, resolveSystemAlert } from './selfHeal'
 import { raiseEscalation } from './escalationNotify'
+import {
+  LLM_PROVIDER_BILLING_ALERT,
+  isLlmProviderBillingFailure,
+  llmBillingAlertDetail,
+} from './telegramNoisePolicy'
 
 /** The concrete neon client type returned by getSql() (NeonQueryFunction<false, false>). */
 type Sql = ReturnType<typeof getSql>
@@ -116,7 +121,18 @@ export async function reportAgentHealth(
     // failure) only — not every failure ≥3 — so repeated agent failures alert once, not on a loop.
     const r = rows[0]
     if (r && r.status === 'critical' && Number(r.consecutive_failures) === 3) {
-      await raiseEscalation('agent_critical', { agentId, consecutiveFailures: 3, lastError: String(error ?? '').slice(0, 200) }, companyId).catch(() => {})
+      const lastErr = String(error ?? '').slice(0, 200)
+      // PS-TELEGRAM-NOISE-01: Ollama/LLM payment-failed hits every agent the same standup.
+      // Coalesce to one money alert; do not raise per-agent agent_critical homework.
+      if (isLlmProviderBillingFailure(lastErr)) {
+        await openSystemAlert(
+          LLM_PROVIDER_BILLING_ALERT,
+          llmBillingAlertDetail(lastErr, agentId),
+          companyId,
+        ).catch(() => {})
+      } else {
+        await raiseEscalation('agent_critical', { agentId, consecutiveFailures: 3, lastError: lastErr }, companyId).catch(() => {})
+      }
     }
   }
 }
@@ -215,13 +231,14 @@ export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<
   const sql = getSql()
   await ensureAgentHealthTable(sql)
   const rows = await sql`
-    SELECT agent_id, last_success_at, status, consecutive_failures, total_runs
+    SELECT agent_id, last_success_at, status, consecutive_failures, total_runs, last_error
     FROM agent_health_v2 WHERE company_id = ${companyId}
   `.catch(() => [] as any[])
 
   const alerts: string[] = []
   const now = Date.now()
   const expectedIds = Object.keys(AGENTS) as AgentId[]
+  let llmBillingCoalesced = false
 
   for (const agentId of expectedIds) {
     const row = (rows as any[]).find((r) => r.agent_id === agentId)
@@ -229,6 +246,7 @@ export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<
     const lastSuccess = row?.last_success_at ? new Date(row.last_success_at).getTime() : 0
     const stale = !lastSuccess || now - lastSuccess > threshold
     const critical = row?.status === 'critical' || (row?.consecutive_failures ?? 0) >= 3
+    const lastErr = row?.last_error != null ? String(row.last_error) : ''
 
     if (!lastSuccess && Number(row?.total_runs ?? 0) === 0) {
       // Never called reportAgentHealth — Janet/Marcus/leftover Max. Not a missed ping.
@@ -244,6 +262,25 @@ export async function checkEmployeeStaleness(companyId = 'phishsimai'): Promise<
       const age = lastSuccess ? `${((now - lastSuccess) / 3600000).toFixed(1)}h ago` : 'never'
       const label = AGENTS[agentId]?.name || agentId
       alerts.push(`employee:${agentId}: ${age}${critical ? ' critical' : ''}`)
+      // PS-TELEGRAM-NOISE-01: shared LLM billing makes every employee look stale/critical.
+      // Coalesce to one money page; clear per-agent homework quietly.
+      if (isLlmProviderBillingFailure(lastErr)) {
+        if (!llmBillingCoalesced) {
+          await openSystemAlert(
+            LLM_PROVIDER_BILLING_ALERT,
+            llmBillingAlertDetail(lastErr, agentId),
+            companyId,
+          ).catch(() => {})
+          llmBillingCoalesced = true
+        }
+        await resolveSystemAlert(
+          'employee_stale:' + agentId,
+          'shared LLM billing — coalesced to llm_provider_billing',
+          companyId,
+          { notify: false },
+        )
+        continue
+      }
       await openSystemAlert('employee_stale:' + agentId, `${label} last ping ${age}`)
     } else {
       await resolveSystemAlert('employee_stale:' + agentId, 'employee responding within threshold')

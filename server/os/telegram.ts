@@ -1,6 +1,7 @@
 /** Kaan AI OS — Telegram alerts (PhishSim AI edition, mirrors ScrollFuel lib/telegram.ts) */
 
 import { evaluateTelegramWiring } from './kaan-os-core/telegramWiring'
+import { gateTelegram, type TelegramKind } from './telegramGate'
 
 export const TELEGRAM_PRODUCT = 'PhishSim AI'
 const PRODUCT_ID = 'phishsimai'
@@ -180,11 +181,23 @@ export function splitForTelegram(text: string, limit = CHUNK_TARGET): string[] {
 
 export async function sendTelegram(
   text: string,
-  keyboard?: { text: string; callback_data: string }[][]
-): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
+  keyboard?: { text: string; callback_data: string }[][],
+  kind?: TelegramKind | null,
+  opts?: { bypassGate?: boolean },
+): Promise<{ ok: boolean; skipped?: boolean; error?: string; kind?: TelegramKind }> {
+  // PS-TELEGRAM-GATE-01: owner allowlist hard_failure | founder_brief only.
+  // bypassGate is ONLY for /telegram/test wiring checks — never for product callers.
+  const gate = opts?.bypassGate
+    ? { allowed: true, kind: (kind || 'hard_failure') as TelegramKind }
+    : gateTelegram(text, kind)
+  if (!gate.allowed) {
+    console.log(`[telegram] silenced kind=${gate.kind}: ${String(text).slice(0, 80).replace(/\n/g, ' ')}`)
+    return { ok: false, skipped: true, error: gate.reason, kind: gate.kind }
+  }
+
   const c = resolveCreds()
   if (!c.token || !c.chatId) {
-    return { ok: false, skipped: true, error: 'Telegram not configured (PHISHSIM_TELEGRAM_*)' }
+    return { ok: false, skipped: true, error: 'Telegram not configured (PHISHSIM_TELEGRAM_*)', kind: gate.kind }
   }
 
   // FAIL CLOSED on bot identity. If the token is not PhishSim's own bot — in particular if it
@@ -258,7 +271,10 @@ export async function sendTelegram(
 /** Send a test ping — used by /api/os/telegram/test */
 export async function sendTelegramTest(): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
   return sendTelegram(
-    `✅ <b>Telegram connected</b>\n${TELEGRAM_PRODUCT} · Kaan AI OS\nAlerts: bugs, replies, Janet briefs, architect deploys, QA.`
+    `✅ <b>Telegram connected</b>\n${TELEGRAM_PRODUCT} · Kaan AI OS\nAlerts: hard failures + founder brief only.`,
+    undefined,
+    'hard_failure',
+    { bypassGate: true },
   )
 }
 

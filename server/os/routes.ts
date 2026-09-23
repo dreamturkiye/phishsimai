@@ -13,6 +13,7 @@ import { runHeartbeat } from './heartbeat'
 import { processReply } from './replyParser'
 import { recallContext, recallMemory, rememberFact, seedPhishSimMemory } from './memory'
 import { sendTelegram } from './telegram'
+import { shouldTelegramTaskStatus } from './telegramNoisePolicy'
 import { ensureHqTables, formatOsError, getSql } from './conn'
 import { handleIncomingTelegram } from './telegramCommands'
 import { getTelegramConfig, sendTelegramTest, registerTelegramWebhook, verifyTelegram } from './telegram'
@@ -685,7 +686,10 @@ export async function hqTask(req: Request, res: Response) {
     const { id, status, notes } = req.body
     const sql = getSql()
     await sql`UPDATE os_architect_tasks SET status=${status}, notes=${notes || null}, updated_at=NOW() WHERE id=${id}`
-    await sendTelegram(`PHISHSIMAI TASK ${status.toUpperCase()}: ${notes || id}`)
+    // PS-TELEGRAM-NOISE-01: routine in_progress/done flips are homework. Failures still page.
+    if (shouldTelegramTaskStatus(status)) {
+      await sendTelegram(`PHISHSIMAI TASK ${String(status).toUpperCase()}: ${notes || id}`)
+    }
     res.json({ ok: true })
   } catch (e: any) {
     res.status(500).json({ error: e.message })
