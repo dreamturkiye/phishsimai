@@ -8,18 +8,41 @@
 import { assertPublicPostingDisabled } from './publicPostingLockout'
 
 const API_BASE = 'https://api.postforme.dev/v1'
+/** Live 2026-09-23: POST /v1/posts → `404 Cannot POST /v1/posts`. Create is /v1/social-posts. */
+export const POSTFORME_SOCIAL_POSTS_URL = `${API_BASE}/social-posts`
+
+export type PostForMeEnv = Record<string, string | undefined>
+
+/** Ignore a stale POSTFORME_API_URL that still points at the removed /v1/posts route. */
+export function resolvePostForMeCreateUrl(env: PostForMeEnv = process.env): string {
+  const raw = String(env.POSTFORME_API_URL || '').trim().replace(/\/$/, '')
+  if (!raw || /\/v1\/posts$/.test(raw) || /\/posts$/.test(raw)) return POSTFORME_SOCIAL_POSTS_URL
+  return raw
+}
+
+/** PhishSim key wins over a generic/ScrollFuel POSTFORME_API_KEY. */
+export function resolvePostForMeApiKey(env: PostForMeEnv = process.env): string {
+  return (
+    env.POSTFORME_PHISHSIM_API_KEY?.trim() ||
+    env.POSTFORME_API_KEY?.trim() ||
+    env.POST_FOR_ME_API_KEY?.trim() ||
+    ''
+  )
+}
+
+/** Sarah's connected account. Fall back to the older Kaan-account env only if Sarah's id is unset. */
+export function resolvePostForMeLinkedInAccount(env: PostForMeEnv = process.env): string {
+  return env.POSTFORME_SARAH_LINKEDIN_ID?.trim() || env.POSTFORME_LINKEDIN_ACCOUNT?.trim() || ''
+}
 
 function apiKey(): string {
-  const key =
-    process.env.POSTFORME_PHISHSIM_API_KEY?.trim() ||
-    process.env.POSTFORME_API_KEY?.trim() ||
-    process.env.POST_FOR_ME_API_KEY?.trim()
+  const key = resolvePostForMeApiKey()
   if (!key) throw new Error('POSTFORME_API_KEY not configured')
   return key
 }
 
 function sarahLinkedInAccountId(): string {
-  const id = process.env.POSTFORME_SARAH_LINKEDIN_ID?.trim()
+  const id = resolvePostForMeLinkedInAccount()
   if (!id) throw new Error('POSTFORME_SARAH_LINKEDIN_ID not configured')
   return id
 }
@@ -69,7 +92,7 @@ export async function postLinkedInViaPostForMe(
   assertPublicPostingDisabled('LinkedIn (PostForMe / publishSarahLinkedIn)')
   const socialAccountId = sarahLinkedInAccountId()
 
-  const res = await fetch(`${API_BASE}/social-posts`, {
+  const res = await fetch(resolvePostForMeCreateUrl(), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey()}`,

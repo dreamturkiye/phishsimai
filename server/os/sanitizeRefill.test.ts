@@ -7,7 +7,8 @@ import {
   shouldUseMapsMxBridge,
   isMapsSourced,
   isPromotableHeldAddress,
-  refillMaySelectLabel,
+  domainNeedsPersonalFinder,
+  heldDomainBlocksFinder,
   refillSendablePool,
   SANITIZE_BUFFER_DAYS,
 } from './sanitizeRefill'
@@ -77,7 +78,8 @@ describe('QEV vs empty MEV (Sep 12 death shape)', () => {
     expect(src).toContain('QEV_API_KEY')
     expect(src).toContain('maps_mx_bridge')
     expect(src).toContain('mev_qev')
-    expect(src).toContain('MEV_CATCHALL_REQUEUE')
+    expect(src).not.toContain('MEV_CATCHALL_REQUEUE')
+    expect(src).toContain("interval '7 days'")
     expect(src).toContain('qev_catchall')
     expect(src).not.toMatch(/\$\{qevFallback\}/)
     expect(src).toContain('sendablePoolEmptyAlertMessage')
@@ -123,6 +125,24 @@ describe('finder skip predicate matches refill promotability', () => {
     expect(isPromotableHeldAddress('info@msp.example', null)).toBe(false)
     expect(isPromotableHeldAddress('pat@msp.example', 'mev_valid')).toBe(true)
     expect(isPromotableHeldAddress('pat@msp.example', null)).toBe(true)
+    expect(isPromotableHeldAddress('pat@msp.example', 'unverified_unknown')).toBe(false)
+  })
+})
+
+describe('personal-mailbox supply vs catch-all policy', () => {
+  it('reopens role-only domains and leaves catch-all, valid, and inconclusive closed', () => {
+    expect(domainNeedsPersonalFinder([{ email: 'info@msp.example', sanitizeReason: 'role_account' }])).toBe(true)
+    expect(domainNeedsPersonalFinder([{ email: 'ceo@msp.example', sanitizeReason: 'role_strict' }])).toBe(true)
+    expect(domainNeedsPersonalFinder([
+      { email: 'info@msp.example', sanitizeReason: 'role_account' },
+      { email: 'pat@msp.example', sanitizeReason: 'catchall' },
+    ])).toBe(false)
+    expect(domainNeedsPersonalFinder([{ email: 'pat@msp.example', sanitizeReason: 'mev_valid' }])).toBe(false)
+    expect(domainNeedsPersonalFinder([{ email: 'pat@msp.example', sanitizeReason: null }])).toBe(false)
+    expect(domainNeedsPersonalFinder([{ email: 'pat@msp.example', sanitizeReason: 'unverified_unknown' }])).toBe(false)
+    expect(heldDomainBlocksFinder([{ email: 'pat@msp.example', sanitizeReason: 'catchall' }])).toBe('catchall')
+    expect(heldDomainBlocksFinder([{ email: 'pat@msp.example', sanitizeReason: 'qev_valid' }])).toBe('sendable')
+    expect(heldDomainBlocksFinder([{ email: 'info@msp.example', sanitizeReason: 'role_account' }])).toBe('open')
   })
 })
 
@@ -252,7 +272,7 @@ describe('refillSendablePool fail-closed vs QEV', () => {
     expect(vi.mocked(verifyViaService)).toHaveBeenCalled()
   })
 
-  it('MEV catch-all defers to QEV and promotes a QEV-valid mailbox (mev_qev starve)', async () => {
+  it('MEV catch-all is terminal and does not spend QEV', async () => {
     process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
     process.env.QEV_API_KEY = 'qk_test'
     vi.stubGlobal('fetch', async (url: string | URL) => {
@@ -261,14 +281,6 @@ describe('refillSendablePool fail-closed vs QEV', () => {
         return { ok: true, status: 200, text: async () => JSON.stringify({ Status: 'Catch-all', catch_all: 'true' }) }
       }
       throw new Error('unexpected fetch ' + u)
-    })
-    vi.mocked(verifyViaService).mockResolvedValue({
-      status: 'valid',
-      catchAll: false,
-      isRole: false,
-      reason: 'valid',
-      reached: true,
-      remainingCredits: 800,
     })
     const sql = fakeSql([
       { match: /ALTER TABLE/, rows: [] },
@@ -280,42 +292,9 @@ describe('refillSendablePool fail-closed vs QEV', () => {
     ])
     const r = await refillSendablePool(sql, new Date('2026-09-23T15:00:00Z'))
     expect(r.verifyMode).toBe('mev_qev')
-    expect(r.promoted).toBe(1)
-    expect(r.promotedLeads[0]?.verdict).toBe('valid')
-    expect(vi.mocked(verifyViaService)).toHaveBeenCalled()
-    expect(sql.calls.some((q: string) => q.includes('qev_valid'))).toBe(true)
-  })
-
-  it('MEV catch-all + QEV catch-all does not promote and writes qev_catchall', async () => {
-    process.env.MYEMAILVERIFIER_API_KEY = 'mev-key'
-    process.env.QEV_API_KEY = 'qk_test'
-    vi.stubGlobal('fetch', async (url: string | URL) => {
-      const u = String(url)
-      if (u.includes('myemailverifier.com')) {
-        return { ok: true, status: 200, text: async () => JSON.stringify({ Status: 'Valid', catch_all: 'true' }) }
-      }
-      throw new Error('unexpected fetch ' + u)
-    })
-    vi.mocked(verifyViaService).mockResolvedValue({
-      status: 'risky',
-      catchAll: true,
-      isRole: false,
-      reason: 'accept_all',
-      reached: true,
-      remainingCredits: 800,
-    })
-    const sql = fakeSql([
-      { match: /ALTER TABLE/, rows: [] },
-      { match: /sanitized_at IS NOT NULL AND touch1_sent_at IS NULL/, rows: [{ n: 0 }] },
-      {
-        match: /refill_checked_at IS NULL/,
-        rows: [{ id: 'lead-8', email: 'sam@msp.example', source: 'ai_discovery' }],
-      },
-    ])
-    const r = await refillSendablePool(sql, new Date('2026-09-23T15:00:00Z'))
     expect(r.promoted).toBe(0)
     expect(r.checked).toBe(1)
-    expect(sql.calls.some((q: string) => q.includes('qev_catchall'))).toBe(true)
+    expect(vi.mocked(verifyViaService)).not.toHaveBeenCalled()
     expect(process.env.REFILL_ALLOW_MX_ONLY).toBeUndefined()
   })
 
@@ -354,16 +333,12 @@ describe('MEV catch-all is not a QEV verdict', () => {
     expect(mapMevBody({ Status: 'Unknown' })).toBe('unknown')
   })
 
-  it('re-opens MEV catchall for QEV and keeps role / invalid / qev_catchall closed', () => {
-    expect(refillMaySelectLabel(null, true)).toBe(true)
-    expect(refillMaySelectLabel('catchall', true)).toBe(true)
-    expect(refillMaySelectLabel('unverified_catchall', true)).toBe(true)
-    expect(refillMaySelectLabel('catchall', false)).toBe(false)
-    expect(refillMaySelectLabel('qev_catchall', true)).toBe(false)
-    expect(refillMaySelectLabel('qev_invalid', true)).toBe(false)
-    expect(refillMaySelectLabel('role_account', true)).toBe(false)
-    expect(refillMaySelectLabel('mev_invalid', true)).toBe(false)
-    expect(refillMaySelectLabel('unverified_unknown', true)).toBe(true)
+  it('does not re-open catchall, role, or a fresh inconclusive for another hourly QEV pass', () => {
+    const src = readFileSync('server/os/sanitizeRefill.ts', 'utf8')
+    expect(src).toContain('CATCHALL_TERMINAL_LABELS')
+    expect(src).toContain("interval '7 days'")
+    expect(src).not.toContain('MEV_CATCHALL_REQUEUE')
+    expect(src).not.toMatch(/sanitize_reason = ANY\(\$\{[^}]*CATCHALL/)
   })
 })
 
