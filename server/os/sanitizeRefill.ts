@@ -11,8 +11,9 @@
 //   • MyEmailVerifier when MYEMAILVERIFIER_API_KEY is a NON-EMPTY value — empty string (Vercel
 //     name-exists-value-empty, measured 2026-09-17) is unset. Live fire: MEV checked 23, promoted 0.
 //     When both keys are set, MEV runs first; QEV is the fallback on empty/fail/unknown
-//     AND on MEV catch-all (mode mev_qev, 2026-09-23). A MEV catch-all is re-queued for QEV;
-//     QEV catch-all is stored as qev_catchall and is not re-opened.
+//     only (mode mev_qev). MEV catch-all is terminal. Live 2026-09-23: 0 valid, ~3615 role
+//     and ~2312 catchall already DISQUALIFIED; 59 inconclusive QEV passes promoted 0.
+//     New sendable supply is a personal-mailbox find on role-only domains, not this loop.
 //   • else a free MX check (domain-level) — which CANNOT detect catch-all, so it is OFF unless the
 //     operator opts in with REFILL_ALLOW_MX_ONLY=1 (accepting that ~82% of this list is catch-all
 //     and MX alone will pass them, risking bounces). SMTP RCPT is not usable — Vercel blocks port 25.
@@ -82,42 +83,79 @@ export function mapQevToRefillVerdict(v: Pick<VerifierVerdict, 'status' | 'catch
 export const DISQUALIFIED_LABELS = [
   'role_account', 'role_strict', 'catchall', 'unverified_catchall', 'no_mx', 'mev_invalid',
   'edu_gov_domain', 'domain_cap', 'deprioritized_generic', 'initials_greeting', 'generic_greeting',
-  // QEV-confirmed terminal labels. Not re-queued (unlike a MEV-only catchall).
+  // QEV-confirmed terminal labels. Catch-all (MEV or QEV) is not re-queued.
   'qev_catchall', 'qev_invalid',
 ]
 
-/** Previously checked but never decided — QEV fallback must re-open these (live: 1244 null + 120 unknown). */
+/** Role / generic inboxes. A domain that holds only these can still have a named person. */
+export const ROLE_ONLY_FINDER_LABELS = [
+  'role_account', 'role_strict', 'deprioritized_generic', 'generic_greeting', 'initials_greeting',
+]
+
+/** Catch-all is a domain property. Re-finding another address there will not yield a QEV-valid mailbox. */
+export const CATCHALL_TERMINAL_LABELS = ['catchall', 'unverified_catchall', 'qev_catchall']
+
+/** Previously checked but never decided. QEV may retry these after 7 days, not every hour. */
 export const INCONCLUSIVE_LABELS = [
   'unverified_unknown', 'unverified_timeout', 'unverified_blank',
 ]
 
 /**
- * MEV catch-all is not a QEV verdict. Live mev_qev (2026-09-23): sanitizedEligible=0 while
- * ~6124 GEO never-touched remained because MEV labeled catch-all and the candidate query
- * never spent a QEV credit. Re-open ONLY these labels for a QEV pass. Role / no-MX / invalid
- * stay disqualified. A QEV catch-all is rewritten to qev_catchall so it cannot loop.
- */
-export const MEV_CATCHALL_REQUEUE = ['catchall', 'unverified_catchall'] as const
-
-/** Label-only half of the refill candidate predicate (SQL applies refill_checked_at too). */
-export function refillMaySelectLabel(reason: string | null | undefined, qev: boolean): boolean {
-  const label = String(reason ?? '').trim()
-  if (!label) return true
-  if ((MEV_CATCHALL_REQUEUE as readonly string[]).includes(label)) return qev
-  if ((DISQUALIFIED_LABELS as readonly string[]).includes(label)) return false
-  return true
-}
-
-/**
  * True when holding this address is a reason to skip a paid finder.
- * Org inboxes and DISQUALIFIED labels (catchall / role_account / …) are NOT skippable —
- * live 2026-09-17: remaining TOF was role/catchall while mev_valid was already T1'd.
+ * Org inboxes, DISQUALIFIED labels, and already-checked inconclusive rows are NOT skippable.
+ * Live 2026-09-23: 0 valid; role + catchall are disqualified; 59 inconclusive were QEV'd and
+ * promoted 0. An unchecked null is still refill's job (do not pay the finder for it).
  */
 export function isPromotableHeldAddress(email: string, sanitizeReason?: string | null): boolean {
   if (!email || isOrgInbox(email)) return false
   const label = String(sanitizeReason || '').trim()
-  if (label && (DISQUALIFIED_LABELS as readonly string[]).includes(label)) return false
+  if (!label) return true
+  if ((INCONCLUSIVE_LABELS as readonly string[]).includes(label)) return false
+  if ((DISQUALIFIED_LABELS as readonly string[]).includes(label)) return false
   return true
+}
+
+export type HeldAddress = { email: string; sanitizeReason?: string | null }
+
+/**
+ * Why the finder must not spend a credit on this domain.
+ * `sendable` — a promotable or unchecked personal is already held (refill owns it).
+ * `catchall` — catch-all is terminal; another address on the same domain will not verify.
+ * `open` — role-only, org-inbox-only, or empty. A named personal find is worth paying for.
+ */
+export function heldDomainBlocksFinder(held: HeldAddress[]): 'sendable' | 'catchall' | 'open' {
+  const labels = held.map((h) => String(h.sanitizeReason ?? '').trim())
+  if (held.some((h) => isPromotableHeldAddress(h.email, h.sanitizeReason))) return 'sendable'
+  if (labels.some((label) => (CATCHALL_TERMINAL_LABELS as readonly string[]).includes(label))) return 'catchall'
+  return 'open'
+}
+
+/**
+ * True when this domain should be put back on the finder for a named personal mailbox.
+ * Role-only (and org-inbox-only) domains qualify. Catch-all, already-valid, unchecked
+ * personal, and inconclusive rows do not — those are terminal or still the refill's job.
+ */
+export function domainNeedsPersonalFinder(held: HeldAddress[]): boolean {
+  if (!held.length) return false
+  if (heldDomainBlocksFinder(held) !== 'open') return false
+  let sawRoleOrOrg = false
+  for (const row of held) {
+    const email = String(row.email || '').trim()
+    if (!email) continue
+    const label = String(row.sanitizeReason ?? '').trim()
+    if (isOrgInbox(email)) {
+      sawRoleOrOrg = true
+      continue
+    }
+    if ((INCONCLUSIVE_LABELS as readonly string[]).includes(label)) return false
+    if ((ROLE_ONLY_FINDER_LABELS as readonly string[]).includes(label)) {
+      sawRoleOrOrg = true
+      continue
+    }
+    // A decided personal (invalid, no MX, edu, domain cap) means a person was already tried.
+    return false
+  }
+  return sawRoleOrOrg
 }
 
 // Generic ORG inboxes with no individual owner. Deliberately NOT the same list as abTest.ts's
@@ -193,11 +231,12 @@ export async function verifyEmailDetailed(
         if (res.ok) {
           const d = JSON.parse((await res.text()) || '{}') as { Status?: string; catch_all?: number | string | boolean }
           const verdict = mapMevBody(d)
-          // MEV valid / invalid are terminal (do not spend QEV). Catch-all and unknown defer to
-          // QEV when keyed — a MEV catch-all is not proof the mailbox is unsafe, and treating it
-          // as final left sanitizedEligible=0 under mev_qev.
-          const deferToQev = opts.qev && (verdict === 'catchall' || verdict === 'unknown')
-          if (!deferToQev && (verdict === 'valid' || verdict === 'catchall' || verdict === 'invalid')) {
+          // MEV valid / invalid / catch-all are terminal. Do not re-spend QEV on catch-all:
+          // live 2026-09-23 the unsanitized pool is ~3615 role + ~2312 catchall, 0 valid.
+          // Unknown still falls through to QEV. New sendable supply is the finder, not this loop.
+          if (verdict === 'unknown' && opts.qev) {
+            // fall through
+          } else if (verdict === 'valid' || verdict === 'catchall' || verdict === 'invalid') {
             return { verdict, via: 'mev' }
           }
         } else {
@@ -336,25 +375,17 @@ export async function refillSendablePool(
      WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
        AND country = ANY(${GEO}) AND bounced = false AND unsubscribed = false
        AND pipeline_stage NOT IN ('dead','customer')
-       AND (
-         sanitize_reason IS NULL
-         OR NOT (sanitize_reason = ANY(${DISQUALIFIED_LABELS}))
-         OR sanitize_reason = ANY(${MEV_CATCHALL_REQUEUE})
-       )
+       AND (sanitize_reason IS NULL OR sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
        AND (
          refill_checked_at IS NULL
-         OR sanitize_reason IS NULL
-         OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS})
-         OR sanitize_reason = ANY(${MEV_CATCHALL_REQUEUE})
+         OR (
+           (sanitize_reason IS NULL OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS}))
+           AND refill_checked_at < now() - interval '7 days'
+         )
        )
-     ORDER BY
-       CASE
-         WHEN refill_checked_at IS NULL THEN 0
-         WHEN sanitize_reason IS NULL OR sanitize_reason = ANY(${INCONCLUSIVE_LABELS}) THEN 1
-         ELSE 2
-       END,
-       refill_checked_at ASC NULLS FIRST,
-       created_at DESC
+     ORDER BY CASE WHEN refill_checked_at IS NULL THEN 0 ELSE 1 END,
+              refill_checked_at ASC NULLS FIRST,
+              created_at DESC
      LIMIT ${maxLookups}`
       : await sql`SELECT id, email, source FROM ps_outreach_leads
      WHERE sanitized_at IS NULL AND touch1_sent_at IS NULL
@@ -419,8 +450,9 @@ export async function refillSendablePool(
         }
       } else if (verdict === 'unknown') {
         // Stamp the check so the next run rotates past a QEV hold / grey-list instead of
-        // re-spending the whole budget on the same newest rows. Keep an existing label
-        // (MEV catchall stays re-queueable). Blank reason becomes inconclusive, not disqualified.
+        // re-spending the whole budget on the same newest rows. Keep an existing label.
+        // Blank reason becomes inconclusive, not disqualified. Catch-all is written on
+        // the decision path and is not re-queued.
         await sql`UPDATE ps_outreach_leads
            SET refill_checked_at = now(),
                sanitize_reason = CASE

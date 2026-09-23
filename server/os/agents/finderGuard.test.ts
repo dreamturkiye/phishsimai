@@ -84,7 +84,7 @@ describe('findEmailForDomainOnly — proceeds when a find is genuinely worth pay
     }
   })
 
-  it('PROCEEDS when the held personal is DISQUALIFIED catchall/role (live remaining TOF)', async () => {
+  it('SKIPS catch-all domains and PROCEEDS on role-only or inconclusive personals', async () => {
     expect(
       await findEmailForDomainOnly(
         stubSql([{ email: 'pat@msp.example', sanitize_reason: 'catchall' }]),
@@ -92,10 +92,18 @@ describe('findEmailForDomainOnly — proceeds when a find is genuinely worth pay
         'MSP',
         'icypeas',
       ),
-    ).toBe('vendor_error')
+    ).toBe('catchall_closed')
     expect(
       await findEmailForDomainOnly(
         stubSql([{ email: 'ceo@msp.example', sanitize_reason: 'role_account' }]),
+        'msp.example',
+        'MSP',
+        'icypeas',
+      ),
+    ).toBe('vendor_error')
+    expect(
+      await findEmailForDomainOnly(
+        stubSql([{ email: 'pat@msp.example', sanitize_reason: 'unverified_unknown' }]),
         'msp.example',
         'MSP',
         'icypeas',
@@ -132,5 +140,10 @@ describe('findEmailForDomainOnly — failure behaviour', () => {
     expect(src).toMatch(/sanitize_reason IN \('mev_valid','qev_valid'\)/)
     expect(src).toContain('reopenDuplicateQueueWhereOnlyDisqualified')
     expect(src).toContain('isPromotableHeldAddress')
+    expect(src).toContain('domainNeedsPersonalFinder')
+    expect(src).toContain('catchall_closed')
+    expect(src).toContain('isOrgInbox')
+    expect(src).toContain('ORDER BY attempts ASC, created_at DESC')
+    expect(src).toContain('PERSONAL_FINDER_REOPEN_CAP')
   })
 })
