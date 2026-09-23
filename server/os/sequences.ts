@@ -1,5 +1,6 @@
 import { getSql } from './conn'
 import { sendTelegram } from './telegram'
+import { shouldSendSequenceDigest, utcDayKey } from './telegramNoisePolicy'
 import { AB_EXPERIMENTS, TOUCH2_VARIANT, getVariant, recordImpression, deriveFirstName, computeAdaptiveSplit, splitByWeight, CANSPAM_TEXT } from './abTest'
 import { reportAgentRun } from './agentHealth'
 import { reportAgentHealth } from './agentHealth_v2'
@@ -987,7 +988,25 @@ export async function runFullSequence() {
 
   if (totalSent > 0) {
     const lines = results.map((r: any) => 'T' + r.touch + ': ' + r.company + (r.variant ? ' [' + r.variant + ']' : '') + ' - ' + r.subject).join('\n')
-    await sendTelegram('PHISHSIMAI ARIA SEQUENCE: ' + totalSent + ' sent\n' + lines)
+    // PS-TELEGRAM-NOISE-01: hourly Dex drip used to flood ARIA SEQUENCE. One digest/UTC day;
+    // founder brief still carries funnel. Bounce breaker + hard seq errors stay separate.
+    const day = utcDayKey()
+    let lastDigestDay: string | null = null
+    try {
+      const rows = await sql`
+        SELECT value FROM janet_memory
+        WHERE company_id='phishsimai' AND type='operating' AND key='aria_sequence_digest_day'
+        LIMIT 1`
+      lastDigestDay = rows[0]?.value != null ? String(rows[0].value).slice(0, 10) : null
+    } catch { /* memory optional */ }
+    if (shouldSendSequenceDigest({ totalSent, lastDigestUtcDay: lastDigestDay, nowUtcDay: day })) {
+      await sendTelegram('PHISHSIMAI ARIA SEQUENCE: ' + totalSent + ' sent\n' + lines)
+      await sql`
+        INSERT INTO janet_memory (company_id, type, key, value, confidence, source)
+        VALUES ('phishsimai', 'operating', 'aria_sequence_digest_day', ${day}, 1, 'aria')
+        ON CONFLICT (company_id, type, key) DO UPDATE SET value=${day}, updated_at=NOW()
+      `.catch(() => {})
+    }
   }
   await reportAgentRun('aria', totalSent >= 0, { sent: totalSent }, undefined, 'phishsimai').catch(() => {})
   await reportAgentHealth('aria', true, 0, undefined, 'phishsimai').catch(() => {})

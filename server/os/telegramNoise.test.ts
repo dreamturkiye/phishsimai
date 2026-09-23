@@ -96,4 +96,12 @@ describe('founder Telegram is for faults, not SME brainstorms', () => {
     expect(platform).toContain("if (/forbidden/i.test(detail))")
     expect(platform).toContain('Voice session was rejected')
   })
+
+  it('PS-TELEGRAM-NOISE-01 policy module is wired for LLM billing coalesce', () => {
+    const policy = readFileSync('server/os/telegramNoisePolicy.ts', 'utf8')
+    expect(policy).toContain('LLM_PROVIDER_BILLING_ALERT')
+    expect(policy).toContain('shouldSendSequenceDigest')
+    const triage = readFileSync('server/os/escalationTriagePolicy.ts', 'utf8')
+    expect(triage).toContain('isLlmBillingAgentCritical')
+  })
 })

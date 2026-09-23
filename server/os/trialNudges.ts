@@ -200,7 +200,8 @@ export async function runGreyBoxPaidNudge(sqlOverride?: any): Promise<GreyBoxPai
       VALUES (${org.id}, ${GREY_BOX_CRISIS_NUDGE_DAY}, NOW())
       ON CONFLICT (org_id, nudge_day) DO UPDATE SET sent_at = NOW()
     `.catch(() => {});
-    await sendTelegram(`✉️ Grey Box paid nudge (existing D25 checkout) — org ${org.id}, ${daysLeft}d left`).catch(() => {});
+    // PS-TELEGRAM-NOISE-01: do not double-page — cronTrialNudges already Telegrams the sent list
+    // (includes D181 Grey Box). Real win stays on Telegram once.
     return { attempted: true, sent: true, orgId: org.id, daysLeft, reason: 'sent existing D25 checkout copy to Grey Box' };
   } catch (e: any) {
     return { attempted: true, sent: false, orgId: org.id, daysLeft, reason: String(e?.message || e).slice(0, 160) };
