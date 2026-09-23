@@ -9,6 +9,11 @@ import { rememberFact } from '../memory'
 import { sarahLinkedInPublishBlocker } from './sarahLinkedIn'
 import { assertPublicPostingDisabled } from './publicPostingLockout'
 import { LINKEDIN_DAILY_POST_CAP, linkedInBodyIsPublishable } from './crisisSocialPublish'
+import {
+  resolvePostForMeApiKey,
+  resolvePostForMeCreateUrl,
+  resolvePostForMeLinkedInAccount,
+} from './postForMeLinkedIn'
 
 const COMPANY = 'phishsimai'
 
@@ -71,19 +76,18 @@ async function postForMePublish(post: { body: string; title?: string; imageUrl?:
   // PS-SOCIAL-LOCKOUT-01: structural block. The linkedin_autopost_enabled DB flag above is
   // founder-flippable without review, so it is not a structural guard on its own.
   assertPublicPostingDisabled('LinkedIn (PostForMe / linkedInPublisher)')
-  const key = process.env.POSTFORME_API_KEY || process.env.POST_FOR_ME_API_KEY
-  const base = process.env.POSTFORME_API_URL || 'https://api.postforme.dev/v1/posts'
-  const account = process.env.POSTFORME_LINKEDIN_ACCOUNT // Kaan's PostForMe LinkedIn channel id
-  if (!key || !account) return { ok: false, error: 'PostForMe not configured (POSTFORME_API_KEY + POSTFORME_LINKEDIN_ACCOUNT)' }
+  const key = resolvePostForMeApiKey()
+  const base = resolvePostForMeCreateUrl()
+  const account = resolvePostForMeLinkedInAccount()
+  if (!key || !account) return { ok: false, error: 'PostForMe not configured (POSTFORME_PHISHSIM_API_KEY or POSTFORME_API_KEY + POSTFORME_SARAH_LINKEDIN_ID)' }
   try {
     const res = await fetch(base, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        account_ids: [account],
-        platform: 'linkedin',
-        content: post.title ? `${post.title}\n\n${post.body}` : post.body,
-        media_urls: post.imageUrl ? [post.imageUrl] : [],
+        caption: post.title ? `${post.title}\n\n${post.body}` : post.body,
+        social_accounts: [account],
+        media: post.imageUrl ? [{ url: post.imageUrl }] : [],
       }),
       signal: AbortSignal.timeout(15000),
     })
@@ -112,7 +116,11 @@ export async function publishApprovedLinkedIn(maxPosts = 1): Promise<{ published
   }
   const approved = (await sql`
     SELECT id, title, body, image_url FROM os_social_queue
-    WHERE platform='linkedin' AND status IN ('queued','draft','pending_review') AND review_status='approved'
+    WHERE platform='linkedin' AND review_status='approved'
+      AND (
+        status IN ('queued','draft','pending_review')
+        OR (status='failed' AND COALESCE(error, '') ILIKE '%/v1/posts%')
+      )
     ORDER BY scheduled_at ASC NULLS LAST LIMIT ${Math.min(maxPosts, LINKEDIN_DAILY_POST_CAP)}
   `.catch(() => [])) as any[]
 

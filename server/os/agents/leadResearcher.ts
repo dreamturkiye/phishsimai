@@ -2,7 +2,15 @@ import { getSql } from '../conn'
 // PS-ICY-GUARD-01: the finder guard reuses the refill's OWN promotability predicate. Sharing the
 // function (rather than restating the rule) is deliberate — if the two ever disagree about what
 // counts as a usable address, the guard starts skipping domains the refill would never send to.
-import { DISQUALIFIED_LABELS, isPromotableHeldAddress } from '../sanitizeRefill'
+import {
+  CATCHALL_TERMINAL_LABELS,
+  ROLE_ONLY_FINDER_LABELS,
+  domainNeedsPersonalFinder,
+  heldDomainBlocksFinder,
+  isOrgInbox,
+  isPromotableHeldAddress,
+  type HeldAddress,
+} from '../sanitizeRefill'
 // PS-FINDER-LEDGER-01: every paid finder call is written down, so "where did 299 credits go"
 // is a query rather than a reconstruction from row counts.
 import { recordProviderCall } from '../providerUsage'
@@ -128,10 +136,13 @@ type AmfResult = { email: string; name: string | null; title: string | null } | 
  * call site cannot bypass it by forgetting a convention. Returns before any HTTP request, so a
  * skip costs zero credits with either vendor.
  */
-export type FinderOutcome = AmfResult | 'already_have_sendable'
+export type FinderOutcome = AmfResult | 'already_have_sendable' | 'catchall_closed'
 
-/** Addresses at this domain that we could actually send to today. */
-async function sendableAddressesAtDomain(sql: ReturnType<typeof getSql>, domain: string): Promise<string[]> {
+/** How many role-only domains one researcher run may put back on the finder. */
+export const PERSONAL_FINDER_REOPEN_CAP = 8
+const PERSONAL_FINDER_SCAN = 400
+
+async function heldAddressesAtDomain(sql: ReturnType<typeof getSql>, domain: string): Promise<HeldAddress[]> {
   const d = String(domain).trim().toLowerCase()
   if (!d) return []
   const rows = (await sql`
@@ -139,39 +150,65 @@ async function sendableAddressesAtDomain(sql: ReturnType<typeof getSql>, domain:
     WHERE split_part(lower(email), '@', 2) = ${d}
       AND bounced = false AND unsubscribed = false
       AND pipeline_stage NOT IN ('dead')`) as Array<{ email: string; sanitize_reason?: string | null }>
-  // Promotable (not org inbox, not DISQUALIFIED catchall/role). Sharing isPromotableHeldAddress
-  // with the refill: a catchall personal must NOT skip the finder — live remaining TOF is that.
-  return rows.map(r => String(r.email)).filter((e, i) => isPromotableHeldAddress(e, rows[i]?.sanitize_reason))
+  return rows.map((r) => ({ email: String(r.email), sanitizeReason: r.sanitize_reason }))
 }
 
 /**
- * Re-open queue rows retired as 'duplicate' solely because we held a catchall/role address.
- * Live 2026-09-17: finder skipped those domains; mev_valid stock was already T1'd; sendable=0.
+ * Re-open role-only queue rows so the finder can look for a named personal mailbox.
+ * Catch-all domains stay closed: another address on a catch-all domain will not verify.
+ * Live 2026-09-23: sanitizedEligible=0 is ~3615 role + ~2312 catchall, not an unchecked backlog.
+ * Cap per run so a desert of role domains cannot drain the Icypeas budget in one tick.
  */
 export async function reopenDuplicateQueueWhereOnlyDisqualified(sql: ReturnType<typeof getSql>): Promise<number> {
   try {
+    const blockLabels = [...CATCHALL_TERMINAL_LABELS, 'mev_valid', 'qev_valid']
     const rows = (await sql`
-      UPDATE lead_research_queue q
-      SET status = 'pending', attempts = 0, updated_at = NOW()
-      WHERE q.company_id = ${COMPANY_ID}
-        AND q.status = 'duplicate'
-        AND EXISTS (
-          SELECT 1 FROM ps_outreach_leads l
-          WHERE split_part(lower(l.email), '@', 2) = lower(q.domain)
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM ps_outreach_leads l
-          WHERE split_part(lower(l.email), '@', 2) = lower(q.domain)
-            AND l.bounced = false AND l.unsubscribed = false
-            AND l.pipeline_stage NOT IN ('dead')
-            AND (l.sanitize_reason IS NULL OR l.sanitize_reason <> ALL(${DISQUALIFIED_LABELS}))
-        )
-      RETURNING q.id`) as Array<{ id: string }>
-    const n = rows.length
-    if (n > 0) console.log(`[researcher] reopened ${n} duplicate queue rows that only hold DISQUALIFIED (catchall/role) addresses`)
-    return n
+      SELECT q.id, l.email, l.sanitize_reason
+      FROM (
+        SELECT id, domain, updated_at
+        FROM lead_research_queue
+        WHERE company_id = ${COMPANY_ID}
+          AND status IN ('duplicate', 'enriched')
+          AND EXISTS (
+            SELECT 1 FROM ps_outreach_leads r
+            WHERE split_part(lower(r.email), '@', 2) = lower(domain)
+              AND (
+                r.sanitize_reason = ANY(${ROLE_ONLY_FINDER_LABELS})
+                OR r.sanitize_reason IS NULL
+                OR btrim(COALESCE(r.sanitize_reason, '')) = ''
+              )
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM ps_outreach_leads c
+            WHERE split_part(lower(c.email), '@', 2) = lower(domain)
+              AND c.sanitize_reason = ANY(${blockLabels})
+          )
+        ORDER BY updated_at ASC NULLS FIRST
+        LIMIT ${PERSONAL_FINDER_SCAN}
+      ) q
+      JOIN ps_outreach_leads l
+        ON split_part(lower(l.email), '@', 2) = lower(q.domain)
+      ORDER BY q.updated_at ASC NULLS FIRST`) as Array<{ id: string; email: string; sanitize_reason?: string | null }>
+    const byId = new Map<string, HeldAddress[]>()
+    for (const row of rows) {
+      const list = byId.get(row.id) ?? []
+      list.push({ email: row.email, sanitizeReason: row.sanitize_reason })
+      byId.set(row.id, list)
+    }
+    const ids: string[] = []
+    for (const [id, held] of byId) {
+      if (ids.length >= PERSONAL_FINDER_REOPEN_CAP) break
+      if (domainNeedsPersonalFinder(held)) ids.push(id)
+    }
+    if (!ids.length) return 0
+    await sql`
+      UPDATE lead_research_queue
+      SET status = 'pending', attempts = 0, created_at = NOW(), updated_at = NOW()
+      WHERE id = ANY(${ids})`
+    console.log(`[researcher] reopened ${ids.length} role-only queue rows for a personal-mailbox find (catchall domains stay closed)`)
+    return ids.length
   } catch (e: any) {
-    console.error(`[researcher] reopen duplicates failed: ${String(e?.message || e).slice(0, 120)}`)
+    console.error(`[researcher] reopen role-only failed: ${String(e?.message || e).slice(0, 120)}`)
     return 0
   }
 }
@@ -186,13 +223,20 @@ export async function findEmailForDomainOnly(
   companyName: string | null,
   finder: string,
 ): Promise<FinderOutcome> {
-  const existing = await sendableAddressesAtDomain(sql, domain).catch((e: any) => {
+  const held = await heldAddressesAtDomain(sql, domain).catch((e: any) => {
     // Fail OPEN on a read error: a DB hiccup must not silently disable lead generation. Say so —
     // an unguarded call is a thing we want to see in the log, not a thing we want to assume.
     console.error(`[finder-guard] ${domain}: precheck FAILED (${String(e?.message || e).slice(0, 100)}) — proceeding UNGUARDED`)
-    return [] as string[]
+    return [] as HeldAddress[]
   })
-  if (existing.length) {
+  const block = heldDomainBlocksFinder(held)
+  if (block === 'catchall') {
+    console.log(`[finder-guard] SKIP ${domain} — catch-all terminal; 0 credits spent`)
+    await recordProviderCall({ provider: finder === 'amf' ? 'amf' : 'icypeas', endpoint: 'guard/skip', sent: false, skipped: 1 })
+    return 'catchall_closed'
+  }
+  if (block === 'sendable') {
+    const existing = held.filter((h) => isPromotableHeldAddress(h.email, h.sanitizeReason)).map((h) => h.email)
     // The log line is the whole point of "enforce it structurally" — a guard nobody can see
     // working is indistinguishable from a guard that silently stopped working.
     console.log(`[finder-guard] SKIP ${domain} — already hold ${existing.length} sendable address(es) (${existing.slice(0, 2).join(', ')}); 0 credits spent`)
@@ -575,7 +619,7 @@ export async function runLeadResearcher(batchSize = 6) {
     const pending = await sql`
       SELECT id, domain, company_name, research_data FROM lead_research_queue
       WHERE company_id = ${COMPANY_ID} AND status = 'pending' AND attempts < ${MAX_RESEARCH_ATTEMPTS}
-      ORDER BY created_at ASC LIMIT ${batchSize}`
+      ORDER BY attempts ASC, created_at DESC LIMIT ${batchSize}`
 
     for (const item of pending) {
       // PS-FINDER-THROTTLE-01: stop the moment today's finder output (prior + this run's inserts)
@@ -613,10 +657,22 @@ export async function runLeadResearcher(batchSize = 6) {
           await sql`UPDATE lead_research_queue SET status='duplicate', updated_at=NOW() WHERE id=${item.id}`
           continue
         }
+        if (primary === 'catchall_closed') {
+          stats.skipped++
+          await sql`UPDATE lead_research_queue SET status='unenrichable', updated_at=NOW() WHERE id=${item.id}`
+          continue
+        }
 
         const amfVendorError = primary === 'vendor_error' // "the lookup never ran" — do not retire the lead
         let hunter = primary && primary !== 'vendor_error' ? primary : null
         if (!hunter) hunter = await enrichViaHunter(String(item.domain))
+        const orgInboxOnly = !!(hunter?.email && isOrgInbox(hunter.email))
+        if (orgInboxOnly && hunter) {
+          // An org inbox is not personal supply. Inserting it and marking enriched is how
+          // role-only domains left the finder with nothing a mailbox verifier can promote.
+          console.log(`[researcher] t=${el()}s ${item.domain} org inbox ${hunter.email} — not inserted`)
+          hunter = null
+        }
 
         if (hunter?.email) {
           stats.enriched++
@@ -637,7 +693,7 @@ export async function runLeadResearcher(batchSize = 6) {
             stats.added++
             await sql`UPDATE lead_research_queue SET status='enriched', icp_score=72, updated_at=NOW() WHERE id=${item.id}`
           }
-        } else if (amfVendorError) {
+        } else if (amfVendorError && !orgInboxOnly) {
           // PS-RESEARCHER-TERMINAL-01: the lookup NEVER RAN (bad key / out of credits / timeout).
           // Do not spend the lead's retry budget on an outage it isn't responsible for — undo the
           // attempt increment and leave it pending so it retries once AMF recovers. This is the bug
